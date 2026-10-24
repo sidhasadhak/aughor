@@ -1,14 +1,16 @@
 "use client";
 
 /**
- * The look, chosen by one person: accent, grey, corners and scaling (ROADMAP §6 item 44).
+ * The look, chosen by one person: accent, grey, corners, scaling, edges and typeface (ROADMAP §6
+ * items 44 and 52).
  *
- * These are the four knobs of Radix Themes' own panel. A choice here moves the whole product
- * at once — every button, table, chip and line — because each design token is a name for a
- * step of the scale the knob selects. It is kept twice, like the skin: in this browser so the
- * page paints as it was left, and in the person's settings so it follows them.
+ * The first four are the knobs of Radix Themes' own panel; edges and typeface are ours. A choice
+ * here moves the whole product at once — every button, table, chip and line — because each design
+ * token is a name for a step of the scale the knob selects. It is kept twice, like the skin: in
+ * this browser so the page paints as it was left, and in the person's settings so it follows them.
  *
- * The chart palette does not move: a chart's colours are data.
+ * A preset is all six at once, named for what it does (`lib/lookValues.ts`); choosing one leaves
+ * every knob its own afterwards. The chart palette does not move: a chart's colours are data.
  *
  * Drawn as one card (Settings ▸ Appearance, redone to `aughor-v2/CLARITY.md`): a row per knob, the way back to the
  * default at the label's right end, and the one line that says where the choice is kept.
@@ -21,12 +23,25 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { putMyPreference } from "@/lib/api";
 import {
-  ACCENTS, DEFAULT_LOOK, GREYS, LOOK_KEYS, RADII, SCALINGS, setLook, useLook,
-  type Look, type Radius,
+  ACCENTS, DEFAULT_LOOK, EDGES, GREYS, LOOK_KEYS, PRESET_NAMES, PRESETS, RADII, SCALINGS, TYPEFACES,
+  setLook, useLook, type Edges, type Look, type Preset, type Radius, type Typeface,
 } from "@/lib/look";
 
 const RADIUS_WORD: Record<Radius, string> = { none: "Square", small: "Small", medium: "Medium", large: "Large", full: "Round" };
+const EDGES_WORD: Record<Edges, string> = { off: "Off", on: "On" };
+const TYPEFACE_WORD: Record<Typeface, string> = { inter: "Inter", "source-sans": "Source Sans" };
+const PRESET_WORD: Record<Preset, string> = { aughor: "Aughor", workbench: "Workbench" };
+/** What a preset sets, said once on hover — the knobs below show it anyway. */
+const PRESET_SAID: Record<Preset, string> = {
+  aughor: "Indigo · gray · large corners · 100% · no edges · Inter — the default",
+  workbench: "Blue · slate · small corners · 95% · boxed cards · Source Sans — a denser, cooler look",
+};
 const title = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+/** The preset the look is, if it is one exactly. */
+function presetOf(look: Look): Preset | null {
+  return PRESET_NAMES.find(name => LOOK_KEYS.every(key => look[key] === PRESETS[name][key])) ?? null;
+}
 
 /** Change the look here and in the person's settings. The page has already followed by the
  *  time the store answers; a store that cannot be reached leaves this browser's copy standing. */
@@ -73,10 +88,23 @@ function Knob({ name, children }: { name: string; children: ReactNode }) {
 export function LookPanel() {
   const look = useLook();
   const isDefault = LOOK_KEYS.every(key => look[key] === DEFAULT_LOOK[key]);
+  const preset = presetOf(look);
   return (
     <Card label="Look" testId="look-panel"
       right={!isDefault && <Button variant="outline" size="xs" onClick={() => chooseLook(DEFAULT_LOOK)}>Back to the default</Button>}>
       <div style={{ display: "grid", gap: 14 }}>
+        <Knob name="Preset">
+          <div role="radiogroup" aria-label="Preset" style={{ display: "flex", gap: 6 }}>
+            {PRESET_NAMES.map(name => (
+              <Tooltip key={name} content={PRESET_SAID[name]}>
+                <Button variant={preset === name ? "secondary" : "outline"} size="xs" role="radio"
+                  aria-checked={preset === name} onClick={() => chooseLook(PRESETS[name])}>
+                  {PRESET_WORD[name]}
+                </Button>
+              </Tooltip>
+            ))}
+          </div>
+        </Knob>
         <Knob name="Accent">
           <Swatches label="Accent" values={ACCENTS} chosen={look.accent} onChoose={accent => chooseLook({ accent })} />
         </Knob>
@@ -93,6 +121,18 @@ export function LookPanel() {
           <SegmentedControl.Root size="1" value={look.scaling} aria-label="Scaling"
             onValueChange={value => chooseLook({ scaling: value as Look["scaling"] })}>
             {SCALINGS.map(value => <SegmentedControl.Item key={value} value={value}>{value}</SegmentedControl.Item>)}
+          </SegmentedControl.Root>
+        </Knob>
+        <Knob name="Edges">
+          <SegmentedControl.Root size="1" value={look.edges} aria-label="Edges"
+            onValueChange={value => chooseLook({ edges: value as Edges })}>
+            {EDGES.map(value => <SegmentedControl.Item key={value} value={value}>{EDGES_WORD[value]}</SegmentedControl.Item>)}
+          </SegmentedControl.Root>
+        </Knob>
+        <Knob name="Typeface">
+          <SegmentedControl.Root size="1" value={look.typeface} aria-label="Typeface"
+            onValueChange={value => chooseLook({ typeface: value as Typeface })}>
+            {TYPEFACES.map(value => <SegmentedControl.Item key={value} value={value}>{TYPEFACE_WORD[value]}</SegmentedControl.Item>)}
           </SegmentedControl.Root>
         </Knob>
       </div>

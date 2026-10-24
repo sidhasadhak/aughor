@@ -214,3 +214,20 @@
   --shadow-sm: 0 1px 2px rgba(31, 31, 31, .10);
   --shadow-md: 0 1px 2px rgba(31, 31, 31, .10), 0 6px 16px rgba(31, 31, 31, .08);
 }
+
+/* ── The look's two knobs of our own (2026-10-25, ROADMAP §6 item 52). Each is an attribute on
+   <html>, painted before the first frame by lib/themeBoot.ts and kept by app/theme-root.tsx;
+   off and inter are what the page was, so a person who chose nothing sees nothing move. ── */
+
+/* edges: a card in the dark skin boxed by the same hairline the light skin draws */
+:root[data-edges="on"] {
+  --card-edge: var(--b1);
+}
+
+/* typeface: the interface set in Source Sans 3 instead of Inter. --font-ui is what the body
+   and every control read (styles/tokens.css); --font-sans is what Radix's root reads
+   (app/globals.css). Figures stay tabular Inter; ids and code stay mono. */
+:root[data-typeface="source-sans"] {
+  --font-ui:   var(--font-source-sans), system-ui, sans-serif;
+  --font-sans: var(--font-source-sans), system-ui, sans-serif;
+}

@@ -678,3 +678,11 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
 - [x] §5 "a package's questions are not covered" — #539 merged them. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*
 - [x] §3.22 does not mark CP-1 and CP-2 as built (#542). *Corrected and merged 2026-10-04 · #565.*
 - [x] §3.5's "VA-10 is therefore not one band" and §5's "cross-user Know waits on VA-10" — sign-in shipped 2026-09-06; only the live IdP receipt is open. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*
+58. [~] **The look, measured against Palantir's** (the user, 2026-10-25: *"Let's research how we can make Aughor look
+    more like Palantir"*) — **studied 2026-10-25**: `docs/PALANTIR_DESIGN_STUDY_2026-10-25.md` + the six-step
+    side-by-side `design-mockups/palantir-inspired/aughor-foundry-knobs-2026-10-25.png`. Decided the same day (ROADMAP
+    §6 item 52): the product look · a per-person **preset** with all six knobs · the chrome as a screenshot first.
+    *Built 2026-10-25: the Workbench preset (blue · slate · small · 95% · edges · Source Sans) and the two new knobs,
+    edges and typeface, in the Look panel and the preference store; tests green.* Owed: the chrome screenshot's
+    verdict (dark rail on light content — shown, not built); Blueprint's 30px rows beyond scaling; Dependents and
+    Usage on an entity; Workshop's numbers into CLARITY §3; bordered state tags.

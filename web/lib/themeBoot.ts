@@ -15,12 +15,15 @@
 import { DEFAULT_LOOK, LOOK_KEY, LOOK_VALUES, type Look } from "@/lib/lookValues";
 import { THEME_KEY } from "@/lib/themeSwitch";
 
-/** Which `<html>` attribute Radix Themes keeps each knob in. */
+/** Which `<html>` attribute each knob lives in: Radix Themes' own for the first four, ours for
+ *  edges and typeface (`aughor-v2/theme/tokens-v2.css` reads them; `app/theme-root.tsx` keeps them). */
 export const LOOK_ATTRIBUTE: Record<keyof Look, string> = {
   accent: "data-accent-color",
   grey: "data-gray-color",
   radius: "data-radius",
   scaling: "data-scaling",
+  edges: "data-edges",
+  typeface: "data-typeface",
 };
 
 /** Inline and pre-paint. Blocked storage, or nothing stored, leaves the default: dark, indigo. */

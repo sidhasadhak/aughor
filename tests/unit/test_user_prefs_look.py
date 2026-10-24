@@ -1,6 +1,7 @@
-"""The look — accent, grey, radius, scaling — is a per-person preference (ROADMAP §6 item 44).
+"""The look — accent, grey, radius, scaling, edges, typeface — is a per-person preference (ROADMAP §6
+items 44 and 52).
 
-The web hands these four to Radix Themes; the store keeps them so a person's look follows them to
+The web hands four of them to Radix Themes and keeps two on <html> itself; the store keeps all six so a person's look follows them to
 another browser. Two things are held here: each key admits Radix's own values and nothing else, and
 the lists are the same ones `web/lib/lookValues.ts` spells — a value the web offers and the store refuses
 would be a choice that silently does not stick.
@@ -16,7 +17,8 @@ from aughor.db import user_prefs
 from aughor.db.user_prefs import ALLOWED_KEYS, get_preferences, set_preference
 
 LOOK = {"accent": user_prefs.LOOK_ACCENTS, "grey": user_prefs.LOOK_GREYS,
-        "radius": user_prefs.LOOK_RADII, "scaling": user_prefs.LOOK_SCALINGS}
+        "radius": user_prefs.LOOK_RADII, "scaling": user_prefs.LOOK_SCALINGS,
+        "edges": user_prefs.LOOK_EDGES, "typeface": user_prefs.LOOK_TYPEFACES}
 WEB = Path(__file__).resolve().parents[2] / "web" / "lib" / "lookValues.ts"
 
 
@@ -32,13 +34,15 @@ def test_each_knob_is_a_known_key_that_takes_its_own_values_only(key):
 
 
 def test_a_look_comes_back_as_it_was_set():
-    for key, value in (("accent", "teal"), ("grey", "sage"), ("radius", "small"), ("scaling", "95%")):
+    chosen = {"accent": "teal", "grey": "sage", "radius": "small", "scaling": "95%", "edges": "on", "typeface": "source-sans"}
+    for key, value in chosen.items():
         set_preference(key, value)
     kept = get_preferences()["preferences"]
-    assert {k: kept[k] for k in LOOK} == {"accent": "teal", "grey": "sage", "radius": "small", "scaling": "95%"}
+    assert {k: kept[k] for k in LOOK} == chosen
 
 
-@pytest.mark.parametrize("key, name", [("accent", "ACCENTS"), ("grey", "GREYS"), ("radius", "RADII"), ("scaling", "SCALINGS")])
+@pytest.mark.parametrize("key, name", [("accent", "ACCENTS"), ("grey", "GREYS"), ("radius", "RADII"), ("scaling", "SCALINGS"),
+                                       ("edges", "EDGES"), ("typeface", "TYPEFACES")])
 def test_the_web_offers_exactly_what_the_store_admits(key, name):
     source = WEB.read_text()
     block = re.search(rf"export const {name} = \[(.*?)\] as const", source, re.S)

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Source_Sans_3 } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { Providers } from "./providers";
 import { ThemeRoot } from "./theme-root";
@@ -7,10 +7,12 @@ import { NAV_COLLAPSE_BOOT } from "@/lib/navCollapse";
 import { THEME_BOOT } from "@/lib/themeBoot";
 import "./globals.css";
 
-// Two families, both self-hosted by next/font at build time (no runtime request
+// Three families, all self-hosted by next/font at build time (no runtime request
 // to a font CDN, so nothing here depends on the network at page load).
 // Inter carries the UI; JetBrains Mono carries every figure, id, timestamp and
-// metric — a tabular face so a column of numbers lines up on the decimal.
+// metric — a tabular face so a column of numbers lines up on the decimal. Source Sans 3
+// is the UI face a person can choose instead of Inter (the look's `typeface` knob,
+// 2026-10-25): narrower, so a row holds more words at the same size.
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -21,6 +23,12 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
+  subsets: ["latin"],
   display: "swap",
 });
 
@@ -68,7 +76,7 @@ export default function RootLayout({
     <ThemeRoot>
       <html
         lang="en"
-        className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} ${sourceSans.variable} h-full antialiased`}
         // The boot scripts below set <html>'s attributes before React hydrates — data-nav (which React
         // never renders), and the skin and look (which the Theme renders at their defaults) — so the
         // first paint is the person's own. Hydration leaves attributes as it finds them; this silences

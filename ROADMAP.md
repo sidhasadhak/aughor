@@ -14452,6 +14452,33 @@ the browser** · **measure the premise before building.**
     - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 
+52. ✅ **DECIDED 2026-10-25 — the look of the product, measured against Palantir's; a preset, not a new
+    default** (`docs/PALANTIR_DESIGN_STUDY_2026-10-25.md`; the user: *"Let's research how we can make Aughor look
+    more like Palantir"*, then *"Product look, preset with all six, build the chrome screenshot"*).
+    - Measured from primary sources (Blueprint's token files, Palantir's own Workshop design rules, nine Foundry
+      screenshots, palantir.com's computed styles) against the live instance: the distance is surface — corners,
+      the tint of the greys, the accent, card edges, scale, the face — and four of the six were already the Look
+      panel's knobs. Aughor is Foundry-shaped where it counts (the Ontology tab, the cockpit-from-object pieces,
+      the icon rail, straight graph edges).
+    - **(1)** The product look, not the brand: Blueprint's cool slate, one blue, 4px, a 1px edge on every card,
+      Source Sans at 14px. The marketing black and the licensed face (Alliance) are left.
+    - **(2)** A **preset**, per person, in the Look panel — the platform's default (indigo · gray · large · 100%,
+      2026-10-06) and the dark charcoal skin (2026-10-05) do not move. The default moves, if ever, after a week of
+      real use and on a side-by-side as before.
+    - **(3)** The preset holds **all six**: two knobs of our own join Radix's four — **edges** (a card in the dark
+      skin boxed by the hairline the light skin draws) and **typeface** (Source Sans 3, OFL, self-hosted by
+      next/font) — each still its own knob afterwards. Named for what it does, as the vocabulary ratchet requires:
+      **Workbench** (blue · slate · small · 95% · edges on · Source Sans); the default preset is **Aughor**.
+    - **(4)** The dark-rail-on-light chrome (Foundry's own) is a **screenshot first**, built by hand on the live page
+      and shown; no code until it is seen (§4.10, the rail stays).
+    - Not taken now, recommended for later: Blueprint's 30px rows beyond scaling; Dependents and Usage sections on an
+      entity (needs usage attribution); Workshop's numbers written into CLARITY §3; bordered state tags.
+    - *Built 2026-10-25 on `claude/aughor-palantir-design-bddf88`: `lib/lookValues.ts` (EDGES, TYPEFACES, PRESETS),
+      `lib/themeBoot.ts` (two attributes of our own), `app/theme-root.tsx` (keeps them), `app/layout.tsx` (the
+      third family), `aughor-v2/theme/tokens-v2.css` (`[data-edges]`, `[data-typeface]`), `components/LookPanel.tsx`
+      (a Preset row, two knobs), `aughor/db/user_prefs.py` (two keys); tests in each. Off by default: a person who
+      chose nothing sees nothing move.*
+
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
 - **Measure the premise before building.** Every wave in this arc moved its own scope at the

@@ -12,12 +12,15 @@
  * leaves all of those on the default look.
  *
  * Two inputs. The skin is `<html data-theme>`, the attribute the app has always switched
- * (`lib/themeSwitch.ts`); the four knobs are the look (`lib/look.ts`).
+ * (`lib/themeSwitch.ts`); the six knobs are the look (`lib/look.ts`). The Theme takes four of
+ * them as props; edges and typeface are ours, so this root writes them to `<html>` itself, under
+ * the same attribute names the boot script painted before React ran (`lib/themeBoot.ts`).
  */
 import { useEffect, useState } from "react";
 import { Theme } from "@radix-ui/themes";
 
 import { useLook } from "@/lib/look";
+import { LOOK_ATTRIBUTE } from "@/lib/themeBoot";
 
 /** Light or dark, as `<html data-theme>` says it. */
 function useAppearance(): "light" | "dark" {
@@ -36,6 +39,11 @@ function useAppearance(): "light" | "dark" {
 export function ThemeRoot({ children }: { children: React.ReactElement }) {
   const appearance = useAppearance();
   const look = useLook();
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute(LOOK_ATTRIBUTE.edges, look.edges);
+    root.setAttribute(LOOK_ATTRIBUTE.typeface, look.typeface);
+  }, [look.edges, look.typeface]);
   return (
     // No background of its own: `body` paints the page from `--bg-0`, as it always has.
     <Theme asChild appearance={appearance} accentColor={look.accent} grayColor={look.grey}

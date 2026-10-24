@@ -235,6 +235,16 @@ Only the first keeps the word in prose: say **validate** for SQL, **feedback** f
 
 ---
 
+## The look (Settings ▸ Appearance)
+
+| Use this | For | Don't use |
+|---|---|---|
+| **Skin** | Dark or light — `<html data-theme>`, the toggle in the top strip | "theme" in anything a user reads (the Theme is Radix's root) |
+| **Look** | The six knobs one person keeps: accent, grey, corners, scaling, edges, typeface (`web/lib/lookValues.ts`, `aughor/db/user_prefs.py`) | "theme", "style", "density" (retired 2026-10-06; scaling is the one knob for size) |
+| **Preset** | All six knobs at once, named for what it does: **Aughor** (the default) · **Workbench** (blue · slate · small corners · 95% · boxed cards · Source Sans) | a product's name for a look (the ratchet retires those) |
+| **Edges** | Whether a card in the dark skin is boxed by a hairline (`--card-edge`); the light skin always is | "borders" as a knob |
+| **Typeface** | The face the interface is set in: Inter or Source Sans; figures stay tabular, ids and code mono | "font" as the knob's name |
+
 ## External names
 
 **Keep** the name of anything we actually integrate with — DuckDB, MotherDuck, MLflow,
