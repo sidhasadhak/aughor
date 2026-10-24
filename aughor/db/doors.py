@@ -31,6 +31,9 @@ _DIALECT: ContextVar[Optional[str]] = ContextVar("aughor_door_dialect", default=
 #: The schema an unqualified table name resolves to behind the door in flight (the connection's own, when it names
 #: one), or None. The exclusion step reads it: `orders` behind a door scoped to `stage` is `stage.orders`.
 _SCHEMA: ContextVar[Optional[str]] = ContextVar("aughor_door_schema", default=None)
+#: Arc ED, ED-1 — what a step told the reader about the statement in flight (`say`), added to its result's caveats on
+#: the way out: a narrowed read is said on the answer it narrowed, never implied by a smaller number.
+_SAID: ContextVar[Optional[list[str]]] = ContextVar("aughor_door_said", default=None)
 
 #: Each door word, in plain words. ``{d}`` is the detail after the colon.
 WORDS: dict[str, str] = {
@@ -44,6 +47,7 @@ WORDS: dict[str, str] = {
     "engine-undeclared": "run on an engine whose connector does not say whether its session is read-only: the door's "
                          "checks are the read-only boundary",
     "row-policy": "narrowed by the row-level access policy",
+    "object-policy": "narrowed to the objects the reader may see ({d})",
     "pii-checked": "checked for sensitive data (PII)",
     "pii-redacted": "{d} sensitive value(s) redacted",
     "pii-blocked": "withheld: it held sensitive data this agent may not see",
@@ -88,6 +92,14 @@ def passed(word: str) -> None:
     trail = _TRAIL.get()
     if trail is not None:
         trail.append(word)
+
+
+def say(text: str) -> None:
+    """Tell the reader something about the statement in flight; it reaches its result's caveats. Nothing is open,
+    nothing is said."""
+    said = _SAID.get()
+    if said is not None and text and text not in said:
+        said.append(text)
 
 
 def add(result: Any, words: Iterable[str], *, first: bool = False) -> Any:
@@ -156,6 +168,7 @@ def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[
     from aughor.db.dialects import sql_for_engine
 
     token = _TRAIL.set([])
+    said_token = _SAID.set([])
     internal_token = _INTERNAL.set(bool(internal))
     dialect_token = _DIALECT.set(str(getattr(conn, "dialect", "") or "duckdb"))
     _own = getattr(conn, "_schema_name", None) or getattr(conn, "schema_name", None)
@@ -184,11 +197,15 @@ def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[
                 result = run(statement)
         if result is not None and hasattr(result, "doors"):
             add(result, _TRAIL.get() or [], first=True)
+        said = _SAID.get() or []
+        if said and result is not None and hasattr(result, "caveats"):
+            result.caveats = list(dict.fromkeys([*(result.caveats or []), *said]))
         return result
     finally:
         _SCHEMA.reset(schema_token)
         _DIALECT.reset(dialect_token)
         _INTERNAL.reset(internal_token)
+        _SAID.reset(said_token)
         _TRAIL.reset(token)
 
 

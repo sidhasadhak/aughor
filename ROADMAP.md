@@ -11814,7 +11814,7 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
-### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 BUILT 2026-10-24** on the session branch, the rest not started)
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 and ED-1 BUILT 2026-10-24** on the session branch, the rest not started)
 
 **The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
 not yet hold is that shape's own rules, at every door:
@@ -11836,7 +11836,7 @@ not yet hold is that shape's own rules, at every door:
 | # | Builds | Flag (off) · size | Falsifier |
 |---|---|---|---|
 | **ED-0** | The small defects: document search says *unavailable* instead of `[]`; §3.26's eight monitor defects; stale words (`mcp/policy.py` "eighteen" over 23 tools, `routers/builder_v1.py:7` "(off)" of a graduated flag) | bugs, no flag · S | A saved monitor reads back a grace period other than its own → stop |
-| **ED-1** | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
+| **ED-1** ✅ | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
 | **ED-2** | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
 | **ED-3** | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
 | **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
@@ -11885,6 +11885,43 @@ Proved on a scratch API over temp stores:
 - `knowledge/health.store_status` cannot see a store that is down, because `collection_count` swallows the error.
 - When this ships, theLook's "Key Questions: Outerwear & Coats" anomaly monitor (a category breakdown) starts recording
   failed runs, as it should.
+
+**ED-1, built 2026-10-24** (same branch; flag `ontology.security_sql`, off, in the graduation queue; it needs
+`ontology.security`). A connection's own door — where a quick answer, a deep analysis and the SQL editor run their
+statements — now applies the released ontology's row policies and sensitive properties, as the object doors do
+(`ontology/security_sql.py`, the rewrite in `sql/rls.apply_entity_rules`, hooked after the RBAC step in
+`db.connection.enforce_row_policy` through a registry the agent fills at bootstrap,
+`kernel/registries/object_policies.py`. The platform imports no ontology. With the flags on and nothing registered,
+a request's statement is refused, never run unfiltered).
+- **Rows:** a table that backs an entity with row policies is read through the reader's objects — the object door's
+  own condition (`security.row_condition`) — and the answer says so in its caveats (`db.doors.say`, new) with
+  `object-policy:<entity>` on its trail.
+- **Masked properties:** a statement that reads a property masked for the reader — named anywhere, or under a
+  `SELECT *` — is refused with the object door's words.
+- **Query-backed entities:** a table read by a query-backed entity the reader is restricted on is refused, since raw SQL
+  over it cannot be narrowed to their objects.
+- **Fail-closed:** a policy that cannot be applied blocks the statement.
+- **Left alone:** the platform's own statements (`internal=True`), schedules and automation runs (no request acts for
+  anyone), and the object doors' own statements, which apply OC-7 themselves (`object_door`, marked by code on their
+  routers and execution sites — never by anything a statement carries).
+- **The result cache** keys a narrowed read by the reader and their groups.
+- **Edit history** is read as the reader may: a masked property's values are emptied with why, and an edit to an object
+  outside their rows is withheld, counted and said. Edits it cannot check are withheld, never shown. The object page's
+  history shows the reason.
+
+The falsifier held on the samples warehouse through the real DuckDB door and the real compiler: Ana counts 3,300 orders
+through the SQL editor and through the object door, Ben his own number, and Carl none, with the groups named. A masked
+sum is refused over HTTP. 19 tests. Every piece was mutation-killed, including removing the object router's mark (its
+listing is then refused for its own `SELECT *`). One survivor is a redundant guard: the registry and the applier both
+check that object security is on.
+
+**Named, not done:**
+- The theLook receipt on a scratch install, which needs sign-in as `ontology.security` does.
+- Retiring `ROW_POLICIES` (after that receipt).
+- The organisation ontology's declarations at the SQL door.
+- The served graphs are read per statement while the flag is on (no memo).
+- An unqualified column named like a masked one on another joined table is refused too (the refusal says which property).
+- An unqualified backing table matches that name in every schema (the doubt resolved toward the policy).
 
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
 

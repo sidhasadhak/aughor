@@ -350,7 +350,8 @@ function EditHistory({ connectionId, objectType, rowKey, column }: {
             : rows === null ? "Reading…"
             : rows.map((r) => (
               <span key={`${r.version}:${r.event}`} style={{ display: "block" }}>
-                v{r.version} · {r.event === "withdrawn" ? `withdrawn (was ${r.previous || "unset"})`
+                v{r.version} · {r.masked ? <>{r.event === "withdrawn" ? "withdrawn" : "set"} <Masked why={r.masked} /></>
+                  : r.event === "withdrawn" ? `withdrawn (was ${r.previous || "unset"})`
                   : `set to ${r.body}${r.previous ? ` (was ${r.previous})` : ""}`}
                 {" "}by {r.actor || "—"} · {r.at.slice(0, 16).replace("T", " ")}
               </span>

@@ -20,12 +20,14 @@ from pydantic import BaseModel, Field
 
 from aughor.db.registry import BUILTIN_ID
 from aughor.ontology.security import acting_agent_from_request
+from aughor.ontology.security_sql import object_door_from_request
 from aughor.security.authz import caller, connection_owner_guard
 from aughor.semantic.object_query import ObjectListing
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
 router = APIRouter(tags=["builders"], dependencies=[Depends(connection_owner_guard),
-                                                    Depends(acting_agent_from_request)])   # Arc OC-7
+                                                    Depends(acting_agent_from_request),     # Arc OC-7
+                                                    Depends(object_door_from_request)])     # Arc ED, ED-1
 
 FLAG = "ontology.builder_doors"
 

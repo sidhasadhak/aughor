@@ -120,7 +120,9 @@ def object_metrics(graph: OntologyGraph, db: Any, entity: OntologyEntity, instan
                     out.append({**row, "refused": exc.reason, "sql": compiled.sql})
                     continue
             else:
-                result = db.execute("object_metric", compiled.sql)
+                from aughor.ontology.security_sql import object_door
+                with object_door():          # Arc ED, ED-1 — compiled by the object door, which applied OC-7 itself
+                    result = db.execute("object_metric", compiled.sql)
             if getattr(result, "error", None):
                 out.append({**row, "error": str(result.error)[:300], "sql": compiled.sql})
                 continue

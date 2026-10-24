@@ -417,21 +417,23 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
     applies but can't be compiled in, the query is blocked rather than run unfiltered.
 
     Injects on the DuckDB-form SQL these transpile-from-DuckDB engines receive (before translate/normalize),
-    so the wrapped subqueries transpile with the rest of the statement."""
+    so the wrapped subqueries transpile with the rest of the statement.
+
+    Arc ED, ED-1 — then the released ontology's own declarations (`ontology.security_sql`, off): the reader's objects
+    and masked properties, as the object doors apply them (`_enforce_object_policies`)."""
     try:
         ctx = _row_policy_principal()
         if ctx is None:
-            return sql, None
+            return _enforce_object_policies(conn, hypothesis_id, sql)
         org, user, roles = ctx
         from aughor.rbac.row_policy import resolve_row_filters
         filters = resolve_row_filters(roles, org, user)
         if not filters:
-            return sql, None
+            return _enforce_object_policies(conn, hypothesis_id, sql)
         from aughor.sql.rls import inject_row_filters
         from aughor.db.dialects import authored_dialect
         filtered = inject_row_filters(sql, filters, authored_dialect(conn))
         _passed("row-policy")
-        return filtered, None
     except Exception as exc:  # noqa: BLE001 — fail CLOSED: an un-appliable policy blocks, never leaks
         from aughor.kernel.errors import tolerate
         tolerate(exc, "row-policy injection failed; blocking the query (fail-closed)",
@@ -440,6 +442,32 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
         return sql, QueryResult(
             hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
             error="[ROW POLICY] query blocked — the row-level access policy could not be safely applied")
+    return _enforce_object_policies(conn, hypothesis_id, filtered)
+
+
+def _enforce_object_policies(conn: "DatabaseConnection", hypothesis_id: str,
+                             sql: str) -> "tuple[str, QueryResult | None]":
+    """Arc ED, ED-1 — the released ontology's row policies and sensitive properties at the connection's door
+    (`ontology.security_sql`, off: ``(sql, None)``, untouched). A statement that reads what the reader may not is
+    refused with why; one whose policies cannot be applied is refused rather than run unfiltered (fail-closed)."""
+    from aughor.kernel.registries import object_policies
+    try:
+        if not object_policies.applies():
+            return sql, None
+        from aughor.db.dialects import authored_dialect
+        return object_policies.apply(getattr(conn, "_connection_id", "") or "", sql, authored_dialect(conn)), None
+    except Exception as exc:  # noqa: BLE001 — fail CLOSED: a policy that cannot be applied blocks, never leaks
+        from aughor.sql.rls import PolicyRefused
+        if isinstance(exc, PolicyRefused):
+            reason = str(exc)
+        else:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the object policies could not be applied; blocking the statement (fail-closed)",
+                     counter="ontology.security_sql.blocked")
+            reason = "the object policies could not be safely applied to it"
+        _passed("blocked:object-policy")
+        return sql, QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
+                                error=f"[OBJECT POLICY] refused — {reason}")
 
 
 def result_cache_tenancy() -> "str | None":
@@ -459,18 +487,25 @@ def result_cache_tenancy() -> "str | None":
     Mirrors ``enforce_row_policy``'s gate via the shared ``_row_policy_principal`` so it returns a real
     fingerprint on *exactly* the requests that get filtered. Fails CLOSED: if the gate is live but the
     fingerprint cannot be computed, returns a per-call unique token so the entry can be neither shared nor
-    reused (the cache is effectively bypassed for that call) — never the legacy key."""
+    reused (the cache is effectively bypassed for that call) — never the legacy key.
+
+    Arc ED, ED-1 — while the ontology's own declarations apply to the request (`ontology.security_sql`), the reader and
+    their groups are folded in too: two readers share an entry only when they are the same parties in the same groups."""
     try:
         ctx = _row_policy_principal()
-        if ctx is None:
+        from aughor.kernel.registries.object_policies import tenancy
+        reader = tenancy()
+        if ctx is None and reader is None:
             return None
+        if ctx is None:
+            return "os:" + hashlib.sha256(reader.encode()).hexdigest()[:24]
         org, user, roles = ctx
         from aughor.rbac.row_policy import resolve_row_filters
         filters = resolve_row_filters(roles, org, user)
-        payload = json.dumps(
-            {"org": org, "roles": sorted(roles), "filters": {k: filters[k] for k in sorted(filters)}},
-            separators=(",", ":"), sort_keys=True,
-        )
+        fold = {"org": org, "roles": sorted(roles), "filters": {k: filters[k] for k in sorted(filters)}}
+        if reader is not None:
+            fold["reader"] = reader
+        payload = json.dumps(fold, separators=(",", ":"), sort_keys=True)
         return "rp:" + hashlib.sha256(payload.encode()).hexdigest()[:24]
     except Exception as exc:  # noqa: BLE001 — fail CLOSED: a shared/legacy key here would be the leak
         from aughor.kernel.errors import tolerate

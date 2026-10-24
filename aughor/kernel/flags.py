@@ -124,6 +124,10 @@ FLAG_ENV = {
     "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
     "ontology.builder_doors": "AUGHOR_ONTOLOGY_BUILDER_DOORS",
     "ontology.security": "AUGHOR_ONTOLOGY_SECURITY",
+    # Arc ED, ED-1 (ROADMAP §3.58). ON (with ontology.security): a connection's door applies the released ontology's row
+    # policies and sensitive properties to every statement a request runs — narrowed to the reader's objects, a masked
+    # property refused. OFF: only the object doors apply them, and every statement reads as before.
+    "ontology.security_sql": "AUGHOR_ONTOLOGY_SECURITY_SQL",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -716,6 +720,18 @@ FLAG_META = {
                        "may. It applies to dashboards, object pages and outside programs. Off: every reader "
                        "sees every object and property.",
     },
+    "ontology.security_sql": {
+        "label": "Apply object security to every answer",
+        "summary": "Answers, deep analyses and the SQL editor read only the objects the reader may see. "
+                   "A masked property cannot be read there either.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "needs", "text": "Needs object security on"},
+                  {"kind": "private", "text": "Readers are told what is hidden"}],
+        "description": "The row policies and sensitive properties declared on an entity also apply "
+                       "where a question runs its own query. A query that would read a masked property is "
+                       "refused, with why. Scheduled checks still count every object. Off: only object "
+                       "pages, dashboards and outside programs apply them.",
+    },
     "dashboard.composed": {
         "label": "A dashboard in each Data Canvas",
         "summary": "Adds a Dashboards tab to the Data Canvas. Arrange its cards in tabs and sections, "
@@ -1102,6 +1118,11 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-1 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "ontology.security_sql": "receipt: on a scratch install over theLook, a group with a row policy gets the same count from "
+                             "a quick answer as from the object door, and a question that reads a masked property is "
+                             "refused, with why. Falsifier: one count that differs between the two doors stops it. It "
+                             "needs ontology.security, so live waits for sign-in as that does",
     # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
     "ontology.security": "receipt: on a scratch install, two people open the same dashboard and see different rows and a "
                          "masked property, each told why, and an agent acting for one reads no more than that person does. "

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
 from aughor.ontology.security import acting_agent_from_request
+from aughor.ontology.security_sql import object_door_from_request
 from aughor.routers.ontology import refuse_organisation_scope
 from aughor.security.authz import connection_owner_guard
 from aughor.semantic.object_query import ObjectListing, ObjectQuery
@@ -24,7 +25,8 @@ from aughor.semantic.object_query import ObjectListing, ObjectQuery
 #: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection;
 #: DATA-06 — every connection a door names belongs to the caller's org (identity on).
 router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard),
-                                                  Depends(acting_agent_from_request)])   # Arc OC-7 — an agent reads only what its person may
+                                                  Depends(acting_agent_from_request),    # Arc OC-7 — an agent reads only what its person may
+                                                  Depends(object_door_from_request)])    # Arc ED, ED-1 — its statements apply OC-7 themselves
 
 
 #: Arc AP-6 — the group a builder previews a dashboard as: one more party among the reader's, so it only narrows.

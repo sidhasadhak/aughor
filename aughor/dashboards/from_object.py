@@ -296,7 +296,9 @@ def reader(connection_id: str, schema_name: Optional[str], graph: Any) -> Iterat
             return held
         compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                         overlay=overlay, metrics=metrics)
-        result = execute_guarded(db, compiled.sql, query_id="cockpit.from_object")
+        from aughor.ontology.security_sql import object_door
+        with object_door():                  # Arc ED, ED-1 — compiled by the object door, which applied OC-7 itself
+            result = execute_guarded(db, compiled.sql, query_id="cockpit.from_object")
         if result.error:
             raise RuntimeError(result.error)
         return (list(result.columns or []) or list(compiled.columns), list(result.rows or []),

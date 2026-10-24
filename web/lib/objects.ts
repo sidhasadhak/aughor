@@ -364,6 +364,8 @@ export interface EditHistoryRow {
   actor: string;
   origin: string;
   at: string;
+  /** Arc ED, ED-1 — why the property's values are not shown to this reader (they arrive empty). */
+  masked?: string;
 }
 
 /** Arc OC-6 — every version of the edits on one object (and one property), newest first. */
