@@ -48,7 +48,11 @@ def is_agent_request(request: Request) -> bool:
     if is_service(getattr(request.state, "principal", None)):
         return True
     # Arc ED, ED-2 — with grants held, a service principal is one whether or not identity is enforced: an install
-    # without sign-in still holds the program that presents one to its grant.
+    # without sign-in still holds the program that presents one to its grant. Asked only of a request that presents
+    # one, so every other request is decided as before, with no flag read.
+    from aughor.security.service_principals import headers_present
+    if not headers_present(request):
+        return False
     from aughor.rbac import principal_grant
     return principal_grant.enabled() and principal_grant.principal_of(request) is not None
 

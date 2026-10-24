@@ -35,14 +35,14 @@ def presented(headers: Any) -> Optional[tuple[str, str]]:
 
 async def answer(name: str, key: str, client) -> tuple[int, Optional[dict]]:
     """What the API says of this name and key — kept for thirty seconds, keyed by a hash, never the key itself."""
-    digest = hashlib.sha256(f"{name}\x00{key}".encode("utf-8")).hexdigest()
+    kept_as = hashlib.sha256(f"{name}\x00{key}".encode("utf-8")).hexdigest()
     now = time.monotonic()
-    kept = _answers.get(digest)
+    kept = _answers.get(kept_as)
     if kept is not None and now - kept[0] < _TTL:
         return kept[1], kept[2]
     status, body = await client.service_principal_me(name, key)
     if status in (200, 401, 404):              # a transport failure is asked again next time, never remembered
-        _answers[digest] = (now, status, body)
+        _answers[kept_as] = (now, status, body)
     return status, body
 
 
