@@ -264,12 +264,12 @@ three places where Aughor already holds one concept twice, and one where it must
 ## 8. Decisions for you
 
 1. **Should an App's readers see a published version rather than every keep?** Today an edit carries its audience
-   forward, deliberately. *Recommended:* yes, one published version per App, the next keep a draft until published.
+   forward, deliberately. *Recommended:* yes, one published version per App, the next keep a draft until published. *Decided 2026-10-24: yes.*
 2. **Which arc first?** *Adopted in the order proposed (§6 item 52).* *Recommended:* "trust holds at every door". Its defects are latent — they cost nothing today
    and become real the day `ontology.security` graduates or a second MCP client connects.
 3. **Programs calling agents through a chat-compatible endpoint (item 12):** wanted now, or when a customer asks
-   (the same rule ROADMAP applies to a client library)?
-4. **Proposed agent revisions:** start once agents have certified goldens, or not at all?
+   (the same rule ROADMAP applies to a client library)? *Decided 2026-10-24: when a customer asks.*
+4. **Proposed agent revisions:** start once agents have certified goldens, or not at all? *Decided 2026-10-24: once goldens exist.*
 5. **Adopt into the roadmap:** *Done 2026-10-24 — §3.58–§3.60, §6 item 52, PENDING item 58.* record the three arcs in ROADMAP §3 and the defects D1–D7 in PENDING.md?
 
 ---
@@ -293,3 +293,23 @@ run payloads.
 object door versus raw SQL, which sets how much item 1 changes in practice; whether a signed-in session works inside
 a third-party frame; Foundry behaviour marked "where enabled" or beta in its docs. The Automate pages that replace
 Object Monitors were not in the page set.
+
+**Outside reading, added 2026-10-24 at the user's suggestion.** *Palantir Ontology Explained*, PAL4C Labs (Omar J,
+updated 2026-10-06), <https://pal4c.com/palantir-ontology-explained/>. It comes from a third-party consultancy, not
+from Palantir: it says it has no affiliation with Palantir, and its author says the firm is paid to build these
+systems. Its figures (one anonymised client's savings and the delay drop) are its own claims and were not checked
+here. It agrees with this study on the main points:
+- The semantic half and the kinetic half (§1).
+- People, apps and agents act under one set of permissions, with the decision kept beside the object it changed (Arc
+  TC, and `record/decisions.py`).
+- Agents draft and a person approves, with autonomy growing only as evaluations hold, which is §6 item 52(c).
+
+Three points in it are not in the study and are worth testing against Aughor before anyone builds on them:
+- A decision should record **what the decider saw**, not only who decided. TC-2 adds the run and its trace. Whether a
+  person's edit keeps the figures shown to them when they made it has not been checked.
+- **A primary key is never reused.** A reused key quietly joins a new thing to an old thing's history. No check for this
+  was found in the ontology's key declaration, and it was not looked for either.
+- **Start from one decision, not from the source systems**, as a design rule for a pack or a first App.
+
+The article also names two critics: Vonng says the ontology is tables with extra steps, and Lokad says it has no
+decision science of its own. Both match §7 (what not to copy) and the decision loop's reason to exist.

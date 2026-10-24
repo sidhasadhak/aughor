@@ -1,7 +1,8 @@
 """Why the knowledge base answered nothing.
 
-`search_documents` ends `except Exception: return []`. Four different conditions arrive at
-that line and leave it identical:
+`search_documents` ended `except Exception: return []` until ED-0 (ROADMAP §3.58), when a
+failed search began raising `DocumentSearchUnavailable`. Four different conditions arrived at
+that line and left it identical, and an empty corpus still answers `[]`:
 
 * nothing in the corpus matched the query — fine, and the only one that is;
 * no documents are indexed at all;

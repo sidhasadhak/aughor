@@ -261,6 +261,28 @@ def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> t
     return False, f"schedule({cond.cron}): next due {nxt.isoformat() if nxt else 'never'}"
 
 
+def _metric_not_due(cond: Condition, automation: Automation, now: datetime) -> Optional[tuple[bool, str]]:
+    """``(False, why)`` when a metric condition's monitor is not due a check on this tick; None when it is, or when its
+    cadence cannot be read (the probe then says what is wrong with the monitor).
+
+    A monitor says how often it is checked (``check_cron``). A chain naming one ran it on every 60-second tick, so an
+    hourly monitor queried the warehouse sixty times an hour (ROADMAP §3.26). Its own cron is the cadence here, asked
+    as a schedule condition is: did it match since this automation last ran?"""
+    from aughor.monitors.store import get_monitor
+
+    monitor = get_monitor(cond.monitor_id)
+    if monitor is None or not (monitor.check_cron or "").strip():
+        return None
+    try:
+        due, detail = _schedule_fired(Condition(kind="schedule", config={"cron": monitor.check_cron}),
+                                      automation, now)
+    except ProbeUnavailable:
+        return None
+    if due:
+        return None
+    return False, f"metric({monitor.name}): not checked on this tick — {detail.split(': ', 1)[-1]}"
+
+
 def default_probe(cond: Condition, automation: Automation):
     """Evaluate a warehouse-backed condition.
 
@@ -378,6 +400,8 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
         elif cond.kind == "webhook":
             results.append((True, f"webhook: {asked}") if manual
                            else (False, "webhook: waiting to be called"))
+        elif cond.kind == "metric" and not manual and (waiting := _metric_not_due(cond, automation, now)):
+            results.append(waiting)
         else:
             # HB-3 — a probe may return (fired, detail) or (fired, detail, payload);
             # a fired condition's payload is what the chain binds as `trigger.<key>`

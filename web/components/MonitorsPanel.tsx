@@ -17,6 +17,8 @@ import {
   getAllAlerts,
   acknowledgeAlert,
   getMetrics,
+  getActionTriggers,
+  type ActionTrigger,
   Metric,
   MonitorProof,
   backtestMonitor,
@@ -119,6 +121,8 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
   const [monitors, setMonitors]   = useState<MonitorDef[]>([]);
   const [alerts, setAlerts]       = useState<MonitorAlert[]>([]);
   const [metrics, setMetrics]     = useState<Metric[]>([]);
+  /** Where an alert can go besides in-app; null when they could not be read. */
+  const [triggers, setTriggers]   = useState<ActionTrigger[] | null>(null);
   const [loading, setLoading]     = useState(false);
   const [loaded, setLoaded]       = useState(false);
   const [readFailed, setReadFailed] = useState<string | null>(null);
@@ -159,14 +163,16 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ms, as, mets] = await Promise.all([
+      const [ms, as, mets, trs] = await Promise.all([
         getMonitors(connId, workspaceId),
         getAllAlerts(connId, 100, workspaceId),
         getMetrics().catch(() => []),
+        getActionTriggers().catch(() => null),
       ]);
       setMonitors(ms);
       setAlerts(as);
       setMetrics(mets);
+      setTriggers(trs);
       setReadFailed(null);
       void readProofs(ms);
     } catch (e: unknown) {
@@ -244,7 +250,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       const read = res.read ? ` · ${res.read}` : "";
       const msg = "fired" in res && res.fired === false
         ? `No condition met${read}`
-        : `Fired: ${(res as MonitorAlert).severity} — ${alertText((res as MonitorAlert).message)}${read}`;
+        : `Would fire: ${(res as MonitorAlert).severity} — ${alertText((res as MonitorAlert).message)}${read} · shown, not sent`;
       setRunResult(r => ({ ...r, [id]: msg }));
       setTimeout(() => setRunResult(r => { const n = { ...r }; delete n[id]; return n; }), 6000);
     } catch {
@@ -323,6 +329,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
             metricSource={metricSource}
             setMetricSource={setMetricSource}
             metrics={metrics}
+            triggers={triggers}
             cronPreset={cronPreset}
             isCustomCron={isCustomCron}
             onCronPreset={handleCronPreset}
@@ -342,7 +349,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
           {loaded && !readFailed && view === "alerts" && <AlertsList alerts={alerts} monitors={monitors} onAck={ack} />}
           {loaded && !readFailed && view === "list" && (monitors.length === 0
             ? <EmptyState onAdd={openCreate} />
-            : <Overview monitors={monitors} alerts={alerts} unacked={unacked} proofs={proofs} metrics={metrics}
+            : <Overview monitors={monitors} alerts={alerts} unacked={unacked} proofs={proofs} metrics={metrics} triggers={triggers}
                 checking={checking} runResult={runResult} openRows={openRows}
                 onToggleRow={id => setOpenRows(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
                 onAck={ack} onSeeAlerts={() => setView("alerts")} onCheckRules={checkRules} onEdit={openEdit}
@@ -356,13 +363,14 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
 
 // ── The overview: figures, Needs you, the picture, the list ───────────────────
 
-function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runResult, openRows, onToggleRow, onAck, onSeeAlerts,
-  onCheckRules, onEdit, onDelete, onRun, onToggle, onProofChanged }: {
+function Overview({ monitors, alerts, unacked, proofs, metrics, triggers, checking, runResult, openRows, onToggleRow, onAck,
+  onSeeAlerts, onCheckRules, onEdit, onDelete, onRun, onToggle, onProofChanged }: {
   monitors: MonitorDef[];
   alerts: MonitorAlert[];
   unacked: MonitorAlert[];
   proofs: Record<string, MonitorProof | null>;
   metrics: Metric[];
+  triggers: ActionTrigger[] | null;
   checking: boolean;
   runResult: Record<string, string>;
   openRows: ReadonlySet<string>;
@@ -469,6 +477,7 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runRes
         {monitors.map((m, i) => (
           <MonitorRow key={m.id} monitor={m} first={i === 0} proof={proofs[m.id]} proofRead={m.id in proofs}
             metricLabel={m.metric_name ? (metrics.find(x => x.name === m.metric_name)?.label ?? m.metric_name) : null}
+            channel={channelWords(m.notification_channel, triggers)}
             alerts={alertsOf(m.id)} open={openRows.has(m.id)} runResult={runResult[m.id]}
             onToggleOpen={() => onToggleRow(m.id)} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)}
             onRun={() => onRun(m)} onToggle={() => onToggle(m)} onProofChanged={onProofChanged} />
@@ -480,13 +489,15 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runRes
 
 // ── A monitor, one row ────────────────────────────────────────────────────────
 
-function MonitorRow({ monitor, first, proof, proofRead, metricLabel, alerts, open, runResult, onToggleOpen, onEdit, onDelete,
-  onRun, onToggle, onProofChanged }: {
+function MonitorRow({ monitor, first, proof, proofRead, metricLabel, channel, alerts, open, runResult, onToggleOpen, onEdit,
+  onDelete, onRun, onToggle, onProofChanged }: {
   monitor: MonitorDef;
   first: boolean;
   proof: MonitorProof | null | undefined;
   proofRead: boolean;
   metricLabel: string | null;
+  /** Where its alerts go, in words (`channelWords`). */
+  channel: string;
   alerts: MonitorAlert[];
   open: boolean;
   runResult?: string;
@@ -501,7 +512,7 @@ function MonitorRow({ monitor, first, proof, proofRead, metricLabel, alerts, ope
   const unacked = alerts.filter(a => !a.acknowledged).length;
   const state = proofRead ? proofState(proof) : "unknown";
   const meta = [
-    ruleWords(monitor), scheduleWords(monitor.check_cron), channelWords(monitor.notification_channel),
+    ruleWords(monitor), scheduleWords(monitor.check_cron), channel,
     metricLabel ?? "your own query", lastAlert ? `last fired ${relTime(lastAlert.triggered_at)} ago` : "",
   ].filter(Boolean).join(" · ");
 
@@ -694,7 +705,7 @@ function AlertRow({ g, first, removed, onAck }: { g: AlertGroup; first: boolean;
 // ── Monitor form ──────────────────────────────────────────────────────────────
 
 function MonitorForm({
-  form, setField, metricSource, setMetricSource, metrics,
+  form, setField, metricSource, setMetricSource, metrics, triggers,
   cronPreset, isCustomCron, onCronPreset, onCustomCronChange,
   saving, error, isEdit, onSave, onCancel,
 }: {
@@ -703,6 +714,7 @@ function MonitorForm({
   metricSource: "catalog" | "sql";
   setMetricSource: (s: "catalog" | "sql") => void;
   metrics: Metric[];
+  triggers: ActionTrigger[] | null;
   cronPreset: string;
   isCustomCron: boolean;
   onCronPreset: (cron: string) => void;
@@ -714,6 +726,9 @@ function MonitorForm({
   onCancel: () => void;
 }) {
   const alertOn = form.alert_on ?? "threshold_cross";
+  const channel = form.notification_channel || "in_app";
+  // A stored channel that names no trigger (the form once offered "slack" and "email") is shown as what it is.
+  const stranded = triggers !== null && channel !== "in_app" && !triggers.some(t => t.id === channel);
 
   return (
     <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -880,8 +895,22 @@ function MonitorForm({
 
       {/* Notification */}
       <Field label="Notification">
-        <Segmented label="Notification" value={form.notification_channel ?? ""} onChange={ch => setField("notification_channel", ch as MonitorDef["notification_channel"])} style={{ alignSelf: "flex-start" }}
-          options={[{ value: "in_app", label: "In-app" }, { value: "slack", label: "Slack" }, { value: "email", label: "Email" }]} />
+        <SelectField aria-label="Notification" value={channel} onChange={e => setField("notification_channel", e.target.value)}
+          style={{ width: "100%" }}>
+          <option value="in_app">In-app</option>
+          {(triggers ?? []).map(t => <option key={t.id} value={t.id}>{`${t.name} (${t.type})${t.enabled ? "" : " — off"}`}</option>)}
+          {stranded && <option value={channel}>{`"${channel}" — no such destination`}</option>}
+        </SelectField>
+        {triggers !== null && triggers.length === 0 && (
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
+            Alerts stay in-app until a webhook or Slack trigger exists under Operations ▸ Notifications.
+          </div>
+        )}
+        {stranded && (
+          <div className="aug-fs-xs" style={{ color: "var(--red4)", marginTop: 2 }}>
+            {`"${channel}" names no destination, so these alerts are sent nowhere. Choose one.`}
+          </div>
+        )}
       </Field>
 
       {/* Error */}

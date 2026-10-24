@@ -2,8 +2,8 @@
 
 Monitors run user `custom_sql` on a schedule with no correctness battery: a
 wrong-grain SUM / id-arithmetic product silently mis-values the metric and then
-ALERTS on it. Under `monitors.guarded` (default off) the runner attaches a
-deterministic caveat to the fired alert; create/update reject mutating or
+ALERTS on it. The runner attaches a deterministic caveat to the fired alert (unconditionally since
+2026-08-06, when the `monitors.guarded` flag left the registry); create/update reject mutating or
 non-binding custom SQL with an explicit 422 instead of a silent never-fires.
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ class _StubDB:
         return "TABLE: sales\n  order_id  INTEGER\n  amt  DOUBLE\n"
 
 
-# ── Runner: flag-gated caveat ─────────────────────────────────────────────────
+# ── Runner: the caveat ────────────────────────────────────────────────────────
 
 def test_guard_probe_failure_never_blocks_the_alert(monkeypatch):
     """The guard is unconditional since flag endgame Wave 2 (2026-08-06, receipt

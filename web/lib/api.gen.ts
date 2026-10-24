@@ -10602,7 +10602,8 @@ export interface paths {
         put?: never;
         /**
          * Trigger Monitor
-         * @description Run a monitor immediately and return the alert (or null if no condition met).
+         * @description Check a monitor now and return the alert it would raise (or null if no condition met). Shown, not filed or
+         *     sent: the scheduled check owns the record and the send.
          */
         post: operations["trigger_monitor_monitors__monitor_id__trigger_post"];
         delete?: never;
@@ -17808,6 +17809,11 @@ export interface components {
             /** Freshness Table */
             freshness_table?: string | null;
             /**
+             * Grace Period Hours
+             * @default 4
+             */
+            grace_period_hours: number;
+            /**
              * History Days
              * @default 30
              */
@@ -21175,6 +21181,8 @@ export interface components {
             freshness_sla_hours?: number | null;
             /** Freshness Table */
             freshness_table?: string | null;
+            /** Grace Period Hours */
+            grace_period_hours?: number | null;
             /** History Days */
             history_days?: number | null;
             /** Metric Name */

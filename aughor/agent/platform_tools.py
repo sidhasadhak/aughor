@@ -417,8 +417,8 @@ def search_documents(connection_id: str, args: dict) -> dict:
         return {"count": 0, "hits": [], "why": "the document index could not be searched"}
 
     if not raw:
-        # An empty corpus, an unreachable embedder and a genuine no-match all arrive here
-        # identically. Say which, so the model reports the right thing to a person instead
+        # An empty corpus and a genuine no-match arrive here identically (a failed search
+        # raised above). Say which, so the model reports the right thing to a person instead
         # of concluding the documentation is silent on the subject.
         why = ""
         try:

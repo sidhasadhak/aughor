@@ -22,7 +22,7 @@ CODE_CONNECTION = "AGENT_CONNECTION_DENIED"  # the connection is not on the orga
 CODE_SELF_SET = "AGENT_POLICY_NOT_SELF_SET"  # an agent tried to set its own policy
 ERROR = "agent_policy_denied"
 
-#: The eighteen static tools, by what they need. `run` spends model calls or starts work;
+#: The static tools, by what they need. `run` spends model calls or starts work;
 #: `act` changes something. A tool missing here is a registration mistake a test catches.
 TOOL_LEVELS: dict[str, Level] = {
     "list_connections": "read",

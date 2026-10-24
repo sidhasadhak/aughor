@@ -108,8 +108,15 @@ export function ruleWords(m: Pick<MonitorDef, "alert_on" | "warning_threshold" |
   }
 }
 
-const CHANNEL_WORD: Record<string, string> = { in_app: "in-app", slack: "Slack", email: "email" };
-export const channelWords = (c: string) => CHANNEL_WORD[c] ?? c;
+/** Where a monitor's alerts go, in words. `in_app` stays on the platform; any other value names a Notifications trigger,
+ *  and a value that names none sends nothing, which is said. The form once offered "slack" and "email", which name no
+ *  trigger, so a monitor set to either sent nothing while its row read "Slack". `triggers` unread: the value as stored. */
+export function channelWords(c: string, triggers?: ReadonlyArray<{ id: string; name: string }> | null): string {
+  if (!c || c === "in_app") return "in-app";
+  if (!triggers) return c;
+  const t = triggers.find(x => x.id === c);
+  return t ? `to ${t.name}` : `sends nowhere: no destination "${c}"`;
+}
 
 /** An alert's message with its numbers as a person reads them: "2.026e+04 above … 2e+04" → "20,260 above … 20,000". */
 export const alertText = (message: string) => normalizeNumberPrecision(message);

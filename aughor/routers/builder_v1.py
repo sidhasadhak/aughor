@@ -4,7 +4,8 @@
 entity's objects and each declared action's parameters, and the same as TypeScript declarations, stamped with the
 release they came from. `/objects/v1` lists objects and proposes declared actions. A proposal is staged in the Actions
 inbox for a person and never runs from here — the doors read and propose; approving stays a person's (decision (d)).
-Behind `ontology.builder_doors` (off): with it off every door says so (404), and nothing else changes.
+Behind `ontology.builder_doors`, on by default since its graduation on 2026-10-10 (§3.56); with it off every door says
+so (404), and nothing else changes.
 
 The shapes here are the version: a field is added, never renamed or removed, while the prefix is `v1`.
 """

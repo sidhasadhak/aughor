@@ -241,7 +241,8 @@ def collection_dim(name: str) -> int | None:
     Exists because `ensure_collection` silently does NOTHING when a collection is already
     there, whatever its width — so changing embedding model against an existing index
     produces a dimension mismatch at UPSERT (an opaque driver error) and, worse, at SEARCH,
-    where `search_documents`' `except: return []` turns it into a silently empty result.
+    where `search_documents`' `except: return []` turned it into a silently empty result
+    (it raises `DocumentSearchUnavailable` since ED-0).
     """
     if not available():
         return None

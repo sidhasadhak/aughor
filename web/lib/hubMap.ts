@@ -9,7 +9,9 @@ export function destinationText(d: HubDestination): string {
     return `routed(${d.routed_about}) → ${n} ${n === 1 ? "destination" : "destinations"}`;
   }
   if (d.kind === "slack_post") return `slack ${d.channel || d.target}`;
+  if (d.kind === "in_app") return "in-app";
   if (d.kind === "notify") {
+    if (d.missing) return `nowhere: no trigger "${d.target}"`;
     return d.label ? `${d.label} (${d.type || "trigger"})` : `trigger ${d.target}`;
   }
   return d.target ? `${d.kind} ${d.target}` : d.kind;

@@ -133,9 +133,10 @@ class MonitorAlert(BaseModel):
     previous_value: Optional[float] = None
     threshold: Optional[float] = None
     message: str = ""
-    # WP-1b (`monitors.guarded`) — a deterministic correctness finding on the
-    # monitor's SQL (id-arithmetic, fan-out): the alert still fires, but carries
-    # the reason its number may be mis-valued. None when the probes are off/quiet.
+    # WP-1b — a deterministic correctness finding on the monitor's SQL (id-arithmetic,
+    # fan-out): the alert still fires, but carries the reason its number may be
+    # mis-valued. None when the probes are quiet. (Unconditional since 2026-08-06; the
+    # `monitors.guarded` flag left the registry then.)
     caveat: Optional[str] = None
     acknowledged: bool = False
     acknowledged_at: Optional[str] = None

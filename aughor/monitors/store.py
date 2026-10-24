@@ -161,8 +161,10 @@ def upsert_monitor(monitor: Monitor) -> Monitor:
     monitor = monitor.model_copy(update={"updated_at": now})
 
     params = monitor.model_dump()
-    # Persist post-schema fields in the `extra` JSON blob (no column migration).
-    params["extra"] = json.dumps({"reanchor_window": monitor.reanchor_window})
+    # Persist post-schema fields in the `extra` JSON blob (no column migration). A field left out of it is never
+    # saved: `grace_period_hours` was, and every monitor read back the 4-hour default whatever a person set.
+    params["extra"] = json.dumps({"reanchor_window": monitor.reanchor_window,
+                                  "grace_period_hours": monitor.grace_period_hours})
 
     with _LOCK:
         conn = _connect()

@@ -95,10 +95,10 @@ export function HubMapPanel({ connId, onOpenAgent, onOpenAutomation }: {
         display: "flex", alignItems: "baseline", gap: 14, padding: "12px 16px 8px",
         borderBottom: "1px solid var(--b1)",
       }}>
-        <span className="aug-fs-ui" style={{ fontWeight: 600, color: "var(--t1)" }}>Every automation, one screen</span>
+        <span className="aug-fs-ui" style={{ fontWeight: 600, color: "var(--t1)" }}>Every automation and monitor, one screen</span>
         {totals && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            {totals.automations} automations · {totals.live} live · {totals.probation} on probation
+            {totals.automations} automations · {totals.monitors ?? 0} monitors · {totals.live} live · {totals.probation} on probation
             · cost over {data?.window_days}d is a floor
           </span>
         )}
@@ -150,7 +150,7 @@ function MapRow({ row, onOpenAgent, onOpenAutomation }: {
       <TableCell>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           <span title={row.state} className="aug-fs-xs" style={{ color: stateColor(row.state) }}>●</span>
-          {onOpenAutomation ? (
+          {onOpenAutomation && row.kind !== "monitor" ? (
             <Button variant="link" size="xs" onClick={() => onOpenAutomation(row.id)}
               title={row.description || row.name} style={{ padding: 0, height: "auto" }}>
               {row.name}
@@ -162,7 +162,9 @@ function MapRow({ row, onOpenAgent, onOpenAutomation }: {
             </span>
           )}
         </div>
-        <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingLeft: 15 }}>{row.conn_id}{row.state !== "live" ? ` · ${row.state}` : ""}</div>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingLeft: 15 }}>
+          {row.kind === "monitor" ? "monitor · " : ""}{row.conn_id}{row.state !== "live" ? ` · ${row.state}` : ""}
+        </div>
       </TableCell>
       <TableCell>
         {row.last_run.status ? (

@@ -7930,7 +7930,7 @@ result as a (date, value) series — the first column is a category name, `_as_d
 None, the settling filter keeps undated points, and the categories' revenues are z-scored
 as if they were days. It can never fire meaningfully. The runner should refuse a series whose
 first column is not a date — one edit, adjacent, named here. ⏳ Also left: the seven defects
-the map turned up — `grace_period_hours` is never saved; the Monitors UI offers "slack"/"email"
+the map turned up (✅ all eight closed 2026-10-24 under ED-0, §3.58) — `grace_period_hours` is never saved; the Monitors UI offers "slack"/"email"
 as channels, which are not trigger ids, so `dispatch_alert` warns and sends nothing;
 `metric_name` monitors run a bare aggregate as SQL and stay silent; "Run now" sends a real
 alert and writes it into history; a metric-condition chain queries the warehouse every
@@ -11814,7 +11814,7 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
-### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · nothing built)
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 BUILT 2026-10-24** on the session branch, the rest not started)
 
 **The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
 not yet hold is that shape's own rules, at every door:
@@ -11839,12 +11839,52 @@ not yet hold is that shape's own rules, at every door:
 | **ED-1** | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
 | **ED-2** | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
 | **ED-3** | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
-| **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ⚑ §6 item 52(a) |
+| **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
 | **ED-5** | **Cause and effect in one store**: confirmed causal edges fold into impacts as *validated*; the file stops being read | — · M | An alert summary names a cause the impacts store does not hold → stop |
 | **ED-6** | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
 
 **The laws it keeps.** Withheld is said, never implied · one store per concept (two policy stores and two causal stores become
 one each) · programs propose and people approve · no new door, only the existing ones made to agree.
+
+**ED-0, built 2026-10-24** (branch `claude/rea-repository-exploration-24280f`; bugs, no flag). A background check of the
+current tree found six of §3.26's eight defects still present, #4 partly fixed and #7 now only stale words. It also found
+one regression from #625. Each fix has a test that drives the code that had the defect, and every fix was mutation-killed.
+- **Document search:** a failed search raises `DocumentSearchUnavailable` instead of answering `[]`:
+  - the HTTP door answers 503;
+  - a prompt reads "could not be searched" instead of nothing;
+  - the chat tool's existing branch now sees a real failure.
+
+  "Nothing indexed" is asked of the registry, not of `collection_count`, which answered 0 for a store that was down.
+- **Monitors (§3.26):**
+  - an anomaly check over a non-date first column is a failed run that says so, and its series is sorted by day;
+  - `grace_period_hours` is saved and both routes accept it;
+  - the channel picker offers *In-app* and the Notifications triggers that exist, a channel naming no trigger is refused
+    (422) where it is chosen, and a stored "slack" reads *sends nowhere*;
+  - a metric monitor reads its governed value query (`value_query`), not the bare expression;
+  - *Run now* shows its verdict and files and sends nothing;
+  - a metric condition in a chain is checked on its monitor's own cron, not every 60-second tick;
+  - the Hub map lists monitors (kind, state, destination, last run);
+  - the stale `monitors.guarded` "default off" comments are corrected.
+- **The #625 regression:** a dated metric's period reading declared the engine's dialect to the door, which accepts only
+  platform SQL, so every threshold, any-change and trend check over a dated metric raised on BigQuery, Postgres or
+  Snowflake. Its SQL is compiled for the engine, so it now declares none. The live install was not hit: its one
+  dated-metric monitor is on DuckDB.
+- **Stale words:** the MCP tool table no longer states a count, and the builder doors' docstring says the flag graduated.
+
+Proved on a scratch API over temp stores:
+- a `slack` channel → 422;
+- a grace of 0 and then 12.5 read back;
+- *Run now* → a warning shown, 0 alerts filed;
+- the monitor is on the Hub map;
+- a registered document whose collection does not exist → 503 *unavailable*.
+
+**Named, not done:**
+- An anomaly monitor over a metric still reads a scalar against its alert history, while the backtest replays it as a
+  daily series (`backtest.series_sql_for`).
+- `_guard_caveats` probes the monitor's statement, not the period SQL the check ran.
+- `knowledge/health.store_status` cannot see a store that is down, because `collection_count` swallows the error.
+- When this ships, theLook's "Key Questions: Outerwear & Coats" anomaly monitor (a category breakdown) starts recording
+  failed runs, as it should.
 
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
 
@@ -11886,11 +11926,11 @@ rule defines a population but nothing acts on each object as it enters; a pack b
 | **FA-4** | **A set becomes a segment**: "Keep as a segment" declares a dashboard set through the draft; the builder shows each set as its chain with a count at each step | `ontology.set_segments` · M + S | — |
 | **FA-5** | **Act on each object a rule admits**: a condition that fires for objects a rule or segment newly admits, keys only and capped, the count said when the list is withheld | `automations.objects_admitted` · M | — |
 | **FA-6** | **Packs as products**: the installed version and the inputs a person declined, "upgrade to vN" showing the input diff; a pack may carry a dashboard template a person keeps | `packs.installed_versions`, `packs.dashboard_templates` · M + M | — |
-| **FA-7** | **Any SDK can call an agent**: a grounding read returning what an agent would read without calling the model; a chat-compatible endpoint where the model is an Aughor agent and the receipt rides in metadata | `agents.grounding_read`, `doors.chat_completions` · S + M | ⚑ §6 item 52(b) |
+| **FA-7** | **Any SDK can call an agent**: a grounding read returning what an agent would read without calling the model. The chat-compatible endpoint (the model is an Aughor agent, the receipt rides in metadata) waits until a customer asks | `agents.grounding_read` · S; `doors.chat_completions` · M, not scheduled | ✅ §6 item 52(b): the endpoint waits for a customer |
 
 **Next, not yet waves:** an App takes values from its address or an embedding host (the July study's module interfaces, M–L,
 mockup first) · MCP tool search, and `platform_help` on MCP (S) · a neighbourhood view on the object page (M) · interfaces
-declared by a person (M) · reading objects under a past release (M) · proposed agent revisions, ⚑ §6 item 52(c).
+declared by a person (M) · reading objects under a past release (M) · proposed agent revisions, once an agent has certified goldens (✅ §6 item 52(c)).
 
 **The laws it keeps.** A model never adds or wires a piece, and never authors a declaration · the organisation ontology is
 edited by people only · no embedding of customer object text · no hosted code · commands never fire on a value change.
@@ -14156,14 +14196,15 @@ the browser** · **measure the premise before building.**
       *"palantir actual website and its docs.. check that.."* → the catalogue (4,132 docs pages, 329 API operations; the
       July study had named 39 of 148 sections and no REST page) → *"The whole point of this Study is to understand how we
       can incorporate the features of Palantir into our platform.."* → *"rebase and adopt the arcs into the roadmap"*.
-    - Adopted: the three arcs, in the order the study proposed (ED → TC → FA). The order was proposed, not separately
-      confirmed.
-    - Open, the user's:
-      - **(a)** ED-4 — an App's readers see one published version rather than every keep. Recommended: yes.
-      - **(b)** FA-7 — the chat-compatible endpoint now, or when a customer asks (the rule (d) of item 50 applies to a
-        client library).
-      - **(c)** Proposed agent revisions — try variants against certified goldens and stage the best in Approvals: once
-        goldens exist, or never.
+    - Adopted: the three arcs, in the order the study proposed (ED → TC → FA). The order stands: the user was offered
+      a different order on 2026-10-24 and chose *"Start ED-0 here"*.
+    - Decided by the user 2026-10-24, from options (each took the recommended choice):
+      - **(a)** ED-4 — *"Last published version"*: an App's readers see the version last published; a later keep is a
+        draft until published.
+      - **(b)** FA-7 — *"When a customer asks"*: `doors.chat_completions` is written down, not built. The grounding read
+        (`agents.grounding_read`) stays in FA-7.
+      - **(c)** Proposed agent revisions — *"Once test questions exist"*: variants are tried only against an agent's
+        certified goldens and staged in Approvals for a person; never scored by a model. Not before goldens exist.
     - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 

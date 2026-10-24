@@ -146,8 +146,9 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     shape; what is left is three properties of what it built. In plain words: **ED** fixes what does not hold today (a row
     policy only one door applies, edit history that ignores the reader, table health nothing measures, a search that hides
     its failures, outside programs that all look like one caller); **TC** makes every answer, edit, alert and run say what
-    made it; **FA** makes the ontology searchable and lets a choice travel. Nothing built. **Three calls are the user's
-    (§6 item 52 (a)–(c)).** ⚑
+    made it; **FA** makes the ontology searchable and lets a choice travel. The three calls were decided 2026-10-24 (§6
+    item 52 (a)–(c): one published App version · the chat endpoint when a customer asks · proposed agent revisions once
+    goldens exist). **ED-0 started 2026-10-24.**
 
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
@@ -156,11 +157,11 @@ Just outside the list: the next industry package (insurance has public data to t
 ## Everything pending, by arc
 
 ### A rule holds at every door — Arc ED (§3.58; drafted and adopted 2026-10-24, §6 item 52; first of three)
-- [ ] ED-0 · the small defects — document search says *unavailable* instead of `[]` (`knowledge/indexer.py:457`); §3.26's eight monitor defects (`grace_period_hours` never saved); the stale words (`mcp/policy.py` "eighteen" over 23 tools; `routers/builder_v1.py:7` "(off)")
+- [x] ED-0 · the small defects — ✅ BUILT 2026-10-24 (§3.58 "ED-0, built"; also a #625 regression fixed: dated-metric checks raised on every non-DuckDB engine) — document search says *unavailable* instead of `[]` (`knowledge/indexer.py:457`); §3.26's eight monitor defects (`grace_period_hours` never saved); the stale words (`mcp/policy.py` "eighteen" over 23 tools; `routers/builder_v1.py:7` "(off)")
 - [ ] ED-1 · one row policy at every door — the SQL gate applies OC-7's row policies and sensitive properties; edit history filtered by reader; `ROW_POLICIES` retired after the receipt (`ontology.security_sql`)
 - [ ] ED-2 · every outside caller is someone — per-caller MCP identity; principal allowlists and area scopes; the contract generated from the grant (`mcp.caller_principals`, `security.principal_scopes`)
 - [ ] ED-3 · table health that is measured — a producer for `quality/results.py`; latest reports per check; the naming call first (`quality.checks`)
-- [ ] ED-4 · an App publishes one version (`dashboard.app_versions`) ⚑ §6 item 52(a)
+- [ ] ED-4 · an App publishes one version (`dashboard.app_versions`) — ✅ decided 2026-10-24, §6 item 52(a): readers see the last published version
 - [ ] ED-5 · cause and effect in one store — `data/causal_graph.json` folded into impacts as *validated*
 - [ ] ED-6 · every object read says how complete it is (`objects.completeness`)
 
@@ -178,7 +179,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] FA-4 · a set becomes a segment; the set's chain with counts (`ontology.set_segments`)
 - [ ] FA-5 · act on each object a rule admits (`automations.objects_admitted`)
 - [ ] FA-6 · packs as products — installed versions, upgrade diff, dashboard templates (`packs.installed_versions`, `packs.dashboard_templates`)
-- [ ] FA-7 · any SDK can call an agent — grounding read, chat-compatible endpoint (`agents.grounding_read`, `doors.chat_completions`) ⚑ §6 item 52(b)
+- [ ] FA-7 · any SDK can call an agent — the grounding read (`agents.grounding_read`); the chat-compatible endpoint (`doors.chat_completions`) waits until a customer asks — ✅ §6 item 52(b)
 
 ### The cockpit as an App builder — Arc AP (§3.57; drafted and adopted 2026-10-10, §6 item 51; branch `claude/platform-text-density-002fe8`)
 - [x] AP-0 · the study — [docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md](docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md): Workshop read across ~220 doc pages and the user's 22 screenshots, the cockpit inventoried, the starter measured on every theLook entity; the mockup `design-mockups/cockpit-builder.html` (seven screens on live theLook numbers, drawn for 1920 × 1080). The words in `docs/GLOSSARY.md` (set · chosen · ticked · value · drawer · form · shape; *Size* one grade at a time).

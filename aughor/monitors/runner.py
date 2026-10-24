@@ -62,7 +62,9 @@ def _metric_of(monitor: Monitor):
 
 
 def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
-    """Return the scalar SQL expression for this monitor (custom_sql wins).
+    """Return the scalar SQL statement for this monitor (custom_sql wins). A metric's is its governed value query
+    (`semantic.metrics.value_query`): its expression wrapped over its table with its filters. The bare expression it
+    used to return ("SUM(amount)") is no statement, so every such check failed and never read a value.
 
     When ``monitor.reanchor_window`` is set and a live ``db`` is provided, the SQL's
     absolute date window is slid forward to the data's current activity edge — so a
@@ -75,7 +77,8 @@ def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
     elif monitor.metric_name:
         m = _metric_of(monitor)
         if m:
-            sql = m.sql.strip()
+            from aughor.semantic.metrics import value_query
+            sql = value_query(m).strip() or None
     if sql and db is not None and getattr(monitor, "reanchor_window", False):
         try:
             from aughor.monitors.window import reanchor_trailing_window
@@ -96,12 +99,12 @@ def monitor_sql(monitor: Monitor) -> Optional[str]:
 _READINGS: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar("monitor_readings", default=None)
 
 
-def _scalar(db, sql: str, dialect: str = "duckdb") -> Optional[float]:
+def _scalar(db, sql: str, dialect: Optional[str] = "duckdb") -> Optional[float]:
     """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``, declared
     DuckDB as `_query` is: the threshold, any-change and trend-reversal monitors read this
     path, and the gate-map census (2026-09-26) found it still sending DuckDB-quoted SQL to
     native engines after the anomaly path was fixed. Strict, as `_query` is. A metric's period
-    reading is compiled in the connection's own dialect and says so (``dialect``)."""
+    reading is compiled in the connection's own dialect, so it is handed on as written (``dialect=None``)."""
     value = db.scalar(sql, label="__monitor__", cast=float, sql_dialect=dialect, strict=True)
     seen = _READINGS.get()
     if seen is not None and value is not None:
@@ -118,6 +121,11 @@ class PeriodUnreadable(QueryRefused):
     run (GM-4) — never read over all history instead, which is the defect this replaced."""
 
 
+class SeriesUndated(QueryRefused):
+    """An anomaly check whose query's first column is not a date — a category breakdown, say. Its rows are no daily
+    series, so z-scoring them as days could never mean anything; the check is a failed run that says why (GM-4)."""
+
+
 def _covered(words: str) -> None:
     seen = _COVERED.get()
     if seen is not None and words not in seen:
@@ -129,7 +137,7 @@ def covered_words() -> str:
     return next(iter(_COVERED.get() or []), "")
 
 
-def _reading_sql(monitor: Monitor, db) -> tuple[Optional[str], str]:
+def _reading_sql(monitor: Monitor, db) -> tuple[Optional[str], Optional[str]]:
     """``(sql, dialect)`` a single-value check reads — the threshold, any-change and trend-reversal monitors.
 
     A monitor over a metric whose dates are set reads the metric for the newest settled period of the metric's
@@ -163,7 +171,9 @@ def _reading_sql(monitor: Monitor, db) -> tuple[Optional[str], str]:
     if sql is None:
         raise PeriodUnreadable(f"{label} could not be measured for a {grain}: {why}")
     _covered(phrases(spec)["covers"])
-    return f"SELECT _v FROM ({sql}) AS _period WHERE _n > 0", dialect
+    # Compiled for this engine, so it declares no dialect: the door translates only platform SQL ("duckdb") and
+    # refuses any other name, which made every dated-metric check raise on BigQuery, Postgres or Snowflake.
+    return f"SELECT _v FROM ({sql}) AS _period WHERE _n > 0", None
 
 
 def plain_figure(v: float) -> str:
@@ -253,7 +263,7 @@ def _suppressed_by_grace(monitor: Monitor, alert: MonitorAlert) -> bool:
 
 
 def _guard_caveats(monitor: Monitor, db) -> Optional[str]:
-    """WP-1b (`monitors.guarded`) — deterministic correctness probes on the SQL a
+    """WP-1b (unconditional since 2026-08-06) — deterministic correctness probes on the SQL a
     monitor evaluates: id-arithmetic (pure AST) and parent fan-out / dim-ratio chasm
     (schema-based). A wrong-grain SUM in a monitor silently mis-values the metric and
     then alerts on it — this attaches the reason to the alert instead of asserting the
@@ -467,10 +477,18 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
             points: list[tuple] = []
             for row in rows:
                 vals = list(row.values()) if isinstance(row, dict) else list(row)
+                if vals[0] is None:
+                    continue                    # a row with no date has no place in the series
+                day = _as_day(vals[0])
+                if day is None:
+                    raise SeriesUndated(
+                        f"its query's first column is not a date (it read {str(vals[0])[:40]!r}); an anomaly "
+                        f"check scores a daily series of (date, value) rows")
                 try:
-                    points.append((_as_day(vals[0]), float(vals[1])))
+                    points.append((day, float(vals[1])))
                 except (TypeError, ValueError):
                     pass
+            points.sort(key=lambda p: p[0])     # the newest day is scored, whatever order the rows came in
             # Idea 4 — score the newest SETTLED day. A source that restates its recent days
             # (theLook: the youngest day reads ~8× what it settles at) would otherwise raise
             # an anomaly every morning on a day that has not finished arriving. Points younger
@@ -738,8 +756,9 @@ def _check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
         logger.error("Monitor %s (%s) runner crashed: %s", monitor.id, monitor.name, exc)
         alert = _make_alert(monitor, "info", f"{monitor.name}: runner error — {exc}")
 
-    # WP-1b — guarded evaluation (flag `monitors.guarded`, default off): attach any
-    # deterministic correctness finding on the monitor's SQL to the fired alert.
+    # WP-1b — guarded evaluation (unconditional since 2026-08-06, when the `monitors.guarded`
+    # flag left the registry): attach any deterministic correctness finding on the monitor's
+    # SQL to the fired alert.
     if alert is not None:
         try:
             _cav = _guard_caveats(monitor, db)

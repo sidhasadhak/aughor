@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MonitorAlert, MonitorProof } from "./api";
 import {
-  alertText, alertsByWeek, checksPerDay, foldAlerts, fromRemovedMonitors, proofState, proofWords, removedWords, ruleWords,
+  alertText, alertsByWeek, channelWords, checksPerDay, foldAlerts, fromRemovedMonitors, proofState, proofWords, removedWords, ruleWords,
   scheduleMix, short,
 } from "./monitorSummary";
 
@@ -125,5 +125,19 @@ describe("alerts from monitors since removed", () => {
   it("says nothing when every alert's monitor is still there", () => {
     expect(removedWords([alert({ monitor_id: "gmv-floor" })], live)).toBe("");
     expect(removedWords([], live)).toBe("");
+  });
+});
+
+describe("where a monitor's alerts go", () => {
+  const triggers = [{ id: "trg-1", name: "Ops webhook" }];
+  it("names the trigger a channel points at", () => {
+    expect(channelWords("in_app", triggers)).toBe("in-app");
+    expect(channelWords("trg-1", triggers)).toBe("to Ops webhook");
+  });
+  it("says a channel that names no trigger sends nowhere — the form once offered \"slack\", which is none", () => {
+    expect(channelWords("slack", triggers)).toBe('sends nowhere: no destination "slack"');
+  });
+  it("claims nothing when the triggers could not be read", () => {
+    expect(channelWords("slack", null)).toBe("slack");
   });
 });

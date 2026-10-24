@@ -46,6 +46,7 @@ class CreateMonitorRequest(BaseModel):
     custom_sql: Optional[str] = None
     reanchor_window: bool = False
     check_cron: str = "0 * * * *"
+    grace_period_hours: float = 4.0
     alert_on: str = "threshold_cross"
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -65,6 +66,7 @@ class UpdateMonitorRequest(BaseModel):
     """Partial update — only provided fields are changed."""
     name: Optional[str] = None
     check_cron: Optional[str] = None
+    grace_period_hours: Optional[float] = None
     alert_on: Optional[str] = None
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -80,6 +82,20 @@ class UpdateMonitorRequest(BaseModel):
     enabled: Optional[bool] = None
     custom_sql: Optional[str] = None
     metric_name: Optional[str] = None
+
+
+def _validate_channel(channel: Optional[str]) -> None:
+    """A channel is ``in_app`` or the id of a Notifications trigger. Anything else is refused here, where the person
+    is: a monitor saved with one sends every alert nowhere, and the form once offered "slack" and "email", which are no
+    trigger's id. A trigger deleted later is the delivery path's to say (`monitors/notify.py`)."""
+    channel = (channel or "").strip()
+    if not channel or channel == "in_app":
+        return
+    from aughor.notifications.store import get_trigger
+    if get_trigger(channel) is None:
+        raise HTTPException(status_code=422, detail=(
+            f"notification_channel: no destination has the id {channel!r}. Use in_app, or a trigger from "
+            f"Operations ▸ Notifications."))
 
 
 def _validate_custom_sql(conn_id: str, custom_sql: Optional[str]) -> None:
@@ -168,6 +184,7 @@ def create_monitor(req: CreateMonitorRequest, request: Request) -> dict:
     # DATA-06: can't attach a monitor to a connection your org can't see.
     from aughor.security.authz import check_owner, get_principal
     check_owner("connection", req.conn_id, get_principal(request))
+    _validate_channel(req.notification_channel)
     _validate_custom_sql(req.conn_id, req.custom_sql)  # WP-1b — mutation gate + bind check
     # CreateMonitorRequest is permissive (str fields); Monitor enforces strict
     # Literals (alert_on, threshold_direction, …). Translate a domain-model
@@ -188,6 +205,8 @@ def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
     existing = get_monitor(monitor_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Monitor not found")
+    if req.notification_channel is not None and req.notification_channel != existing.notification_channel:
+        _validate_channel(req.notification_channel)
     if req.custom_sql is not None:
         _validate_custom_sql(existing.conn_id, req.custom_sql)  # WP-1b
     # Merge non-None fields
@@ -225,7 +244,8 @@ def disable_monitor(monitor_id: str) -> dict:
 
 @router.post("/monitors/{monitor_id}/trigger", dependencies=[gate(Capability.MONITORS)])
 def trigger_monitor(monitor_id: str) -> dict:
-    """Run a monitor immediately and return the alert (or null if no condition met)."""
+    """Check a monitor now and return the alert it would raise (or null if no condition met). Shown, not filed or
+    sent: the scheduled check owns the record and the send."""
     if not get_monitor(monitor_id):
         raise HTTPException(status_code=404, detail="Monitor not found")
     try:

@@ -6472,6 +6472,8 @@ export interface HubDestination {
   channel?: string;
   label?: string;
   type?: string;
+  /** A monitor's channel that names no trigger: nothing is sent. */
+  missing?: boolean;
 }
 
 export interface HubGrant {
@@ -6508,6 +6510,8 @@ export interface HubProbation {
 
 export interface HubMapRow {
   id: string;
+  /** A monitor runs through the engine as a virtual automation; it is edited under Monitors. */
+  kind: "automation" | "monitor";
   conn_id: string;
   name: string;
   description: string;
@@ -6527,7 +6531,7 @@ export interface HubMapResponse {
   rows: HubMapRow[];
   window_days: number;
   generated_at: string;
-  totals: { automations: number; live: number; probation: number };
+  totals: { automations: number; monitors: number; live: number; probation: number };
 }
 
 /** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel
