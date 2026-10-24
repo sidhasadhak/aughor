@@ -4,7 +4,7 @@
  * Pure functions over what `GET /monitors`, `GET /alerts` and `GET /monitors/{id}/proof` already return.
  */
 import type { MonitorAlert, MonitorDef, MonitorProof } from "@/lib/api";
-import { compactNumber, MONTHS_SHORT, normalizeNumberPrecision } from "@/lib/format";
+import { compactNumber, formatCount, MONTHS_SHORT, normalizeNumberPrecision } from "@/lib/format";
 
 /** Where a monitor's proof stands, from the server's own record (`aughor/monitors/drill.py::proof`):
  *  proven — a drill fired and delivered; delivered — a real alert went out; checked — a drill fired, nothing sent;
@@ -113,6 +113,25 @@ export const channelWords = (c: string) => CHANNEL_WORD[c] ?? c;
 
 /** An alert's message with its numbers as a person reads them: "2.026e+04 above … 2e+04" → "20,260 above … 20,000". */
 export const alertText = (message: string) => normalizeNumberPrecision(message);
+
+/** The alerts whose monitor no longer exists: history, said apart. A workspace's Monitors page counted four alerts of
+ *  two monitors removed weeks before as its own (the Olist study, 2026-10-22: "Open alerts 0 · 5 acknowledged · last 24
+ *  Aug" beside one monitor that had never fired). `live` is the monitors read with the alerts. */
+export function fromRemovedMonitors<T extends Pick<MonitorAlert, "monitor_id">>(alerts: T[],
+  live: ReadonlyArray<Pick<MonitorDef, "id">>): T[] {
+  const ids = new Set(live.map(m => m.id));
+  return alerts.filter(a => !ids.has(a.monitor_id));
+}
+
+/** How many of `alerts` came from monitors since removed, in the Notifications page's words for its removed triggers:
+ *  "all from 2 monitors since removed", "3 from 1 monitor since removed", or "" when none did. */
+export function removedWords(alerts: Pick<MonitorAlert, "monitor_id">[], live: ReadonlyArray<Pick<MonitorDef, "id">>): string {
+  const gone = fromRemovedMonitors(alerts, live);
+  if (!gone.length) return "";
+  const n = new Set(gone.map(a => a.monitor_id)).size;
+  const monitors = `${formatCount(n)} ${n === 1 ? "monitor" : "monitors"} since removed`;
+  return gone.length === alerts.length ? `all from ${monitors}` : `${formatCount(gone.length)} from ${monitors}`;
+}
 
 /** Alerts that say the same thing, said once: one group per monitor, severity, message and caveat. */
 export interface AlertGroup {

@@ -35,6 +35,9 @@ from typing import Any, Callable, Optional
 KINDS = ("flow", "stock", "cohort")
 #: The periods a metric is reported by (`time_grain`).
 GRAINS = ("day", "week", "month", "quarter", "year")
+#: The period a metric is reported by when no one set one — the metric editor's own word for an unset grain,
+#: "month (the default)".
+DEFAULT_GRAIN = "month"
 #: The fields an edit may send; ``time_source`` is written by the platform, never sent, and
 #: ``time_confirmed_by`` is stamped by the server with the person signed in, never typed.
 TIME_FIELDS = ("time_column", "time_kind", "outcome_column", "until_column",
@@ -62,6 +65,13 @@ def declared(m: Any) -> bool:
     if kind == "cohort":
         return bool(_get(m, "outcome_column"))
     return True
+
+
+def reported_grain(m: Any) -> str:
+    """The period ``m`` is reported by: its ``time_grain``, else ``DEFAULT_GRAIN`` — the period the metric editor
+    shows a person for it, so what reads "by month" there is read by the month everywhere that follows it."""
+    g = str(_get(m, "time_grain") or "").lower()
+    return g if g in GRAINS else DEFAULT_GRAIN
 
 
 def unreachable_date(m: Any) -> str:
@@ -214,6 +224,33 @@ def _ratio(node):
             if found:
                 return found
     return None
+
+
+def adds_up(m: Any, *, dialect: str = "duckdb") -> bool:
+    """Whether a group's figure is the sum of its parts' — a SUM, or a COUNT of rows, at the top of the formula — so
+    one part can be compared with the rest of its group (PENDING 57, D-3). A ratio, an average, a COUNT(DISTINCT …)
+    (a key can sit in two parts) or any other shape does not add up."""
+    import sqlglot
+    from sqlglot import exp
+    formula = str(_get(m, "sql") or "").strip()
+    if not formula:
+        return False
+    try:
+        node = sqlglot.parse_one(formula, read=dialect)
+    except Exception:  # noqa: BLE001 — a formula that does not parse is not known to add up
+        return False
+    if isinstance(node, exp.Select):
+        node = node.expressions[0] if len(node.expressions) == 1 else None
+    while isinstance(node, (exp.Alias, exp.Paren)):
+        node = node.this
+    if isinstance(node, exp.Mul):            # 100 * SUM(x) still adds up
+        consts = [x for x in (node.this, node.expression) if isinstance(x, exp.Literal)]
+        node = next((x for x in (node.this, node.expression) if not isinstance(x, exp.Literal)), None) if consts else None
+        while isinstance(node, exp.Paren):
+            node = node.this
+    if isinstance(node, exp.Count):
+        return not isinstance(node.this, exp.Distinct)
+    return isinstance(node, exp.Sum)
 
 
 def _set(kind: str, column: str, source: str, *, outcome: str = None, until: str = None) -> Inference:

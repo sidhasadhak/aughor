@@ -26,6 +26,14 @@ from aughor.record import claims as _claims
 DECISION_KIND = "decision"
 OUTCOME_KIND = "outcome"
 DEFAULT_REVIEW_DAYS = 30
+#: PENDING 57, D-1 to D-3 (docs/DECISION_LOOP_STUDY_2026-10-24.md): decisions booked in full where they are made,
+#: reviewed when they expected something, scored against what would have happened anyway. Off: as before.
+LOOP_FLAG = "record.decision_loop"
+
+
+def loop_on() -> bool:
+    from aughor.kernel.flags import flag_enabled
+    return flag_enabled(LOOP_FLAG)
 
 SourceKind = Literal["recommendation", "approval", "declared", "autonomy"]
 Verdict = Literal["as_expected", "better", "worse", "cannot_tell"]
@@ -57,6 +65,10 @@ class Expectation(BaseModel):
     coverage: float = 0.8          # the interval's stated coverage
     settles_on: str = ""           # ISO date
     text: str = ""                 # the one line, as said
+    #: One part of the metric the decision is about — ``category = Jeans`` — so its review can compare that part
+    #: with the rest of its group (PENDING 57, D-3). Empty: the metric as a whole.
+    segment_dimension: str = ""
+    segment_value: str = ""
 
 
 class Source(BaseModel):
@@ -166,7 +178,9 @@ def _expectation_claim(decision: Decision, exp: Expectation, *, author: str) -> 
         status="To date", as_of=decision.decided_at[:10], author=author or decision.decided_by,
         author_kind="person", owner=decision.owner, state="open",
         extra={"direction": exp.direction, "low": exp.low, "mid": exp.mid, "high": exp.high,
-               "coverage": exp.coverage, "settles_on": exp.settles_on, "method": "declared"},
+               "coverage": exp.coverage, "settles_on": exp.settles_on, "method": "declared",
+               **({"segment": {"dimension": exp.segment_dimension, "value": exp.segment_value}}
+                  if exp.segment_dimension and exp.segment_value else {})},
     )
     return _claims.book(claim, key=_claims.claim_key("prediction", decision_key(decision.source)),
                         conn_id=decision.connection_id or None)
@@ -181,7 +195,8 @@ def _expectation_text(exp: Expectation) -> str:
     else:
         band = exp.direction or "to move"
     by = f" by {exp.settles_on}" if exp.settles_on else ""
-    return f"expected: {exp.metric} {band}{by}"
+    part = f" for {exp.segment_dimension} = {exp.segment_value}" if exp.segment_dimension and exp.segment_value else ""
+    return f"expected: {exp.metric}{part} {band}{by}"
 
 
 def book_decision(decision: Decision, *, expectation: Optional[Expectation] = None,

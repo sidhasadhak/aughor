@@ -39,6 +39,23 @@ export function schemaDocParts(doc: DocumentEntry): { connectionId: string; sche
   return null;
 }
 
+/** The documents an agent on `connectionId` can be given, in the order a person picks from: its connection's schema
+ *  documentation (the scoped schema's first), then uploads, which belong to no connection and are the organisation's
+ *  (`orgWide`). The other connections' schema documentation is left out and counted (`hidden`) — the agent wizard
+ *  listed every connection's (the Olist study, 2026-10-22). With no connection chosen, nothing is left out. */
+export function documentsForConnection(docs: DocumentEntry[], connectionId: string, schema = ""):
+  { shown: { doc: DocumentEntry; orgWide: boolean }[]; hidden: number } {
+  const rank = (d: DocumentEntry) => {
+    const parts = schemaDocParts(d);
+    if (!parts) return 2;
+    return schema && parts.schema.toLowerCase() === schema.toLowerCase() ? 0 : 1;
+  };
+  const kept = docs.filter(d => !connectionId || (schemaDocParts(d)?.connectionId ?? connectionId) === connectionId);
+  const shown = kept.map((doc, i) => ({ doc, i })).sort((a, b) => rank(a.doc) - rank(b.doc) || a.i - b.i)
+    .map(({ doc }) => ({ doc, orgWide: schemaDocParts(doc) === null }));
+  return { shown, hidden: docs.length - kept.length };
+}
+
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**

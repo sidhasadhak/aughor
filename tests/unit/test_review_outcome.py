@@ -102,20 +102,20 @@ def test_the_review_measures_history_books_the_outcome_with_both_verdicts_and_sc
 
 
 def test_inside_historys_own_noise_is_cannot_tell_and_the_wrong_way_is_worse():
-    from aughor.record.byproducts import _verdict_against_history
-    v, why, e = _verdict_against_history(actual=1005, baseline=1000, low=980, high=1030, direction="up",
+    from aughor.record.byproducts import verdict_against_baseline
+    v, why, e = verdict_against_baseline(actual=1005, baseline=1000, low=980, high=1030, direction="up",
                                          against="inside", history_note="")
     assert v == "cannot_tell" and "inside the baseline's own noise" in why and e.method == "history"
-    v, why, e = _verdict_against_history(actual=900, baseline=1000, low=980, high=1030, direction="up",
+    v, why, e = verdict_against_baseline(actual=900, baseline=1000, low=980, high=1030, direction="up",
                                          against="below", history_note="")
     assert v == "worse" and "the wrong way" in why and e.value == -100
-    v, why, e = _verdict_against_history(actual=1100, baseline=1000, low=980, high=1030, direction="up",
+    v, why, e = verdict_against_baseline(actual=1100, baseline=1000, low=980, high=1030, direction="up",
                                          against="inside", history_note="")
     assert v == "as_expected" and "the wanted way" in why
-    v, why, e = _verdict_against_history(actual=1100, baseline=1000, low=980, high=1030, direction="",
+    v, why, e = verdict_against_baseline(actual=1100, baseline=1000, low=980, high=1030, direction="",
                                          against="no expectation", history_note="")
     assert v == "cannot_tell" and "no expectation named the wanted direction" in why
-    v, why, e = _verdict_against_history(actual=1100, baseline=None, low=None, high=None, direction="up",
+    v, why, e = verdict_against_baseline(actual=1100, baseline=None, low=None, high=None, direction="up",
                                          against="inside", history_note="only 1 prior window held a reading")
     assert v == "cannot_tell" and "no history baseline could be measured: only 1 prior window" in why
 

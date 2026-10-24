@@ -282,6 +282,8 @@ export interface DecisionDetail extends Decision {
 export interface ExpectationIn {
   metric: string; direction?: string; low?: number | null; mid?: number | null; high?: number | null;
   unit?: string; coverage?: number; settles_on?: string; text?: string;
+  /** One part of the metric — `category = Jeans` — read against the rest of its group at review (PENDING 57). */
+  segment_dimension?: string; segment_value?: string;
 }
 
 export interface DeclareDecisionBody {
@@ -299,6 +301,9 @@ export interface DeclareDecisionBody {
   review_on?: string;
   expectation?: ExpectationIn | null;
   note?: string;
+  /** The Explorer finding it was decided on: the server cites the finding's claim (PENDING 57, decision loop on). */
+  finding_id?: string;
+  schema_name?: string;
 }
 
 export interface OutcomeBody {

@@ -172,6 +172,13 @@ FLAG_ENV = {
     # and shown as the Data Canvas shows one; opening the dashboard never asks. OFF: the vocabulary refuses a Question
     # and the question routes answer 404.
     "dashboard.questions": "AUGHOR_DASHBOARD_QUESTIONS",
+    # PENDING 57 (2026-10-24, docs/DECISION_LOOP_STUDY_2026-10-24.md, D-1 to D-3). ON: a decision is booked in full where
+    # it is made (Home's Decide cites its finding and may state an expectation; "Not worth it" books not acting; a
+    # recommendation keeps its report's other actions as alternatives and marks what was recommended), every decision
+    # that expected something is reviewed on its date, and an outcome is scored against what would have happened anyway
+    # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
+    # misses one way). OFF: decisions are booked, reviewed and scored as before.
+    "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -603,6 +610,18 @@ FLAG_META = {
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
+    "record.decision_loop": {
+        "label": "Decisions reviewed honestly",
+        "summary": "A decision keeps its evidence, options and expectation, and is reviewed on its date against what "
+                   "would have happened anyway.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads each due metric once"},
+                  {"kind": "schedule", "text": "Checks hourly for due reviews"}],
+        "description": "Deciding on a finding cites it and may say what you expect; setting one aside records the choice "
+                       "not to act. On its review date a decision is measured over the thirty days after it, against "
+                       "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
+                       "decisions are kept and reviewed as before.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -888,6 +907,9 @@ EXPERIMENT: dict = {
     "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
+    "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
+                            "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
+                            "study §5): a do-nothing decision is credited its metric's trend — stop",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",

@@ -203,6 +203,9 @@ class ExpectationIn(BaseModel):
     coverage: float = 0.8
     settles_on: str = ""
     text: str = ""
+    # One part of the metric — ``category = Jeans`` — read against the rest of its group at review (PENDING 57, D-3).
+    segment_dimension: str = ""
+    segment_value: str = ""
 
 
 class DissentIn(BaseModel):
@@ -225,6 +228,10 @@ class DeclareDecisionRequest(BaseModel):
     review_on: str = ""            # defaults to the proposed date (30 days + the settling lag)
     expectation: Optional[ExpectationIn] = None
     note: str = ""
+    # The Explorer finding the decision was taken on (Home's Decide): cited as the claim it relied on, by the
+    # server, with the decision loop on (PENDING 57, D-1). The schema, when the page knows it.
+    finding_id: str = ""
+    schema_name: str = ""
 
 
 class OutcomeIn(BaseModel):
@@ -288,7 +295,8 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
             approvers=req.approvers, dissent=[d.model_dump() for d in req.dissent], relied_on=req.relied_on,
             objective=req.objective, connection_id=req.connection_id, decided_at=req.decided_at,
             decided_by=who, review_on=req.review_on,
-            expectation=req.expectation.model_dump() if req.expectation else None, note=req.note)
+            expectation=req.expectation.model_dump() if req.expectation else None, note=req.note,
+            finding_id=req.finding_id, schema_name=req.schema_name)
     except (ValueError, C.ClaimRefused) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return get_record_decision(did)

@@ -241,6 +241,14 @@ def history(spec: dict, run_sql: RunSql, *, end_day: Optional[_dt.date] = None, 
             continue
         values.append(value)
         labels.append(label)
+    return history_of(values, days=days, labels=labels, coverage=coverage)
+
+
+def history_of(values: list[float], *, days: int, labels: Optional[list[str]] = None,
+               coverage: float = HISTORY_COVERAGE) -> Projection:
+    """Method 3 over readings already measured, oldest first: their mean, the interval at the stated coverage, and the
+    backtest — the one home of the formula, read by :func:`history` and by a decision's review (PENDING 57, D-2)."""
+    labels = list(labels or [])
     if len(values) < 3:
         return Projection(method="history", note=f"only {len(values)} prior window{'s' if len(values) != 1 else ''} "
                                                  f"held a reading; three are the least a baseline is drawn from",
@@ -350,6 +358,80 @@ def project(method: str, **kw) -> Projection:
     if _methods.get_method(method) is not None:
         return _methods.project_registered(method, **kw)
     raise ValueError(f"no method named {method!r} on the ladder or registered; the four built are {', '.join(METHODS)}")
+
+
+# ── the review's baselines (PENDING 57, D-3; docs/DECISION_LOOP_STUDY_2026-10-24.md §3.4) ───────────────────
+# Not methods on the ladder: METHODS is what packs, the kit and the ledger contract publish. These are what a
+# decision's review measures an effect against, named on the outcome's effect.
+
+#: A metric's history band is said to miss one way when at least this many of its scored windows missed, all on one
+#: side, and the band held less often than it said it would.
+DRIFT_MIN_MISSES = 3
+
+
+def drift_words(conn_id: str, metric: str, *, method: str = "history") -> str:
+    """Why the metric's own history cannot stand for "what would have happened anyway" on this connection, or "".
+
+    Read from the Record's own scoring of that metric's history predictions (:func:`calibration`): a band that keeps
+    missing on one side is a trend the history method does not see, and an outcome measured against it would credit
+    a decision with the trend. On one live connection, 2026-10-24, two growing totals' bands missed above in 5 and 7
+    of 8 windows, while a ratio that holds level stayed inside 8 of 8 (docs/DECISION_LOOP_STUDY_2026-10-24.md §3.4)."""
+    if not metric:
+        return ""
+    try:
+        rows = [g for g in calibration(conn_id=conn_id or None) if g["method"] == method and g["metric"] == metric]
+    except Exception as exc:  # noqa: BLE001 — an unreadable calibration names no drift; the verdict stands as measured
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the metric's calibration could not be read; no drift is said", counter="record.drift_read")
+        return ""
+    inside = sum(g["inside"] for g in rows)
+    above = sum(g["above"] for g in rows)
+    below = sum(g["below"] for g in rows)
+    judged = inside + above + below
+    if above + below < DRIFT_MIN_MISSES or (above and below) or not judged:
+        return ""
+    stated = [g["coverage_stated"] for g in rows if g.get("coverage_stated") is not None]
+    if stated and inside / judged >= _mean(stated):
+        return ""
+    side = "above" if above else "below"
+    return (f"{metric}'s own history band has missed {side} in {above + below} of {judged} scored windows, so its "
+            f"{'rise' if side == 'above' else 'fall'} cannot be told from the decision")
+
+
+def comparison(readings: dict[str, dict[str, Optional[float]]], *, segment: str, prior: list[str], current: str,
+               coverage: float = HISTORY_COVERAGE) -> Projection:
+    """What one part of a metric that adds up would have read in ``current`` without the decision: the rest of its
+    group in that window, times the part's usual ratio to the rest over the ``prior`` windows, with an interval from
+    that ratio's spread. ``readings`` is ``{window: {group: value}}``.
+
+    The baseline the placebo of 2026-10-10 found unbiased on theLook — +0.0% credited to a do-nothing decision, where
+    the metric's own history credited +18% — because growth the whole group shares cancels out."""
+    def rest(window: str) -> float:
+        return sum(v for g, v in (readings.get(window) or {}).items() if g != segment and v is not None)
+
+    ratios: list[float] = []
+    used: list[str] = []
+    for w in prior:
+        part, others = (readings.get(w) or {}).get(segment), rest(w)
+        if part is None or others <= 0:
+            continue
+        ratios.append(part / others)
+        used.append(w)
+    if len(ratios) < 3:
+        why = (f"only {len(ratios)} prior window{'s' if len(ratios) != 1 else ''} held both {segment} and the rest of "
+               "its group; three are the least a comparison is drawn from")
+        return Projection(method="comparison", note=why, must_say=[why])
+    now = rest(current)
+    if now <= 0:
+        why = f"the rest of {segment}'s group read nothing in the review window"
+        return Projection(method="comparison", note=why, must_say=[why])
+    mu, sd = _mean(ratios), _sd(ratios)
+    low, high = now * (mu - _Z80 * sd), now * (mu + _Z80 * sd)
+    return Projection(method="comparison", value=round(now * mu, 6), low=round(low, 6), high=round(high, 6),
+                      coverage=coverage, inputs={"windows": used, "rest_now": now, "ratio": round(mu, 6)},
+                      must_say=[f"the rest of its group read {_fmt(now)} in the review window, and {segment} has run at "
+                                f"{mu:.4g} of it over {len(ratios)} prior windows: {_fmt(low)} to {_fmt(high)} at "
+                                f"{int(coverage * 100)}% stated coverage"])
 
 
 _TIER_BY_METHOD = {"identity": "mined", "declared": "declared", "history": "mined", "intervention": "mined"}

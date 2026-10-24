@@ -572,7 +572,12 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
 1. Decide A: either uploads create a connection per workspace, or a workspace scopes by schema everywhere a
    page says "Workspace". **Done 2026-10-23 (#623):** an uploads connection per workspace; Catalog, Now's
    Briefing fold, Needs-you docs and profile metrics scoped. Still org-wide: agent-wizard documents,
-   Monitors' and Notifications' lists.
+   Monitors' and Notifications' lists. **Measured and closed 2026-10-24:** Monitors' list and alerts were already scoped by workspace — the
+   Olist workspace's five alerts were its own connection's, from two monitors removed weeks before, and are now said
+   so ("5 from 2 monitors since removed", a "since removed" chip on each). Notifications' 50 failed sends carry no
+   run at all (an empty investigation id), so no connection can claim them; the page already said they came from
+   triggers since removed, and is unchanged. The agent wizard lists only its connection's schema documentation and
+   the organisation's uploads, said as such ("6 documents of other connections are not listed").
 2. Teach the Briefing (and Now) the data's last settled day (B). **Built 2026-10-23** on the user's decision
    (mockup `design-mockups/briefing-data-ended.html`): data whose newest row is more than a month old has
    ENDED; every edition reads as if today were the day after its last row (Olist: 17 Oct 2018), is final,
@@ -596,7 +601,14 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
    jobs on the workspace's connections (Agent runs stays the person's history); a budget stop reads "stopped at
    its budget" in Agent Ops; a monitor says what it read — live, Olist's GMV floor reads the ALL-TIME total
    (13,494,400.74), which is why it never fires against a monthly 900,000 line (a monitor over a metric reading its
-   all-time value is the next defect to name). Gap 30 did not reproduce.
+   all-time value is the next defect to name). Gap 30 did not reproduce. **Fixed 2026-10-24:** a threshold,
+   any-change or trend check over a metric whose dates are set reads the newest settled period of the metric's
+   grain (month unless a person set another, as the metric editor says), measured by the metric's own compiler
+   with the Briefing's range and data edge, and says it. Live (Test now, 2026-10-23 19:05 UTC): "read 145 for
+   September 2018 (warning below 900,000; critical below 800,000)" — critical. That is the Briefing's own last month
+   for data that ends on 17 Oct 2018 (the "Sep 2018 BRL 145 ▼100%" row the user kept, 2026-10-23); August 2018
+   (848,860.10) is the month before it. A metric with no date says it reads all history; a period that cannot be
+   read is a failed run, never an all-history read (`tests/unit/test_monitor_reads_its_period.py`).
 6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
 Not done in this run: the other seven Olist metrics, Health targets, a document upload, Slack reach, the
 Default workspace's `data/metrics.json` drift from this run.

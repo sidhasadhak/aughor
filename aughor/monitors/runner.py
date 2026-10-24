@@ -46,6 +46,21 @@ def _query(db, sql: str) -> list:
     return db.rows(sql, label="__monitor__", sql_dialect="duckdb", strict=True)
 
 
+def _metric_of(monitor: Monitor):
+    """The approved definition a monitor names, or None.
+
+    SCOPED to the connection this monitor runs against. Resolving by name alone returns the first row carrying that
+    name whatever connection owns it, so a monitor on one warehouse could evaluate another's formula — and unlike the
+    read routes that shared this defect, a monitor ALERTS on the number, unattended, to people who never see which
+    definition produced it. `conn_id` is required on `Monitor` and has always been right here; only this lookup
+    ignored it."""
+    try:
+        from aughor.semantic.metrics import get_metric
+        return get_metric(monitor.metric_name, connection_id=monitor.conn_id or None)
+    except Exception:
+        return None
+
+
 def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
     """Return the scalar SQL expression for this monitor (custom_sql wins).
 
@@ -58,19 +73,9 @@ def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
     if monitor.custom_sql:
         sql = monitor.custom_sql.strip()
     elif monitor.metric_name:
-        try:
-            from aughor.semantic.metrics import get_metric
-            # SCOPED to the connection this monitor runs against. Resolving by name alone
-            # returns the first row carrying that name whatever connection owns it, so a
-            # monitor on one warehouse could evaluate another's formula — and unlike the read
-            # routes that shared this defect, a monitor ALERTS on the number, unattended, to
-            # people who never see which definition produced it. `conn_id` is required on
-            # `Monitor` and has always been right here; only this lookup ignored it.
-            m = get_metric(monitor.metric_name, connection_id=monitor.conn_id or None)
-            if m:
-                sql = m.sql.strip()
-        except Exception:
-            pass
+        m = _metric_of(monitor)
+        if m:
+            sql = m.sql.strip()
     if sql and db is not None and getattr(monitor, "reanchor_window", False):
         try:
             from aughor.monitors.window import reanchor_trailing_window
@@ -91,16 +96,74 @@ def monitor_sql(monitor: Monitor) -> Optional[str]:
 _READINGS: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar("monitor_readings", default=None)
 
 
-def _scalar(db, sql: str) -> Optional[float]:
+def _scalar(db, sql: str, dialect: str = "duckdb") -> Optional[float]:
     """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``, declared
     DuckDB as `_query` is: the threshold, any-change and trend-reversal monitors read this
     path, and the gate-map census (2026-09-26) found it still sending DuckDB-quoted SQL to
-    native engines after the anomaly path was fixed. Strict, as `_query` is."""
-    value = db.scalar(sql, label="__monitor__", cast=float, sql_dialect="duckdb", strict=True)
+    native engines after the anomaly path was fixed. Strict, as `_query` is. A metric's period
+    reading is compiled in the connection's own dialect and says so (``dialect``)."""
+    value = db.scalar(sql, label="__monitor__", cast=float, sql_dialect=dialect, strict=True)
     seen = _READINGS.get()
     if seen is not None and value is not None:
         seen.append(value)
     return value
+
+
+#: What the value a check read covers, in words — "August 2018", or "all history" with why.
+_COVERED: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar("monitor_covered", default=None)
+
+
+class PeriodUnreadable(QueryRefused):
+    """A monitor over a dated metric whose period could not be read: the check did not run, which is said as a failed
+    run (GM-4) — never read over all history instead, which is the defect this replaced."""
+
+
+def _covered(words: str) -> None:
+    seen = _COVERED.get()
+    if seen is not None and words not in seen:
+        seen.append(words)
+
+
+def covered_words() -> str:
+    """What the current check's reading covers ("" when nothing said it)."""
+    return next(iter(_COVERED.get() or []), "")
+
+
+def _reading_sql(monitor: Monitor, db) -> tuple[Optional[str], str]:
+    """``(sql, dialect)`` a single-value check reads — the threshold, any-change and trend-reversal monitors.
+
+    A monitor over a metric whose dates are set reads the metric for the newest settled period of the metric's
+    grain — month unless a person set another, as the metric editor shows it — with the data's edge and an ended
+    dataset taken as the Briefing takes them (`explorer.watch.settled_period`), compiled by the metric's own
+    measurement (`metric_time.measure_sql`). Before, it read the metric's statement as written, over all history: the
+    Olist study's "Monthly GMV floor" read 13,494,400.74 against a monthly 900,000 line, and could never fire while
+    August 2018 sat at 848,860.10. A period with no rows is no figure, as in the Briefing.
+
+    A monitor's own SQL is read as written; a metric with no dates is read over all history and says so."""
+    if (monitor.custom_sql or "").strip() or not monitor.metric_name:
+        return _resolve_sql(monitor, db), "duckdb"
+    metric = _metric_of(monitor)
+    if metric is None:
+        return None, "duckdb"
+    from aughor.semantic import metric_time as mt
+    label = getattr(metric, "label", None) or metric.name
+    if not mt.declared(metric):
+        _covered(f"all history — {label} has no date set, so no period of it can be read")
+        return _resolve_sql(monitor, db), "duckdb"
+    from aughor.briefing.ranges import phrases
+    from aughor.explorer.watch import settled_period
+    grain = mt.reported_grain(metric)
+    spec = settled_period(monitor.conn_id, grain, today=datetime.now(timezone.utc).date(),
+                          schema=getattr(metric, "schema_name", None) or None)
+    if spec is None:
+        raise PeriodUnreadable(f"no settled {grain} of {label} could be read")
+    dialect = getattr(db, "dialect", None) or "duckdb"
+    sql, why = mt.measure_sql(metric, [mt.Window("current", spec.start, spec.end, as_of=spec.as_of)],
+                              dialect=dialect)
+    if sql is None:
+        raise PeriodUnreadable(f"{label} could not be measured for a {grain}: {why}")
+    _covered(phrases(spec)["covers"])
+    return f"SELECT _v FROM ({sql}) AS _period WHERE _n > 0", dialect
 
 
 def plain_figure(v: float) -> str:
@@ -109,14 +172,18 @@ def plain_figure(v: float) -> str:
 
 
 def reading_words(monitor: Monitor, run: "MonitorRun") -> str:
-    """What a check read, beside the line it is judged against: "read 848,860.1 (warning below 900,000)"; "" when
-    the check read no single value (a drift or an anomaly reads a series, and says so in its alert)."""
+    """What a check read, what it covers, and the line it is judged against: "read 848,860.1 for August 2018
+    (warning below 900,000)"; "" when the check read no single value (a drift or an anomaly reads a series, and says
+    so in its alert). A period with no rows says it read none."""
+    over = run.covered
     if run.reading is None:
-        return ""
+        return f"read no value for {over}: it holds no rows" if over and not over.startswith("all history") else ""
     lines = [f"{label} {monitor.threshold_direction} {plain_figure(t)}"
              for label, t in (("warning", monitor.warning_threshold), ("critical", monitor.critical_threshold))
              if t is not None and monitor.alert_on == "threshold_cross"]
-    return f"read {plain_figure(run.reading)}" + (f" ({'; '.join(lines)})" if lines else "")
+    return (f"read {plain_figure(run.reading)}" + (f" over {over}" if over.startswith("all history") else
+                                                   f" for {over}" if over else "")
+            + (f" ({'; '.join(lines)})" if lines else ""))
 
 
 #: The kinds of the two alerts about whether a monitor can run — never a reading of its metric.
@@ -250,13 +317,14 @@ def _make_alert(
 # ── M20a: Threshold / change monitors ─────────────────────────────────────────
 
 def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
-    """Fire if the current metric value crosses warning_threshold or critical_threshold."""
-    sql = _resolve_sql(monitor, db)
+    """Fire if the current metric value — for its period, when it names a dated metric — crosses warning_threshold or
+    critical_threshold."""
+    sql, dialect = _reading_sql(monitor, db)
     if not sql:
         logger.warning("Monitor %s (%s): no SQL resolved — skipping", monitor.id, monitor.name)
         return None
 
-    current = _scalar(db, sql)
+    current = _scalar(db, sql, dialect)
     if current is None:
         return None
 
@@ -269,9 +337,11 @@ def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
                                 critical=monitor.critical_threshold)
     if not verdict.fired or verdict.threshold is None:
         return None
+    over = covered_words()
+    period = f" for {over}" if over and not over.startswith("all history") else ""
     return _make_alert(
         monitor, verdict.severity,
-        f"{monitor.name}: {plain_figure(current)} {'below' if direction == 'below' else 'above'} "
+        f"{monitor.name}: {plain_figure(current)}{period} {'below' if direction == 'below' else 'above'} "
         f"{verdict.severity} threshold {plain_figure(verdict.threshold)}",
         current_value=current, previous_value=previous,
         threshold=verdict.threshold,
@@ -280,11 +350,11 @@ def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 def run_any_change_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     """Fire whenever the metric value changes from its last recorded value."""
-    sql = _resolve_sql(monitor, db)
+    sql, dialect = _reading_sql(monitor, db)
     if not sql:
         return None
 
-    current = _scalar(db, sql)
+    current = _scalar(db, sql, dialect)
     if current is None:
         return None
 
@@ -311,11 +381,11 @@ def run_any_change_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 def run_trend_reversal_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     """Fire when the rolling direction of the metric flips (up→down or down→up)."""
-    sql = _resolve_sql(monitor, db)
+    sql, dialect = _reading_sql(monitor, db)
     if not sql:
         return None
 
-    current = _scalar(db, sql)
+    current = _scalar(db, sql, dialect)
     if current is None:
         return None
 
@@ -613,6 +683,8 @@ class MonitorRun:
     failed: str = ""      # the warehouse's refusal; "" when the query ran
     #: The value the check read (its first single value), raised or not; None when it read none.
     reading: Optional[float] = None
+    #: What that reading covers, in words — its period, or "all history" and why; "" when nothing said it.
+    covered: str = ""
 
 
 def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[MonitorAlert]:
@@ -623,15 +695,17 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
 
 def check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     """See ``_check_monitor``; this keeps the value the check read on the run it returns (Gap 36)."""
-    token = _READINGS.set([])
+    token, over = _READINGS.set([]), _COVERED.set([])
     try:
         run = _check_monitor(monitor, db, suppress)
         read = _READINGS.get() or []
         if read and run.reading is None:
             run.reading = read[0]
+        run.covered = run.covered or covered_words()
         return run
     finally:
         _READINGS.reset(token)
+        _COVERED.reset(over)
 
 
 def _check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
