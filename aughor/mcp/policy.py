@@ -20,6 +20,11 @@ CODE_LEVEL = "AGENT_LEVEL_DENIED"            # the policy's level is below what 
 CODE_TOOL = "AGENT_TOOL_DENIED"              # the tool is not on the organisation's allowlist
 CODE_CONNECTION = "AGENT_CONNECTION_DENIED"  # the connection is not on the organisation's allowlist
 CODE_SELF_SET = "AGENT_POLICY_NOT_SELF_SET"  # an agent tried to set its own policy
+#: Arc ED, ED-2 — a service principal's grant narrows the policy (`rbac/principal_grant.py`).
+CODE_AREA = "AGENT_AREA_DENIED"              # the route is in an area the principal's grant does not name
+CODE_ENTITY = "AGENT_ENTITY_DENIED"          # the entity is not on the principal's grant
+CODE_ACTION = "AGENT_ACTION_DENIED"          # the declared action is not on the principal's grant
+CODE_GRANT_CONNECTION = "AGENT_GRANT_CONNECTION_DENIED"   # the connection is not on the principal's grant
 ERROR = "agent_policy_denied"
 
 #: The static tools, by what they need. `run` spends model calls or starts work;
@@ -122,6 +127,38 @@ def tool_level(name: str) -> Level:
     return "act"
 
 
+#: Arc ED, ED-2 — the area each static tool works in (`security.service_principals.AREAS`), so a principal's grant
+#: hides what it may not call from `tools/list`. A tool added at start-up is placed by its registrar (`DYNAMIC_AREAS`).
+TOOL_AREAS: dict[str, str] = {
+    "list_connections": "catalog:read", "get_investigation": "catalog:read", "get_metric": "catalog:read",
+    "list_findings": "catalog:read", "list_jobs": "catalog:read", "get_job": "catalog:read",
+    "search_graph": "catalog:read", "describe_entity": "catalog:read", "get_table_health": "catalog:read",
+    "list_trusted_queries": "catalog:read", "list_runs": "catalog:read", "inspect_run": "catalog:read",
+    "read_run_span": "catalog:read",
+    "ask": "analysis:run", "deep_analysis": "analysis:run", "explore": "analysis:run", "get_briefing": "analysis:run",
+    "cancel_job": "analysis:run",
+    "list_objects": "objects:read",
+    "read_contract": "ledger:read", "read_claims": "ledger:read", "read_restatements": "ledger:read",
+    "post_claim": "ledger:write",
+}
+DYNAMIC_AREAS: dict[str, str] = {}
+#: The declared action a propose tool proposes, by the name it was registered under.
+PROPOSED_ACTIONS: dict[str, str] = {}
+
+
+def tool_area(name: str) -> str:
+    """The area an MCP tool works in: a static tool by its row, a tool added at start-up by its registrar's word, a
+    Spotlight tool by its level (a read reads the catalog; an act stages a change for a person, a proposal), and
+    anything else (an automation) runs an automation."""
+    if name in TOOL_AREAS:
+        return TOOL_AREAS[name]
+    if name in DYNAMIC_AREAS:
+        return DYNAMIC_AREAS[name]
+    if name in SPOTLIGHT_ACT_TOOLS:
+        return "actions:propose"
+    return "automations:run"
+
+
 def tool_annotations(level: Level) -> ToolAnnotations:
     """The MCP hints a client reads before calling: a `read` tool is read-only; an `act` tool is
     destructive in the protocol's sense (it changes something outside the conversation); a
@@ -134,18 +171,24 @@ def tool_annotations(level: Level) -> ToolAnnotations:
 
 
 def refusal(code: str, *, tool: Optional[str], policy_level: str, required: Optional[str] = None,
-            connection: Optional[str] = None) -> dict:
+            connection: Optional[str] = None, detail: str = "") -> dict:
     """The refusal body, the same from the API and from the MCP server."""
     body: dict = {"error": ERROR, "code": code, "tool": tool, "policy_level": policy_level}
     if required:
         body["required_level"] = required
     if connection:
         body["connection"] = connection
+    if detail:
+        body["detail"] = detail
     body["hint"] = {
         CODE_LEVEL: f"this organisation's agent policy is '{policy_level}'; the tool needs '{required}'. "
                     "A person with ADMIN_MANAGE_ORG can raise it at PUT /org-settings/agent-policy.",
         CODE_TOOL: "the tool is not on this organisation's agent allowlist.",
         CODE_CONNECTION: f"connection {connection!r} is not on this organisation's agent allowlist.",
         CODE_SELF_SET: "an agent cannot set its own policy; a person does, at PUT /org-settings/agent-policy.",
+        CODE_AREA: "this principal's grant does not name the area; a person mints it again with the area named.",
+        CODE_ENTITY: "this principal's grant does not name the entity; a person mints it again with the entity named.",
+        CODE_ACTION: "this principal's grant does not name the declared action; a person mints it again with it named.",
+        CODE_GRANT_CONNECTION: f"connection {connection!r} is not on this principal's grant.",
     }.get(code, "")
     return body

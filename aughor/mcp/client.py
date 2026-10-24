@@ -46,6 +46,12 @@ TOOL_HEADER = "X-Aughor-Tool"
 AGENT_MARK = "mcp"
 #: The MCP tool a request serves, set by the server around each call (`PolicedFastMCP`).
 CURRENT_TOOL: ContextVar[str] = ContextVar("aughor_mcp_current_tool", default="")
+#: Arc ED, ED-2 — a service principal's headers, spelled here as `security.service_principals` spells them (a test holds
+#: the two equal), and the HTTP caller a request acts as, set by the server around each list and call
+#: (`mcp/callers.py`): ``(name, key)``, or None for this process's own principal.
+SERVICE_NAME_HEADER = "X-Aughor-Service"
+SERVICE_KEY_HEADER = "X-Aughor-Service-Key"
+CURRENT_CALLER: ContextVar[Optional[tuple[str, str]]] = ContextVar("aughor_mcp_current_caller", default=None)
 
 
 class AughorError(RuntimeError):
@@ -99,12 +105,16 @@ class AughorClient:
         h = {"accept": "application/json"}
         if self.api_key:
             h["X-Api-Key"] = self.api_key
+        # Arc ED, ED-2 — an HTTP caller let in as itself: its own service principal, and none of this process's.
+        caller = CURRENT_CALLER.get()
+        if caller is not None:
+            h[SERVICE_NAME_HEADER], h[SERVICE_KEY_HEADER] = caller
         # DE-2a — the principal this client acts as, so an API that requires identity can
         # resolve one: a verified bearer where an issuer is configured, the header seam where
         # not. The user defaults to `mcp` once an org is named, so the audit row says who.
-        if self.bearer:
+        elif self.bearer:
             h["Authorization"] = f"Bearer {self.bearer}"
-        if self.org:
+        if self.org and caller is None:
             h[IDENTITY_ORG_HEADER] = self.org
             h[IDENTITY_USER_HEADER] = self.user or "mcp"
         # DE-2b — every call this client makes is an agent's own, and says which tool it serves,
@@ -511,6 +521,23 @@ class AughorClient:
     # ── DE-2b: the organisation's agent policy, as the API answers it ─────────────
     async def agent_policy(self) -> dict:
         return await self._get("/org-settings/agent-policy")
+
+    async def service_principal_me(self, name: str, key: str) -> tuple[int, Optional[dict]]:
+        """Arc ED, ED-2 — ``(status, body)`` the API gives a presented service principal: 200 with its grant, 401 when the
+        name and key do not match, 404 when callers as principals are off there. 0 when the API could not be asked."""
+        token = CURRENT_CALLER.set((name, key))
+        try:
+            async with self._mk_client() as c:
+                r = await c.get("/ledger/v1/principals/service/me")
+        except httpx.HTTPError:
+            return 0, None
+        finally:
+            CURRENT_CALLER.reset(token)
+        try:
+            body = r.json()
+        except ValueError:
+            body = None
+        return r.status_code, body if isinstance(body, dict) else None
 
     # ── Phase 7 of the 2027 study: the ledger API ──────────────────────────────────
     async def contract(self) -> dict:

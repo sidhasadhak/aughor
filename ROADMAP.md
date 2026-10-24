@@ -11814,7 +11814,7 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
-### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 and ED-1 BUILT 2026-10-24** on the session branch, the rest not started)
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0, ED-1 and ED-2 BUILT 2026-10-24** on the session branch, the rest not started)
 
 **The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
 not yet hold is that shape's own rules, at every door:
@@ -11837,7 +11837,7 @@ not yet hold is that shape's own rules, at every door:
 |---|---|---|---|
 | **ED-0** | The small defects: document search says *unavailable* instead of `[]`; §3.26's eight monitor defects; stale words (`mcp/policy.py` "eighteen" over 23 tools, `routers/builder_v1.py:7` "(off)" of a graduated flag) | bugs, no flag · S | A saved monitor reads back a grace period other than its own → stop |
 | **ED-1** ✅ | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
-| **ED-2** | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
+| **ED-2** ✅ | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
 | **ED-3** | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
 | **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
 | **ED-5** | **Cause and effect in one store**: confirmed causal edges fold into impacts as *validated*; the file stops being read | — · M | An alert summary names a cause the impacts store does not hold → stop |
@@ -11922,6 +11922,46 @@ check that object security is on.
 - The served graphs are read per statement while the flag is on (no memo).
 - An unqualified column named like a masked one on another joined table is refused too (the refusal says which property).
 - An unqualified backing table matches that name in every schema (the doubt resolved toward the policy).
+
+**ED-2, built 2026-10-24** (same branch; flags `mcp.caller_principals` and `security.principal_scopes`, both off and in
+the graduation queue, both held by the API). The service principals of phase 7 were the identity; ED-2 makes them the
+caller, and gives each one a grant.
+
+- **A grant** (`security/service_principals.py`; *Grant* and *Area* in the glossary) is set by a person when minting. It
+  names the *areas* a principal may work in (catalog:read · objects:read · actions:propose · analysis:run ·
+  automations:run · ledger:read · ledger:write), the entities it may read and the declared actions it may propose,
+  beside the connections it already named. Each is stored only when named, so a principal minted without one is the
+  row it was, and rotating keeps it. The Developer page mints with one and says what each principal is held to.
+- **The API holds it** (`rbac/principal_grant.py`, called by the agent gate after the organisation's policy, so it
+  only narrows):
+  - every route belongs to one area, and a route in none is closed to a principal that names areas;
+  - an entity, an action or a connection off the grant is refused, each with its own stable code;
+  - the call is audited under the principal's name;
+  - the builders' contract and its TypeScript are cut to the grant and count what they left out;
+  - with the flag on, a principal is held to its grant whether or not sign-in is enforced.
+- **Over MCP HTTP** (`mcp/callers.py`), a program may present its principal instead of the server's shared token:
+  - the server asks the API who it is (`GET /ledger/v1/principals/service/me`, which refuses a bad key whatever the
+    identity mode);
+  - every list and call then runs as that principal;
+  - `tools/list` shows only the tools its grant admits (each tool's area is in `mcp/policy.TOOL_AREAS`, and the
+    registrars place the tools they add);
+  - a name and key the API refuses are refused at the door, whatever token comes with them;
+  - with the API's switch off, the shared token is the door as before, byte for byte.
+
+The falsifier held through a real streamable-HTTP session against the real API in-process:
+- a principal granted catalog:read and one granted the ledger list different tools, each a strict part of what the
+  shared token lists;
+- a call made as the first is audited under `service:<its name>`;
+- a guessed key is refused at the door.
+
+11 tests. Every piece was mutation-killed (16 mutants), including the client not sending the caller and the door
+admitting any principal. 3 component tests on the mint form.
+
+**Named, not done:**
+- A user bearer through MCP HTTP, which waits for OIDC (VA-10).
+- The object catalogue and type listings are not yet cut to a grant's entities. The contract and every named-entity
+  door are.
+- A grant per acting person, for an agent that acts for someone.
 
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
 

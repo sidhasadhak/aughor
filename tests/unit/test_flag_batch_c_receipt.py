@@ -87,7 +87,11 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc ED, ED-1 (ROADMAP §3.58), 2026-10-24: `ontology.security_sql` — OC-7's declarations at a connection's own
     # door. No model call; it needs `ontology.security`, so it waits for sign-in with it, and its entry names the
     # receipt (one count through either door) and the falsifier.
+    # Arc ED, ED-2, the same day: `mcp.caller_principals` (an outside program connects to the MCP server as its own
+    # service principal) and `security.principal_scopes` (that principal's grant narrows the agent policy). Neither
+    # calls a model; each entry names its receipt and the falsifier.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
-                                     "ontology.security", "ontology.security_sql"}
+                                     "ontology.security", "ontology.security_sql", "mcp.caller_principals",
+                                     "security.principal_scopes"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

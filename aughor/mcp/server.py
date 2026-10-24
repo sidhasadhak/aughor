@@ -79,14 +79,38 @@ class PolicedFastMCP(FastMCP):
 
         low.create_initialization_options = _options
 
+    async def _caller(self) -> "tuple[Optional[tuple[str, str]], Optional[dict]]":
+        """Arc ED, ED-2 — the HTTP caller this request comes from, as itself: ``((name, key), grant)`` when it presented
+        a service principal the API recognised, else ``(None, None)`` (stdio, the shared token, or the API's switch
+        off). The door already refused a name and key the API does not recognise."""
+        from aughor.mcp import callers
+        try:
+            request = getattr(self.get_context().request_context, "request", None)
+        except (LookupError, ValueError, AttributeError):
+            return None, None
+        pair = callers.presented(getattr(request, "headers", None)) if request is not None else None
+        if pair is None:
+            return None, None
+        status, body = await callers.answer(pair[0], pair[1], _client)
+        return (pair, (body or {}).get("grant") or {}) if status == 200 else (None, None)
+
     async def list_tools(self):
+        from aughor.mcp import callers
+        from aughor.mcp.client import CURRENT_CALLER
         from aughor.mcp.policy import tool_annotations, tool_level
         await refresh_live_tools()
-        policy = await current_policy()
+        pair, grant = await self._caller()
+        token = CURRENT_CALLER.set(pair)
+        try:
+            policy = await current_policy()
+        finally:
+            CURRENT_CALLER.reset(token)
         out = []
         for t in await super().list_tools():
             level = tool_level(t.name)
             if not (policy.allows_tool(t.name) and policy.allows_level(level)):
+                continue
+            if not callers.admits(grant, t.name):          # ED-2 — the caller's own grant narrows the list
                 continue
             out.append(t.model_copy(update={"annotations": tool_annotations(level)}))
         return out
@@ -96,22 +120,32 @@ class PolicedFastMCP(FastMCP):
 
         from mcp.server.fastmcp.exceptions import ToolError
 
-        from aughor.mcp.client import CURRENT_TOOL
-        from aughor.mcp.policy import CODE_LEVEL, CODE_TOOL, refusal, tool_level
-        policy = await current_policy()
-        level = tool_level(name)
-        if name in getattr(self._tool_manager, "_tools", {}):
-            if not policy.allows_tool(name):
-                raise ToolError(_json.dumps(refusal(CODE_TOOL, tool=name, policy_level=policy.level)))
-            if not policy.allows_level(level):
-                raise ToolError(_json.dumps(refusal(CODE_LEVEL, tool=name, policy_level=policy.level, required=level)))
-        token = CURRENT_TOOL.set(name)
+        from aughor.mcp import callers
+        from aughor.mcp.client import CURRENT_CALLER, CURRENT_TOOL
+        from aughor.mcp.policy import CODE_AREA, CODE_LEVEL, CODE_TOOL, refusal, tool_area, tool_level
+        pair, grant = await self._caller()
+        caller_token = CURRENT_CALLER.set(pair)
         try:
-            return await super().call_tool(name, arguments)
+            policy = await current_policy()
+            level = tool_level(name)
+            if name in getattr(self._tool_manager, "_tools", {}):
+                if not policy.allows_tool(name):
+                    raise ToolError(_json.dumps(refusal(CODE_TOOL, tool=name, policy_level=policy.level)))
+                if not policy.allows_level(level):
+                    raise ToolError(_json.dumps(refusal(CODE_LEVEL, tool=name, policy_level=policy.level, required=level)))
+                if not callers.admits(grant, name):
+                    raise ToolError(_json.dumps(refusal(
+                        CODE_AREA, tool=name, policy_level=policy.level,
+                        detail=f"the tool works in {tool_area(name)}, which this principal's grant does not admit")))
+            token = CURRENT_TOOL.set(name)
+            try:
+                return await super().call_tool(name, arguments)
+            finally:
+                CURRENT_TOOL.reset(token)
+                if await refresh_live_tools():
+                    await self._say_the_list_changed()
         finally:
-            CURRENT_TOOL.reset(token)
-            if await refresh_live_tools():
-                await self._say_the_list_changed()
+            CURRENT_CALLER.reset(caller_token)
 
     async def _say_the_list_changed(self) -> None:
         """`notifications/tools/list_changed` on the session this request came in on — a
@@ -123,17 +157,20 @@ class PolicedFastMCP(FastMCP):
 
 
 _POLICY_TTL = 30.0
-_policy_cache: list = []   # [(fetched_at, AgentPolicy)]
+_policy_cache: dict = {}   # {caller name, "" for this process: (fetched_at, AgentPolicy)}
 
 
 async def current_policy():
-    """The effective agent policy for this server's principal, from the API; the default when
-    the API cannot say (and that is logged once per fetch, not hidden)."""
+    """The effective agent policy for this server's principal — or, for an HTTP caller let in as itself (ED-2), for
+    that caller — from the API; the default when the API cannot say (and that is logged once per fetch, not hidden)."""
     import time as _time
 
+    from aughor.mcp.client import CURRENT_CALLER
     from aughor.orgsettings.agent_policy import DEFAULT_POLICY, AgentPolicy
-    if _policy_cache and (_time.monotonic() - _policy_cache[0][0]) < _POLICY_TTL:
-        return _policy_cache[0][1]
+    who = (CURRENT_CALLER.get() or ("",))[0]
+    kept = _policy_cache.get(who)
+    if kept and (_time.monotonic() - kept[0]) < _POLICY_TTL:
+        return kept[1]
     policy = DEFAULT_POLICY
     try:
         answer = await _client.agent_policy()
@@ -146,7 +183,7 @@ async def current_policy():
         )
     except Exception as exc:
         _log.warning("could not read the agent policy from the API (%s); applying the default, `run`", exc)
-    _policy_cache[:] = [(_time.monotonic(), policy)]
+    _policy_cache[who] = (_time.monotonic(), policy)
     return policy
 
 
@@ -624,6 +661,8 @@ async def register_spotlight_tools(client: "AughorClient | None" = None) -> list
         # The roster's split, said to the level map: by its name alone a roster read cannot be
         # told from an automation, and was read as an act — hidden under the default policy.
         DYNAMIC_LEVELS[name] = spotlight_tool_level(name)
+        from aughor.mcp.policy import DYNAMIC_AREAS
+        DYNAMIC_AREAS[name] = "actions:propose" if spotlight_tool_level(name) == "act" else "catalog:read"   # ED-2
         taken.add(name)
         added.append(name)
         _DYNAMIC[name] = "spotlight"
@@ -665,6 +704,8 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
                      name=name, description=_agent_description(row),
                      annotations=tool_annotations("run"))       # DE-2b: an ask spends; it changes nothing
         DYNAMIC_LEVELS[name] = "run"
+        from aughor.mcp.policy import DYNAMIC_AREAS
+        DYNAMIC_AREAS[name] = "analysis:run"            # ED-2: an agent's answer is an analysis
         taken.add(name)
         added.append(name)
         _DYNAMIC[name] = "agents"
@@ -733,6 +774,9 @@ async def register_ontology_tools(client: "AughorClient | None" = None) -> list[
             "type": "string", "description": "Why — shown to the person who decides."}}
         _declare_arguments(name, schema)
         DYNAMIC_LEVELS[name] = "act"
+        from aughor.mcp.policy import DYNAMIC_AREAS, PROPOSED_ACTIONS
+        DYNAMIC_AREAS[name] = "actions:propose"         # ED-2: a grant names the declared actions it may propose
+        PROPOSED_ACTIONS[name] = row["action_id"]
         taken.add(name)
         added.append(name)
         _DYNAMIC[name] = "ontology"
@@ -962,13 +1006,18 @@ class BearerGate:
 
     The comparison is constant-time (`hmac.compare_digest`), the refusal names what is missing and carries a
     `WWW-Authenticate` challenge, and nothing else is read from the request — the MCP app behind the gate
-    decides everything else."""
+    decides everything else.
 
-    def __init__(self, app: Any, token: str) -> None:
+    Arc ED, ED-2 — or presents a service principal (its name and key) that the API recognises, and is then served as
+    that principal (`mcp/callers.py`). A name and key the API refuses are refused here, whatever token comes with
+    them; while the API's switch is off, the shared token is the door as before."""
+
+    def __init__(self, app: Any, token: str, client: "AughorClient | None" = None) -> None:
         if not token:
             raise ValueError("BearerGate needs a token")
         self.app = app
         self._token = token.encode("utf-8")
+        self._client = client
 
     def _presented(self, scope: dict) -> bytes:
         for name, value in scope.get("headers") or []:
@@ -981,10 +1030,22 @@ class BearerGate:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         presented = self._presented(scope)
-        if presented and hmac.compare_digest(presented, self._token):
+        token_ok = bool(presented) and hmac.compare_digest(presented, self._token)
+        from aughor.mcp import callers
+        caller = callers.presented(scope.get("headers") or [])
+        if caller is not None:
+            status, _ = await callers.answer(caller[0], caller[1], self._client or _client)
+            if status == 200 or (status == 404 and token_ok):
+                return await self.app(scope, receive, send)
+            return await self._refuse(send, callers.refused_because(status).encode("utf-8"))
+        if token_ok:
             return await self.app(scope, receive, send)
-        body = (b'{"error":"unauthorized","detail":"this MCP server requires `Authorization: Bearer <token>`; '
-                b'the token is AUGHOR_MCP_TOKEN on the server"}')
+        await self._refuse(send, b"this MCP server requires `Authorization: Bearer <token>`; the token is "
+                                 b"AUGHOR_MCP_TOKEN on the server")
+
+    async def _refuse(self, send, why: bytes) -> None:
+        import json as _json
+        body = _json.dumps({"error": "unauthorized", "detail": why.decode("utf-8")}, separators=(",", ":")).encode("utf-8")
         await send({"type": "http.response.start", "status": 401, "headers": [
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode()),

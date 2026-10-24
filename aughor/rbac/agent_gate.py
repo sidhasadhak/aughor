@@ -45,7 +45,12 @@ def is_agent_request(request: Request) -> bool:
     if (request.headers.get(AGENT_HEADER) or "").strip().lower() == AGENT_MARK:
         return True
     from aughor.security.service_principals import is_service
-    return is_service(getattr(request.state, "principal", None))
+    if is_service(getattr(request.state, "principal", None)):
+        return True
+    # Arc ED, ED-2 — with grants held, a service principal is one whether or not identity is enforced: an install
+    # without sign-in still holds the program that presents one to its grant.
+    from aughor.rbac import principal_grant
+    return principal_grant.enabled() and principal_grant.principal_of(request) is not None
 
 
 def _bounded(value: Any) -> Any:
@@ -83,7 +88,8 @@ def _connection_named(request: Request, body: Optional[dict]) -> Optional[str]:
 
 
 def _audit(request: Request, *, tool: Optional[str], allowed: bool, code: Optional[str],
-           required: str, policy, connection: Optional[str], body: Optional[dict], org_id: str) -> None:
+           required: str, policy, connection: Optional[str], body: Optional[dict], org_id: str,
+           principal: str = "") -> None:
     try:
         from aughor.kernel.ledger import Ledger
         from aughor.org.context import current_user_id
@@ -102,6 +108,7 @@ def _audit(request: Request, *, tool: Optional[str], allowed: bool, code: Option
             "org_id": org_id, "agent": AGENT_MARK,
             "allowed": allowed, "code": code, "required_level": required, "policy_level": policy.level,
             "policy_source": policy.source, "connection": connection, "args": args,
+            **({"principal": principal} if principal else {}),
         }, conn_id=connection)
     except Exception as exc:  # the audit must never take the call with it, but it is said
         from aughor.kernel.errors import tolerate
@@ -134,8 +141,24 @@ async def enforce_agent_policy(request: Request) -> None:
     elif not policy.allows_connection(connection):
         code = CODE_CONNECTION
 
+    # Arc ED, ED-2 — then the presenting service principal's own grant (`security.principal_scopes`, off: none): it
+    # narrows what the policy allowed, never widens it.
+    detail, principal = "", ""
+    if code is None:
+        from aughor.rbac import principal_grant
+        grant = principal_grant.grant_for(request)
+        if grant is not None:
+            from aughor.security.service_principals import principal_id, name_of
+            principal = principal_id(name_of(principal_grant.principal_of(request)))
+            held = principal_grant.refusal(
+                grant, method=request.method, template=template, tool=tool, connection=connection,
+                entity=principal_grant.named(request, body, ("entity", "object_type")),
+                action=principal_grant.named(request, body, ("action_id",)))
+            if held is not None:
+                code, detail = held
+
     _audit(request, tool=tool, allowed=code is None, code=code, required=required, policy=policy,
-           connection=connection, body=body, org_id=org_id)
+           connection=connection, body=body, org_id=org_id, principal=principal)
     if code is not None:
         raise HTTPException(status_code=403, detail=refusal(
-            code, tool=tool, policy_level=policy.level, required=required, connection=connection))
+            code, tool=tool, policy_level=policy.level, required=required, connection=connection, detail=detail))

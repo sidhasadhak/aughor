@@ -51,23 +51,28 @@ def _scope(connection_id: str, schema_name: Optional[str]):
 
 
 @router.get("/ontology/v1/contract")
-def get_ontology_contract(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
+def get_ontology_contract(request: Request, connection_id: str = BUILTIN_ID,
+                          schema_name: Optional[str] = Query(default=None)):
     """The published ontology as a contract: a JSON Schema per entity (its properties, key and the segments a listing
     may name) and per declared action (what a proposal carries), stamped with the release they came from."""
     _on()
     from aughor.ontology.builder_doors import ontology_contract
+    from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
-    return ontology_contract(graph, release)
+    # Arc ED, ED-2 — a service principal reads the contract its grant names (`security.principal_scopes`)
+    return narrow_contract(ontology_contract(graph, release), grant_for(request))
 
 
 @router.get("/ontology/v1/types.d.ts", response_class=PlainTextResponse)
-def get_ontology_typescript(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
+def get_ontology_typescript(request: Request, connection_id: str = BUILTIN_ID,
+                            schema_name: Optional[str] = Query(default=None)):
     """The same contract as TypeScript declarations — an interface per entity, a union of its segments, a params
     interface per declared action and the release. Declarations only: nothing in them runs."""
     _on()
     from aughor.ontology.builder_doors import ontology_contract, typescript
+    from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
-    return PlainTextResponse(typescript(ontology_contract(graph, release)),
+    return PlainTextResponse(typescript(narrow_contract(ontology_contract(graph, release), grant_for(request))),
                              media_type="application/typescript; charset=utf-8")
 
 

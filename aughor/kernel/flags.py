@@ -128,6 +128,13 @@ FLAG_ENV = {
     # policies and sensitive properties to every statement a request runs — narrowed to the reader's objects, a masked
     # property refused. OFF: only the object doors apply them, and every statement reads as before.
     "ontology.security_sql": "AUGHOR_ONTOLOGY_SECURITY_SQL",
+    # Arc ED, ED-2 (ROADMAP §3.58). ON: GET /ledger/v1/principals/service/me answers for a presented service principal, so the MCP
+    # server lets an HTTP caller in as itself — each call made as it, its tools listed by its own grant. OFF: the route
+    # says it is off and every HTTP client shares the server's token, as before.
+    "mcp.caller_principals": "AUGHOR_MCP_CALLER_PRINCIPALS",
+    # Arc ED, ED-2. ON: a service principal's grant — areas, entities, declared actions, connections — narrows what the
+    # agent policy allows it on every request, and its contract is cut to it. OFF: the policy alone holds it.
+    "security.principal_scopes": "AUGHOR_SECURITY_PRINCIPAL_SCOPES",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -720,6 +727,28 @@ FLAG_META = {
                        "may. It applies to dashboards, object pages and outside programs. Off: every reader "
                        "sees every object and property.",
     },
+    "mcp.caller_principals": {
+        "label": "Outside programs connect as themselves",
+        "summary": "A program can connect to the MCP server with its own service principal. Each call then runs "
+                   "as that program, not as the server.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "needs", "text": "Needs a minted principal"}],
+        "description": "Over HTTP, a program presents its principal's name and key instead of the server's shared "
+                       "token. The server checks them with the platform, lists only the tools that program may "
+                       "use, and makes every call as it. Off: every HTTP client shares the server's token and "
+                       "acts as the server.",
+    },
+    "security.principal_scopes": {
+        "label": "Limit what each outside program may do",
+        "summary": "A principal can be limited to some areas, entities and actions. It never gets more than the "
+                   "agent policy allows.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Refusals say why"}],
+        "description": "When minting a principal, a person names the areas it may work in, such as reading "
+                       "objects. They may also name the entities and actions it may use. A request outside them is "
+                       "refused with why, and its contract lists only what it may use. Off: every principal is "
+                       "held to the agent policy alone.",
+    },
     "ontology.security_sql": {
         "label": "Apply object security to every answer",
         "summary": "Answers, deep analyses and the SQL editor read only the objects the reader may see. "
@@ -1118,6 +1147,13 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-2 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "mcp.caller_principals": "receipt: on the live install, two outside programs connect over HTTP as two principals with "
+                             "different grants; each lists its own tools and every call is audited under its own name. "
+                             "Falsifier: two principals with different grants see the same tool list — stop",
+    "security.principal_scopes": "receipt: a principal granted reading objects of one entity reads it, is refused another "
+                                 "with why, and its contract lists only that entity. Falsifier: a request outside the "
+                                 "grant that reaches its handler stops it",
     # Arc ED, ED-1 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "ontology.security_sql": "receipt: on a scratch install over theLook, a group with a row policy gets the same count from "
                              "a quick answer as from the object door, and a question that reads a masked property is "
