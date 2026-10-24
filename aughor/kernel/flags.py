@@ -147,6 +147,10 @@ FLAG_ENV = {
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
     "ontology.impacts_only": "AUGHOR_ONTOLOGY_IMPACTS_ONLY",
+    # Arc ED, ED-6 (ROADMAP §3.58). ON: every object door's answer says how complete its read is — complete, truncated
+    # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
+    # contract describes it. OFF: each door answers as before.
+    "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -762,6 +766,16 @@ FLAG_META = {
                        "One that cannot be measured is said, not counted as failing. Off: the step is skipped, "
                        "and table health reads not checked.",
     },
+    "objects.completeness": {
+        "label": "Every object read says how complete it is",
+        "summary": "Each object read says whether it is complete, cut short, narrowed for you, or refused. It also "
+                   "says how long it took.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Says what is withheld from you"}],
+        "description": "A read can stop at the connection's limit of rows, and then it says there are more. A row "
+                       "policy or a masked property is named. Outside programs read the same field, described in "
+                       "their contract. Off: a cut read can look complete.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1192,6 +1206,10 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
+    "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
+                            "truncated, a group with a row policy reads withheld, and the contract describes the field. "
+                            "Falsifier: an object read cut at the cap that says complete stops it",
     # Arc ED, ED-5 (ROADMAP §3.58), queued 2026-10-24. No model call; it trims one field from an analysis's answer.
     "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
                              "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "

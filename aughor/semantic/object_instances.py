@@ -498,7 +498,29 @@ def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: 
            f"ORDER BY l.{quote_ident(target_key)} LIMIT {limit + 1} OFFSET {offset}")
     result = _read(on(target), sql, chosen.describe())
     rows = list(result.rows or [])
-    return {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
+    page = {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
+    _mask_page(target, page)
+    return page
+
+
+def _mask_page(entity: OntologyEntity, page: dict) -> None:
+    """Arc OC-7, closed at the linked page by ED-6: a sensitive property the reader may not read is emptied in every
+    row, as the object's own page empties it (`_mask`), with why — ``masked`` maps each column to it — and what a row
+    policy withholds of the linked objects is said. Nothing is added when no policy restricts the reader."""
+    from aughor.ontology.security import masked, rows_said
+    columns = list(page.get("columns") or [])
+    hidden = {c: why for c in columns if (why := masked(entity, c))}
+    caveats: list[str] = []
+    if hidden:
+        at = [i for i, c in enumerate(columns) if c in hidden]
+        page["rows"] = [[None if i in at else v for i, v in enumerate(row)] for row in page["rows"]]
+        page["masked"] = hidden
+        caveats.extend(dict.fromkeys(hidden.values()))
+    said = rows_said(entity)
+    if said:
+        caveats.append(said)
+    if caveats:
+        page["caveats"] = caveats
 
 
 def typed_value(value: Any, data_type: str) -> Any:

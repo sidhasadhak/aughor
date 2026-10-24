@@ -172,7 +172,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] ED-3 · table health that is measured — ✅ BUILT 2026-10-24 behind `quality.expectations` (§3.58 "ED-3, built"; the word is *expectation*, the user's call) — a producer for `quality/results.py`; latest reports per check; the naming call first (`quality.checks`)
 - [x] ED-4 · an App publishes one version — ✅ BUILT 2026-10-24 behind `dashboard.app_versions` (§3.58 "ED-4, built"; the live receipt waits) — ✅ decided 2026-10-24, §6 item 52(a): readers see the last published version; a keep is a draft on `kernel/lifecycle.py`'s axis, publishing to the same audience publishes it, the owner is told which version readers read
 - [x] ED-5 · cause and effect in one store — ✅ BUILT 2026-10-24 behind `ontology.impacts_only` (§3.58 "ED-5, built"; re-scoped on its premise, the user's call §6 item 52(d): *"Impacts are the one store"* — no edge was ever confirmed live, and the proposals name no promise) — the files neither read nor written, the model not asked for causes, the alert summary words the declared impacts
-- [ ] ED-6 · every object read says how complete it is (`objects.completeness`)
+- [x] ED-6 · every object read says how complete it is — ✅ BUILT 2026-10-25 behind `objects.completeness` (§3.58 "ED-6, built") — measured first: a read cut at the connection's 500 rows said complete (the door compared with 1,000), and the linked page showed masked properties (fixed under OC-7's flag); one typed `completeness` on every object door and in the contract
 
 ### Every change says what made it — Arc TC (§3.59; drafted and adopted 2026-10-24, §6 item 52; second of three)
 - [ ] TC-1 · the agent's `config_rev` on every turn and receipt (`agents.revision_on_answers`)

@@ -11814,7 +11814,7 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
-### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-5 BUILT 2026-10-24** on the session branch, the rest not started)
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-5 BUILT 2026-10-24 and ED-6 on 2026-10-25** on the session branch — the arc is built)
 
 **The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
 not yet hold is that shape's own rules, at every door:
@@ -11841,7 +11841,7 @@ not yet hold is that shape's own rules, at every door:
 | **ED-3** ✅ | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
 | **ED-4** ✅ | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
 | **ED-5** ✅ | **Cause and effect in one store**: the declared impacts are the one store; the model's proposed causes are neither asked for nor kept, and the file stops being read (✅ §6 item 52(d), re-scoped on its measured premise) | `ontology.impacts_only` · M | An alert summary names a cause the impacts store does not hold → stop |
-| **ED-6** | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
+| **ED-6** ✅ | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
 
 **The laws it keeps.** Withheld is said, never implied · one store per concept (two policy stores and two causal stores become
 one each) · programs propose and people approve · no new door, only the existing ones made to agree.
@@ -12063,6 +12063,35 @@ removed.
 - Deleting the old path and the two files, once the flag graduates.
 - Offering a reviewed decision's outcome as *evidence* on a declared impact — a person's door, close to TC-2 and the
   decision loop.
+
+**ED-6, built 2026-10-25** (same branch; flag `objects.completeness`, off, in the graduation queue). Measured first:
+- **A cut read said complete.** Every connection hands back at most `db.connection.MAX_ROWS` (500) rows. The object
+  query door said `truncated` only past 1,000 (`_MAX_ROWS`), so it was never true: a chart of objects per day over
+  four years (about 1,460 days) reached its reader as 500 complete-looking days. Every connector counts one past what
+  it returns, or all of them, so `row_count > len(rows)` is the honest test on each engine.
+- **The linked page showed masked properties.** `list_linked` read `SELECT *` with no mask, so with `ontology.security`
+  on, a sensitive property emptied on an object's own page was shown in full on the linked page of an object pointing
+  to it, and nothing said what a row policy withheld. Fixed under OC-7's flag, the security law's: the page empties
+  the column in every row, says why (`masked`), and says the row policy.
+- **"Refused over a cap"** exists: a cross-source query whose home read passes `MAX_HOME_ROWS` is refused with a
+  sentence.
+
+With the flag on, every object door's answer carries one `completeness` (`semantic/completeness.py`): `state` is
+complete · truncated · withheld · refused, with `shown`, `of` (when the door counted, as a listing's `total`), the
+entities a row policy narrowed (`withheld`), the properties emptied (`masked`), `said` and `took_ms`. The doors are
+the object query, the listing (and the builder door that wraps it), one object, the linked page, the titles door,
+and each of their organisation-ontology variants. Refusals say `refused` with their reason. The old `truncated`
+boolean is made true when the connection cut the read. The compiler records the entities it narrowed beside its
+caveats, outside `to_dict`. The contract describes the field, and its TypeScript declares `Completeness`. A
+dashboard piece says a cut read beside its caveats (`answerSays`).
+
+15 tests (two of them over an organisation's ontology), 22 mutants killed; 3 web tests.
+
+**Named, not done:**
+- The theLook receipt (the queue's entry).
+- The agent's own object tools (`agent/object_tools.py`) read the linked page directly and do not yet word its
+  completeness to the model.
+- Platform-owned types' doors carry the field without a test of their own.
 
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
 
