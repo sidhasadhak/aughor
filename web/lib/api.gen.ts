@@ -4150,7 +4150,7 @@ export interface paths {
         /**
          * Audiences
          * @description The groups the asker belongs to and the roles they hold: who they may publish a dashboard to
-         *     (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id.
+         *     (the canvas, B5). Declared before the dashboard-by-id read, which would take the word for an id.
          */
         get: operations["audiences_dashboards_audiences_get"];
         put?: never;
@@ -9146,6 +9146,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ledger/v1/principals/service/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Service Principal Me
+         * @description Arc ED, ED-2 — the service principal this request presents, and the grant it is held to: what the MCP server
+         *     asks before it lets a caller in as itself (`mcp.caller_principals`). A name and key that do not match an active
+         *     principal are refused here whatever the install's identity mode — elsewhere, without sign-in, they would read as
+         *     the install's own operator.
+         */
+        get: operations["service_principal_me_ledger_v1_principals_service_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ledger/v1/principals/service/{name}": {
         parameters: {
             query?: never;
@@ -10602,7 +10625,8 @@ export interface paths {
         put?: never;
         /**
          * Trigger Monitor
-         * @description Run a monitor immediately and return the alert (or null if no condition met).
+         * @description Check a monitor now and return the alert it would raise (or null if no condition met). Shown, not filed or
+         *     sent: the scheduled check owns the record and the send.
          */
         post: operations["trigger_monitor_monitors__monitor_id__trigger_post"];
         delete?: never;
@@ -17808,6 +17832,11 @@ export interface components {
             /** Freshness Table */
             freshness_table?: string | null;
             /**
+             * Grace Period Hours
+             * @default 4
+             */
+            grace_period_hours: number;
+            /**
              * History Days
              * @default 30
              */
@@ -18129,7 +18158,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query" | "mcp_call" | "synthesize";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query" | "mcp_call" | "synthesize" | "expectations";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**
@@ -20451,8 +20480,14 @@ export interface components {
         };
         /** ServicePrincipalIn */
         ServicePrincipalIn: {
+            /** Actions */
+            actions?: string[] | null;
+            /** Areas */
+            areas?: string[] | null;
             /** Connections */
             connections?: string[];
+            /** Entities */
+            entities?: string[] | null;
             /** Name */
             name: string;
             /**
@@ -21175,6 +21210,8 @@ export interface components {
             freshness_sla_hours?: number | null;
             /** Freshness Table */
             freshness_table?: string | null;
+            /** Grace Period Hours */
+            grace_period_hours?: number | null;
             /** History Days */
             history_days?: number | null;
             /** Metric Name */
@@ -38410,6 +38447,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    service_principal_me_ledger_v1_principals_service_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

@@ -10,8 +10,9 @@ loop; `/cron/tick` drives the same tick on serverless. The L4 equivalence receip
 anti-flap and no-double-fire held over 9/9 scenarios ×3.
 
 What remains here, deliberately:
-    trigger_now(id)  — fire a monitor immediately (the API test endpoint); bypasses
-                       the debounce so the operator always sees the raw verdict.
+    trigger_now(id)  — check a monitor immediately (the API test endpoint); bypasses
+                       the debounce so the operator always sees the raw verdict, and
+                       files nothing: the scheduled check owns the record and the send.
     evict_matcache_once() — hourly housekeeping; needs a clock, is not a monitor.
     start() / stop() — the APScheduler thread now carries ONLY the housekeeping job
                        (api.py starts it on always-on processes; /cron/tick calls
@@ -60,7 +61,7 @@ def trigger_now_read(monitor_id: str) -> tuple[Optional[MonitorAlert], str]:
     below 900,000)" — so "no condition met" is never said without the value it was judged on (the Olist study, Gap 36)."""
     said = ""
     try:
-        from aughor.monitors.store import get_monitor, append_alert
+        from aughor.monitors.store import get_monitor
         from aughor.monitors.runner import check_monitor, failure_alert
         from aughor.db.connection import open_connection_for
         from aughor.db.registry import get_connection_org
@@ -91,10 +92,9 @@ def trigger_now_read(monitor_id: str) -> tuple[Optional[MonitorAlert], str]:
                 return failure_alert(monitor, run.failed), ""
             from aughor.monitors.runner import reading_words
             said = reading_words(monitor, run)
-            alert = run.alert
-            if alert is not None:
-                append_alert(alert)
-            return alert, said
+            # Shown, not filed, as a failure is and a drill is. Filing it sent a real alert past the debounce and made
+            # it the "last alert" every later any-change, trend and debounce check compares against.
+            return run.alert, said
     except Exception as exc:
         logger.error("trigger_now failed for monitor %s: %s", monitor_id, exc)
         return None, said

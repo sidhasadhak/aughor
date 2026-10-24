@@ -22,6 +22,10 @@ describe("destinationText", () => {
     expect(destinationText({ kind: "notify", target: "t1", label: "Ops webhook", type: "webhook" }))
       .toBe("Ops webhook (webhook)");
   });
+  it("says a monitor's in-app alerts and a channel that names no trigger (ROADMAP §3.26)", () => {
+    expect(destinationText({ kind: "in_app", target: "" })).toBe("in-app");
+    expect(destinationText({ kind: "notify", target: "slack", missing: true })).toBe('nowhere: no trigger "slack"');
+  });
 });
 
 describe("cost", () => {

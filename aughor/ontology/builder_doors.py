@@ -114,11 +114,17 @@ def action_schema(action: KineticAction, release: str = "", graph: Optional[Onto
 
 def ontology_contract(graph: OntologyGraph, release: str = "") -> dict:
     """The whole contract a scope serves: every entity's and every declared action's schema, stamped with the
-    release. Entities an organisation marked as parts are included (a listing may name them)."""
-    return {"release": release or "", "connection_id": graph.connection_id, "schema_name": graph.schema_name,
-            "entities": {e.id: entity_schema(graph, e, release) for e in sorted(graph.entities.values(), key=lambda e: e.id)},
-            "actions": {a.id: action_schema(a, release, graph)
-                        for a in sorted(graph.declared_actions(), key=lambda a: a.id)}}
+    release. Entities an organisation marked as parts are included (a listing may name them). Arc ED-6 — with
+    ``objects.completeness`` on, it also describes the ``completeness`` every object door's answer carries."""
+    out = {"release": release or "", "connection_id": graph.connection_id, "schema_name": graph.schema_name,
+           "entities": {e.id: entity_schema(graph, e, release) for e in sorted(graph.entities.values(), key=lambda e: e.id)},
+           "actions": {a.id: action_schema(a, release, graph)
+                       for a in sorted(graph.declared_actions(), key=lambda a: a.id)}}
+    from aughor.semantic import completeness
+    if completeness.enabled():
+        out["completeness"] = {"$schema": DIALECT, "$id": f"aughor:{release or 'unreleased'}:completeness",
+                               **completeness.SCHEMA}
+    return out
 
 
 # ── TypeScript ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -179,6 +185,16 @@ def typescript(contract: dict) -> str:
             lines.append(f"  {_ts_key(prop)}{'' if prop in required else '?'}: {_ts_type(ps)};\n")
         lines.append("}\n")
     lines.append(f"export type ActionId = {' | '.join(repr(a) for a in ids) or 'never'};\n")
+    said = contract.get("completeness")
+    if said:                                       # Arc ED-6 — what every object door's answer says of its read
+        lines.append(_ts_doc(said.get("description")))
+        lines.append("export interface Completeness {\n")
+        for prop, ps in said["properties"].items():
+            kind = " | ".join(repr(v) for v in ps["enum"]) if "enum" in ps else (
+                "string[]" if ps.get("type") == "array" else _ts_type(ps))
+            lines.append(_ts_doc(ps.get("description"), "  "))
+            lines.append(f"  {_ts_key(prop)}: {kind};\n")
+        lines.append("}\n")
     return "".join(lines)
 
 

@@ -1,6 +1,6 @@
 """A first dashboard, written by code from cards a person already has (Arc CT, CT-4; CT-7).
 
-**No model.** A person with cards should not need one to get a cockpit: this
+**No model.** A person with cards should not need one to get a dashboard: this
 groups the cards by their kind into sections, in a fixed order, and the result is kept like
 any other spec — through the validator, as a version, with the person's name on it.
 CT-5 is where a model arranges; this is what a person starts from without one.

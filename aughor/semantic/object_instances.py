@@ -80,7 +80,7 @@ class ObjectInstance:
                 "timeseries": list(self.timeseries), **({"platform": True} if self.platform else {})}
 
 
-def _key_of(entity: OntologyEntity) -> str:
+def key_of(entity: OntologyEntity) -> str:
     backing = entity.backing
     key = (backing.primary_key if backing is not None else "") or entity.identity_key
     if not key:
@@ -100,7 +100,9 @@ def _value(row: dict, column: str) -> Any:
 
 
 def _read(db: Any, sql: str, what: str):
-    result = db.execute("object_instance", sql, sql_dialect="duckdb")
+    from aughor.ontology.security_sql import object_door
+    with object_door():                      # Arc ED, ED-1 — the page reads through backing_from and masks what it shows
+        result = db.execute("object_instance", sql, sql_dialect="duckdb")
     if getattr(result, "error", None):
         raise ObjectQueryRefused(f"{what} could not be read: {result.error}"[:300])
     return result
@@ -125,7 +127,7 @@ def title_column(entity: OntologyEntity) -> Optional[str]:
 
 
 def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str], bool]:
-    key = _key_of(entity)
+    key = key_of(entity)
     prop = _key_property(entity, key)
     sql = (f"SELECT * FROM {backing_from(entity, 't0')} "
            f"WHERE t0.{quote_ident(prop.name)} = {typed_literal(str(pk), prop, key)} LIMIT 2")
@@ -241,7 +243,7 @@ def _link_view(on: Callable[..., Any], link: ObjectLink, row: dict) -> dict:
     literal = typed_literal(str(value), remote, link.remote_col)
     source = backing_from(link.target, "l")
     if link.to_one:
-        target_key = _key_of(link.target)
+        target_key = key_of(link.target)
         if link.remote_col.lower() == target_key.lower():
             return {**view, "usable": True, "pk": str(value)}
         found = _read(on(link.target), f"SELECT l.{quote_ident(target_key)} FROM {source} "
@@ -277,7 +279,9 @@ def _formula_properties(graph: OntologyGraph, on: Callable[..., Any], entity: On
         if compiled.cross_source is not None:
             caveats.append(f"{name} is not shown: it reads another connection")
             continue
-        result = db.execute("object_instance", compiled.sql)
+        from aughor.ontology.security_sql import object_door
+        with object_door():                  # Arc ED, ED-1 — compiled by the object door, which applied OC-7 itself
+            result = db.execute("object_instance", compiled.sql)
         if getattr(result, "error", None):
             caveats.append(f"{name} could not be read: {str(result.error)[:200]}")
             continue
@@ -309,7 +313,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
     except ObjectNotFound:
         _say_withheld(on(entity), entity, pk)
         raise
-    key = _key_of(entity)
+    key = key_of(entity)
     caveats: list[str] = []
     if repeated:
         note = (entity.backing.verification_note if entity.backing is not None else "") or "unmeasured"
@@ -400,7 +404,7 @@ def titles(graph: OntologyGraph, db: Any, object_type: str, keys: list[str], *,
     another connection costs a second read, of which of the keys an object holds."""
     entity = find_object_type(graph, object_type)
     on = _reader(graph, db, source_db)
-    key = _key_of(entity)
+    key = key_of(entity)
     column = title_column(entity)
     wanted, seen = [], set()
     for raw in keys:
@@ -479,7 +483,7 @@ def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: 
     offset = max(0, int(offset))
     row, _, _ = _fetch_row(on(entity), entity, pk)
     target = chosen.target
-    target_key = _key_of(target)
+    target_key = key_of(target)
     base = {"link": chosen.name, "object_type": target.api_name, "type_id": target.id,
             "type_name": target.display_name or target.id, "key": target_key,
             "title_column": title_column(target), "cardinality": chosen.label,
@@ -494,7 +498,29 @@ def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: 
            f"ORDER BY l.{quote_ident(target_key)} LIMIT {limit + 1} OFFSET {offset}")
     result = _read(on(target), sql, chosen.describe())
     rows = list(result.rows or [])
-    return {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
+    page = {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
+    _mask_page(target, page)
+    return page
+
+
+def _mask_page(entity: OntologyEntity, page: dict) -> None:
+    """Arc OC-7, closed at the linked page by ED-6: a sensitive property the reader may not read is emptied in every
+    row, as the object's own page empties it (`_mask`), with why — ``masked`` maps each column to it — and what a row
+    policy withholds of the linked objects is said. Nothing is added when no policy restricts the reader."""
+    from aughor.ontology.security import masked, rows_said
+    columns = list(page.get("columns") or [])
+    hidden = {c: why for c in columns if (why := masked(entity, c))}
+    caveats: list[str] = []
+    if hidden:
+        at = [i for i, c in enumerate(columns) if c in hidden]
+        page["rows"] = [[None if i in at else v for i, v in enumerate(row)] for row in page["rows"]]
+        page["masked"] = hidden
+        caveats.extend(dict.fromkeys(hidden.values()))
+    said = rows_said(entity)
+    if said:
+        caveats.append(said)
+    if caveats:
+        page["caveats"] = caveats
 
 
 def typed_value(value: Any, data_type: str) -> Any:

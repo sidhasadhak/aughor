@@ -84,7 +84,19 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Neither calls a model; each entry names its receipt and the falsifier.
     # …and on 2026-10-10 history, release, cockpit_pieces, outbox and builder_doors graduated on their receipts
     # (FLAG_DEFAULT, each a kill switch): security waits for sign-in, the census for seven daily readings.
+    # Arc ED, ED-1 (ROADMAP §3.58), 2026-10-24: `ontology.security_sql` — OC-7's declarations at a connection's own
+    # door. No model call; it needs `ontology.security`, so it waits for sign-in with it, and its entry names the
+    # receipt (one count through either door) and the falsifier.
+    # Arc ED, ED-2, the same day: `mcp.caller_principals` (an outside program connects to the MCP server as its own
+    # service principal) and `security.principal_scopes` (that principal's grant narrows the agent policy). Neither
+    # calls a model; each entry names its receipt and the falsifier.
+    # …and `quality.expectations` (ED-3): an automation step measures a table's expectations into the quality plane.
+    # …and `dashboard.app_versions` (ED-4): an App's readers read the version last published, a later keep a draft.
+    # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
+    # …and `objects.completeness` (ED-6): every object read says how complete it is.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
-                                     "ontology.security"}
+                                     "ontology.security", "ontology.security_sql", "mcp.caller_principals",
+                                     "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
+                                     "ontology.impacts_only", "objects.completeness"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

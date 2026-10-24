@@ -187,7 +187,7 @@ def list_dashboards(request: Request, connection_id: str) -> dict:
 @router.get("/dashboards/audiences")
 def audiences(request: Request, connection_id: str) -> dict:
     """The groups the asker belongs to and the roles they hold: who they may publish a dashboard to
-    (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id."""
+    (the canvas, B5). Declared before the dashboard-by-id read, which would take the word for an id."""
     _on()
     from aughor.dashboards import sharing
     from aughor.dashboards.home import person_of

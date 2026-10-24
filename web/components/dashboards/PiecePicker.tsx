@@ -120,7 +120,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
       const list = c.object_types.map(t => ({ value: t.object_type, label: t.display_name || words(t.object_type) }));
       setEntities(list);
       setEntity(e => e || list[0]?.value || "");
-    }).catch(() => { /* the entity the cockpit reads stays offered */ });
+    }).catch(() => { /* the entity the dashboard reads stays offered */ });
     getDeclaredActions(connectionId, schema).then(a => { if (alive) setActions(Object.values(a)); }).catch(() => { if (alive) setActions([]); });
     getProcesses(connectionId, schema).then(p => { if (alive) setProcesses((p?.processes ?? []).map(x => ({ id: x.id, entity: x.entity }))); })
       .catch(() => { if (alive) setProcesses([]); });

@@ -56,7 +56,7 @@ def hold_lines(brief, conn_id: str) -> tuple:
     in the briefing. Returns ``(brief without them, the reasons)``.
 
     Judged by what each section's lines claim: monitor alerts are dated records a person
-    declared; findings and recommendations answer to trust, definition and claim type; the
+    declared; findings, recommendations and declared impacts answer to trust, definition and claim type; the
     causal graph's relationships cannot depart at all; a review count is a count. The
     briefing ends by naming how many lines it did not send."""
     from aughor.govern.departure import line_holds
@@ -72,7 +72,8 @@ def hold_lines(brief, conn_id: str) -> tuple:
                 cut += 1
                 reasons.append(f"“{line[:80]}”: {CAUSAL_HOLD}")
             continue
-        if kind in ("monitor_alerts", "findings", "recommendations"):
+        # Arc ED-5 — a declared impact's line is its counts, worded by its mechanism: judged as a finding is
+        if kind in ("monitor_alerts", "findings", "recommendations", "impacts"):
             kept = []
             for line in section.items:
                 why = line_holds(line, conn_id=conn_id, declared=kind == "monitor_alerts")

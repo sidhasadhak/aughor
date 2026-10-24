@@ -2950,6 +2950,10 @@ export interface DashboardVersion {
   published_by?: string;
   /** Arc OC-4 — the ontology release a version holding pieces was composed against. */
   ontology_release?: string;
+  /** Arc ED-4 (flag `dashboard.app_versions`) — where this version stands: a keep is a draft until it is published. */
+  state?: "draft" | "published" | "archived";
+  /** Arc ED-4 — on the newest version only: the version the App's readers read, null while it reaches nobody. */
+  published_version?: number | null;
 }
 
 /** Arc OC-4 — for a dashboard holding pieces bound to the ontology: the release it was composed against, the one in
@@ -5482,7 +5486,9 @@ export type EffectKind =
   // VA-9d — a read-only tool on an allowlisted foreign MCP server.
   | "mcp_call"
   // DS-18 — write up what the step before produced, under the context authored on it.
-  | "synthesize";
+  | "synthesize"
+  // Arc ED, ED-3 — measure a table's expectations and record each verdict as its health.
+  | "expectations";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -5517,6 +5523,8 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   // honest default ("summarise this"), and demanding a sentence before the node can be
   // saved would make the common case the annoying one.
   synthesize: ["data"],
+  // Arc ED, ED-3 — what the table must meet: a list the server validates expectation by expectation.
+  expectations: ["expectations"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
@@ -6472,6 +6480,8 @@ export interface HubDestination {
   channel?: string;
   label?: string;
   type?: string;
+  /** A monitor's channel that names no trigger: nothing is sent. */
+  missing?: boolean;
 }
 
 export interface HubGrant {
@@ -6508,6 +6518,8 @@ export interface HubProbation {
 
 export interface HubMapRow {
   id: string;
+  /** A monitor runs through the engine as a virtual automation; it is edited under Monitors. */
+  kind: "automation" | "monitor";
   conn_id: string;
   name: string;
   description: string;
@@ -6527,7 +6539,7 @@ export interface HubMapResponse {
   rows: HubMapRow[];
   window_days: number;
   generated_at: string;
-  totals: { automations: number; live: number; probation: number };
+  totals: { automations: number; monitors: number; live: number; probation: number };
 }
 
 /** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel

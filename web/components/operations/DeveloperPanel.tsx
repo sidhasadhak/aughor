@@ -19,7 +19,8 @@ import { countNoun, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { keyToWords } from "@/lib/names";
 import {
-  checkPack, getContract, getEventCatalogue, getMethods, getServicePrincipals, mintServicePrincipal,
+  checkPack, getContract, getEventCatalogue, getMethods, getServicePrincipals, grantWords, mintServicePrincipal,
+  PRINCIPAL_AREAS,
   registerMethod, revokeServicePrincipal, uploadPack, withdrawMethod,
   type AgentContract, type ContractDuty, type EventKind, type PackVerdict, type RegisteredMethod, type ServicePrincipal,
 } from "@/lib/record";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Callout } from "@/components/ui/callout";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface PackListing {
   id: string; name: string; status: string; layer: string; source: string; description: string;
@@ -397,9 +399,13 @@ function ContractRest({ contract }: { contract: AgentContract }) {
   );
 }
 
-function Principals({ principals, onChanged }: { principals: ServicePrincipal[]; onChanged: () => void }) {
+export function Principals({ principals, onChanged }: { principals: ServicePrincipal[]; onChanged: () => void }) {
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
+  // Arc ED, ED-2 — the grant a person names at minting; each left empty does not narrow the agent policy there.
+  const [areas, setAreas] = useState<string[]>([]);
+  const [entities, setEntities] = useState("");
+  const [actions, setActions] = useState("");
   const [minted, setMinted] = useState<{ name: string; key: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -407,10 +413,19 @@ function Principals({ principals, onChanged }: { principals: ServicePrincipal[];
     setBusy(true);
     setError("");
     try {
-      const out = await mintServicePrincipal({ name: name.trim(), note: note.trim() });
+      const list = (text: string) => text.split(",").map(s => s.trim()).filter(Boolean);
+      const out = await mintServicePrincipal({
+        name: name.trim(), note: note.trim(),
+        ...(areas.length ? { areas } : {}),
+        ...(list(entities).length ? { entities: list(entities) } : {}),
+        ...(list(actions).length ? { actions: list(actions) } : {}),
+      });
       setMinted({ name: name.trim(), key: String(out.key ?? "") });
       setName("");
       setNote("");
+      setAreas([]);
+      setEntities("");
+      setActions("");
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -430,6 +445,9 @@ function Principals({ principals, onChanged }: { principals: ServicePrincipal[];
       ) : withUniqueKeys(principals, p => p.name).map(([key, p]) => (
         <div className="aug-item" key={key}>
           <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{p.name}{p.note ? ` — ${String(p.note)}` : ""}</div>
+          <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+            {grantWords(p) ? `Held to its grant: ${grantWords(p)}` : "Held to the agent policy alone"}
+          </div>
           <div className="aug-item-foot aug-fs-sm">
             {p.created_at && <span>minted {day(String(p.created_at))}</span>}
             {p.created_by && <span>by {String(p.created_by)}</span>}
@@ -452,6 +470,24 @@ function Principals({ principals, onChanged }: { principals: ServicePrincipal[];
         <Input value={note} onChange={e => setNote(e.target.value)} placeholder="what it is for" aria-label="What it is for" style={{ flex: "1 1 220px", maxWidth: 360 }} />
         <Button size="xs" disabled={busy || !name.trim()} onClick={() => void mint()}>Mint a principal</Button>
         {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
+      </div>
+      <div data-testid="principal-grant" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+          What it may do — leave everything empty to hold it to the agent policy alone
+        </span>
+        {PRINCIPAL_AREAS.map(a => (
+          <label key={a.area} className="aug-fs-sm" style={{ display: "flex", gap: 6, alignItems: "center", color: "var(--t2)" }}>
+            <Checkbox checked={areas.includes(a.area)} aria-label={a.area}
+              onChange={e => setAreas(s => e.target.checked ? [...s, a.area] : s.filter(x => x !== a.area))} />
+            {a.words}
+          </label>
+        ))}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Input value={entities} onChange={e => setEntities(e.target.value)} placeholder="only these entities: Order, Customer"
+            aria-label="Entities it may read" style={{ flex: "1 1 220px", maxWidth: 320 }} />
+          <Input value={actions} onChange={e => setActions(e.target.value)} placeholder="only these actions: flag_order"
+            aria-label="Actions it may propose" style={{ flex: "1 1 220px", maxWidth: 320 }} />
+        </div>
       </div>
     </>
   );

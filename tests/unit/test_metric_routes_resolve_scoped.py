@@ -156,10 +156,11 @@ def test_a_monitor_evaluates_its_own_connections_formula():
     from aughor.monitors.runner import _resolve_sql
 
     beta = Monitor(conn_id=BETA, name="Beta revenue watch", metric_name="revenue")
-    assert _resolve_sql(beta) == "SUM(b)", "the monitor resolved another connection's formula"
+    # The governed value query, not the bare expression (ROADMAP §3.26: a bare aggregate is no statement).
+    assert _resolve_sql(beta) == "SELECT (SUM(b)) AS _v FROM t", "the monitor resolved another connection's formula"
 
     alpha = Monitor(conn_id=ALPHA, name="Alpha revenue watch", metric_name="revenue")
-    assert _resolve_sql(alpha) == "SUM(a)"
+    assert _resolve_sql(alpha) == "SELECT (SUM(a)) AS _v FROM t"
 
 
 # ── The control: do not over-fix ──────────────────────────────────────────────

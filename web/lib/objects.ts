@@ -364,6 +364,8 @@ export interface EditHistoryRow {
   actor: string;
   origin: string;
   at: string;
+  /** Arc ED, ED-1 — why the property's values are not shown to this reader (they arrive empty). */
+  masked?: string;
 }
 
 /** Arc OC-6 — every version of the edits on one object (and one property), newest first. */
@@ -481,10 +483,31 @@ export interface ObjectQueryRequest {
   limit?: number;
 }
 
+/** Arc ED-6 (flag `objects.completeness`) — how complete an object read is, on every object door's answer: every row
+ *  asked for · cut at the connection's cap with more to read · narrowed by a row policy or a masked property ·
+ *  refused. `said` puts it in words, empty when complete. A server with it off sends none. */
+export interface ObjectCompleteness {
+  state: "complete" | "truncated" | "withheld" | "refused";
+  shown: number;
+  of: number | null;
+  withheld: string[];
+  masked: string[];
+  said: string;
+  took_ms: number;
+}
+
 /** What `POST /objects/query` answers: the rows, or a refusal with why. */
 export type ObjectQueryResult =
-  | { path: "compiled"; columns: string[]; rows: unknown[][]; caveats: string[]; error: string | null }
+  | { path: "compiled"; columns: string[]; rows: unknown[][]; caveats: string[]; error: string | null;
+      completeness?: ObjectCompleteness }
   | ObjectRefusal;
+
+/** The lines a piece says of a query's answer: its caveats, and — when the read was cut at the connection's cap —
+ *  that it was (a row policy's words are already among the caveats). */
+export function answerSays(out: { caveats?: string[]; completeness?: ObjectCompleteness }): string[] {
+  const cut = out.completeness?.state === "truncated" && out.completeness.said ? [out.completeness.said] : [];
+  return [...(out.caveats ?? []), ...cut];
+}
 
 export async function queryObjects(
   body: ObjectQueryRequest, connectionId?: string, schemaName?: string, asGroup?: string,

@@ -48,7 +48,7 @@ import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
 import {
-  cachedObjectCatalog, getDeclaredActions, getObjectPage, listObjects, queryObjects, runOrPropose,
+  answerSays, cachedObjectCatalog, getDeclaredActions, getObjectPage, listObjects, queryObjects, runOrPropose,
   type ActionCheck, type DeclaredAction, type ObjectListingPage, type ObjectPage, type ObjectQueryRequest,
 } from "@/lib/objects";
 import { getProcesses, type ProcessDetail, type ProcessesAndRules } from "@/lib/objectTypes";
@@ -164,7 +164,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     setPicked({});
     setTicked({});
     if (!dashboardId) return;
-    try { localStorage.setItem(filtersKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the cockpit is open */ }
+    try { localStorage.setItem(filtersKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the dashboard is open */ }
   }, [dashboardId]);
   const toggle = useCallback((entity: string, path: string, value: string) => keep(toggled(filters, entity, path, value)),
     [filters, keep]);
@@ -253,7 +253,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
       void _gone;
       const next = v === undefined ? rest : { ...prev, [name]: v };
       if (dashboardId) {
-        try { localStorage.setItem(valuesKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the cockpit is open */ }
+        try { localStorage.setItem(valuesKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the dashboard is open */ }
       }
       return next;
     });
@@ -970,7 +970,7 @@ function useObjectQuery(body: ObjectQueryRequest | null): Read {
     queryObjects(body, connectionId, schema, ...(asGroup ? [asGroup] : []))
       .then(out => {
         if (!alive) return;
-        if (out.path !== "refused") say(out.caveats);
+        if (out.path !== "refused") say(answerSays(out));   // Arc ED-6 — a read cut at the cap says so
         if (out.path === "refused") setRead({ refused: out.refused });
         else if (out.error) setRead({ refused: out.error });
         else setRead({ rows: out.rows, caveats: out.caveats ?? [] });

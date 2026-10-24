@@ -686,7 +686,32 @@ export interface EventKind {
 }
 export interface ServicePrincipal {
   name: string; duties?: string[]; clearance?: string; created_at?: string; created_by?: string;
-  revoked_at?: string; [k: string]: unknown;
+  revoked_at?: string;
+  /** Arc ED, ED-2 — its grant: what narrows the agent policy for it. Absent or empty: not narrowed there. */
+  areas?: string[]; entities?: string[]; actions?: string[]; connections?: string[];
+  [k: string]: unknown;
+}
+
+/** Arc ED, ED-2 — the areas a principal's grant may name, as the API names them (`security/service_principals.AREAS`). */
+export const PRINCIPAL_AREAS: { area: string; words: string }[] = [
+  { area: "catalog:read", words: "Read connections, metrics, findings and past runs" },
+  { area: "objects:read", words: "Read objects and the ontology's contract" },
+  { area: "actions:propose", words: "Propose a declared action for a person to approve" },
+  { area: "analysis:run", words: "Ask questions and start analyses (spends model calls)" },
+  { area: "automations:run", words: "Run an automation" },
+  { area: "ledger:read", words: "Read the ledger's claims" },
+  { area: "ledger:write", words: "Post a claim to the ledger" },
+];
+
+/** What a principal's grant holds it to, in words — "" when it names nothing (the agent policy alone holds it). */
+export function grantWords(p: Pick<ServicePrincipal, "areas" | "entities" | "actions" | "connections">): string {
+  const parts = [
+    p.areas?.length ? `areas ${p.areas.join(", ")}` : "",
+    p.entities?.length ? `entities ${p.entities.join(", ")}` : "",
+    p.actions?.length ? `actions ${p.actions.join(", ")}` : "",
+    p.connections?.length ? `connections ${p.connections.join(", ")}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
 export interface PrincipalRecord { principal: string; [k: string]: unknown }
 

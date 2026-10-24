@@ -129,6 +129,10 @@ ACTIONS: tuple[PaletteEntry, ...] = (
     PaletteEntry("trusted_query", "action", "Trusted query",
                  "Run a vetted query and publish its rows — the one output in this "
                  "plane a step can run once per item of", "table", 90),
+    # Arc ED, ED-3 — values a person types (names and values, never SQL), so always ready.
+    PaletteEntry("expectations", "action", "Measure expectations",
+                 "Measure what a table's data must meet — never empty, never repeated, fresh — "
+                 "and record each verdict as the table's health", "check", 85),
 )
 
 ENTRIES: tuple[PaletteEntry, ...] = TRIGGERS + ACTIONS

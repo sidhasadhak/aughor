@@ -58,6 +58,12 @@ def _conn_prefix(connection_id: str) -> str:
     return f"{connection_id}:"
 
 
+def built_schemas(connection_id: str) -> list[str]:
+    """The schemas of this connection an ontology has been built for — a read of the cache's keys, never a build."""
+    prefix = _conn_prefix(connection_id)
+    return sorted({k[len(prefix):].split(":", 1)[0] for k in _load() if k.startswith(prefix)})
+
+
 def _graph_from(entry: dict, connection_id: str) -> Optional[OntologyGraph]:
     """A cached entry's graph, or None when it does not validate — counted and logged, never silent (PENDING item 21):
     an unreadable saved graph used to read as "no ontology" with no trace, and every door then told a person to build

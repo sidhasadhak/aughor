@@ -124,6 +124,33 @@ FLAG_ENV = {
     "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
     "ontology.builder_doors": "AUGHOR_ONTOLOGY_BUILDER_DOORS",
     "ontology.security": "AUGHOR_ONTOLOGY_SECURITY",
+    # Arc ED, ED-1 (ROADMAP §3.58). ON (with ontology.security): a connection's door applies the released ontology's row
+    # policies and sensitive properties to every statement a request runs — narrowed to the reader's objects, a masked
+    # property refused. OFF: only the object doors apply them, and every statement reads as before.
+    "ontology.security_sql": "AUGHOR_ONTOLOGY_SECURITY_SQL",
+    # Arc ED, ED-2 (ROADMAP §3.58). ON: GET /ledger/v1/principals/service/me answers for a presented service principal, so the MCP
+    # server lets an HTTP caller in as itself — each call made as it, its tools listed by its own grant. OFF: the route
+    # says it is off and every HTTP client shares the server's token, as before.
+    "mcp.caller_principals": "AUGHOR_MCP_CALLER_PRINCIPALS",
+    # Arc ED, ED-2. ON: a service principal's grant — areas, entities, declared actions, connections — narrows what the
+    # agent policy allows it on every request, and its contract is cut to it. OFF: the policy alone holds it.
+    "security.principal_scopes": "AUGHOR_SECURITY_PRINCIPAL_SCOPES",
+    # Arc ED, ED-3 (ROADMAP §3.58). ON: an automation's expectations step measures a table read-only and records each
+    # verdict in the quality plane, which answers, the MCP table-health tool and the Briefing already read. OFF: the step
+    # is skipped and says so; the plane reads "not checked" as before.
+    "quality.expectations": "AUGHOR_QUALITY_EXPECTATIONS",
+    # Arc ED, ED-4 (ROADMAP §3.58; the user, 2026-10-24: readers see the last published version). ON: a keep on a
+    # dashboard is a draft, and an App's readers read the version last published until its owner publishes again.
+    # OFF: readers read every version the moment it is kept, as before.
+    "dashboard.app_versions": "AUGHOR_DASHBOARD_APP_VERSIONS",
+    # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
+    # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
+    # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
+    "ontology.impacts_only": "AUGHOR_ONTOLOGY_IMPACTS_ONLY",
+    # Arc ED, ED-6 (ROADMAP §3.58). ON: every object door's answer says how complete its read is — complete, truncated
+    # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
+    # contract describes it. OFF: each door answers as before.
+    "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -716,6 +743,83 @@ FLAG_META = {
                        "may. It applies to dashboards, object pages and outside programs. Off: every reader "
                        "sees every object and property.",
     },
+    "mcp.caller_principals": {
+        "label": "Outside programs connect as themselves",
+        "summary": "A program can connect to the MCP server with its own service principal. Each call then runs "
+                   "as that program, not as the server.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "needs", "text": "Needs a minted principal"}],
+        "description": "Over HTTP, a program presents its principal's name and key instead of the server's shared "
+                       "token. The server checks them with the platform, lists only the tools that program may "
+                       "use, and makes every call as it. Off: every HTTP client shares the server's token and "
+                       "acts as the server.",
+    },
+    "quality.expectations": {
+        "label": "Measure what tables must meet",
+        "summary": "An automation can measure a table's expectations and record each result as its health. "
+                   "Answers about the table then say when one is not met.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries the warehouse when run"},
+                  {"kind": "schedule", "text": "Runs on its automation's schedule"}],
+        "description": "An expectation says what a table's data must meet: a column never empty, a key never "
+                       "repeated, the newest row recent enough. Each is counted read-only, never copying rows. "
+                       "One that cannot be measured is said, not counted as failing. Off: the step is skipped, "
+                       "and table health reads not checked.",
+    },
+    "objects.completeness": {
+        "label": "Every object read says how complete it is",
+        "summary": "Each object read says whether it is complete, cut short, narrowed for you, or refused. It also "
+                   "says how long it took.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Says what is withheld from you"}],
+        "description": "A read can stop at the connection's limit of rows, and then it says there are more. A row "
+                       "policy or a masked property is named. Outside programs read the same field, described in "
+                       "their contract. Off: a cut read can look complete.",
+    },
+    "ontology.impacts_only": {
+        "label": "Read what bears on what from impacts only",
+        "summary": "The impacts a person declared are the one record of what one promise does to another. "
+                   "Summaries word them as measured.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Nothing is deleted"}],
+        "description": "An alert summary names each impact that holds, in the words of how it was shown. It also "
+                       "says how many are declared and do not hold. An analysis no longer proposes causes of its own, and "
+                       "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
+                       "as before.",
+    },
+    "dashboard.app_versions": {
+        "label": "Readers see an App's published version",
+        "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
+                   "reading the version you last published.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Readers never see a draft"}],
+        "description": "Publishing makes the dashboard as it stands the App its readers read. Each later change is a "
+                       "draft, and the dashboard says which version they read. Unpublishing still reaches nobody at "
+                       "once. Off: readers read every change the moment it is kept.",
+    },
+    "security.principal_scopes": {
+        "label": "Limit what each outside program may do",
+        "summary": "A principal can be limited to some areas, entities and actions. It never gets more than the "
+                   "agent policy allows.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Refusals say why"}],
+        "description": "When minting a principal, a person names the areas it may work in, such as reading "
+                       "objects. They may also name the entities and actions it may use. A request outside them is "
+                       "refused with why, and its contract lists only what it may use. Off: every principal is "
+                       "held to the agent policy alone.",
+    },
+    "ontology.security_sql": {
+        "label": "Apply object security to every answer",
+        "summary": "Answers, deep analyses and the SQL editor read only the objects the reader may see. "
+                   "A masked property cannot be read there either.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "needs", "text": "Needs object security on"},
+                  {"kind": "private", "text": "Readers are told what is hidden"}],
+        "description": "The row policies and sensitive properties declared on an entity also apply "
+                       "where a question runs its own query. A query that would read a masked property is "
+                       "refused, with why. Scheduled checks still count every object. Off: only object "
+                       "pages, dashboards and outside programs apply them.",
+    },
     "dashboard.composed": {
         "label": "A dashboard in each Data Canvas",
         "summary": "Adds a Dashboards tab to the Data Canvas. Arrange its cards in tabs and sections, "
@@ -1102,6 +1206,34 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
+    "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
+                            "truncated, a group with a row policy reads withheld, and the contract describes the field. "
+                            "Falsifier: an object read cut at the cap that says complete stops it",
+    # Arc ED, ED-5 (ROADMAP §3.58), queued 2026-10-24. No model call; it trims one field from an analysis's answer.
+    "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
+                             "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "
+                             "alert summary names a cause the impacts store does not hold stops it",
+    # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
+                              "the group reads the published version until its owner publishes, then the new one. "
+                              "Falsifier: a reader reads a version its owner never published stops it",
+    # Arc ED, ED-3 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "quality.expectations": "receipt: on theLook, a scheduled step measures one table's expectations, the verdicts reach "
+                            "an answer's caveats and the table-health tool, and one it cannot measure is said, not "
+                            "counted. Falsifier: a table read as failing because a query could not run stops it",
+    # Arc ED, ED-2 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "mcp.caller_principals": "receipt: on the live install, two outside programs connect over HTTP as two principals with "
+                             "different grants; each lists its own tools and every call is audited under its own name. "
+                             "Falsifier: two principals with different grants see the same tool list — stop",
+    "security.principal_scopes": "receipt: a principal granted reading objects of one entity reads it, is refused another "
+                                 "with why, and its contract lists only that entity. Falsifier: a request outside the "
+                                 "grant that reaches its handler stops it",
+    # Arc ED, ED-1 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "ontology.security_sql": "receipt: on a scratch install over theLook, a group with a row policy gets the same count from "
+                             "a quick answer as from the object door, and a question that reads a masked property is "
+                             "refused, with why. Falsifier: one count that differs between the two doors stops it. It "
+                             "needs ontology.security, so live waits for sign-in as that does",
     # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
     "ontology.security": "receipt: on a scratch install, two people open the same dashboard and see different rows and a "
                          "masked property, each told why, and an agent acting for one reads no more than that person does. "

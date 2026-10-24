@@ -889,6 +889,12 @@ cause→effect pairs the evidence defends."""
 #: contract above and the post-generation checks; a baseline model keeps the guidance.
 #: (PE-2's tiering rule: prose that a stronger model makes unnecessary is a RESTRICTION
 #: — scale it with the model; the CHECKS are verification and run for every tier.)
+#: Arc ED, ED-5 — the rule for ``causal_links``, carried only while that field is asked for: with the declared impacts
+#: the one store (``ontology.impacts_only``) the field is not asked for, and a rule for a field the call does not carry
+#: is a rule for nothing.
+CAUSAL_LINKS_RULE = " causal_links: only cause→effect pairs the evidence defends."
+
+
 BASELINE_GUARDRAILS = """\
 GROUNDING (critical): state a number ONLY if it appears in FULL EVIDENCE. This applies
 especially to SHARES ("X% of total"): never divide two numbers yourself to manufacture a
@@ -1128,19 +1134,33 @@ class ADASynthesisModel(BaseModel):
 #: in 86 (forced empty on every cross-sectional run), while three of the seven narrator rules
 #: and two checks governed it. Derived from the full model, like `IntakeAsk`, so the two cannot
 #: drift; `widen_synthesis` turns an answer back into the full model with an empty waterfall.
-def _build_synthesis_ask_model():
+def _build_synthesis_ask_model(name: str = "SynthesisAsk", drop: frozenset = frozenset({"attribution_waterfall"})):
     from pydantic import create_model
     keep = {n: (f.annotation, f) for n, f in ADASynthesisModel.model_fields.items()
-            if n != "attribution_waterfall"}
-    return create_model("SynthesisAsk", __doc__=ADASynthesisModel.__doc__, **keep)
+            if n not in drop}
+    return create_model(name, __doc__=ADASynthesisModel.__doc__, **keep)
 
 
 SynthesisAsk = _build_synthesis_ask_model()
+#: Arc ED, ED-5 — the same two models without ``causal_links``, asked for while the declared impacts are the one store.
+_WITHOUT_LINKS = {
+    True: _build_synthesis_ask_model("SynthesisAskWithoutLinks", frozenset({"causal_links"})),
+    False: _build_synthesis_ask_model("SynthesisAskWithoutLinksOrWaterfall",
+                                      frozenset({"attribution_waterfall", "causal_links"})),
+}
+
+
+def _links_asked() -> bool:
+    from aughor.lifecycle.causal import impacts_only
+    return not impacts_only()
 
 
 def synthesis_ask_model(waterfall: bool):
     """The response model for one narrator call: the full model when a waterfall is asked for,
-    else the same model without that field."""
+    else the same model without that field — and, with the declared impacts the one store (ED-5), without
+    ``causal_links`` either."""
+    if not _links_asked():
+        return _WITHOUT_LINKS[bool(waterfall)]
     return ADASynthesisModel if waterfall else SynthesisAsk
 
 
@@ -1148,7 +1168,7 @@ def widen_synthesis(asked) -> ADASynthesisModel:
     """The narrator's answer as a full `ADASynthesisModel`; a waterfall not asked for is empty."""
     if asked is None or isinstance(asked, ADASynthesisModel):
         return asked
-    return ADASynthesisModel(attribution_waterfall=[], **asked.model_dump())
+    return ADASynthesisModel(**{"attribution_waterfall": [], **asked.model_dump()})
 
 
 # R16 P2 — the argument-style writing contract.
@@ -1183,7 +1203,8 @@ def synthesis_system_prompt(waterfall: bool = True) -> str:
         "Every number must trace to the evidence log. No fabrication. "
         "Be definitive where evidence is strong; honest about uncertainty where it isn't."
     )
-    rules = SYNTHESIS_CORE_RULES + ("\n" + WATERFALL_RULE if waterfall else "")
+    core = SYNTHESIS_CORE_RULES if _links_asked() else SYNTHESIS_CORE_RULES.replace(CAUSAL_LINKS_RULE, "")
+    rules = core + ("\n" + WATERFALL_RULE if waterfall else "")
     parts = [base, ARGUMENT_STYLE_ADDENDUM, rules]
     # PE-2 tiering: the long-form guardrails ride along only for BASELINE-tier
     # narrators. Fail to the conservative register — an unresolvable binding means a

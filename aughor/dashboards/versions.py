@@ -24,6 +24,13 @@ writes nothing, by the same reasoning that keeps a Briefing from versioning on e
 
 A dashboard that lived in a Data Canvas before the home moved is read here by its old key, and
 retired when it moves (``canvas_*``); nothing new is kept under a canvas.
+
+**An App publishes one version** (Arc ED, ED-4, behind ``dashboard.app_versions``; the user, 2026-10-24: readers see
+the last published version). Each version then says where it stands on the platform's one publication axis
+(``kernel/lifecycle.py``): a keep is a *draft*, a publish *published*, an unpublish or a retire *archived*. Who a
+dashboard reaches is still its newest version's audience — an edit carries it, an unpublish clears it at once — but
+what its readers read is the version last published, until the owner publishes again. Off: every version reaches the
+audience the moment it is kept, as before, and nothing new is written.
 """
 from __future__ import annotations
 
@@ -34,7 +41,11 @@ from typing import Any, Iterable, Optional
 
 from aughor.dashboards import validate as _validate
 from aughor.dashboards.home import Home, prefix
+from aughor.kernel import lifecycle
 from aughor.kernel.errors import tolerate
+
+#: Arc ED, ED-4 — a keep is a draft; an App's readers read the version last published.
+APP_VERSIONS = "dashboard.app_versions"
 
 #: The artifact kind, for a person's dashboard and a canvas's alike.
 KIND = "cockpit"
@@ -62,6 +73,43 @@ class Kept:
     def as_dict(self) -> dict[str, Any]:
         return {"status": self.status, "kept": self.kept, "version": self.version,
                 "artifact_id": self.artifact_id, "sentences": list(self.sentences)}
+
+
+def app_versions() -> bool:
+    from aughor.kernel.flags import flag_enabled
+    return flag_enabled(APP_VERSIONS)
+
+
+def publication_of(payload: dict) -> lifecycle.PublicationState:
+    """Where a version stands on the publication axis. A version kept before an App had versions of its own records
+    no state; its audience read it the moment it was kept, so it projects as published when it reached anyone — what
+    they read then is what they keep reading when App versions are switched on."""
+    recorded = lifecycle.state_of(payload)
+    if recorded:
+        return recorded
+    if payload.get("retired"):
+        return "archived"
+    return "published" if payload.get("published_to") else "draft"
+
+
+def _stamped(payload: dict, state: lifecycle.PublicationState, by: str) -> dict:
+    """The payload with its publication state, when App versions are on; without one when they are off — a stamp
+    copied forward from a version kept while they were on would say a state the version does not have."""
+    out = {k: v for k, v in payload.items() if k != "_lifecycle"}
+    if app_versions():
+        from aughor.util.time import now_iso_z
+        out["_lifecycle"] = lifecycle.stamp(state, by=by.strip(),
+                                            published_at=now_iso_z() if state == "published" else "")
+    return out
+
+
+def nothing_to_publish(published_to: Any, state: str, targets: list) -> bool:
+    """Whether publishing to ``targets`` would change nothing a reader reads: the same audience as now and — with App
+    versions on — nothing kept since the version they read."""
+    same = list(targets) == list(published_to or [])
+    if not same or not targets or not app_versions():
+        return same
+    return state == "published"
 
 
 def canvas_key(canvas_id: str) -> str:
@@ -128,6 +176,8 @@ def _entry(row: dict, *, with_spec: bool) -> dict[str, Any]:
         "published_by": p.get("published_by") or "",
         # Arc OC-4 — the ontology release a version holding pieces was composed against.
         **({"ontology_release": p["ontology_release"]} if p.get("ontology_release") else {}),
+        # Arc ED-4 — draft, published or archived: whether this version is one an App's readers read.
+        **({"state": publication_of(p)} if app_versions() else {}),
     }
     if with_spec:
         out["spec"] = p.get("spec")
@@ -142,9 +192,28 @@ def _latest_row(key: str) -> Optional[dict]:
 def latest(home: Home) -> Optional[dict]:
     """The newest version, with its spec — or None when this person has no such dashboard.
     A retired dashboard is returned, with ``retired`` True and no spec: that it was retired,
-    when and by whom is something a reader is owed."""
+    when and by whom is something a reader is owed. With App versions on it also says which
+    version the App's readers read (``published_version``), None while it reaches nobody."""
     row = _latest_row(home.key)
-    return _entry(row, with_spec=True) if row else None
+    if not row:
+        return None
+    out = _entry(row, with_spec=True)
+    if app_versions():
+        reached = not out["retired"] and bool(out["published_to"])
+        read = published(home.key) if reached else None
+        out["published_version"] = read["version"] if read else None
+    return out
+
+
+def published(key: str) -> Optional[dict]:
+    """The version an App's readers read, by the dashboard's natural key (``Home.key``), with its spec: the newest one
+    published — or None when none is. Who it reaches is the newest version's audience, which the caller checks first
+    (:func:`latest`)."""
+    from aughor.kernel.ledger import Ledger
+    for row in Ledger.default().artifact_versions(key, limit=1000):
+        if _mine(row) and publication_of(row["payload"]) == "published":
+            return _entry(row, with_spec=True)
+    return None
 
 
 def _card_titles(specs) -> dict:
@@ -304,7 +373,7 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
          also_known: Iterable[str] = (), written_by_model: bool = True,
          came_from: Iterable[tuple[str, str, str]] = (), stamps_are_ours: bool = False,
          repin: bool = False) -> Kept:
-    """Keep ``spec`` as this person's cockpit: the next version, or nothing at all.
+    """Keep ``spec`` as this person's dashboard: the next version, or nothing at all.
 
     ``approved_by`` is the person who approved it; ``source`` is where it came from.
     ``also_known`` names cards the same approval has just created. ``written_by_model`` says
@@ -362,11 +431,13 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
         "written_by_model": bool(written_by_model),
         "cards": list(verdict.cards),
         "changes": changes(before.get("spec"), spec),
-        # An edit does not unpublish: who the dashboard reaches carries to the next version.
+        # An edit does not unpublish: who the dashboard reaches carries to the next version. With App versions on
+        # it is a draft, and they read the version last published until it is published.
         "published_to": list(before.get("published_to") or []) if not before.get("retired") else [],
         "published_by": (before.get("published_by") or "") if not before.get("retired") else "",
         **({"ontology_release": pin} if pin else {}),
     }
+    payload = _stamped(payload, "draft", approved_by)
     kept = _write(home.key, home.connection_id, payload, prior, "the spec changed", also=came_from)
     if kept.status == KEPT:
         # PENDING 54 — a question taken off stops being asked; one put back (or kept again after a retire) is asked again
@@ -389,7 +460,7 @@ def publish(home: Home, to: list[dict], *, approved_by: str) -> Kept:
     if before.get("retired") or not before.get("spec"):
         return Kept(REFUSED, sentences=("A retired dashboard is not published. Bring it back first.",))
     targets = [{"kind": str(t["kind"]), "id": str(t["id"]), "name": str(t.get("name") or t["id"])} for t in to]
-    if targets == list(before.get("published_to") or []):
+    if nothing_to_publish(before.get("published_to"), publication_of(before), targets):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
     names = ", ".join(t["name"] for t in targets)
     payload = {
@@ -401,6 +472,8 @@ def publish(home: Home, to: list[dict], *, approved_by: str) -> Kept:
         "published_to": targets,
         "published_by": approved_by.strip() if targets else "",
     }
+    # Arc ED-4 — publishing makes the dashboard as it stands what its readers read; unpublishing reaches nobody
+    payload = _stamped(payload, "published" if targets else "archived", approved_by)
     return _write(home.key, home.connection_id, payload, prior, "published" if targets else "unpublished")
 
 
@@ -420,6 +493,10 @@ def restore(home: Home, number: int, *, approved_by: str) -> Kept:
 
 
 def _retired_payload(before: dict, approved_by: str, note: str) -> dict:
+    return _stamped(_retired_fields(before, approved_by, note), "archived", approved_by)
+
+
+def _retired_fields(before: dict, approved_by: str, note: str) -> dict:
     return {
         "spec": None, "retired": True, "title": title_of(before.get("spec")),
         "approved_by": approved_by.strip(), "source": "retired", "note": note.strip(),

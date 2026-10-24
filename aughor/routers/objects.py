@@ -10,13 +10,14 @@ pages (`GET /objects/{type}/{pk}`) will live beside these.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
 from aughor.ontology.security import acting_agent_from_request
+from aughor.ontology.security_sql import object_door_from_request
 from aughor.routers.ontology import refuse_organisation_scope
 from aughor.security.authz import connection_owner_guard
 from aughor.semantic.object_query import ObjectListing, ObjectQuery
@@ -24,7 +25,8 @@ from aughor.semantic.object_query import ObjectListing, ObjectQuery
 #: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection;
 #: DATA-06 — every connection a door names belongs to the caller's org (identity on).
 router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard),
-                                                  Depends(acting_agent_from_request)])   # Arc OC-7 — an agent reads only what its person may
+                                                  Depends(acting_agent_from_request),    # Arc OC-7 — an agent reads only what its person may
+                                                  Depends(object_door_from_request)])    # Arc ED, ED-1 — its statements apply OC-7 themselves
 
 
 #: Arc AP-6 — the group a builder previews a dashboard as: one more party among the reader's, so it only narrows.
@@ -54,6 +56,35 @@ async def preview_from_request(as_group: Optional[str] = AS_GROUP) -> None:
 
 #: Rows a response carries; `row_count` still says how many the query returned.
 _MAX_ROWS = 1000
+
+
+def _complete(out: Any, clock: Any, **facts) -> Any:
+    """Arc ED-6 — the answer with how complete its read is (`semantic/completeness.py`), when ``objects.completeness``
+    is on; as it was when off. A refusal is said as ``refused``, with its reason."""
+    from aughor.semantic import completeness as C
+    if not C.enabled() or not isinstance(out, dict):
+        return out
+    if out.get("path") == "refused":
+        return {**out, "completeness": C.refused(str(out.get("refused") or ""), clock)}
+    return {**out, "completeness": C.of_read(took_ms=clock.ms(), **facts)}
+
+
+def _truthful(out: dict, result: Any) -> dict:
+    """With ``objects.completeness`` on, ``truncated`` says what the connection did: it stopped at its own cap (500)
+    long before the 1,000 this door compares with, so the old boolean was never true. Off: as before."""
+    from aughor.semantic import completeness as C
+    if C.enabled() and C.cut(result):
+        out["truncated"] = True
+    return out
+
+
+def _read_facts(graph: Any, compiled: Any, result: Any, shown: int) -> dict:
+    """What a query's read says of its completeness: cut at the connection's cap, a row policy's narrowing, or a read
+    that failed — refused over a cap among them."""
+    from aughor.semantic import completeness as C
+    error = str(getattr(result, "error", "") or "")
+    return {"shown": shown, "truncated": C.cut(result), "withheld": list(getattr(compiled, "withheld", []) or []),
+            "said": C.policy_words(graph, getattr(compiled, "withheld", []) or []), "refused": error}
 
 
 def _served_graph(connection_id: str, schema_name: Optional[str]):
@@ -152,8 +183,10 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
     compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
     an unknown type is `path: refused` with the types that exist. ON-8 — with ``domain``, an object of the
     organisation's ontology: its row, each binding and each linked type read on the connection it lives on."""
+    from aughor.semantic.completeness import Clock
+    clock = Clock()
     if domain is not None:
-        return _domain_object_page(object_type, pk, domain)
+        return _domain_object_page(object_type, pk, domain, clock)
     from aughor.semantic.object_context import object_context
     from aughor.semantic.object_instances import ObjectNotFound, ObjectWithheld, get_object
     from aughor.semantic.object_query import ObjectQueryRefused, keyed_metrics_for
@@ -168,28 +201,38 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
         except ObjectWithheld as exc:   # Arc OC-7 — withheld, said, never missing
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available,
-                    "connection_id": connection_id, "schema_name": graph.schema_name}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         related = object_context(graph, db, connection_id, graph.schema_name, instance,
                                  dialect=getattr(db, "dialect", "") or "duckdb",
                                  keyed=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
-        return {"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
-                **instance.to_dict(), "related": related}
+        return _complete({"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
+                          **instance.to_dict(), "related": related}, clock, **_object_facts(instance))
     finally:
         db.close()
 
 
-def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
+def _object_facts(instance: Any) -> dict:
+    """One object's completeness: each sensitive property emptied for this reader, said in its own words."""
+    masked = [p for p in instance.properties if p.get("withheld")]
+    return {"shown": 1, "masked": [str(p.get("name") or "") for p in masked],
+            "said": [str(p["withheld"]) for p in masked]}
+
+
+def _domain_object_page(object_type: str, pk: str, domain: str, clock: Any = None) -> dict:
     from aughor.ontology.sources import entity_source
     from aughor.semantic.object_context import object_context
     from aughor.semantic.object_instances import ObjectNotFound, ObjectWithheld, get_object
     from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
 
+    from aughor.semantic.completeness import Clock
+    clock = clock or Clock()
     scope, graph = _domain_served(domain)
     try:
         entity = find_object_type(graph, object_type)
     except ObjectQueryRefused as exc:
-        return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+        return _complete({"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key},
+                         clock)
     home = entity_source(graph, entity)
     with _domain_sources(scope) as source_db:
         try:
@@ -199,8 +242,8 @@ def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
         except ObjectWithheld as exc:   # Arc OC-7 — withheld, said, never missing
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
-                    "connection_id": home}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
+                              "connection_id": home}, clock)
         db = source_db(home)
         table = (entity.backing.table if entity.backing is not None else "") or ""
 
@@ -217,8 +260,8 @@ def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
         # the findings and notes around it are the ones kept on the connection its rows live on
         related = object_context(graph, db, home, table.split(".")[-2] if "." in table else "", instance,
                                  dialect=getattr(db, "dialect", "") or "duckdb", run_cross_source=run_plan)
-    return {"path": "object", "domain": scope.key, "connection_id": home, "schema_name": "", **instance.to_dict(),
-            "related": related}
+    return _complete({"path": "object", "domain": scope.key, "connection_id": home, "schema_name": "",
+                      **instance.to_dict(), "related": related}, clock, **_object_facts(instance))
 
 
 @router.get("/objects/{object_type}/{pk}/links/{link}")
@@ -229,8 +272,10 @@ def get_object_links_page(object_type: str, pk: str, link: str, connection_id: s
     """ON-3: one page of the objects a link reaches from one object, ordered by their key — refused
     when the link is (unmeasured, N:N, or touching a query backing). ON-8 — with ``domain``, in the organisation's
     ontology: the object read where it lives, and the linked objects where theirs do."""
+    from aughor.semantic.completeness import Clock
+    clock = Clock()
     if domain is not None:
-        return _domain_links_page(object_type, pk, link, domain, limit, offset)
+        return _domain_links_page(object_type, pk, link, domain, limit, offset, clock)
     from aughor.semantic.object_instances import ObjectNotFound, list_linked
     from aughor.semantic.object_query import ObjectQueryRefused
 
@@ -242,18 +287,31 @@ def get_object_links_page(object_type: str, pk: str, link: str, connection_id: s
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available,
-                    "connection_id": connection_id, "schema_name": graph.schema_name}
-        return {"path": "links", "connection_id": connection_id, "schema_name": graph.schema_name, **page}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
+        return _complete({"path": "links", "connection_id": connection_id, "schema_name": graph.schema_name, **page},
+                         clock, **_page_facts(graph, page))
     finally:
         db.close()
 
 
-def _domain_links_page(object_type: str, pk: str, link: str, domain: str, limit: int, offset: int) -> dict:
+def _page_facts(graph: Any, page: dict) -> dict:
+    """A linked page's completeness: the row policy that narrowed the linked objects, and the properties emptied."""
+    from aughor.semantic.completeness import narrowed, policy_words
+    withheld = narrowed((graph.entities or {}).get(page.get("type_id") or ""))
+    masked = dict(page.get("masked") or {})
+    return {"shown": len(page.get("rows") or []), "withheld": withheld, "masked": list(masked),
+            "said": policy_words(graph, withheld) + list(masked.values())}
+
+
+def _domain_links_page(object_type: str, pk: str, link: str, domain: str, limit: int, offset: int,
+                       clock: Any = None) -> dict:
     from aughor.ontology.sources import entity_source
     from aughor.semantic.object_instances import ObjectNotFound, list_linked
     from aughor.semantic.object_query import ObjectQueryRefused
 
+    from aughor.semantic.completeness import Clock
+    clock = clock or Clock()
     scope, graph = _domain_served(domain)
     with _domain_sources(scope) as source_db:
         try:
@@ -261,9 +319,11 @@ def _domain_links_page(object_type: str, pk: str, link: str, domain: str, limit:
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "domain": scope.key}, clock)
     where = entity_source(graph, graph.entities[page["type_id"]])
-    return {"path": "links", "domain": scope.key, "connection_id": where, "schema_name": "", **page}
+    return _complete({"path": "links", "domain": scope.key, "connection_id": where, "schema_name": "", **page},
+                     clock, **_page_facts(graph, page))
 
 
 @router.get("/objects/catalog")
@@ -292,8 +352,10 @@ def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
     round trip. A type named by its own key resolves nothing and says so; a key nothing matches is absent from
     the map rather than guessed at. An unknown type is `path: refused`. No model call. ON-8 — with ``domain``, a
     type of the organisation's ontology, its names read where they live."""
+    from aughor.semantic.completeness import Clock
+    clock = Clock()
     if domain is not None:
-        return _domain_titles(body, domain)
+        return _domain_titles(body, domain, clock)
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.routers.ontology import resolve_effective_schema
     from aughor.semantic.object_instances import titles
@@ -306,26 +368,40 @@ def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
         try:
             found = titles(graph, db, body.object_type, body.keys)
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available,
-                    "connection_id": connection_id, "schema_name": graph.schema_name}
-        return {"path": "titles", "connection_id": connection_id, "schema_name": graph.schema_name, **found}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
+        return _complete({"path": "titles", "connection_id": connection_id, "schema_name": graph.schema_name, **found},
+                         clock, **_titles_facts(graph, found, body))
     finally:
         db.close()
 
 
-def _domain_titles(body: _TitlesRequest, domain: str) -> dict:
+def _titles_facts(graph: Any, found: dict, body: Any) -> dict:
+    """The names read for a set of keys: the first ``MAX_TITLES`` of them when more were asked, and a row policy's
+    narrowing — a key it withholds is absent from the map, so it is said."""
+    from aughor.semantic.completeness import narrowed, policy_words
+    withheld = narrowed((graph.entities or {}).get(found.get("type_id") or ""))
+    return {"shown": len(found.get("titles") or {}), "of": len(dict.fromkeys(body.keys or [])),
+            "truncated": bool(found.get("truncated")), "withheld": withheld, "said": policy_words(graph, withheld)}
+
+
+def _domain_titles(body: _TitlesRequest, domain: str, clock: Any = None) -> dict:
     from aughor.ontology.sources import entity_source
     from aughor.semantic.object_instances import titles
     from aughor.semantic.object_query import ObjectQueryRefused
 
+    from aughor.semantic.completeness import Clock
+    clock = clock or Clock()
     scope, graph = _domain_served(domain)
     with _domain_sources(scope) as source_db:
         try:
             found = titles(graph, None, body.object_type, body.keys, source_db=source_db)
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "domain": scope.key}, clock)
     home = entity_source(graph, graph.entities[found["type_id"]])
-    return {"path": "titles", "domain": scope.key, "connection_id": home, "schema_name": "", **found}
+    return _complete({"path": "titles", "domain": scope.key, "connection_id": home, "schema_name": "", **found},
+                     clock, **_titles_facts(graph, found, body))
 
 
 @router.get("/object-types")
@@ -428,8 +504,10 @@ def post_object_query(
     the reason and the names that do exist. A refusal is an answer, not an error: the compiler
     never guesses. ON-8 — with ``domain``, the query runs on its anchor type's connection; a source on another
     connection is read by key and the answer aggregated over both (`cross_source` says how, `timings` how long)."""
+    from aughor.semantic.completeness import Clock
+    clock = Clock()
     if domain is not None:
-        return _domain_object_query(query, domain, execute)
+        return _domain_object_query(query, domain, execute, clock)
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
     from aughor.routers.ontology import resolve_effective_schema
@@ -449,7 +527,8 @@ def post_object_query(
         out = platform_query(counted, _accepted_edits(connection_id), measures=[m.model_dump() for m in query.measures],
                              by=list(query.by), filters=[f.model_dump() for f in query.filters], segment=query.segment,
                              time=query.time, grain=query.grain)
-        return {"connection_id": connection_id, "schema_name": graph.schema_name, **out}
+        return _complete({"connection_id": connection_id, "schema_name": graph.schema_name, **out}, clock,
+                         shown=len(out.get("rows") or []))
     db = open_connection_for_with_schema(connection_id,
                                          graph.schema_name or resolve_effective_schema(connection_id, schema_name))
     try:
@@ -458,8 +537,8 @@ def post_object_query(
                                             overlay=_accepted_edits(connection_id),
                                             metrics=keyed_metrics_for(connection_id, graph.schema_name))
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available,
-                    "connection_id": connection_id, "schema_name": graph.schema_name}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         out = {"connection_id": connection_id, "schema_name": graph.schema_name, **compiled.to_dict()}
         if not execute:
             return out
@@ -471,7 +550,7 @@ def post_object_query(
                     "truncated": len(rows) > _MAX_ROWS, "error": result.error,
                     "caveats": list(compiled.caveats) + list(result.caveats or []),
                     "guard_receipts": list(receipts)})
-        return out
+        return _complete(_truthful(out, result), clock, **_read_facts(graph, compiled, result, len(out["rows"])))
     finally:
         db.close()
 
@@ -488,9 +567,11 @@ def post_object_listing(
     object door's own compiler over the SERVED ontology, an accepted edit read like a column, and run through the guard
     battery. `path` is `listed`, or `refused` with the reason and the names that exist. No model call."""
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
+    from aughor.semantic.completeness import Clock
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing
     from aughor.sql.executor import execute_guarded
 
+    clock = Clock()
     graph = _served_graph(connection_id, schema_name)
     from aughor.ontology.platform_objects import is_platform
     from aughor.ontology.platform_objects import listing as platform_listing
@@ -505,15 +586,16 @@ def post_object_listing(
                                 filters=[f.model_dump() for f in listing.filters], order_by=listing.order_by,
                                 descending=listing.descending, offset=listing.offset, limit=listing.limit,
                                 segment=listing.segment)
-        return {"connection_id": connection_id, "schema_name": graph.schema_name, **page}
+        return _complete({"connection_id": connection_id, "schema_name": graph.schema_name, **page}, clock,
+                         shown=len(page.get("rows") or []), of=page.get("total"))
     db = _open_scoped(connection_id, schema_name, graph)
     try:
         try:
             compiled = compile_object_listing(listing, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                               overlay=_accepted_edits(connection_id))
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available,
-                    "connection_id": connection_id, "schema_name": graph.schema_name}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         out = {"connection_id": connection_id, "schema_name": graph.schema_name, "offset": listing.offset,
                "limit": listing.limit, **compiled.to_dict()}
         if not execute:
@@ -526,12 +608,14 @@ def post_object_listing(
         out.update({"names": list(page.columns or []), "rows": list(page.rows or [])[:listing.limit],
                     "total": int(n) if n not in (None, "", "NULL") else None, "error": error,
                     "caveats": list(compiled.caveats) + list(page.caveats or []), "guard_receipts": list(receipts)})
-        return out
+        from aughor.semantic.completeness import policy_words
+        return _complete(out, clock, shown=len(out["rows"]), of=out["total"], refused=str(error or ""),
+                         withheld=compiled.withheld, said=policy_words(graph, compiled.withheld))
     finally:
         db.close()
 
 
-def _domain_object_query(query: ObjectQuery, domain: str, execute: bool) -> dict:
+def _domain_object_query(query: ObjectQuery, domain: str, execute: bool, clock: Any = None) -> dict:
     """ON-8 — `POST /objects/query` over an organisation's ontology. The anchor type's connection is where the query
     runs; a query that reads nothing on another connection runs there as one statement through the guard battery, and
     one that does is split and run across its sources (`aughor.semantic.cross_source`), every connection it reads
@@ -543,11 +627,14 @@ def _domain_object_query(query: ObjectQuery, domain: str, execute: bool) -> dict
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
     from aughor.sql.executor import execute_guarded
 
+    from aughor.semantic.completeness import Clock
+    clock = clock or Clock()
     scope, graph = _domain_served(domain)
     try:
         anchor = find_object_type(graph, query.object_type)
     except ObjectQueryRefused as exc:
-        return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+        return _complete({"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key},
+                         clock)
     home = entity_source(graph, anchor)
     _checked_source(scope, home)
     db = open_connection_for(home)
@@ -556,8 +643,8 @@ def _domain_object_query(query: ObjectQuery, domain: str, execute: bool) -> dict
             compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                             overlay=_domain_edits(graph))
         except ObjectQueryRefused as exc:
-            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
-                    "connection_id": home}
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
+                              "connection_id": home}, clock)
         out = {"domain": scope.key, "connection_id": home, "schema_name": "", **compiled.to_dict()}
         if not execute:
             return out
@@ -578,6 +665,6 @@ def _domain_object_query(query: ObjectQuery, domain: str, execute: bool) -> dict
                     "truncated": len(rows) > _MAX_ROWS, "error": result.error,
                     "caveats": list(compiled.caveats) + list(result.caveats or []),
                     "guard_receipts": receipts, "timings": timings})
-        return out
+        return _complete(_truthful(out, result), clock, **_read_facts(graph, compiled, result, len(out["rows"])))
     finally:
         db.close()

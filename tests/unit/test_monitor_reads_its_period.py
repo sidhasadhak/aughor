@@ -95,7 +95,26 @@ def test_a_monthly_floor_reads_the_month_and_warns_where_all_history_never_could
     # the Briefing's own range, for the metric's dataset — the data's edge is read per dataset
     assert asked.calls == [{"conn_id": "workspace", "preset": "last_month", "schema": "olist"}]
     sql, dialect = warehouse.ran[-1]
-    assert dialect == "duckdb" and "2018-08-01" in sql and "2018-09-01" in sql
+    assert dialect is None and "2018-08-01" in sql and "2018-09-01" in sql   # compiled for the engine
+
+
+def test_a_native_engine_runs_the_period_reading_through_the_door(warehouse, asked):
+    """The period SQL is compiled in the connection's dialect, so it reaches the engine as written. It declared that
+    dialect to the door, which accepts only platform SQL, and every dated-metric check raised on BigQuery."""
+    from aughor.db.dialects import sql_for_engine
+
+    sent: list[str] = []
+
+    def scalar(sql, *, label, cast, sql_dialect, strict):
+        statement = sql_for_engine(bq, sql, sql_dialect)        # what `ConnectionBase.rows` does first
+        sent.append(statement)
+        return 848.6
+
+    bq = SimpleNamespace(scalar=scalar, dialect="bigquery")
+    run = runner.check_monitor(_floor(), bq, suppress=False)
+    assert run.failed == "" and run.reading == pytest.approx(848.6)
+    assert run.alert is not None and "runner error" not in run.alert.message
+    assert sent[-1] == runner._reading_sql(_floor(), bq)[0]     # compiled for BigQuery, handed on unchanged
 
 
 def test_the_metric_grain_sets_the_period_and_an_unset_one_is_the_editor_month(warehouse, asked):

@@ -140,11 +140,55 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     where each category's own history credits +19.83%, and the company total says cannot tell. Owed: §5.2 read
     on 2026-12-05 (five decisions on live data reaching a verdict); D-4 and D-5 not built.*
 
+58. [ ] **Palantir's features, the Aughor way — Arcs ED, TC and FA** (ROADMAP §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6
+    item 52; `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md`) — the user, 2026-10-24: *"The whole point of this Study is
+    to understand how we can incorporate the features of Palantir into our platform"*. Aughor already has most of Foundry's
+    shape; what is left is three properties of what it built. In plain words: **ED** fixes what does not hold today (a row
+    policy only one door applies, edit history that ignores the reader, table health nothing measures, a search that hides
+    its failures, outside programs that all look like one caller); **TC** makes every answer, edit, alert and run say what
+    made it; **FA** makes the ontology searchable and lets a choice travel. The three calls were decided 2026-10-24 (§6
+    item 52 (a)–(c): one published App version · the chat endpoint when a customer asks · proposed agent revisions once
+    goldens exist). **ED-0 started 2026-10-24.**
+
+59. [ ] **A side assistant beside every screen** (the user, 2026-10-24, with CopilotKit's FinanceOS showcase: *"when a
+    user wants to ask a question about a number already given in the briefing section and user clicks on "pull the
+    thread" then aside and with chat feature opens up"*) — ROADMAP §3.61. Measured: the Briefing's *Ask this briefing*
+    panel already exists (one conversation, grounded server-side in the Briefing on screen), but *Pull the thread*
+    streams a separate investigation inline instead of opening it, no other screen has one, and no chat can act on the
+    screen beside it. Sketch: the pull opens the panel with the figure as its subject · one panel for every screen, each
+    grounded server-side · screen actions (navigation only), shown and undoable · steps and suggestion chips. Mockup
+    first. *🅿️ PARKED by the user 2026-10-24: "let's park this in the Road map for a later time".*
+
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
 
 ## Everything pending, by arc
+
+### A rule holds at every door — Arc ED (§3.58; drafted and adopted 2026-10-24, §6 item 52; first of three)
+- [x] ED-0 · the small defects — ✅ BUILT 2026-10-24 (§3.58 "ED-0, built"; also a #625 regression fixed: dated-metric checks raised on every non-DuckDB engine) — document search says *unavailable* instead of `[]` (`knowledge/indexer.py:457`); §3.26's eight monitor defects (`grace_period_hours` never saved); the stale words (`mcp/policy.py` "eighteen" over 23 tools; `routers/builder_v1.py:7` "(off)")
+- [x] ED-1 · one row policy at every door — ✅ BUILT 2026-10-24 behind `ontology.security_sql` (§3.58 "ED-1, built"; the theLook receipt and retiring `ROW_POLICIES` wait for sign-in) — the SQL gate applies OC-7's row policies and sensitive properties; edit history filtered by reader; `ROW_POLICIES` retired after the receipt (`ontology.security_sql`)
+- [x] ED-2 · every outside caller is someone — ✅ BUILT 2026-10-24 behind both flags (§3.58 "ED-2, built"; a user bearer over MCP waits for OIDC) — per-caller MCP identity; principal allowlists and area scopes; the contract generated from the grant (`mcp.caller_principals`, `security.principal_scopes`)
+- [x] ED-3 · table health that is measured — ✅ BUILT 2026-10-24 behind `quality.expectations` (§3.58 "ED-3, built"; the word is *expectation*, the user's call) — a producer for `quality/results.py`; latest reports per check; the naming call first (`quality.checks`)
+- [x] ED-4 · an App publishes one version — ✅ BUILT 2026-10-24 behind `dashboard.app_versions` (§3.58 "ED-4, built"; the live receipt waits) — ✅ decided 2026-10-24, §6 item 52(a): readers see the last published version; a keep is a draft on `kernel/lifecycle.py`'s axis, publishing to the same audience publishes it, the owner is told which version readers read
+- [x] ED-5 · cause and effect in one store — ✅ BUILT 2026-10-24 behind `ontology.impacts_only` (§3.58 "ED-5, built"; re-scoped on its premise, the user's call §6 item 52(d): *"Impacts are the one store"* — no edge was ever confirmed live, and the proposals name no promise) — the files neither read nor written, the model not asked for causes, the alert summary words the declared impacts
+- [x] ED-6 · every object read says how complete it is — ✅ BUILT 2026-10-25 behind `objects.completeness` (§3.58 "ED-6, built") — measured first: a read cut at the connection's 500 rows said complete (the door compared with 1,000), and the linked page showed masked properties (fixed under OC-7's flag); one typed `completeness` on every object door and in the contract
+
+### Every change says what made it — Arc TC (§3.59; drafted and adopted 2026-10-24, §6 item 52; second of three)
+- [ ] TC-1 · the agent's `config_rev` on every turn and receipt (`agents.revision_on_answers`)
+- [ ] TC-2 · the run and trace id on edit history and the action audit — an object's timeline (`actions.run_attribution`)
+- [ ] TC-3 · versions for automations and monitors; each run names its version and keeps its trigger payload (`automations.versions`)
+- [ ] TC-4 · alerts that close — a *recovered* alert (`monitors.recovery`), after ED-0
+- [ ] TC-5 · operations read across runs — hub-map failure rate, log search, audit window and export, reasons on payload reads (`hub.failure_rate`, `obs.log_search`, `govern.justifications`)
+
+### The ontology people can find and act on — Arc FA (§3.60; drafted and adopted 2026-10-24, §6 item 52; third of three)
+- [ ] FA-1 · the ontology can be searched — declarations in graph search, ⌘K finds objects across entities, hybrid document search (`graph.declarations`, `objects.find`, `knowledge.hybrid_documents`)
+- [ ] FA-2 · a choice can leave its piece — typed object and set references, "ask about these" in the Data Canvas; mockup first (`canvas.ask_about_chosen`)
+- [ ] FA-3 · safe removal — put back, retiring, usage per entity (`ontology.put_back`, `ontology.retiring`, `ontology.usage`)
+- [ ] FA-4 · a set becomes a segment; the set's chain with counts (`ontology.set_segments`)
+- [ ] FA-5 · act on each object a rule admits (`automations.objects_admitted`)
+- [ ] FA-6 · packs as products — installed versions, upgrade diff, dashboard templates (`packs.installed_versions`, `packs.dashboard_templates`)
+- [ ] FA-7 · any SDK can call an agent — the grounding read (`agents.grounding_read`); the chat-compatible endpoint (`doors.chat_completions`) waits until a customer asks — ✅ §6 item 52(b)
 
 ### The cockpit as an App builder — Arc AP (§3.57; drafted and adopted 2026-10-10, §6 item 51; branch `claude/platform-text-density-002fe8`)
 - [x] AP-0 · the study — [docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md](docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md): Workshop read across ~220 doc pages and the user's 22 screenshots, the cockpit inventoried, the starter measured on every theLook entity; the mockup `design-mockups/cockpit-builder.html` (seven screens on live theLook numbers, drawn for 1920 × 1080). The words in `docs/GLOSSARY.md` (set · chosen · ticked · value · drawer · form · shape; *Size* one grade at a time).

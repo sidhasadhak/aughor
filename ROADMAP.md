@@ -7930,7 +7930,7 @@ result as a (date, value) series — the first column is a category name, `_as_d
 None, the settling filter keeps undated points, and the categories' revenues are z-scored
 as if they were days. It can never fire meaningfully. The runner should refuse a series whose
 first column is not a date — one edit, adjacent, named here. ⏳ Also left: the seven defects
-the map turned up — `grace_period_hours` is never saved; the Monitors UI offers "slack"/"email"
+the map turned up (✅ all eight closed 2026-10-24 under ED-0, §3.58) — `grace_period_hours` is never saved; the Monitors UI offers "slack"/"email"
 as channels, which are not trigger ids, so `dispatch_alert` warns and sends nothing;
 `metric_name` monitors run a bare aggregate as SQL and stay silent; "Run now" sends a real
 alert and writes it into history; a metric-condition chain queries the warehouse every
@@ -11814,6 +11814,368 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-5 BUILT 2026-10-24 and ED-6 on 2026-10-25** on the session branch — the arc is built)
+
+**The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
+not yet hold is that shape's own rules, at every door:
+
+- OC-7's row policies and sensitive properties apply at the object door only (`semantic/object_query.py:693`). Quick answers
+  and deep analyses go through `rbac/row_policy.py`, a second store that ships empty (`ROW_POLICIES = {}`). Inert while
+  `ontology.security` is off; a hole the day it graduates.
+- `GET /actions/edits/history` scopes by organisation only (`routers/actions.py:74-81`): no row policy, no sensitive property.
+- The quality plane has readers (`mcp/knowledge_tools.py:213`, `knowledge/briefing_content.py:173`) and no producer, so table
+  health can only say "not checked".
+- Document search returns `[]` on any exception (`knowledge/indexer.py:457`) — a failure reads as "no match".
+- §3.26's eight monitor defects are still open; `grace_period_hours` is never saved (`monitors/store.py:164-165`).
+- Every HTTP MCP client is one principal (`mcp/client.py:93-95`, one `AUGHOR_MCP_TOKEN`), so the agent policy and the audit
+  cannot tell two programs apart.
+- A shared App's readers see every keep: an edit carries `published_to` forward (`dashboards/versions.py:366`).
+- Cause and effect lives in two stores: `ontology/impacts.py` and `data/causal_graph.json` (`lifecycle/causal.py`, read by
+  `monitors/alert_summary.py:147`).
+
+| # | Builds | Flag (off) · size | Falsifier |
+|---|---|---|---|
+| **ED-0** | The small defects: document search says *unavailable* instead of `[]`; §3.26's eight monitor defects; stale words (`mcp/policy.py` "eighteen" over 23 tools, `routers/builder_v1.py:7` "(off)" of a graduated flag) | bugs, no flag · S | A saved monitor reads back a grace period other than its own → stop |
+| **ED-1** ✅ | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
+| **ED-2** ✅ | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
+| **ED-3** ✅ | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
+| **ED-4** ✅ | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
+| **ED-5** ✅ | **Cause and effect in one store**: the declared impacts are the one store; the model's proposed causes are neither asked for nor kept, and the file stops being read (✅ §6 item 52(d), re-scoped on its measured premise) | `ontology.impacts_only` · M | An alert summary names a cause the impacts store does not hold → stop |
+| **ED-6** ✅ | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
+
+**The laws it keeps.** Withheld is said, never implied · one store per concept (two policy stores and two causal stores become
+one each) · programs propose and people approve · no new door, only the existing ones made to agree.
+
+**ED-0, built 2026-10-24** (branch `claude/rea-repository-exploration-24280f`; bugs, no flag). A background check of the
+current tree found six of §3.26's eight defects still present, #4 partly fixed and #7 now only stale words. It also found
+one regression from #625. Each fix has a test that drives the code that had the defect, and every fix was mutation-killed.
+- **Document search:** a failed search raises `DocumentSearchUnavailable` instead of answering `[]`:
+  - the HTTP door answers 503;
+  - a prompt reads "could not be searched" instead of nothing;
+  - the chat tool's existing branch now sees a real failure.
+
+  "Nothing indexed" is asked of the registry, not of `collection_count`, which answered 0 for a store that was down.
+- **Monitors (§3.26):**
+  - an anomaly check over a non-date first column is a failed run that says so, and its series is sorted by day;
+  - `grace_period_hours` is saved and both routes accept it;
+  - the channel picker offers *In-app* and the Notifications triggers that exist, a channel naming no trigger is refused
+    (422) where it is chosen, and a stored "slack" reads *sends nowhere*;
+  - a metric monitor reads its governed value query (`value_query`), not the bare expression;
+  - *Run now* shows its verdict and files and sends nothing;
+  - a metric condition in a chain is checked on its monitor's own cron, not every 60-second tick;
+  - the Hub map lists monitors (kind, state, destination, last run);
+  - the stale `monitors.guarded` "default off" comments are corrected.
+- **The #625 regression:** a dated metric's period reading declared the engine's dialect to the door, which accepts only
+  platform SQL, so every threshold, any-change and trend check over a dated metric raised on BigQuery, Postgres or
+  Snowflake. Its SQL is compiled for the engine, so it now declares none. The live install was not hit: its one
+  dated-metric monitor is on DuckDB.
+- **Stale words:** the MCP tool table no longer states a count, and the builder doors' docstring says the flag graduated.
+
+Proved on a scratch API over temp stores:
+- a `slack` channel → 422;
+- a grace of 0 and then 12.5 read back;
+- *Run now* → a warning shown, 0 alerts filed;
+- the monitor is on the Hub map;
+- a registered document whose collection does not exist → 503 *unavailable*.
+
+**Named, not done:**
+- An anomaly monitor over a metric still reads a scalar against its alert history, while the backtest replays it as a
+  daily series (`backtest.series_sql_for`).
+- `_guard_caveats` probes the monitor's statement, not the period SQL the check ran.
+- `knowledge/health.store_status` cannot see a store that is down, because `collection_count` swallows the error.
+- When this ships, theLook's "Key Questions: Outerwear & Coats" anomaly monitor (a category breakdown) starts recording
+  failed runs, as it should.
+
+**ED-1, built 2026-10-24** (same branch; flag `ontology.security_sql`, off, in the graduation queue; it needs
+`ontology.security`). A connection's own door — where a quick answer, a deep analysis and the SQL editor run their
+statements — now applies the released ontology's row policies and sensitive properties, as the object doors do
+(`ontology/security_sql.py`, the rewrite in `sql/rls.apply_entity_rules`, hooked after the RBAC step in
+`db.connection.enforce_row_policy` through a registry the agent fills at bootstrap,
+`kernel/registries/object_policies.py`. The platform imports no ontology. With the flags on and nothing registered,
+a request's statement is refused, never run unfiltered).
+- **Rows:** a table that backs an entity with row policies is read through the reader's objects — the object door's
+  own condition (`security.row_condition`) — and the answer says so in its caveats (`db.doors.say`, new) with
+  `object-policy:<entity>` on its trail.
+- **Masked properties:** a statement that reads a property masked for the reader — named anywhere, or under a
+  `SELECT *` — is refused with the object door's words.
+- **Query-backed entities:** a table read by a query-backed entity the reader is restricted on is refused, since raw SQL
+  over it cannot be narrowed to their objects.
+- **Fail-closed:** a policy that cannot be applied blocks the statement.
+- **Left alone:** the platform's own statements (`internal=True`), schedules and automation runs (no request acts for
+  anyone), and the object doors' own statements, which apply OC-7 themselves (`object_door`, marked by code on their
+  routers and execution sites — never by anything a statement carries).
+- **The result cache** keys a narrowed read by the reader and their groups.
+- **Edit history** is read as the reader may: a masked property's values are emptied with why, and an edit to an object
+  outside their rows is withheld, counted and said. Edits it cannot check are withheld, never shown. The object page's
+  history shows the reason.
+
+The falsifier held on the samples warehouse through the real DuckDB door and the real compiler: Ana counts 3,300 orders
+through the SQL editor and through the object door, Ben his own number, and Carl none, with the groups named. A masked
+sum is refused over HTTP. 19 tests. Every piece was mutation-killed, including removing the object router's mark (its
+listing is then refused for its own `SELECT *`). One survivor is a redundant guard: the registry and the applier both
+check that object security is on.
+
+**Named, not done:**
+- The theLook receipt on a scratch install, which needs sign-in as `ontology.security` does.
+- Retiring `ROW_POLICIES` (after that receipt).
+- The organisation ontology's declarations at the SQL door.
+- The served graphs are read per statement while the flag is on (no memo).
+- An unqualified column named like a masked one on another joined table is refused too (the refusal says which property).
+- An unqualified backing table matches that name in every schema (the doubt resolved toward the policy).
+
+**ED-2, built 2026-10-24** (same branch; flags `mcp.caller_principals` and `security.principal_scopes`, both off and in
+the graduation queue, both held by the API). The service principals of phase 7 were the identity; ED-2 makes them the
+caller, and gives each one a grant.
+
+- **A grant** (`security/service_principals.py`; *Grant* and *Area* in the glossary) is set by a person when minting. It
+  names the *areas* a principal may work in (catalog:read · objects:read · actions:propose · analysis:run ·
+  automations:run · ledger:read · ledger:write), the entities it may read and the declared actions it may propose,
+  beside the connections it already named. Each is stored only when named, so a principal minted without one is the
+  row it was, and rotating keeps it. The Developer page mints with one and says what each principal is held to.
+- **The API holds it** (`rbac/principal_grant.py`, called by the agent gate after the organisation's policy, so it
+  only narrows):
+  - every route belongs to one area, and a route in none is closed to a principal that names areas;
+  - an entity, an action or a connection off the grant is refused, each with its own stable code;
+  - the call is audited under the principal's name;
+  - the builders' contract and its TypeScript are cut to the grant and count what they left out;
+  - with the flag on, a principal is held to its grant whether or not sign-in is enforced.
+- **Over MCP HTTP** (`mcp/callers.py`), a program may present its principal instead of the server's shared token:
+  - the server asks the API who it is (`GET /ledger/v1/principals/service/me`, which refuses a bad key whatever the
+    identity mode);
+  - every list and call then runs as that principal;
+  - `tools/list` shows only the tools its grant admits (each tool's area is in `mcp/policy.TOOL_AREAS`, and the
+    registrars place the tools they add);
+  - a name and key the API refuses are refused at the door, whatever token comes with them;
+  - with the API's switch off, the shared token is the door as before, byte for byte.
+
+The falsifier held through a real streamable-HTTP session against the real API in-process:
+- a principal granted catalog:read and one granted the ledger list different tools, each a strict part of what the
+  shared token lists;
+- a call made as the first is audited under `service:<its name>`;
+- a guessed key is refused at the door.
+
+11 tests. Every piece was mutation-killed (16 mutants), including the client not sending the caller and the door
+admitting any principal. 3 component tests on the mint form.
+
+**Named, not done:**
+- A user bearer through MCP HTTP, which waits for OIDC (VA-10).
+- The object catalogue and type listings are not yet cut to a grant's entities. The contract and every named-entity
+  door are.
+- A grant per acting person, for an agent that acts for someone.
+
+**ED-3, built 2026-10-24** (same branch; flag `quality.expectations`, off, in the graduation queue). The naming call
+came first, and it was the user's: one table-health item is an **expectation** (glossary). *Rule* stays the business's
+and *check* stays claims'. The flag is named for the word, not the roadmap's provisional `quality.checks`.
+
+The quality plane had three readers and no producer. An answer's caveats, the MCP `get_table_health` tool and the
+Briefing's failing count all read `quality/results.py`, and nothing wrote to it. Now an automation step, **Measure
+expectations**, does (`quality/expectations.py`, the engine's `_dispatch_expectations`):
+- it measures a table's expectations read-only through the connection's door, audited as a stored definition's read;
+- it records each verdict in the one store, as a count of the rows that break it, never the rows;
+- a drift is judged against the last reading, and the first reading is the baseline, which it says;
+- an expectation that cannot be measured is said on the step and recorded as nothing, because an unreadable query is not
+  a failing table — a step where nothing could be measured fails rather than reading healthy;
+- the step carries names and values, never SQL (DS-12's law): table and columns must be plain names, and a `filter` is
+  refused;
+- a malformed step is refused when it is saved;
+- the designer edits it as one table and a row per expectation.
+
+A latent defect fixed on the way: `freshness` counted every row older than the limit, so a table with any history
+failed it forever. It now asks whether the newest row is older. Nothing had ever run it.
+
+On the samples warehouse, through the real DuckDB door:
+- `order_id` is never empty and never repeats, and every `customer_id` matches a customer;
+- "status is shipped" is not met, by the exact count of other orders;
+- the verdicts reach `latest_for_tables`, the failing count and an answer's caveats;
+- a column that does not exist is said, and the failing count stays 0.
+
+9 tests, 9 mutants killed (the freshness one only after its test was made to tell the two compilers apart), and 4 web
+tests on the editor and its config.
+
+**Named, not done:**
+- The theLook receipt.
+- Proposing expectations from a table's profile (`quality.caveats.candidates_from_profile` exists, unwired).
+- The two drift kinds' limits beyond one number each.
+- A filter for a step, which would need a declared form rather than SQL.
+
+**ED-4, built 2026-10-24** (same branch; flag `dashboard.app_versions`, off, in the graduation queue). The call was the
+user's (§6 item 52(a)): an App's readers read the version last published. Before this, a keep carried the audience to
+the next version, so readers read every change the moment it was kept.
+
+Each dashboard version now says where it stands on the platform's one publication axis (`kernel/lifecycle.py`, its
+`_lifecycle` stamp): a keep or a restore is a *draft*, a publish *published*, an unpublish or a retire *archived*.
+- Who an App reaches is still its newest version's audience: a keep carries it, and an unpublish reaches nobody at once.
+- What its readers read is the newest published version (`versions.published`): the reader's page, "Apps shared with
+  you", and a dashboard a reader starts from it, which copies the published spec, never the draft.
+- Publishing to the same audience publishes the draft. It is refused as *unchanged* only when nothing was kept since,
+  and the same holds for a publish asked for in words.
+- A version kept before the flag records no state. It projects as published when it reached anyone, which is what its
+  readers read then, so turning the flag on changes nothing a reader sees. A version written with the flag off drops a
+  stamp copied from one written on.
+- The owner is told which version its readers read: the publish door says *readers see version N*, the panel offers
+  *Publish your changes*, and History marks *what its readers read*.
+- The generic lifecycle doors now read an App's states (`published_version` against `editor_version`) and refuse to
+  publish or revert one with a 409. A version written there would hold no spec, so its readers would read an empty
+  App. That hole predated ED-4.
+
+9 tests, 14 mutants killed; 6 web tests (the door, the panel, History and the words), 2 web mutants killed.
+
+**Named, not done:**
+- The live receipt (the graduation queue's entry): an App changed twice on the live install, read by a member of its
+  group.
+- A card's own edits still reach readers at once. A card is its own store with its own revisions, and the App pins
+  where cards are placed, not what each card holds.
+- Publishing to a new audience publishes the draft too; there is no door that changes who an App reaches without it.
+
+**ED-5, built 2026-10-24** (same branch; flag `ontology.impacts_only`, off, in the graduation queue). The premise was
+measured first, and it moved the step. The row said "confirmed causal edges fold into impacts as *validated*". On the
+live install:
+- No edge was ever confirmed: `causal_graph.json` was never written.
+- The model had proposed 222 causes over 101 investigations, 175 of them filed under the connection id `"workspace"`,
+  which matches no connection. Each is that day's finding with its numbers ("Revenue growth (+176.29%) closely
+  matching COGS growth"), and none names a declared promise, which is what an impact joins.
+- The alert summary's reader of the file raised on every call: it asked a list for `.get("edges")`, and the error was
+  logged at debug, so the section never appeared. The prompt section matched a whole question against one signal, so it
+  never fired either.
+
+So there was nothing to fold, and nothing a person could map. The user chose, from options, *"Impacts are the one
+store"* (§6 item 52(d)). With the flag on:
+- nothing reads or writes either file (`lifecycle/causal.py`: the readers return nothing, the writers keep nothing, a
+  reviewed decision says why it confirmed nothing); the files stay on disk, untouched;
+- an analysis is not asked for causes: the synthesis drops `causal_links` and its rule, as it already drops the
+  waterfall when no waterfall can exist (`synthesis_ask_model`);
+- the alert summary's section is **Impacts**: each declared impact that holds, in the words of its mechanism
+  (`impact_words`), validated first, the widest difference next, then those exact by definition. It also says how many
+  are declared and not measured to hold, and how many more hold than it names. It reads the stored ontology and never
+  builds one;
+- at departure an impact line is judged on its own as a finding is, instead of being held as a cause. A real influence
+  and a real validated line both pass the gate;
+- `GET /connections/{id}/causal-graph` answers 410 and names the door that serves impacts, rather than an empty list
+  that would read as "nothing bears on anything";
+- impacts already reached the agent: a question about a promise is framed with the measured impacts into it
+  (`ontology/framing._frame_impacts`), and the Briefing's promise chains name them.
+
+9 tests, 13 of 15 mutants killed. The other two were guards that a reader below them made redundant, so they were
+removed.
+
+**Named, not done:**
+- The theLook receipt (the queue's entry).
+- Deleting the old path and the two files, once the flag graduates.
+- Offering a reviewed decision's outcome as *evidence* on a declared impact — a person's door, close to TC-2 and the
+  decision loop.
+
+**ED-6, built 2026-10-25** (same branch; flag `objects.completeness`, off, in the graduation queue). Measured first:
+- **A cut read said complete.** Every connection hands back at most `db.connection.MAX_ROWS` (500) rows. The object
+  query door said `truncated` only past 1,000 (`_MAX_ROWS`), so it was never true: a chart of objects per day over
+  four years (about 1,460 days) reached its reader as 500 complete-looking days. Every connector counts one past what
+  it returns, or all of them, so `row_count > len(rows)` is the honest test on each engine.
+- **The linked page showed masked properties.** `list_linked` read `SELECT *` with no mask, so with `ontology.security`
+  on, a sensitive property emptied on an object's own page was shown in full on the linked page of an object pointing
+  to it, and nothing said what a row policy withheld. Fixed under OC-7's flag, the security law's: the page empties
+  the column in every row, says why (`masked`), and says the row policy.
+- **"Refused over a cap"** exists: a cross-source query whose home read passes `MAX_HOME_ROWS` is refused with a
+  sentence.
+
+With the flag on, every object door's answer carries one `completeness` (`semantic/completeness.py`): `state` is
+complete · truncated · withheld · refused, with `shown`, `of` (when the door counted, as a listing's `total`), the
+entities a row policy narrowed (`withheld`), the properties emptied (`masked`), `said` and `took_ms`. The doors are
+the object query, the listing (and the builder door that wraps it), one object, the linked page, the titles door,
+and each of their organisation-ontology variants. Refusals say `refused` with their reason. The old `truncated`
+boolean is made true when the connection cut the read. The compiler records the entities it narrowed beside its
+caveats, outside `to_dict`. The contract describes the field, and its TypeScript declares `Completeness`. A
+dashboard piece says a cut read beside its caveats (`answerSays`).
+
+15 tests (two of them over an organisation's ontology), 22 mutants killed; 3 web tests.
+
+**Named, not done:**
+- The theLook receipt (the queue's entry).
+- The agent's own object tools (`agent/object_tools.py`) read the linked page directly and do not yet word its
+  completeness to the model.
+- Platform-owned types' doors carry the field without a test of their own.
+
+### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
+
+**The premise, measured.** Provenance is Aughor's first law, and these places do not yet keep it:
+
+- An answer does not say which revision of the agent gave it: `config_rev` is read by the agents router (`routers/agents.py:442`)
+  and the evals, not stamped on turns or receipts.
+- The edit layer records who, not which run (`actions/overlay.py` holds no trace or run id).
+- An automation save replaces the definition in place (`automations/store.py:381`); a run names the conditions that fired, not
+  the version it ran under nor its trigger payload.
+- An alert opens and never closes: no *recovered* state was found in `monitors/` or `automations/`.
+- The audit feed stops at 1,000 rows with no time window, cursor or export (`routers/governance.py`); payload reads carry no
+  reason, though §6.4 decided "a reason recorded"; logs are read per trace only.
+
+| # | Builds | Flag (off) · size | Falsifier |
+|---|---|---|---|
+| **TC-1** | The agent's `config_rev` stamped on every turn and receipt; an `expected_rev` precondition on the doors | `agents.revision_on_answers` · S | — |
+| **TC-2** | The run and trace id on edit history and on the action audit, read as an object's timeline: who or what changed it, through which run, at what cost | `actions.run_attribution` · S–M | An edit made by an automation shows no run → stop |
+| **TC-3** | Versions for automations and monitors, superseded never deleted; every run names the version it ran under and keeps its trigger payload, so a past run can be replayed as a dry run | `automations.versions` · M | — |
+| **TC-4** | **Alerts that close**: the first in-limit check after a breach writes one *recovered* alert; a run says "in limit" apart from "suppressed by grace" | `monitors.recovery` · S (after ED-0) | — |
+| **TC-5** | Operations read across runs: failure rate over a window on the hub map, saying "no runs" and "not permitted"; log search across runs (30 days); the audit feed with since, until, a cursor and export; a required reason on payload reads and ledger export, as one catalogued event kind | `hub.failure_rate`, `obs.log_search`, `govern.justifications` · S + S + S–M | — |
+
+**The laws it keeps.** Provenance on everything that changes · supersede, don't delete · no fourth lineage walker
+(`govern/lineage.py`, `ontology/dependents.py` and `automations/graph.py` already exist) · no sixth audit sink.
+
+### 3.60 · Arc FA — the ontology people can find and act on (DRAFTED 2026-10-24 as arc 3 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; third of the three · nothing built)
+
+**The premise, measured.** Nothing searches the declarations by meaning (the context graph's node kinds hold none); an object
+cannot be found without knowing its entity; a selection cannot leave the piece it was made in; an ontology element cannot be
+put back to an earlier version, retired with a successor, or seen in use; a dashboard set lives only inside its dashboard; a
+rule defines a population but nothing acts on each object as it enters; a pack binding stores whatever version the caller sends
+(`routers/packs.py:296-297`) and has no upgrade; programs built with any agent SDK reach Aughor only through MCP.
+
+| # | Builds | Flag (off) · size | Falsifier |
+|---|---|---|---|
+| **FA-1** | **The ontology can be searched**: declarations become nodes in the existing graph search, trimmed by `retrieval_trim`; ⌘K finds an object by name across entities and says how many it searched; document search gets a lexical fallback | `graph.declarations`, `objects.find`, `knowledge.hybrid_documents` · M + S + S | — |
+| **FA-2** | **A choice can leave its piece**: typed references to objects and sets (`<type>:<key>`, the builder doors' form; a set by name, never SQL), dragged or sent *Open in* to the Data Canvas ("ask about these"), a choose-one piece or an object page, compiled through the object door under the reader's row policy. Mockup first | `canvas.ask_about_chosen` · M | — |
+| **FA-3** | **Safe removal**: put an earlier version back into the draft; a *retiring* status with a successor and a date, released as a MEANING change; reads per entity over 30 days | `ontology.put_back`, `ontology.retiring`, `ontology.usage` · S + M + S–M | — |
+| **FA-4** | **A set becomes a segment**: "Keep as a segment" declares a dashboard set through the draft; the builder shows each set as its chain with a count at each step | `ontology.set_segments` · M + S | — |
+| **FA-5** | **Act on each object a rule admits**: a condition that fires for objects a rule or segment newly admits, keys only and capped, the count said when the list is withheld | `automations.objects_admitted` · M | — |
+| **FA-6** | **Packs as products**: the installed version and the inputs a person declined, "upgrade to vN" showing the input diff; a pack may carry a dashboard template a person keeps | `packs.installed_versions`, `packs.dashboard_templates` · M + M | — |
+| **FA-7** | **Any SDK can call an agent**: a grounding read returning what an agent would read without calling the model. The chat-compatible endpoint (the model is an Aughor agent, the receipt rides in metadata) waits until a customer asks | `agents.grounding_read` · S; `doors.chat_completions` · M, not scheduled | ✅ §6 item 52(b): the endpoint waits for a customer |
+
+**Next, not yet waves:** an App takes values from its address or an embedding host (the July study's module interfaces, M–L,
+mockup first) · MCP tool search, and `platform_help` on MCP (S) · a neighbourhood view on the object page (M) · interfaces
+declared by a person (M) · reading objects under a past release (M) · proposed agent revisions, once an agent has certified goldens (✅ §6 item 52(c)).
+
+**The laws it keeps.** A model never adds or wires a piece, and never authors a declaration · the organisation ontology is
+edited by people only · no embedding of customer object text · no hosted code · commands never fire on a value change.
+
+### 3.61 · A side assistant beside every screen (🅿️ PARKED 2026-10-24 by the user — *"let's park this in the Road map for a later time"* · not adopted, nothing built, no flag; PENDING item 59)
+
+**What the user pictured** (2026-10-24, with github.com/copilotkit/copilotkit and two screenshots of its FinanceOS
+showcase): *"we do not have a side chat assistant which will help the user and understanding what is on the main
+screen.. when a user wants to ask a question about a number already given in the briefing section and user clicks on
+"pull the thread" then aside and with chat feature opens up which is an interaction section between the user and the
+platform"*. The screenshots show a panel on the right of a dashboard, a conversation with the steps it ran shown as they
+run (*Researching…*, `load_dashboard` complete), an answer that draws a figure card inside the chat, the assistant
+switching the dashboard beside it, and suggestion chips.
+
+**The premise, measured at `add2d52f`.** The Briefing already has half of it:
+- *Ask this briefing →* opens `web/components/brief/BriefAskPanel.tsx`: a side panel 420 px wide that pushes the brief
+  left, one conversation, quick answers only (a deep question goes to Ask), grounded server-side in the Briefing on
+  screen (`knowledge/brief_context.py`, surface `briefing` — nothing about the brief is sent from the browser).
+- *Pull the thread →* on a citation (`BriefingPanel.tsx:529`) does not open that panel. It streams a separate deep
+  investigation inline below the prose (`brief/InlineInvestigationThread.tsx`, a session of its own), so the pull and
+  the side chat are two conversations that cannot see each other.
+- No other screen has a side chat: Dashboards has *change in words* (it proposes an edit), and the Data Canvas's
+  `ChatPanel` is the main surface, not one beside it.
+- No chat can act on the screen beside it: open a dashboard, set the period, point at a card.
+
+**What it would build — a sketch, not waves:**
+1. *Pull the thread* opens the side panel with the figure as its subject (its value, period and query), one
+   conversation; a deep run is a step inside it, not a second thread below the prose.
+2. One side panel for every screen. Each screen declares what is on it, assembled server-side as the Briefing's
+   grounding already is, so the panel cannot drift from what the reader sees.
+3. Screen actions the assistant may take, declared by each screen, shown and undoable: open a dashboard, set the
+   period, point at a card. Navigation only; anything that writes still goes through Approvals.
+4. The steps it ran and suggestion chips in the panel. The chat's parts (`PartsMessage`) already draw both kinds.
+
+**The laws it would keep.** Adapt the pattern, never the hosted service (as with CopilotKit's learning, PENDING 56) ·
+grounded in the server's copy of the screen · the left rail stays, so the panel is on the right · a mockup on live data
+first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything that writes.
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
@@ -14069,6 +14431,25 @@ the browser** · **measure the premise before building.**
       - **(8)** Drawn for 1920 × 1080, fitting a laptop and saying the zoom.
     - This supersedes the six-size *Size* of 2026-10-08 (*"make each component size adjustable… without losing the
       elegance"*).
+52. ✅ **DECIDED 2026-10-24 — Arcs ED, TC and FA adopted, from the Palantir incorporation study** (§3.58–§3.60;
+    `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md`, with `docs/PALANTIR_DOCS_CATALOGUE_2026-10-24.md` and its CSV).
+    - The path: *"lets learn everything about https://github.com/morluto/rea"* → REA set up for Claude Code →
+      *"palantir actual website and its docs.. check that.."* → the catalogue (4,132 docs pages, 329 API operations; the
+      July study had named 39 of 148 sections and no REST page) → *"The whole point of this Study is to understand how we
+      can incorporate the features of Palantir into our platform.."* → *"rebase and adopt the arcs into the roadmap"*.
+    - Adopted: the three arcs, in the order the study proposed (ED → TC → FA). The order stands: the user was offered
+      a different order on 2026-10-24 and chose *"Start ED-0 here"*.
+    - Decided by the user 2026-10-24, from options (each took the recommended choice):
+      - **(a)** ED-4 — *"Last published version"*: an App's readers see the version last published; a later keep is a
+        draft until published.
+      - **(b)** FA-7 — *"When a customer asks"*: `doors.chat_completions` is written down, not built. The grounding read
+        (`agents.grounding_read`) stays in FA-7.
+      - **(c)** Proposed agent revisions — *"Once test questions exist"*: variants are tried only against an agent's
+        certified goldens and staged in Approvals for a person; never scored by a model. Not before goldens exist.
+      - **(d)** ED-5, re-scoped on its measured premise — *"Impacts are the one store"*: no causal edge was ever
+        confirmed on the live install, and the model's proposals name no promise, so nothing is folded. The declared
+        impacts are the one store, the model is not asked for causes, and the alert summary words the impacts.
+    - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)

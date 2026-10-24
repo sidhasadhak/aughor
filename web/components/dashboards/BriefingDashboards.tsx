@@ -65,6 +65,7 @@ import {
   type BriefingRange, type DashboardAudience, type DashboardDrafted, type DashboardKept, type DashboardList, type DashboardVersion,
   type PersonDashboard, type ShapeName, type SharedDashboard, type SharedDashboardListed, type StagedProposal,
 } from "@/lib/api";
+import { appWords } from "@/lib/dashboards/appVersion";
 import { MAX_CAPTION, MAX_NOTE, type Layout, type Size } from "@/lib/dashboards/catalog";
 import {
   cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, placeQuestion, recaption, regrid, resize, sectionsOf, setFilterWidth, swapCard, takeOff, takeOffCard,
@@ -533,9 +534,11 @@ function AskChange({ connectionId, dashboardId, schema, held, onKept }: {
 }
 
 /** Who a dashboard is published to (the canvas, B5): the groups the person belongs to and the roles
- *  they may publish to, picked by hand; publishing and unpublishing are each a version. */
-function PublishPanel({ connectionId, dashboardId, publishedTo, busy, onDone, onClose }: {
+ *  they may publish to, picked by hand; publishing and unpublishing are each a version. With App versions
+ *  on (ED-4) a change kept since the version its readers read is a draft, published to the same audience. */
+function PublishPanel({ connectionId, dashboardId, publishedTo, draft = false, readersSee = null, busy, onDone, onClose }: {
   connectionId: string; dashboardId: string; publishedTo: DashboardAudience[]; busy: boolean;
+  draft?: boolean; readersSee?: number | null;
   onDone: (act: () => Promise<DashboardKept>, said: (k: DashboardKept) => string) => Promise<boolean>; onClose: () => void;
 }) {
   const [audiences, setAudiences] = useState<{ groups: DashboardAudience[]; roles: DashboardAudience[] } | null>(null);
@@ -573,10 +576,15 @@ function PublishPanel({ connectionId, dashboardId, publishedTo, busy, onDone, on
         Your notes and images travel marked as yours. It reads the ontology release it was pinned to and says when one since changes what it reads.
         Publishing is a version; so is unpublishing.
       </div>
+      {draft && readersSee !== null && (
+        <div className="aug-fs-sm" data-testid="dashboard-publish-draft" style={{ color: "var(--t1)" }}>
+          Its readers read version {readersSee}. What you kept since is a draft until you publish it.
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <Button size="sm" disabled={busy || same || !chosen.length} data-testid="dashboard-publish-go"
+        <Button size="sm" disabled={busy || (same && !draft) || !chosen.length} data-testid="dashboard-publish-go"
           onClick={() => void onDone(() => publishDashboard(connectionId, dashboardId, chosen), k => `Published as an App, as version ${k.version}.`).then(ok => { if (ok) onClose(); })}>
-          Publish the App
+          {same && draft ? "Publish your changes" : "Publish the App"}
         </Button>
         {publishedTo.length > 0 && (
           <Button size="sm" variant="secondary" disabled={busy}
@@ -1038,6 +1046,8 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const live = list.cockpits.filter(c => !c.retired);
   const kept = data?.cockpit;
   const drawn = kept && !kept.retired && kept.spec != null;
+  // Arc ED-4 — which version an App's readers read, and whether a change since is a draft
+  const app = appWords(kept ?? { version: 0, published_to: [] });
   const pinned = list.shared_cards + list.own_cards;
   const lines = new Map<string, CardLine>((data?.cards ?? []).map(c => [c.id, { title: c.title }]));
   const notPlaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
@@ -1097,6 +1107,9 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
               )) : <>{v.retired ? "Retired" : changed(v.changes)} · </>}
               {person(v.approved_by)} · {formatDateTime(v.kept_at)}
               {v.source ? ` · ${v.source}` : ""}{v.note ? ` · ${v.note}` : ""}
+              {kept.published_version === v.version && (
+                <span data-testid="dashboard-history-read" style={{ color: "var(--t1)" }}> · what its readers read</span>
+              )}
             </span>
             {v.current ? <span style={{ color: "var(--t3)" }}>current</span> : v.retired ? null : (
               <Button variant="ghost" size="xs" disabled={busy}
@@ -1150,7 +1163,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
       )}
       {publishing && (
         <PublishPanel connectionId={connectionId} dashboardId={data.cockpit_id} busy={busy}
-          publishedTo={(kept.published_to ?? []) as DashboardAudience[]}
+          publishedTo={(kept.published_to ?? []) as DashboardAudience[]} draft={app.draft} readersSee={app.readersSee}
           onDone={write} onClose={() => setPublishing(false)} />
       )}
     </>
@@ -1190,9 +1203,9 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                     setShowHistory(h => !h);
                   }}><Icon name="history" /> History</Button>
                   <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="dashboard-publish-open"
-                    aria-expanded={publishing} title="Share this dashboard, as it stands, with a group you belong to or a role you hold."
+                    aria-expanded={publishing} title={app.title || "Share this dashboard, as it stands, with a group you belong to or a role you hold."}
                     onClick={() => setPublishing(p => !p)}>
-                    <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
+                    <Icon name="send" /> {app.label}
                   </Button>
                   <Button size="xs" variant="ghost" disabled={busy} data-testid="dashboard-retire-open" aria-expanded={retiring}
                     title="Take this dashboard off your strip for good. Its history stays in the record."
@@ -1450,9 +1463,9 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
               )}
               {!arranging && !builderOn && (
                 <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="dashboard-publish-open"
-                  aria-expanded={publishing} title="Share this dashboard, as it stands, with a group you belong to or a role you hold."
+                  aria-expanded={publishing} title={app.title || "Share this dashboard, as it stands, with a group you belong to or a role you hold."}
                   onClick={() => setPublishing(p => !p)}>
-                  <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
+                  <Icon name="send" /> {app.label}
                 </Button>
               )}
               {!arranging && !builderOn && (

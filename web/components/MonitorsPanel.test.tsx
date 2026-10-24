@@ -9,6 +9,7 @@ import { Theme } from "@radix-ui/themes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MonitorAlert, MonitorDef, MonitorProof } from "@/lib/api";
+import { optionsOf } from "@/lib/testing";
 
 const monitor = (over: Partial<MonitorDef>): MonitorDef => ({
   id: "m1", conn_id: "c1", name: "Average Order Value", metric_name: null,
@@ -39,6 +40,7 @@ const api = vi.hoisted(() => ({
   getMonitors: vi.fn(),
   getAllAlerts: vi.fn(),
   getMetrics: vi.fn(async () => []),
+  getActionTriggers: vi.fn(async () => [] as { id: string; name: string; type: string; enabled: boolean }[]),
   getMonitorProof: vi.fn(),
   acknowledgeAlert: vi.fn(async (id: string) => ({ id, acknowledged: true })),
   drillMonitor: vi.fn(async (id: string) => ({ monitor_id: id, at: "", fired: true, delivered: null, detail: "", channel: "in_app" })),
@@ -148,5 +150,21 @@ describe("MonitorsPanel", () => {
     expect(screen.getByTestId("fig-open")).toHaveTextContent("3 acknowledged");
     // the twelve weeks hold two of them, both from the one removed monitor
     expect(screen.getByTestId("monitor-alert-weeks")).toHaveTextContent("2 alerts · all from 1 monitor since removed");
+  });
+
+  it("offers the destinations that exist, and says a stored \"slack\" sends nowhere (ROADMAP §3.26)", async () => {
+    api.getMonitors.mockResolvedValue([monitor({ notification_channel: "slack" })]);
+    api.getAllAlerts.mockResolvedValue([]);
+    api.getMonitorProof.mockResolvedValue(PROOFS.m1);
+    api.getActionTriggers.mockResolvedValue([{ id: "trg-1", name: "Ops webhook", type: "webhook", enabled: true }]);
+    panel();
+    await waitFor(() => expect(screen.getByTestId("monitor-row")).toHaveTextContent('sends nowhere: no destination "slack"'));
+    fireEvent.click(within(screen.getByTestId("monitor-row")).getByRole("button", { name: /Details/ }));
+    fireEvent.click(within(screen.getByTestId("monitor-details")).getByRole("button", { name: "Edit" }));
+    const offered = optionsOf(screen.getByRole("combobox", { name: "Notification" })).map(o => o.text);
+    expect(offered).toEqual(expect.arrayContaining(["In-app", "Ops webhook (webhook)", '"slack" — no such destination']));
+    expect(offered).not.toContain("Slack");
+    expect(offered).not.toContain("Email");
+    expect(screen.getByText(/names no destination, so these alerts are sent nowhere/)).toBeInTheDocument();
   });
 });

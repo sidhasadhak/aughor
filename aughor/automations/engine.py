@@ -261,6 +261,28 @@ def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> t
     return False, f"schedule({cond.cron}): next due {nxt.isoformat() if nxt else 'never'}"
 
 
+def _metric_not_due(cond: Condition, automation: Automation, now: datetime) -> Optional[tuple[bool, str]]:
+    """``(False, why)`` when a metric condition's monitor is not due a check on this tick; None when it is, or when its
+    cadence cannot be read (the probe then says what is wrong with the monitor).
+
+    A monitor says how often it is checked (``check_cron``). A chain naming one ran it on every 60-second tick, so an
+    hourly monitor queried the warehouse sixty times an hour (ROADMAP §3.26). Its own cron is the cadence here, asked
+    as a schedule condition is: did it match since this automation last ran?"""
+    from aughor.monitors.store import get_monitor
+
+    monitor = get_monitor(cond.monitor_id)
+    if monitor is None or not (monitor.check_cron or "").strip():
+        return None
+    try:
+        due, detail = _schedule_fired(Condition(kind="schedule", config={"cron": monitor.check_cron}),
+                                      automation, now)
+    except ProbeUnavailable:
+        return None
+    if due:
+        return None
+    return False, f"metric({monitor.name}): not checked on this tick — {detail.split(': ', 1)[-1]}"
+
+
 def default_probe(cond: Condition, automation: Automation):
     """Evaluate a warehouse-backed condition.
 
@@ -378,6 +400,8 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
         elif cond.kind == "webhook":
             results.append((True, f"webhook: {asked}") if manual
                            else (False, "webhook: waiting to be called"))
+        elif cond.kind == "metric" and not manual and (waiting := _metric_not_due(cond, automation, now)):
+            results.append(waiting)
         else:
             # HB-3 — a probe may return (fired, detail) or (fired, detail, payload);
             # a fired condition's payload is what the chain binds as `trigger.<key>`
@@ -1845,6 +1869,39 @@ def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOut
         data={"rows": rows, "columns": columns, "count": len(rows)})
 
 
+def _dispatch_expectations(effect: Effect, automation: Automation) -> EffectOutcome:
+    """Arc ED, ED-3 — measure a table's expectations, read-only, and record each verdict in the quality plane.
+
+    The step carries names and values, never SQL (`quality.expectations.parse`), and each query counts what breaks an
+    expectation — never the rows — through the connection's own door, audited as a stored definition's read. A verdict
+    lands in the one results store, which an answer's caveats, the MCP table-health tool and the Briefing already read;
+    an expectation that could not be measured is said here and recorded as nothing, because an unreadable query is not
+    a table that failed. Behind ``quality.expectations`` (off: skipped, and said).
+    """
+    from aughor.quality import expectations as X
+    from aughor.quality.rules import RuleError
+
+    target = automation.conn_id
+    if not X.enabled():
+        return EffectOutcome(kind=effect.kind, target=target, status="skipped",
+                             message="the expectations step is off on this install (quality.expectations)")
+    try:
+        rules = X.parse(effect.expectations)
+    except RuleError as exc:
+        return EffectOutcome(kind=effect.kind, target=target, status="invalid_params", message=str(exc))
+    try:
+        with _warehouse(automation) as db:
+            run = X.measure(db, rules, connection_id=automation.conn_id)
+    except KeyError:
+        return EffectOutcome(kind=effect.kind, target=target, status="dispatch_error",
+                             message=f"unknown connection: {automation.conn_id}")
+    data = {"run_id": run.run_id, "met": run.met, "not_met": len(run.results) - run.met,
+            "unmeasured": [{"name": n, "why": w} for n, w in run.unmeasured],
+            "results": [r.to_dict() for r in run.results]}
+    status = "executed" if run.results else "failed"
+    return EffectOutcome(kind=effect.kind, target=target, status=status, message=run.words(), data=data)
+
+
 from aughor.automations.synthesize import dispatch_synthesize  # noqa: E402 — beside its table
 
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
@@ -1867,6 +1924,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     # right: `refused` → `dispatch_error` (terminal — retrying a refusal never changes it)
     # and `blocked` → `failed` (retriable — a cap window rolls over).
     "mcp_call": _dispatch_mcp_call,
+    "expectations": _dispatch_expectations,       # Arc ED, ED-3
 }
 
 

@@ -170,6 +170,14 @@ class EmbeddingDimensionMismatch(RuntimeError):
     """The configured embedder does not fit the collection that already exists."""
 
 
+class DocumentSearchUnavailable(RuntimeError):
+    """The documents could not be searched: the embedder, the store or the registry failed.
+
+    Raised where `search_documents` used to answer `[]`. An empty list says "nothing matched",
+    and that is the one thing a failed search does not know (withheld is said, never implied).
+    """
+
+
 def _ensure_collection() -> None:
     """Create the collection at the ACTIVE embedder's width, or refuse if one exists at a
     different one.
@@ -424,16 +432,21 @@ def search_documents(query: str, top_k: int = 4, *,
     row is what deleting it removed — never another connection's schema docs when
     ``connection_id`` is given, and with sign-in on only the caller's organisation's documents.
     Over-fetches so the filters cannot shrink the answer below ``top_k``.
+
+    Raises `DocumentSearchUnavailable` when the search itself fails; `[]` means the indexed
+    documents were searched and nothing matched, or that none are indexed.
     """
     try:
         from aughor.security.authz import tenant_scope
         from aughor.semantic.embedder import embed_one
-        from aughor.semantic.vector_store import collection_count, search
-        if collection_count(DOCS_COLLECTION) == 0:
+        from aughor.semantic.vector_store import search
+        registry = {d["doc_id"]: d for d in _load_registry()}
+        if not registry:
+            # Nothing indexed. Asked of the registry, not `collection_count`, which answers 0
+            # for a store that is down as well as for an empty one.
             return []
         vector = embed_one(query)
         hits = search(DOCS_COLLECTION, vector, top_k=max(top_k * 4, 16))
-        registry = {d["doc_id"]: d for d in _load_registry()}
         org_id = tenant_scope()
         results = []
         for h in hits:
@@ -454,8 +467,16 @@ def search_documents(query: str, top_k: int = 4, *,
                 "score": h["score"],
             })
         return results
-    except Exception:
-        return []
+    except Exception as exc:
+        first = (str(exc).splitlines() or [""])[0][:200]
+        raise DocumentSearchUnavailable(f"{type(exc).__name__}: {first}") from exc
+
+
+#: What a prompt reads when the documents could not be searched, in place of nothing: an
+#: absent section would let the model conclude the documents are silent on the question.
+DOCUMENTS_UNAVAILABLE_SECTION = (
+    "UPLOADED DOCUMENTS: could not be searched for this question (the document index did not "
+    "answer). Do not treat the documents as silent on this subject.")
 
 
 def build_external_context_section(query: str, top_k: int = 4,
@@ -463,7 +484,8 @@ def build_external_context_section(query: str, top_k: int = 4,
                                    connection_id: Optional[str] = None) -> str:
     """
     Retrieve relevant document snippets and format them for prompt injection.
-    Returns empty string when no documents are indexed or Qdrant is unavailable.
+    Returns empty string when no documents are indexed or none match, and
+    `DOCUMENTS_UNAVAILABLE_SECTION` when the search failed.
     ``connection_id`` keeps another connection's schema docs out (`search_documents`).
 
     Two scopes act here, and they are deliberately not the same shape.
@@ -495,12 +517,18 @@ def build_external_context_section(query: str, top_k: int = 4,
         pinned_ids = [d for d in pinned_ids if d in allowed]
 
     pinned_hits: list[dict] = []
-    if pinned_ids:
-        wide = search_documents(query, top_k=max(top_k * 8, 32), connection_id=connection_id)
-        pinned_hits = [h for h in wide if h.get("doc_id") in set(pinned_ids)][:top_k]
+    try:
+        if pinned_ids:
+            wide = search_documents(query, top_k=max(top_k * 8, 32), connection_id=connection_id)
+            pinned_hits = [h for h in wide if h.get("doc_id") in set(pinned_ids)][:top_k]
 
-    hits = search_documents(query, top_k=top_k if allowed is None else max(top_k * 4, 16),
-                            connection_id=connection_id)
+        hits = search_documents(query, top_k=top_k if allowed is None else max(top_k * 4, 16),
+                                connection_id=connection_id)
+    except DocumentSearchUnavailable as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the documents could not be searched; the prompt says so",
+                 counter="knowledge.docs_unavailable")
+        return DOCUMENTS_UNAVAILABLE_SECTION
     if allowed is not None:
         hits = [h for h in hits if h.get("doc_id") in allowed]
     seen = {(h.get("doc_id"), h.get("chunk_index")) for h in pinned_hits}

@@ -647,10 +647,16 @@ def search_documents_endpoint(body: dict, request: Request):
     query = body.get("query", "")
     top_k = int(body.get("top_k", 5))
     connection_id = body.get("connection_id") or None
+    from aughor.knowledge.indexer import DocumentSearchUnavailable
     if connection_id:
         # a body is invisible to the router's connection guard, so the door checks it itself
         check_owner("connection", connection_id, get_principal(request))
-    return search_documents(query, top_k=top_k, connection_id=connection_id)
+    try:
+        return search_documents(query, top_k=top_k, connection_id=connection_id)
+    except DocumentSearchUnavailable as exc:
+        # A failed search is not an empty one: `[]` here would read as "nothing matched".
+        raise HTTPException(status_code=503,
+                            detail=f"document search is unavailable: {exc}") from exc
 
 
 # ── Org Intelligence ──────────────────────────────────────────────────────────

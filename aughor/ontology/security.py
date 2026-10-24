@@ -217,6 +217,15 @@ def _policies_said(entity: OntologyEntity, who: Reader) -> str:
                      if any(p in _admitted(entity, who.groups.get(pr, {EVERYONE})) for pr in who.principals))
 
 
+def sees_every(entity: OntologyEntity, who: Optional[Reader] = None) -> bool:
+    """Whether every party of the reader is admitted by a policy with no conditions — sees every object of ``entity``.
+    True when nothing restricts it."""
+    if not restricts(entity):
+        return True
+    who = who or reader()
+    return all(any(not p.conditions for p in _admitted(entity, who.groups.get(pr, {EVERYONE}))) for pr in who.principals)
+
+
 def restricts(entity: OntologyEntity) -> bool:
     """Whether a reader's objects of ``entity`` are a policy's — the flag on and a row policy declared."""
     return enabled() and bool(entity.row_policies)

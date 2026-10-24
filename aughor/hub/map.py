@@ -78,15 +78,48 @@ def _destinations(a) -> list[dict]:
     return out
 
 
+def _monitor_destinations(monitor) -> list[dict]:
+    """Where a monitor's alerts go: in-app, or the Notifications trigger its channel names."""
+    channel = (monitor.notification_channel or "in_app").strip()
+    if channel == "in_app":
+        return [{"kind": "in_app", "target": ""}]
+    row: dict = {"kind": "notify", "target": channel}
+    try:
+        from aughor.notifications.store import get_trigger
+        trg = get_trigger(channel)
+        if trg is not None:
+            row.update({"label": trg.name, "channel": trg.channel, "type": trg.type})
+        else:
+            row["missing"] = True        # names no trigger, so nothing is sent
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "hub map could not read a trigger row", counter="hub.map_trigger")
+    return [row]
+
+
+def _monitors(conn_id: str) -> list[tuple]:
+    """Every monitor as ``(virtual automation, monitor)``. Monitors run through the engine as virtual automations and
+    are never rows of the automations store, so the map listed none of them (ROADMAP §3.26). Disabled ones are listed
+    too, and read *disabled*."""
+    try:
+        from aughor.automations.adopt import monitor_as_automation
+        from aughor.monitors.store import list_monitors
+        return [(monitor_as_automation(m), m) for m in list_monitors(conn_id=conn_id or None)]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "hub map could not read the monitors", counter="hub.map_monitors")
+        return []
+
+
 def hub_map(conn_id: str = "") -> dict:
-    """The map. One row per automation, every column the roadmap names."""
+    """The map. One row per automation and per monitor, every column the roadmap names."""
     from aughor.automations.models import now_iso_z
-    from aughor.automations.store import get_runs, list_automations
+    from aughor.automations.store import get_runs, last_run, list_automations
     from aughor.govern.departure import GRADUATION_MIN_MARKED, GRADUATION_PRECISION
     from aughor.govern.departure_store import precision_for
     from aughor.org.context import current_org_id
 
-    autos = list_automations(conn_id=conn_id or None)
+    autos = [(a, None) for a in list_automations(conn_id=conn_id or None)] + _monitors(conn_id)
     since = _window_start()
 
     # One pass over the standing grants: which chains earned unattended sends.
@@ -127,7 +160,7 @@ def hub_map(conn_id: str = "") -> dict:
                                          scan=SESSION_SCAN, since=since)}
 
     rows: list[dict] = []
-    for a in autos:
+    for a, monitor in autos:
         cost = {"window_days": WINDOW_DAYS, "runs": runs_by_auto.get(a.id, 0),
                 "deep_runs": len(invs_by_auto.get(a.id, ())),
                 "total_tokens": 0, "cost_usd": 0.0,
@@ -143,14 +176,20 @@ def hub_map(conn_id: str = "") -> dict:
         cost["cost_usd"] = round(cost["cost_usd"], 6)
 
         prec = precision_for(a.id)
+        last = {"at": a.last_run_at, "status": a.last_status}
+        if monitor is not None:
+            # A virtual row carries no last run of its own; the engine records each tick under its id.
+            r = last_run(a.id)
+            last = {"at": r.started_at, "status": r.outcome} if r else {"at": None, "status": None}
         rows.append({
-            "id": a.id, "conn_id": a.conn_id, "name": a.name,
+            "id": a.id, "kind": "monitor" if monitor is not None else "automation",
+            "conn_id": a.conn_id, "name": a.name,
             "description": a.description, "enabled": a.enabled, "state": _state(a),
             "trigger": [c.describe() for c in a.conditions],
-            "destinations": _destinations(a),
+            "destinations": _monitor_destinations(monitor) if monitor is not None else _destinations(a),
             "grants": grants_by_auto.get(a.id, []),
             "owner": {"declared_by": a.declared_by, "agent_id": a.agent_id},
-            "last_run": {"at": a.last_run_at, "status": a.last_status},
+            "last_run": last,
             "cost": cost,
             "probation": {"on": a.probation, "marked": prec["marked"],
                           "counts": prec["counts"], "unlanded": prec["unlanded"],
@@ -163,7 +202,8 @@ def hub_map(conn_id: str = "") -> dict:
     return {
         "rows": rows, "window_days": WINDOW_DAYS, "generated_at": now_iso_z(),
         "totals": {
-            "automations": len(rows),
+            "automations": sum(1 for r in rows if r["kind"] == "automation"),
+            "monitors": sum(1 for r in rows if r["kind"] == "monitor"),
             "live": sum(1 for r in rows if r["state"] == "live"),
             "probation": sum(1 for r in rows if r["probation"]["on"]),
         },

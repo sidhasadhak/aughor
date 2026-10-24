@@ -93,6 +93,28 @@ class Revision:
         return self.state == "published"
 
 
+def stamp(state: PublicationState, *, by: str = "", published_at: str = "", note: str = "",
+          created_at: str = "") -> dict:
+    """Where a version stands on the publication axis, as every version written here carries it
+    (``payload["_lifecycle"]``). Public for a store that keeps its own payload on the ledger and reads its own
+    versions (Arc ED, ED-4: a dashboard's), so that this module's history and ``resolve`` read the state that store
+    does."""
+    meta = {"state": state, "created_at": created_at or _now(), "published_at": published_at}
+    if by:
+        meta["by"] = by
+    if note:
+        meta["note"] = note
+    return meta
+
+
+def state_of(payload: Any) -> Optional[PublicationState]:
+    """The state a version's payload records — or None when it records none: a version kept before its store was on
+    this axis, whose state only that store can project."""
+    meta = payload.get("_lifecycle") if isinstance(payload, dict) else None
+    state = meta.get("state") if isinstance(meta, dict) else None
+    return state if state in ("draft", "published", "archived") else None
+
+
 def _revision(art: Optional[dict]) -> Optional[Revision]:
     if not art:
         return None
@@ -101,7 +123,7 @@ def _revision(art: Optional[dict]) -> Optional[Revision]:
     return Revision(
         natural_key=art.get("natural_key", ""),
         version=int(art.get("version") or 0),
-        state=meta.get("state") or "draft",
+        state=state_of(payload) or "draft",
         body=dict(payload.get("_body") or {}),
         artifact_id=art.get("id", ""),
         created_at=meta.get("created_at", ""),
@@ -115,12 +137,8 @@ def _write(kind: str, natural_key: str, body: dict, state: PublicationState, *,
            published_at: str = "", conn_id: Optional[str] = None,
            org_id: Optional[str] = None, by: str = "", note: str = "",
            created_at: str = "") -> Revision:
-    meta = {"state": state, "created_at": created_at or _now(), "published_at": published_at}
-    if by:
-        meta["by"] = by
-    if note:
-        meta["note"] = note
-    payload = {"_body": dict(body), "_lifecycle": meta}
+    payload = {"_body": dict(body),
+               "_lifecycle": stamp(state, by=by, published_at=published_at, note=note, created_at=created_at)}
     led = _ledger()
     led.artifact_write(kind, natural_key, payload, conn_id=conn_id, org_id=org_id)
     rev = _revision(led.artifact_latest(natural_key))

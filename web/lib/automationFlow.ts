@@ -591,6 +591,8 @@ export function clearBinding(draft: Draft, toAlias: string, field: string): Draf
  */
 const KIND_SEED: Record<string, Record<string, unknown>> = {
   schedule: { cron: "0 9 * * *" },
+  // Arc ED, ED-3 — a list, not the blank string a required key seeds as.
+  expectations: { expectations: [] },
 };
 
 export function seedConfig(

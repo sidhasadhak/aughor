@@ -839,6 +839,55 @@ describe("History, in words (Arc AP-6)", () => {
   });
 });
 
+describe("an App publishes one version (Arc ED, ED-4)", () => {
+  const sales = { kind: "group" as const, id: "sales", name: "Sales team" };
+  /** The person's dashboard read with ``newest`` as its newest version, under the field name the API carries. */
+  const withNewest = (newest: PersonDashboard["cockpit"], more: Partial<PersonDashboard> = {}): PersonDashboard =>
+    ({ ...READ, ...more, cockpit: newest });
+
+  it("a change kept since the version its readers read is said, publishes to the same audience, and History marks what they read", async () => {
+    api.dashboardAudiences.mockResolvedValue({ groups: [sales], roles: [] });
+    api.publishDashboard.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
+    api.getDashboard.mockResolvedValue(withNewest({ ...version(3), spec: SPEC, published_to: [sales], state: "draft", published_version: 2 }, {
+      history: [{ ...version(3), state: "draft", published_to: [sales] },
+                { ...version(2), current: false, state: "published", published_to: [sales], source: "published to Sales team" },
+                { ...version(1), current: false, state: "draft" }] }));
+    show();
+    const door = await screen.findByTestId("dashboard-publish-open");
+    expect(door).toHaveTextContent("An App for Sales team · readers see version 2");
+    expect(door).toHaveAttribute("title", "What you kept since version 2 is a draft. Its readers read version 2 until you publish.");
+
+    fireEvent.click(door);
+    const panel = await screen.findByTestId("dashboard-publish");
+    await within(panel).findByText("Sales team");
+    expect(within(panel).getByTestId("dashboard-publish-draft")).toHaveTextContent("Its readers read version 2. What you kept since is a draft until you publish it.");
+    const go = within(panel).getByTestId("dashboard-publish-go");
+    expect(go).toHaveTextContent("Publish your changes");
+    expect(go).toBeEnabled();                                   // the same audience: before ED-4 this door was shut
+    fireEvent.click(go);
+    await waitFor(() => expect(api.publishDashboard).toHaveBeenCalledWith("thelook", "returns-1", [sales]));
+
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    const rows = within(await screen.findByTestId("dashboard-history")).getAllByRole("listitem");
+    expect(within(rows[1]).getByTestId("dashboard-history-read")).toHaveTextContent("what its readers read");
+    expect(within(rows[0]).queryByTestId("dashboard-history-read")).toBeNull();
+  });
+
+  it("a server with App versions off says no state: the door reads as before, and the same audience is not offered again", async () => {
+    api.dashboardAudiences.mockResolvedValue({ groups: [sales], roles: [] });
+    api.getDashboard.mockResolvedValue(withNewest({ ...version(3), spec: SPEC, published_to: [sales] }));
+    show();
+    const door = await screen.findByTestId("dashboard-publish-open");
+    expect(door).toHaveTextContent(/^An App for Sales team$/);
+    fireEvent.click(door);
+    const panel = await screen.findByTestId("dashboard-publish");
+    await within(panel).findByText("Sales team");
+    expect(within(panel).queryByTestId("dashboard-publish-draft")).toBeNull();
+    expect(within(panel).getByTestId("dashboard-publish-go")).toHaveTextContent("Publish the App");
+    expect(within(panel).getByTestId("dashboard-publish-go")).toBeDisabled();
+  });
+});
+
 describe("previewing as a group (Arc AP-6)", () => {
   it("reads the dashboard as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
     api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, "ontology.security": { value: true } });

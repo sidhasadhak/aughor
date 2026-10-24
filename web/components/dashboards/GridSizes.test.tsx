@@ -49,7 +49,7 @@ function card(id: string, title: string, value: number): CardState {
 
 const CARDS = [card("c7f3a001", "Return rate", 0.1003), card("c91b2002", "Net merchandise revenue", 341000)];
 const HOST: DashboardHostState = { range: { status: "final" }, cards: { c7f3a001: { status: "within" }, c91b2002: { status: "within" } } };
-/** A reader who may not change the cockpit: only a card's refresh. */
+/** A reader who may not change the dashboard: only a card's refresh. */
 const READER: DashboardDoors = { onRefresh: vi.fn() };
 const owner = () => {
   const doors = { onRemove: vi.fn(), onRefresh: vi.fn(), onTakeOff: vi.fn(), onResize: vi.fn(), onRegrid: vi.fn() };

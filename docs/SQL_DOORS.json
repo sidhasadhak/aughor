@@ -166,6 +166,8 @@
   "aughor/semantic/object_context.py::object_metrics::execute::object_metric": {"dialect": "generated", "author": "mixed", "note": "GM-5: audited — a governed metric compiled for an object page a person opened"},
   "aughor/semantic/object_instances.py::_formula_properties::execute::object_instance": {"dialect": "generated", "author": "mixed", "note": "GM-5: audited — an object page a person opened"},
   "aughor/semantic/object_instances.py::_read::execute::object_instance": {"dialect": "declared", "author": "mixed", "note": "GM-5: audited — an object page a person opened"},
+  "aughor/quality/expectations.py::measure::execute::expectations": {"dialect": "native", "author": "stored", "note": "ED-3: an expectation's count of the rows that break it, compiled for the engine, audited as a stored definition's read"},
+  "aughor/ontology/security_sql.py::_admitted_keys::execute::edit_history_rows": {"dialect": "declared", "author": "door", "note": "ED-1: which edited objects the reader may see, read through the object door's FROM"},
   "aughor/semantic/trusted_verify.py::verify::execute_bounded::__trusted_verify__": {"dialect": "native", "author": "person", "note": "a trusted query"},
   "aughor/sql/executor.py::execute_guarded::execute::{query_id}": {"dialect": "door", "author": "door", "note": "the guard battery runs the statement it rendered for the engine at entry"},
   "aughor/sql/executor.py::execute_guarded::execute::{query_id}#2": {"dialect": "door", "author": "door", "note": "the deterministic repair of the engine's own statement"},

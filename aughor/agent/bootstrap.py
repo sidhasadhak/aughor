@@ -28,6 +28,7 @@ def register_agent_plugins() -> None:
     _register_readings_loader()
     _register_guard_receipt_forwarder()
     _register_exclusions()
+    _register_object_policies()
     _REGISTERED = True
 
 
@@ -49,6 +50,26 @@ def _register_exclusions() -> None:
         return is_table_off(connection_id, schema, table)
 
     register_exclusions(refusal=_refusal, schema_text=_schema_text, table_off=_table_off)
+
+
+def _register_object_policies() -> None:
+    """Arc ED, ED-1 — the ontology's row policies and sensitive properties, applied at a connection's door through the
+    registry seam (no Platform→Agent import). Unregistered with the flags on, a request's statement is refused."""
+    from aughor.kernel.registries.object_policies import register_object_policies
+
+    def _applies() -> bool:
+        from aughor.ontology.security_sql import applies
+        return applies()
+
+    def _apply(connection_id: str, sql: str, dialect: str) -> str:
+        from aughor.ontology.security_sql import apply
+        return apply(connection_id, sql, dialect)
+
+    def _tenancy():
+        from aughor.ontology.security_sql import tenancy_words
+        return tenancy_words()
+
+    register_object_policies(applies=_applies, apply=_apply, tenancy=_tenancy)
 
 
 def _register_readings_loader() -> None:

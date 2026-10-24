@@ -20,7 +20,7 @@ import json
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -341,6 +341,11 @@ class ServicePrincipalIn(BaseModel):
     name: str
     note: str = ""
     connections: list[str] = Field(default_factory=list)
+    #: Arc ED, ED-2 — the grant: the areas it may work in, the entities it may read, the declared actions it may
+    #: propose. Left out, a new principal is not narrowed there and a rotated one keeps what it had.
+    areas: Optional[list[str]] = None
+    entities: Optional[list[str]] = None
+    actions: Optional[list[str]] = None
 
 
 @router.post("/principals/service", status_code=201)
@@ -355,10 +360,34 @@ def mint_service_principal(req: ServicePrincipalIn, principal=Depends(get_princi
         if not _visible(c):
             raise HTTPException(status_code=404, detail=f"No such connection {c!r}")
     try:
-        record, key = SP.mint(req.name, org_id=current_org_id(), by=who, note=req.note, connections=req.connections)
+        record, key = SP.mint(req.name, org_id=current_org_id(), by=who, note=req.note, connections=req.connections,
+                              areas=req.areas, entities=req.entities, actions=req.actions)
     except SP.ServicePrincipalRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return {**record, "key": key, "present_as": {SP.NAME_HEADER: req.name, SP.KEY_HEADER: "the key — shown once"}}
+
+
+@router.get("/principals/service/me")
+def service_principal_me(request: Request) -> dict:
+    """Arc ED, ED-2 — the service principal this request presents, and the grant it is held to: what the MCP server
+    asks before it lets a caller in as itself (`mcp.caller_principals`). A name and key that do not match an active
+    principal are refused here whatever the install's identity mode — elsewhere, without sign-in, they would read as
+    the install's own operator."""
+    from aughor.kernel.flags import flag_enabled
+    from aughor.rbac import principal_grant
+    from aughor.security import service_principals as SP
+    if not flag_enabled("mcp.caller_principals"):
+        raise HTTPException(status_code=404, detail="callers as their own principals are off on this install")
+    if not SP.headers_present(request):
+        raise HTTPException(status_code=404, detail=f"no service principal presented ({SP.NAME_HEADER} and {SP.KEY_HEADER})")
+    principal = SP.resolve(request)
+    if principal is None:
+        raise HTTPException(status_code=401, detail="the name and key do not match an active service principal")
+    name = SP.name_of(principal)
+    held = principal_grant.enabled()
+    return {"principal": SP.principal_id(name), "name": name, "org_id": principal.org_id,
+            "grant": SP.grant(name) if held else {"areas": [], "entities": [], "actions": [], "connections": []},
+            "grant_held": held, "areas": SP.AREAS}
 
 
 @router.get("/principals/service")

@@ -4,7 +4,8 @@
 entity's objects and each declared action's parameters, and the same as TypeScript declarations, stamped with the
 release they came from. `/objects/v1` lists objects and proposes declared actions. A proposal is staged in the Actions
 inbox for a person and never runs from here — the doors read and propose; approving stays a person's (decision (d)).
-Behind `ontology.builder_doors` (off): with it off every door says so (404), and nothing else changes.
+Behind `ontology.builder_doors`, on by default since its graduation on 2026-10-10 (§3.56); with it off every door says
+so (404), and nothing else changes.
 
 The shapes here are the version: a field is added, never renamed or removed, while the prefix is `v1`.
 """
@@ -19,12 +20,14 @@ from pydantic import BaseModel, Field
 
 from aughor.db.registry import BUILTIN_ID
 from aughor.ontology.security import acting_agent_from_request
+from aughor.ontology.security_sql import object_door_from_request
 from aughor.security.authz import caller, connection_owner_guard
 from aughor.semantic.object_query import ObjectListing
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
 router = APIRouter(tags=["builders"], dependencies=[Depends(connection_owner_guard),
-                                                    Depends(acting_agent_from_request)])   # Arc OC-7
+                                                    Depends(acting_agent_from_request),     # Arc OC-7
+                                                    Depends(object_door_from_request)])     # Arc ED, ED-1
 
 FLAG = "ontology.builder_doors"
 
@@ -48,23 +51,28 @@ def _scope(connection_id: str, schema_name: Optional[str]):
 
 
 @router.get("/ontology/v1/contract")
-def get_ontology_contract(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
+def get_ontology_contract(request: Request, connection_id: str = BUILTIN_ID,
+                          schema_name: Optional[str] = Query(default=None)):
     """The published ontology as a contract: a JSON Schema per entity (its properties, key and the segments a listing
     may name) and per declared action (what a proposal carries), stamped with the release they came from."""
     _on()
     from aughor.ontology.builder_doors import ontology_contract
+    from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
-    return ontology_contract(graph, release)
+    # Arc ED, ED-2 — a service principal reads the contract its grant names (`security.principal_scopes`)
+    return narrow_contract(ontology_contract(graph, release), grant_for(request))
 
 
 @router.get("/ontology/v1/types.d.ts", response_class=PlainTextResponse)
-def get_ontology_typescript(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
+def get_ontology_typescript(request: Request, connection_id: str = BUILTIN_ID,
+                            schema_name: Optional[str] = Query(default=None)):
     """The same contract as TypeScript declarations — an interface per entity, a union of its segments, a params
     interface per declared action and the release. Declarations only: nothing in them runs."""
     _on()
     from aughor.ontology.builder_doors import ontology_contract, typescript
+    from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
-    return PlainTextResponse(typescript(ontology_contract(graph, release)),
+    return PlainTextResponse(typescript(narrow_contract(ontology_contract(graph, release), grant_for(request))),
                              media_type="application/typescript; charset=utf-8")
 
 

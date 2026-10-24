@@ -58,7 +58,7 @@ export function processDashboardHolds(process: Pick<ProcessDetail, "stages">): s
 export async function startDashboard(connectionId: string, title: string, spec: unknown, note: string): Promise<string> {
   const id = dashboardIdFor(title);
   await keepDashboard(connectionId, id, spec, note);
-  try { localStorage.setItem(`aughor:cockpit:${connectionId}`, id); } catch { /* the cockpit opens on its own tab */ }
+  try { localStorage.setItem(`aughor:cockpit:${connectionId}`, id); } catch { /* the dashboard opens on its own tab */ }
   return id;
 }
 

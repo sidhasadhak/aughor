@@ -241,6 +241,9 @@ class CompiledObjectQuery:
     #: Arc OC-3 — the objects a keyed metric's statement was read over, as a condition on its entity's table
     #: (``<key> IN (<their keys>)``, in the dialect); "" when the query selects every object or reads no keyed metric.
     objects: str = ""
+    #: Arc ED-6 — the entities whose objects a row policy narrowed for this reader (`semantic/completeness.py`); not in
+    #: ``to_dict``, which answers as before — the door says it in its completeness.
+    withheld: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"path": "compiled", "sql": self.sql, "dialect": self.dialect,
@@ -270,6 +273,8 @@ class CompiledObjectListing:
     overlay: list[dict] = field(default_factory=list)
     #: The segment read, in words — its description, from the declaration that derives it or the segment's own.
     segment_said: str = ""
+    #: Arc ED-6 — as `CompiledObjectQuery.withheld`.
+    withheld: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"path": "listed", "segment_said": self.segment_said, "sql": self.sql, "count_sql": self.count_sql, "dialect": self.dialect,
@@ -815,6 +820,7 @@ class _Compiler:
         self.plan: list[str] = []
         self.links: list[dict] = []
         self.caveats: list[str] = []
+        self.withheld: list[str] = []          # Arc ED-6 — the entities a row policy narrowed (`say_rows`)
         self._n = 0
         self._many: dict[tuple, _ManyLink] = {}
         #: ON-5 — one pre-aggregation per (object alias, timeseries binding) read as a set.
@@ -1353,6 +1359,8 @@ class _Compiler:
         said = rows_said(entity)
         if said and said not in self.caveats:
             self.caveats.append(said)
+        if said and entity.id not in self.withheld:
+            self.withheld.append(entity.id)
 
     def join_one(self, scope: _Scope, from_alias: str, h: ObjectLink) -> str:
         key = (from_alias, h.rel.id, h.name)
@@ -2365,7 +2373,7 @@ class _Compiler:
         return CompiledObjectListing(sql=self.render(sql), count_sql=self.render(count_sql), dialect=self.dialect,
                                      object_type=anchor.api_name, type_id=anchor.id, key=key, title=title,
                                      columns=columns, plan=self.plan, links=self.links, caveats=self.caveats,
-                                     overlay=self.overlay, segment_said=self.segment_said)
+                                     overlay=self.overlay, segment_said=self.segment_said, withheld=self.withheld)
 
     def listed_paths(self, scope: _Scope, anchor: OntologyEntity, asked: list[str], key: str, title: str) -> list[str]:
         """The columns a listing reads: those asked for, each of which must resolve; or, when none is asked for, the
@@ -2514,7 +2522,7 @@ class _Compiler:
                                    object_type=anchor.api_name,
                                    columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
                                    dimensions=dims, measures=measure_names, overlay=self.overlay,
-                                   bindings=self.bindings, cross_source=cross, objects=objects)
+                                   bindings=self.bindings, cross_source=cross, objects=objects, withheld=self.withheld)
 
     def pre_aggregated(self, alias: str, select: str, source: str, outer: str, local: str,
                        columns: list[tuple[str, str]], target: str, label: str) -> str:

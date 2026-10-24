@@ -76,9 +76,15 @@ def get_edit_history(connection_id: str = BUILTIN_ID, object_type: str = "", row
     """Arc OC-6 — every version of the edits on this connection's objects, newest first: who set what, the value it
     replaced, who withdrew it. Narrowed to one entity, one object (`row_key`) and one property."""
     from aughor.actions.overlay import edit_history
+    from aughor.ontology import security_sql
     from aughor.org.context import current_org_id
-    return {"history": edit_history(connection_id, object_type=object_type, row_key=row_key, column=column,
-                                    org_id=current_org_id() or None)}
+    history = edit_history(connection_id, object_type=object_type, row_key=row_key, column=column,
+                           org_id=current_org_id() or None)
+    if not security_sql.enabled():
+        return {"history": history}
+    # Arc ED, ED-1 — as the reader may read it: a masked property's values emptied, an object outside their rows withheld
+    shown, withheld = security_sql.history_as_read(connection_id, history)
+    return {"history": shown, **({"withheld": withheld} if withheld else {})}
 
 
 # ── Action Triggers ───────────────────────────────────────────────────────────

@@ -12,6 +12,11 @@ NOTHING and never falls through to the header seam: a bad credential is refused,
 The shape is the custom agent's key (`custom_agents/keys.py`): random bytes, a constant-time compare,
 revocation as a state the row carries (supersede, never delete — the record of who was let in stays).
 Rows live in the kernel ledger's kv store; no new store.
+
+Arc ED, ED-2 — a principal may also carry a GRANT that narrows what the organisation's agent policy allows it: the
+areas it may work in (`AREAS`), the entities it may read and the declared actions it may propose. Each is stored only
+when a person names it, so a principal minted without one is the row it always was; the agent gate holds a request to
+it behind ``security.principal_scopes`` (`rbac/principal_grant.py`).
 """
 from __future__ import annotations
 
@@ -27,6 +32,17 @@ KV_STORE = "service_principals"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
 _TOKEN_BYTES = 32
 PREFIX = "service:"
+#: Arc ED, ED-2 — the areas a grant may name, each in words. Closed: a grant names only these.
+AREAS: dict[str, str] = {
+    "catalog:read": "read connections, metrics, findings, the knowledge graph and past runs",
+    "objects:read": "read objects, their entities and the ontology's contract",
+    "actions:propose": "propose a declared action for a person to approve",
+    "analysis:run": "ask questions and start analyses, which spend model calls",
+    "automations:run": "run an automation",
+    "ledger:read": "read the ledger's claims and restatements",
+    "ledger:write": "post a claim to the ledger",
+}
+_GRANT_KEYS = ("areas", "entities", "actions")
 
 
 class ServicePrincipalRefused(ValueError):
@@ -64,22 +80,32 @@ def is_service(principal) -> bool:
     return bool(principal is not None and str(getattr(principal, "user_id", "") or "").startswith(PREFIX))
 
 
-def mint(name: str, *, org_id: str, by: str, note: str = "", connections: Optional[list[str]] = None) -> tuple[dict, str]:
+def mint(name: str, *, org_id: str, by: str, note: str = "", connections: Optional[list[str]] = None,
+         areas: Optional[list[str]] = None, entities: Optional[list[str]] = None,
+         actions: Optional[list[str]] = None) -> tuple[dict, str]:
     """A person mints a service principal: returns ``(record, key)`` — the key once, never again.
     Minting an existing name ROTATES its key (the same gesture, so rotation is something a person
-    will do). Refuses a malformed name, no organisation or no minter."""
+    will do). Refuses a malformed name, no organisation or no minter. ``areas``, ``entities`` and
+    ``actions`` are its grant (ED-2); one left as None keeps what the row had."""
     if not _NAME.match(name or ""):
         raise ServicePrincipalRefused("a service principal's name is 2 to 63 characters of lowercase letters, digits, '-' or '_'")
     if not (org_id or "").strip():
         raise ServicePrincipalRefused("a service principal belongs to an organisation")
     if not (by or "").strip() or str(by).startswith(PREFIX) or str(by).startswith("agent:"):
         raise ServicePrincipalRefused("a person mints a service principal; an agent or a service cannot mint one")
+    unknown = sorted(set(areas or []) - set(AREAS))
+    if unknown:
+        raise ServicePrincipalRefused(f"a grant names areas from {', '.join(AREAS)} — not {', '.join(unknown)}")
     key = secrets.token_urlsafe(_TOKEN_BYTES)
     prior = _row(name) or {}
     row = {"name": name, "org_id": org_id, "key_hash": _hash(key), "created_at": prior.get("created_at") or _now(),
            "rotated_at": _now() if prior else "", "created_by": prior.get("created_by") or by, "rotated_by": by if prior else "",
            "note": (note or prior.get("note") or "")[:400], "connections": sorted({str(c) for c in (connections if connections is not None else prior.get("connections") or []) if str(c).strip()}),
            "active": True, "revoked_at": "", "revoked_by": ""}
+    for k, given in zip(_GRANT_KEYS, (areas, entities, actions)):
+        kept = given if given is not None else prior.get(k)
+        if kept is not None:
+            row[k] = sorted({str(v).strip() for v in kept if str(v).strip()})
     _put(row)
     try:
         _ledger().emit("service_principal.minted", {"name": name, "by": by, "active": True, "rotated": bool(prior)})
@@ -151,6 +177,19 @@ def resolve(request: Any):
     row = _row(name) or {}
     from aughor.security.authz import Principal
     return Principal(user_id=principal_id(name), org_id=str(row.get("org_id") or ""))
+
+
+def grant(name: str) -> dict:
+    """What the principal's grant names: its areas, entities, actions and connections. An empty list is "not narrowed
+    there" — the organisation's agent policy decides."""
+    row = _row(name) or {}
+    return {k: list(row.get(k) or []) for k in (*_GRANT_KEYS, "connections")}
+
+
+def name_of(principal) -> str:
+    """The service principal's own name, from its principal id; "" for anyone else."""
+    uid = str(getattr(principal, "user_id", "") or "")
+    return uid[len(PREFIX):] if uid.startswith(PREFIX) else ""
 
 
 def allowed_connection(name: str, connection_id: str) -> bool:
