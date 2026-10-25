@@ -164,6 +164,26 @@ def test_a_statement_is_cut_to_a_named_part_and_the_rest_of_its_group(con):
     assert {r["window"]: r["value"] for r in whole}["current"] == 180.0 == 100.0 + 80.0   # the parts add up to the whole
 
 
+def test_a_statement_whose_date_table_is_optional_in_a_join_is_refused_by_name():
+    """LuxExperience's gross margin (2026-10-26): `order_items LEFT JOIN orders`, dated on orders. The window
+    filtered orders, the unmatched items stayed in the sum, and every window read the same all-time 40.73% — a
+    decision's review booked "worse" on it. A table on the optional side of a join cannot bound a statement."""
+    margin = {"name": "margin", "tables": [], "filters": [], "time_kind": "flow", "time_column": "orders.created_at",
+              "sql": "SELECT SUM(oi.sale_price) AS sales FROM order_items oi LEFT JOIN orders o ON oi.order_id = o.order_id"}
+    sql, why = mt.measure_sql(margin, WINDOWS)
+    assert sql is None and "orders sits on the optional side of a LEFT JOIN" in why and "join it inner" in why
+    sql, why = mt.measure_sql({**margin, "sql": margin["sql"].replace("LEFT JOIN", "JOIN")}, WINDOWS)
+    assert sql and why == ""                                   # an inner join is bounded by the window
+    sql, why = mt.measure_sql({**margin, "time_column": "order_items.created_at"}, WINDOWS)
+    assert sql and why == ""                                   # the FROM side of a LEFT JOIN is never optional
+    right = {**margin, "sql": "SELECT SUM(o.x) AS s FROM orders o RIGHT JOIN order_items oi ON oi.order_id = o.order_id"}
+    sql, why = mt.measure_sql(right, WINDOWS)
+    assert sql is None and "optional side of a RIGHT JOIN" in why
+    full = {**margin, "sql": "SELECT SUM(o.x) AS s FROM order_items oi FULL JOIN orders o ON oi.order_id = o.order_id"}
+    sql, why = mt.measure_sql(full, WINDOWS)
+    assert sql is None and "one side of a FULL JOIN" in why
+
+
 def test_what_a_statement_cannot_have_is_said(con):
     assert mt.measure_sql(REVENUE_STMT, WINDOWS, by="status") == \
         (None, "a whole query is cut by a segment only when its part is named — which status")
