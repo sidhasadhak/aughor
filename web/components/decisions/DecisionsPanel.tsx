@@ -18,6 +18,7 @@ import { useMemo, useState } from "react";
 import type { Connection } from "@/lib/api";
 import { countNoun, formatCount, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
 import {
   amendDecision, bookOutcome, bookScenario, confirmMeetingCandidate, declareDecision, declareDecisionKind, decisionStands,
@@ -785,8 +786,8 @@ export function ThreadSection({ id, version }: { id: string; version: number }) 
         {t => (
           <div data-testid="decision-thread">
             {t.backwards.map(l => <LinkRow key={`b:${l.decision}`} l={l} />)}
-            {t.stages.map(st => (
-              <div key={st.stage} style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
+            {withUniqueKeys(t.stages, st => st.stage).map(([k, st]) => (
+              <div key={k} style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
                 borderTop: "1px solid var(--b1)" }}>
                 <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{st.words}</span>
                 <div>{st.steps.map((s, i) => <StepRow key={`${st.stage}:${s.ref || s.kind}:${i}`} s={s} />)}</div>

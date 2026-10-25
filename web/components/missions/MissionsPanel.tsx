@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 
 import type { Connection } from "@/lib/api";
 import { countNoun, formatCount, formatTableNumber } from "@/lib/format";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
   declareDecision, getMission, getMissionReport, getMissionTemplates, getPastMissionReport, listMissionProposals, listMissions,
@@ -452,7 +453,7 @@ export function Proposals({ m, onOpenDecision }: { m: MissionDetail; onOpenDecis
             the platform proposes it here with what each choice is predicted to do.</Absent>
         ) : (
           <div data-testid="mission-proposals">
-            {r.proposals.map(p => <ProposalRow key={p.kind} p={p} missionId={m.id} onOpenDecision={onOpenDecision} />)}
+            {withUniqueKeys(r.proposals, p => p.kind).map(([k, p]) => <ProposalRow key={k} p={p} missionId={m.id} onOpenDecision={onOpenDecision} />)}
           </div>
         )}
       </Gate>
