@@ -18,6 +18,7 @@ import { InquiriesPanel } from "@/components/inquiries/InquiriesPanel";
 
 const record = vi.hoisted(() => ({
   listInquiries: vi.fn(), listDecisions: vi.fn(), listClaims: vi.fn(), getCorrections: vi.fn(), getOnboarding: vi.fn(),
+  listDecisionKinds: vi.fn(),
 }));
 vi.mock("@/lib/record", async (original) => ({ ...(await original<typeof import("@/lib/record")>()), ...record }));
 
@@ -47,6 +48,7 @@ const mount = (el: React.ReactElement) => render(<Theme>{el}</Theme>);
 
 beforeEach(() => {
   for (const f of Object.values(record)) f.mockReset();
+  record.listDecisionKinds.mockResolvedValue({ kinds: [] });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
 });
@@ -105,6 +107,21 @@ describe("Decisions", () => {
     expect(list.textContent).not.toMatch(/OC-8|2026-12-08/);
     expect(within(screen.getByTestId("fig-dec-expect")).getByText("1 cannot be scored")).toBeInTheDocument();
     expect(within(screen.getByTestId("decision-needs")).getByText("Nothing needs you")).toBeInTheDocument();
+  });
+
+  it("lists the kinds of decision people declared, with the rules each keeps", async () => {
+    record.listDecisions.mockResolvedValue([]);
+    record.listDecisionKinds.mockResolvedValueOnce({ kinds: [{
+      id: "k1", key: "decision_kind:a_price_change", version: 1, name: "a price change", description: "",
+      approvers: ["person:ana"], expectation_required: true, review_days: 14, authority_ceiling: null, metrics: ["gmv"],
+      state: "active", declared_by: "user:amit", recorded_at: "",
+    }] });
+    mount(<DecisionsPanel connections={CONNECTIONS} selectedConn="shop" openId={null} onOpen={noop} onOpenClaim={noop} />);
+    const kinds = await screen.findByTestId("decision-kinds");
+    expect(kinds).toHaveTextContent("a price change");
+    expect(kinds).toHaveTextContent("moves gmv");
+    expect(kinds).toHaveTextContent("reviewed after 14 days");
+    expect(kinds).toHaveTextContent("must say what it expects");
   });
 
   it("says how many reviews reached a verdict, never that each can be scored", async () => {

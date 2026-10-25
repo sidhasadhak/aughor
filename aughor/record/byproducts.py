@@ -427,7 +427,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                      objective: str = "", connection_id: str = "", decided_at: str = "",
                      decided_by: str = "", review_on: str = "", expectation: Optional[dict] = None,
                      note: str = "", finding_id: str = "", schema_name: str = "", run_id: str = "",
-                     figure: Optional[dict] = None) -> str:
+                     figure: Optional[dict] = None, kind: str = "") -> str:
     """A decision taken elsewhere, declared in its own words. Refuses a relied-on id that is not a
     claim (a decision cites what the Record holds, never a loose string). With the decision loop on, the server cites
     what the decision was taken on: an Explorer finding's claim (``finding_id``), the claims a run's receipt booked
@@ -437,6 +437,14 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         raise ValueError("a decision states what was being decided")
     if not (chosen or "").strip():
         raise ValueError("a decision names what was chosen")
+    declared_kind = None
+    if (kind or "").strip():
+        # a decision of a declared kind keeps its kind's rules at the door (the decision-framework study §3.1)
+        from aughor.record.kinds import rules_for
+        declared_kind, approvers = rules_for(kind, expectation=expectation, approvers=approvers)
+        if not review_on:
+            when = _claims._as_dt(decided_at) if decided_at else None
+            review_on, _why = _dec.propose_review_on(connection_id, when, default_days=declared_kind.review_days)
     cited: list[str] = []
     for cid in relied_on or []:
         if _claims.get(cid) is None:
@@ -474,7 +482,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         relied_on=cited, objective=objective or "", decided_at=decided_at or "",
         decided_by=decided_by or "unidentified", review_on=review_on or "",
         source=_dec.Source(kind="declared", ref=uuid.uuid4().hex[:12], detail=(note or "")[:400]),
-        connection_id=connection_id or "",
+        connection_id=connection_id or "", kind=declared_kind.key if declared_kind is not None else "",
         extra={**({"note": note} if note else {}),
                **({} if expectation else {"expectation_note": "none declared — nothing to score"}),
                **({"finding_id": finding_id} if finding_id and _dec.loop_on() else {}),

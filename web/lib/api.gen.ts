@@ -14772,6 +14772,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/decision-kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Decision Kinds
+         * @description The kinds of decision the organisation declared, as they stand now.
+         */
+        get: operations["list_decision_kinds_record_decision_kinds_get"];
+        put?: never;
+        /**
+         * Declare Decision Kind
+         * @description A person declares a kind of decision (or edits one: a new version, the old kept). The author is the person
+         *     signed in; a model never declares one.
+         */
+        post: operations["declare_decision_kind_record_decision_kinds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/decisions": {
         parameters: {
             query?: never;
@@ -15211,6 +15236,28 @@ export interface paths {
          *     choose by the measured effect on the objective and run one — or say why none was chosen.
          */
         post: operations["act_record_mission_record_missions__mission_id__act_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/missions/{mission_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mission Proposals
+         * @description What the platform proposes under a mission: a decision of each declared kind that usually moves its objective,
+         *     each option with what it is predicted to do — composed by code from the kind, the mission and the Record; nothing
+         *     is booked here, and no model is called. A person decides through the declare door.
+         */
+        get: operations["list_mission_proposals_record_missions__mission_id__proposals_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -17962,6 +18009,37 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** DecisionKindRequest */
+        DecisionKindRequest: {
+            /** Approvers */
+            approvers?: string[];
+            /** Authority Ceiling */
+            authority_ceiling?: number | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Expectation Required
+             * @default false
+             */
+            expectation_required: boolean;
+            /** Metrics */
+            metrics?: string[];
+            /** Name */
+            name: string;
+            /**
+             * Review Days
+             * @default 30
+             */
+            review_days: number;
+            /**
+             * State
+             * @default active
+             */
+            state: string;
+        };
         /** DeclareDecisionRequest */
         DeclareDecisionRequest: {
             /** Approvers */
@@ -17992,6 +18070,11 @@ export interface components {
              * @default
              */
             finding_id: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
             /**
              * Note
              * @default
@@ -48302,6 +48385,74 @@ export interface operations {
             };
         };
     };
+    list_decision_kinds_record_decision_kinds_get: {
+        parameters: {
+            query?: {
+                state?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_decision_kind_record_decision_kinds_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionKindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_record_decisions_record_decisions_get: {
         parameters: {
             query?: {
@@ -49090,6 +49241,39 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mission_proposals_record_missions__mission_id__proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

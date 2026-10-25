@@ -97,6 +97,8 @@ class Decision(BaseModel):
     reopened_by: str = ""          # a relied-on claim that was restated or refuted
     source: Source
     connection_id: str = ""
+    #: The declared kind of decision it is (`record/kinds.py`, ``decision_kind:<slug>``); "" when none was named.
+    kind: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
     # read-only, filled by the ledger
     id: str = ""

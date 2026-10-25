@@ -254,6 +254,8 @@ export interface Decision {
   superseded_by: string;
   /** The verdict of its outcome, on a list's rows; "" before its review. */
   outcome_verdict?: OutcomeVerdict | "";
+  /** The declared kind of decision it is (`decision_kind:<slug>`); "" when none was named. */
+  kind?: string;
 }
 
 /** ``missed`` — a hold that moved outside its band: it named no wanted side, so neither better nor worse. */
@@ -311,6 +313,8 @@ export interface DeclareDecisionBody {
   run_id?: string;
   /** The Briefing figure it was decided on: the server measures it for these days and books that reading to cite. */
   figure?: { metric: string; start: string; end: string };
+  /** The declared kind of decision it is: its rules hold at the door. */
+  kind?: string;
 }
 
 export interface OutcomeBody {
@@ -542,6 +546,37 @@ export const getPastMissionReport = (id: string, reportId: string) =>
 export const reportMissionNow = (id: string, deliver: boolean) =>
   send<{ report_id: string; report: MissionReport; delivery: { door?: string; status?: string; note?: string }; mission: Mission }>(
     `/record/missions/${encodeURIComponent(id)}/report?deliver=${deliver ? "true" : "false"}`);
+/** A kind of decision the organisation declared (the decision-framework study §3.1): who approves one, whether it
+ *  must say what it expects, when it is reviewed, and the metrics it usually moves. Declared by people only. */
+export interface DecisionKind {
+  id: string; key: string; version: number; name: string; description: string; approvers: string[];
+  expectation_required: boolean; review_days: number; authority_ceiling: number | null; metrics: string[];
+  state: "active" | "retired"; declared_by: string; recorded_at: string;
+}
+export interface DecisionKindBody {
+  name: string; description?: string; approvers?: string[]; expectation_required?: boolean; review_days?: number;
+  authority_ceiling?: number | null; metrics?: string[]; state?: "active" | "retired";
+}
+/** What one option of a proposal is predicted to do — from the Record only, or why not. */
+export interface ProposalPrediction {
+  method: "intervention" | "history"; says: string;
+  effect?: number | null; effect_low?: number | null; effect_high?: number | null;
+  value?: number | null; low?: number | null; high?: number | null;
+}
+/** A decision of a declared kind the platform proposes under a mission — composed by code, booked by nobody. */
+export interface MissionProposal {
+  kind: string; kind_name: string; mission: string; question: string;
+  options: { option: string; predicted: ProposalPrediction }[];
+  approvers: string[]; expectation_required: boolean; expectation: { metric: string; direction: string };
+  review_days: number; connection_id: string; composed_by: string;
+}
+export const listDecisionKinds = (state?: "active" | "retired") =>
+  read<{ kinds: DecisionKind[] }>(`/record/decision-kinds${qs({ state })}`);
+export const declareDecisionKind = (body: DecisionKindBody) => send<DecisionKind>("/record/decision-kinds", body);
+export const listMissionProposals = (missionId: string) =>
+  read<{ mission: string; proposals: MissionProposal[]; from_report: string }>(
+    `/record/missions/${encodeURIComponent(missionId)}/proposals`);
+
 export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(
     `/record/missions/templates${qs({ connection_id: connectionId })}`);

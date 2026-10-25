@@ -19,9 +19,9 @@ import type { Connection } from "@/lib/api";
 import { countNoun, formatCount, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import {
-  amendDecision, bookOutcome, bookScenario, declareDecision, decisionStands, getCalibration, getDecision,
-  getPastCases, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
-  type CalibrationRow, type Claim, type Decision, type DecisionDetail, type OutcomeVerdict, type Scenario,
+  amendDecision, bookOutcome, bookScenario, declareDecision, declareDecisionKind, decisionStands, getCalibration, getDecision,
+  getPastCases, listDecisionKinds, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
+  type CalibrationRow, type Claim, type Decision, type DecisionDetail, type DecisionKind, type OutcomeVerdict, type Scenario,
   type ScenarioBody,
 } from "@/lib/record";
 import {
@@ -35,7 +35,9 @@ import {
 import { chosenWords, countBy, dateWords, distanceWords, shortLabel, whenWords } from "@/components/record/words";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
 import { Segmented } from "@/components/ui/segmented";
 import { Callout } from "@/components/ui/callout";
 
@@ -97,7 +99,94 @@ function DecisionLedger({ connections, selectedConn, onOpen }: {
         {all => <DecisionOverview all={all} connections={connections} onOpen={onOpen} form={form}
           declaring={declaring} onDeclare={() => setDeclaring(v => !v)} />}
       </Gate>
+      <KindsSection />
     </ClarityPage>
+  );
+}
+
+/** The words a kind's key reads as — `decision_kind:a_price_change` → "a price change". */
+export function kindWords(key: string | undefined): string {
+  return (key ?? "").replace(/^decision_kind:/, "").replace(/_/g, " ");
+}
+
+/** The kinds of decision the organisation declared (the decision-framework study §3.1): who approves one, whether it
+ *  must say what it expects, when it is reviewed, the metrics it usually moves. People declare them; a model never does.
+ *  A decision of a kind keeps its kind's rules, and past decisions of the same kind are the next one's base rate. */
+function KindsSection() {
+  const load = useLoad(() => listDecisionKinds(), []);
+  const [open, setOpen] = useState(false);
+  return (
+    <Section label="Kinds of decision" meta={load.data ? countNoun(load.data.kinds.filter(k => k.state === "active").length, "kind") : undefined}
+      action={<Button size="xs" variant="secondary" onClick={() => setOpen(v => !v)}>{open ? "Close" : "Declare a kind"}</Button>}>
+      {open && <KindForm onDeclared={() => { setOpen(false); load.reload(); }} />}
+      <Gate load={load} what="the kinds of decision">
+        {r => r.kinds.length === 0 ? (
+          <Absent>None declared. A kind says who approves a decision of it, whether it must say what it expects, and when it is
+            reviewed — and past decisions of the same kind become what the next one is projected from.</Absent>
+        ) : (
+          <div data-testid="decision-kinds">
+            {r.kinds.map(k => (
+              <div className="aug-item" key={k.key}>
+                <div className="aug-fs-ui" style={{ color: k.state === "active" ? "var(--t1)" : "var(--t3)" }}>
+                  {k.name}{k.state === "retired" ? " · retired" : ""}
+                </div>
+                <div className="aug-item-foot aug-fs-sm">
+                  <span>{k.metrics.length ? `moves ${k.metrics.join(", ")}` : "names no metric"}</span>
+                  <span>{`reviewed after ${k.review_days} days`}</span>
+                  {k.expectation_required && <span>must say what it expects</span>}
+                  {k.approvers.length > 0 && <span>{`approved by ${k.approvers.map(a => whoLabel(a)).join(", ")}`}</span>}
+                  <span>{`declared by ${whoLabel(k.declared_by)}`}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+function KindForm({ onDeclared }: { onDeclared: (k: DecisionKind) => void }) {
+  const [name, setName] = useState("");
+  const [metrics, setMetrics] = useState("");
+  const [approvers, setApprovers] = useState("");
+  const [days, setDays] = useState("30");
+  const [required, setRequired] = useState(false);
+  const [error, setError] = useState("");
+  const list = (v: string) => v.split(",").map(x => x.trim()).filter(Boolean);
+  const submit = async () => {
+    setError("");
+    try {
+      onDeclared(await declareDecisionKind({
+        name: name.trim(), metrics: list(metrics), approvers: list(approvers).map(a => (a.includes(":") ? a : `person:${a}`)),
+        review_days: Number(days) || 30, expectation_required: required,
+      }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  return (
+    <div className="aug-form-grid" data-testid="kind-form" style={{ marginBottom: 12 }}>
+      <label className="aug-fs-sm" htmlFor="kind-n">The kind</label>
+      <Input id="kind-n" value={name} onChange={e => setName(e.target.value)} placeholder="a price change" />
+      <label className="aug-fs-sm" htmlFor="kind-m">The metrics it moves</label>
+      <Input id="kind-m" value={metrics} onChange={e => setMetrics(e.target.value)} placeholder="gmv, gross_margin" />
+      <label className="aug-fs-sm" htmlFor="kind-a">Who approves one</label>
+      <Input id="kind-a" value={approvers} onChange={e => setApprovers(e.target.value)} placeholder="ana, ben" />
+      <label className="aug-fs-sm" htmlFor="kind-d">Reviewed after</label>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <Input id="kind-d" value={days} onChange={e => setDays(e.target.value)} inputMode="numeric" style={{ width: 80 }} />
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>days, plus how long this connection&apos;s days take to settle</span>
+      </div>
+      <span />
+      <label className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Checkbox checked={required} onChange={e => setRequired(e.target.checked)} aria-label="Must say what it expects" />
+        A decision of this kind must say what it expects
+      </label>
+      <span />
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <Button size="xs" disabled={!name.trim()} onClick={() => void submit()}>Declare it</Button>
+        {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -242,6 +331,9 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
   const [unit, setUnit] = useState("");
   const [reviewOn, setReviewOn] = useState("");
   const [decidedOn, setDecidedOn] = useState("");
+  const [kind, setKind] = useState("");
+  const kinds = useLoad(() => listDecisionKinds("active"), []);
+  const declared = kinds.data?.kinds ?? [];
   const actor = useActor();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -253,7 +345,7 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
       const options = [chosen, ...others.split("\n")].map(o => o.trim()).filter(Boolean);
       const d = await declareDecision({
         question: question.trim(), chosen: chosen.trim(), options, connection_id: connectionId, review_on: reviewOn,
-        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined,
+        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined, ...(kind ? { kind } : {}),
         expectation: metric.trim()
           ? { metric: metric.trim(), low: lo, high: hi, mid: lo !== null && hi !== null ? (lo + hi) / 2 : null, unit: unit.trim(), settles_on: reviewOn }
           : null,
@@ -274,6 +366,24 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
         <Input id="dec-c" value={chosen} onChange={e => setChosen(e.target.value)} placeholder="Extend it to 15 September" />
         <label className="aug-fs-sm" htmlFor="dec-o">The options not taken</label>
         <Input id="dec-o" value={others} onChange={e => setOthers(e.target.value)} placeholder="End it on schedule" />
+        {declared.length > 0 && (
+          <>
+            <label className="aug-fs-sm" htmlFor="dec-k">Kind</label>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <SelectField id="dec-k" aria-label="The kind of decision" value={kind} style={{ maxWidth: 260 }} onChange={e => setKind(e.target.value)}>
+                <option value="">none named</option>
+                {declared.map(k => <option key={k.key} value={k.key}>{k.name}</option>)}
+              </SelectField>
+              {(() => {
+                const k = declared.find(x => x.key === kind);
+                return k ? <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                  {[k.expectation_required ? "it must say what it expects" : "", `reviewed after ${k.review_days} days`,
+                    k.approvers.length ? `approved by ${k.approvers.map(a => whoLabel(a)).join(", ")}` : ""].filter(Boolean).join(" · ")}
+                </span> : null;
+              })()}
+            </div>
+          </>
+        )}
         <label className="aug-fs-sm" htmlFor="dec-m">Expected to move</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Input id="dec-m" value={metric} onChange={e => setMetric(e.target.value)} placeholder="new customers" style={{ flex: "2 1 160px" }} />
@@ -382,6 +492,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
       )}
       <Fact label="Decided">{day(d.decided_at)} by {whoLabel(d.decided_by, actor.name)}</Fact>
       <Fact label="Booked">{SOURCE_WORDS[d.source.kind] ?? d.source.kind}</Fact>
+      {d.kind && <Fact label="Kind">{kindWords(d.kind)}</Fact>}
       <Fact label="Review date">{d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"}</Fact>
       {d.objective && <Fact label="Toward">{d.objective}</Fact>}
       <Fact label="Connection">{d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection"}</Fact>

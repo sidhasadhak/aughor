@@ -250,6 +250,8 @@ class DeclareDecisionRequest(BaseModel):
     # reading to cite (the decision-framework study §3.2). Both with the decision loop on.
     run_id: str = ""
     figure: Optional[FigureIn] = None
+    # The declared kind of decision it is (`record/kinds.py`): its rules hold at the door.
+    kind: str = ""
 
 
 class OutcomeIn(BaseModel):
@@ -315,10 +317,60 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
             decided_by=who, review_on=req.review_on,
             expectation=req.expectation.model_dump() if req.expectation else None, note=req.note,
             finding_id=req.finding_id, schema_name=req.schema_name, run_id=req.run_id,
-            figure=req.figure.model_dump() if req.figure else None)
+            figure=req.figure.model_dump() if req.figure else None, kind=req.kind)
     except (ValueError, C.ClaimRefused) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return get_record_decision(did)
+
+
+# ── decision kinds (the decision-framework study §3.1, §8 step 4) ───────────────────────────
+
+class DecisionKindRequest(BaseModel):
+    name: str
+    description: str = ""
+    approvers: list[str] = Field(default_factory=list)
+    expectation_required: bool = False
+    review_days: int = 30
+    authority_ceiling: Optional[int] = None
+    metrics: list[str] = Field(default_factory=list)
+    state: str = "active"
+
+
+@router.get("/record/decision-kinds")
+def list_decision_kinds(state: Optional[str] = None) -> dict:
+    """The kinds of decision the organisation declared, as they stand now."""
+    from aughor.record.kinds import list_kinds
+    return {"kinds": [k.model_dump() for k in list_kinds(state=state)]}
+
+
+@router.post("/record/decision-kinds", status_code=201)
+def declare_decision_kind(req: DecisionKindRequest, principal=Depends(get_principal)) -> dict:
+    """A person declares a kind of decision (or edits one: a new version, the old kept). The author is the person
+    signed in; a model never declares one."""
+    from aughor.record.kinds import DecisionKind, KindRefused, write_kind
+    who = _who(principal)
+    try:
+        k = write_kind(DecisionKind(**req.model_dump()), by=who,
+                       by_kind="person" if who and not who.startswith(("agent:", "system")) else "system")
+    except (KindRefused, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return k.model_dump()
+
+
+@router.get("/record/missions/{mission_id}/proposals")
+def list_mission_proposals(mission_id: str) -> dict:
+    """What the platform proposes under a mission: a decision of each declared kind that usually moves its objective,
+    each option with what it is predicted to do — composed by code from the kind, the mission and the Record; nothing
+    is booked here, and no model is called. A person decides through the declare door."""
+    from aughor.record import mission as M
+    from aughor.record.kinds import proposals_for
+    m = M.get_mission(mission_id)
+    if m is None or not all(_visible(c) for c in (m.scope.connections or [])):
+        raise HTTPException(status_code=404, detail="No such mission")
+    m = M.latest(m.key) or m
+    reports = M.reports_for(m)
+    latest = reports[0] if reports else None      # the objective's baseline, as the last report measured it
+    return {"mission": m.id, "proposals": proposals_for(m, report=latest), "from_report": (latest or {}).get("id") or ""}
 
 
 class AmendDecisionRequest(BaseModel):
@@ -578,7 +630,7 @@ def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depen
             req.spec = spec
         elif req.method == "intervention":
             proj = S.intervention(metric=req.metric, connection_id=d.connection_id, action_id=req.action_id,
-                                  like=req.like or d.question, unit=req.unit)
+                                  like=req.like or d.question, unit=req.unit, kind=d.kind)
         else:
             raise HTTPException(status_code=422, detail=f"no method named {req.method!r}; the ladder has {', '.join(S.METHODS)}")
         settles_on = req.settles_on or d.review_on
@@ -609,7 +661,7 @@ def list_record_decision_cases(decision_id: str, metric: str = "") -> dict:
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")
-    cases = [c for c in S.intervention_cases(metric=metric, connection_id=d.connection_id, like=d.question)
+    cases = [c for c in S.intervention_cases(metric=metric, connection_id=d.connection_id, like=d.question, kind=d.kind)
              if c["decision"] != d.id]
     return {"cases": cases, "needed": S.INTERVENTION_MIN_CASES,
             "measurable": bool(_metric_spec(metric, d.connection_id)) if metric else None}

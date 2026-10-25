@@ -15,9 +15,10 @@ import type { Connection } from "@/lib/api";
 import { countNoun, formatCount, formatTableNumber } from "@/lib/format";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
-  getMission, getMissionReport, getMissionTemplates, getPastMissionReport, listMissions, reportMissionNow,
-  setMissionState, verdictWords, whoLabel, writeMission,
-  type Mission, type MissionBody, type MissionDetail, type MissionReport, type MissionTemplate,
+  declareDecision, getMission, getMissionReport, getMissionTemplates, getPastMissionReport, listMissionProposals, listMissions,
+  reportMissionNow, setMissionState, verdictWords, whoLabel, writeMission,
+  type Mission, type MissionBody, type MissionDetail, type MissionProposal, type MissionReport, type MissionTemplate,
+  type ProposalPrediction,
 } from "@/lib/record";
 import {
   Absent, ActorField, BackHeader, Fact, Gate, ListCard, ListRow, Page, Section, day, useActor, useLoad,
@@ -437,6 +438,83 @@ const OBJECTIVE_HUE: Record<string, ChipHue> = {
   behind: "negative", worse: "negative", no_effect: "caution", cannot_tell: "muted",
 };
 
+/** What the platform proposes under this mission (the decision-framework study §3.1, reading B): a decision of each
+ *  declared kind that usually moves the objective, each option with what the Record predicts for it — composed by
+ *  code, no model. Nothing is booked until a person chooses; the choice goes through the declare door, with the
+ *  kind's rules, toward this mission. */
+export function Proposals({ m, onOpenDecision }: { m: MissionDetail; onOpenDecision: (id: string) => void }) {
+  const load = useLoad(() => listMissionProposals(m.id), [m.id, m.version]);
+  return (
+    <Section label="Proposed decisions" meta={load.data ? countNoun(load.data.proposals.length, "proposal") : undefined}>
+      <Gate load={load} what="the proposals">
+        {r => r.proposals.length === 0 ? (
+          <Absent>No declared kind of decision moves {m.objective.metric}. Declare one on Decisions, naming the metric, and
+            the platform proposes it here with what each choice is predicted to do.</Absent>
+        ) : (
+          <div data-testid="mission-proposals">
+            {r.proposals.map(p => <ProposalRow key={p.kind} p={p} missionId={m.id} onOpenDecision={onOpenDecision} />)}
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+function predictedWords(p: ProposalPrediction): string {
+  if (p.method === "intervention" && p.effect_low != null && p.effect_high != null)
+    return `past decisions of this kind moved it ${formatTableNumber(p.effect_low)} to ${formatTableNumber(p.effect_high)}`;
+  if (p.method === "history" && p.low != null && p.high != null)
+    return `its own history predicts ${formatTableNumber(p.low)} to ${formatTableNumber(p.high)}`;
+  return p.says || "nothing can be predicted for it yet";
+}
+
+function ProposalRow({ p, missionId, onOpenDecision }: { p: MissionProposal; missionId: string; onOpenDecision: (id: string) => void }) {
+  const [said, setSaid] = useState<{ line: string; id?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const choose = async (option: string) => {
+    setBusy(true);
+    try {
+      // not acting expects the metric to follow its own course: a hold, which names no band and is read as such
+      const acting = option !== "not act";
+      const expectation = p.expectation.metric && (acting || p.expectation_required)
+        ? { metric: p.expectation.metric, direction: acting ? p.expectation.direction : "hold" } : null;
+      const d = await declareDecision({
+        question: p.question, chosen: option, options: p.options.map(o => o.option), connection_id: p.connection_id,
+        kind: p.kind, objective: missionId, ...(expectation ? { expectation } : {}),
+        note: `Chosen from the platform's proposal under mission ${missionId}`,
+      });
+      setSaid({ id: d.id, line: `Booked: ${option} · review ${day(d.review_on)}` });
+    } catch (e) {
+      setSaid({ line: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="aug-item" data-testid="mission-proposal">
+      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{p.question}</div>
+      {p.options.map(o => (
+        <div key={o.option} className="aug-item-foot aug-fs-sm" style={{ alignItems: "center" }}>
+          <span style={{ color: "var(--t1)", minWidth: 120 }}>{o.option}</span>
+          <span style={{ flex: 1 }}>{predictedWords(o.predicted)}</span>
+          {!said?.id && <Button size="xs" variant="secondary" disabled={busy} onClick={() => void choose(o.option)}>Choose</Button>}
+        </div>
+      ))}
+      <div className="aug-item-foot aug-fs-xs" style={{ color: "var(--t3)" }}>
+        {[p.approvers.length ? `approved by ${p.approvers.map(a => whoLabel(a)).join(", ")}` : "",
+          `reviewed after ${p.review_days} days`, "composed by code from the kind, the mission and the Record — no model"]
+          .filter(Boolean).join(" · ")}
+      </div>
+      {said && (
+        <div className="aug-item-foot aug-fs-sm">
+          <span>{said.line}</span>
+          {said.id && <Button size="xs" variant="link" onClick={() => onOpenDecision(said.id!)}>Open it →</Button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MissionBodyView({ m, connections, form, onOpenInquiry, onOpenDecision, onOpenClaim, onOpenMonitors }: {
   m: MissionDetail; connections: Connection[];
   /** The edit form, when it is open — above the report it will change. */
@@ -488,6 +566,7 @@ function MissionBodyView({ m, connections, form, onOpenInquiry, onOpenDecision, 
               onOpenClaim={onOpenClaim} onOpenMonitors={onOpenMonitors} />
           : <Absent>{r.note || "No report can be composed for this mission yet."}</Absent>}
       </Gate>
+      {m.state === "active" && <Proposals m={m} onOpenDecision={onOpenDecision} />}
       <Section label="Past reports" meta={countNoun(m.reports.length, "report")}>
         {m.reports.length === 0 ? (
           <Absent>None booked yet. The first is written on {m.review.next_report_on ? day(m.review.next_report_on) : "its cadence once the mission is active"} and each is kept as of its date.</Absent>
