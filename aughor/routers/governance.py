@@ -70,21 +70,73 @@ def get_audit_feed(
                                                 "action_decision | model_call | "
                                                 "human_verdict | enforcement"),
     limit: int = Query(default=100, ge=1, le=1000),
+    since: Optional[str] = Query(default=None, description="govern.justifications: from this "
+                                 "date or moment (ISO-8601), inclusive"),
+    until: Optional[str] = Query(default=None, description="govern.justifications: before this "
+                                 "date or moment, exclusive"),
+    cursor: Optional[str] = Query(default=None, description="govern.justifications: the "
+                                  "`next_cursor` of the page before"),
 ):
     """Governance events across every audit sink, newest first.
 
     Five sinks record governance-relevant events and none knows about the others; this
     reads them under one category vocabulary. An unknown category is a 400 rather than an
     empty list — "no events" and "that category does not exist" are different answers.
-    """
-    from aughor.govern.audit_categories import CATEGORIES, feed
 
+    Arc TC, TC-5 (`govern.justifications`, off by default): `since`/`until` bound the window
+    and `cursor` pages past the newest thousand — a position in the feed's own order, so a
+    page never shifts as events arrive. Off, those three are read by nothing.
+    """
+    from aughor.govern.audit_categories import CATEGORIES, BadWindow, feed, feed_page
+    from aughor.govern.justifications import required
+
+    if required():
+        try:
+            page = feed_page(category=category, limit=limit, since=since, until=until,
+                             cursor=cursor)
+        except BadWindow as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"categories": list(CATEGORIES), "category": category,
+                "count": len(page["events"]), "events": [e.to_dict() for e in page["events"]],
+                "since": page["since"], "until": page["until"],
+                "next_cursor": page["next_cursor"]}
     try:
         events = feed(category=category, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"categories": list(CATEGORIES), "category": category,
             "count": len(events), "events": [e.to_dict() for e in events]}
+
+
+@router.get("/audit/feed/export")
+def export_audit_feed(
+    format: str = Query(default="csv", description="csv | jsonl"),
+    category: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+):
+    """Arc TC, TC-5 (`govern.justifications`) — the feed's whole window as a file, streamed
+    page by page through the same cursor, with the same filters as the feed. Off: the answer
+    of a route that does not exist."""
+    from fastapi.responses import StreamingResponse
+
+    from aughor.govern.audit_categories import BadWindow, export_rows
+    from aughor.govern.justifications import required
+
+    if not required():
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        rows = export_rows(fmt=format, category=category, since=since, until=until)
+    except BadWindow as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    media = "text/csv" if format == "csv" else "application/x-ndjson"
+    name = f"aughor-governance-feed.{'csv' if format == 'csv' else 'jsonl'}"
+    return StreamingResponse(rows, media_type=media,
+                             headers={"Content-Disposition": f"attachment; filename={name}"})
 
 
 @router.get("/governance/gate-map")

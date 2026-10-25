@@ -1,6 +1,6 @@
 /** HB-6 — pure shaping for the hub map's cells. Kept out of the component (the
  *  AgentMap rule): anything a test must catch lives in a function that needs no DOM. */
-import type { HubCost, HubDestination, HubProbation } from "@/lib/api";
+import type { HubCost, HubDestination, HubFailureRate, HubProbation } from "@/lib/api";
 
 /** One phrase per destination — what a reader scans, with the raw ids left to titles. */
 export function destinationText(d: HubDestination): string {
@@ -70,4 +70,23 @@ export function stateColor(state: string): string {
 
 export function ownerText(owner: { declared_by: string; agent_id: string }): string {
   return owner.declared_by || "—";
+}
+
+/** Arc TC, TC-5 — the failure rate's label, in the server's words: "no runs" and "not
+ *  permitted" are said, never drawn as 0% or left blank. */
+export function failureText(f: HubFailureRate): string {
+  return `${f.label} · ${f.window_days}d`;
+}
+
+/** What the label stands on, for its title: the counts, or why there are none. */
+export function failureDetail(f: HubFailureRate): string {
+  if (f.state === "not_permitted") return f.why || "You may not see these runs.";
+  const gated = f.gated ? ` · ${f.gated} never started` : "";
+  if (f.state === "no_runs") return `Nothing ran in the last ${f.window_days} days${gated}`;
+  return `${f.failed ?? 0} of ${f.ran ?? 0} runs failed in the last ${f.window_days} days${gated}`;
+}
+
+export function failureColor(f: HubFailureRate): string {
+  if (f.state === "measured" && (f.failed ?? 0) > 0) return "var(--red3)";
+  return "var(--t3)";
 }

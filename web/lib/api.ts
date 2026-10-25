@@ -6570,6 +6570,22 @@ export interface HubMapRow {
   cost: HubCost;
   probation: HubProbation;
   exposed_as_tool: boolean;
+  /** Arc TC, TC-5 (`hub.failure_rate`) — present only while the flag is on. */
+  failure_rate?: HubFailureRate;
+}
+
+/** How often a node's runs failed over the window, as the server counted it. "no runs" is
+ *  never 0%, and "not permitted" carries no count: the node stays, its runs are withheld. */
+export interface HubFailureRate {
+  state: "measured" | "no_runs" | "not_permitted";
+  window_days: number;
+  label: string;
+  ran?: number;
+  failed?: number;
+  rate?: number | null;
+  /** Ticks that never started (disabled, expired, muted) — counted toward neither. */
+  gated?: number;
+  why?: string;
 }
 
 export interface HubMapResponse {
@@ -6577,6 +6593,7 @@ export interface HubMapResponse {
   window_days: number;
   generated_at: string;
   totals: { automations: number; monitors: number; live: number; probation: number };
+  failure_window?: { days: number; since: string };
 }
 
 /** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel
@@ -11356,15 +11373,40 @@ export interface AuditFeedEvent {
   detail: Record<string, unknown>;
 }
 
-export async function getAuditFeed(category = "", limit = 100): Promise<{
+/** Arc TC, TC-5 (`govern.justifications`) — the feed's window: from `since` (inclusive) to
+ *  before `until`, each a date or an ISO moment. Read by the server only while the flag is on. */
+export interface AuditFeedWindow { since?: string; until?: string; cursor?: string }
+
+export async function getAuditFeed(category = "", limit = 100, window?: AuditFeedWindow): Promise<{
   categories: string[]; category: string | null; count: number; events: AuditFeedEvent[];
+  /** Present only while `govern.justifications` is on; null when the window is exhausted. */
+  next_cursor?: string | null; since?: string | null; until?: string | null;
 }> {
   const q = new URLSearchParams();
   if (category) q.set("category", category);
   q.set("limit", String(limit));
+  for (const [k, v] of Object.entries(window ?? {})) if (v) q.set(k, v);
   const res = await fetch(`${getApiBase()}/audit/feed?${q}`);
-  if (!res.ok) throw new Error(`Failed to fetch the governance feed (${res.status})`);
+  // A window the server cannot read is refused with why (a first date after the last, say).
+  if (!res.ok) throw window ? await refused(res, "Reading the governance feed")
+                            : new Error(`Failed to fetch the governance feed (${res.status})`);
   return res.json();
+}
+
+/** Arc TC, TC-5 — the feed's whole window as a file, written by the server page by page (every
+ *  event, not the window held on screen), saved by the browser. */
+export async function downloadAuditFeed(format: "csv" | "jsonl",
+                                        filters: { category?: string; since?: string; until?: string }): Promise<void> {
+  const q = new URLSearchParams({ format });
+  for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+  const res = await fetch(`${getApiBase()}/audit/feed/export?${q}`);
+  if (!res.ok) throw await refused(res, "Exporting the governance feed");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `aughor-governance-feed.${format}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export interface ModelUsageRow {

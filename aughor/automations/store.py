@@ -727,6 +727,62 @@ def count_runs_since(day_floor: str) -> dict[str, int]:
             conn.close()
 
 
+#: TC-5 — a step status that means the step did not do its work. `criterion_failed` is an
+#: authored check saying no (a verdict, like `held`), and `uncertain` may have landed; neither
+#: is counted as a failure of the run.
+FAILED_STEP_STATUSES: frozenset[str] = frozenset({"failed", "dispatch_error", "invalid_params"})
+
+
+def failure_counts_since(day_floor: str, conn_id: Optional[str] = None) -> dict[str, dict[str, int]]:
+    """Arc TC, TC-5 — per automation, the runs since ``day_floor`` (``YYYY-MM-DD``, inclusive)
+    and how many of them failed, counted at the store.
+
+    A windowed question gets a windowed query (``count_runs_since`` says why): the outcomes are
+    COUNTed, never read off a capped page of newest rows, which on a once-a-minute schedule is a
+    window of minutes. ``ran`` is every tick that started — fired, not fired, errored or parked;
+    ``gated`` (the tick never started) is kept apart and counts toward neither. ``failed`` is a
+    tick that broke (``error``) plus a tick that ran on while one of its steps failed, because the
+    engine records a failed step as a status on a ``fired`` run, never as an ``error``: counting
+    outcomes alone would read a chain whose every Slack post failed as 0% failed. Only the rows
+    that can carry steps (fired, paused) have their steps read.
+    """
+    out: dict[str, dict[str, int]] = {}
+    scope, params = "", [day_floor]
+    if conn_id:
+        scope = " AND conn_id = ?"
+        params.append(conn_id)
+    with _LOCK:
+        conn = _connect()
+        try:
+            counted = conn.execute(
+                "SELECT automation_id, outcome, COUNT(*) AS n FROM automation_runs "
+                f"WHERE substr(started_at, 1, 10) >= ?{scope} GROUP BY automation_id, outcome",
+                params).fetchall()
+            stepped = conn.execute(
+                "SELECT automation_id, outcome, effects FROM automation_runs "
+                f"WHERE substr(started_at, 1, 10) >= ?{scope} AND outcome IN ('fired', 'paused')",
+                params).fetchall()
+        finally:
+            conn.close()
+    for r in counted:
+        row = out.setdefault(str(r["automation_id"]), {"ran": 0, "failed": 0, "gated": 0})
+        outcome, n = str(r["outcome"] or ""), int(r["n"])
+        if outcome == "gated":
+            row["gated"] += n
+            continue
+        row["ran"] += n
+        if outcome == "error":
+            row["failed"] += n
+    for r in stepped:
+        try:
+            steps = json.loads(r["effects"] or "[]")
+        except (TypeError, ValueError):
+            steps = []
+        if any(isinstance(s, dict) and s.get("status") in FAILED_STEP_STATUSES for s in steps):
+            out.setdefault(str(r["automation_id"]), {"ran": 0, "failed": 0, "gated": 0})["failed"] += 1
+    return out
+
+
 def last_run(automation_id: str) -> Optional[AutomationRun]:
     """The most recent tick, or None. Used by ``schedule`` conditions to know what
     'since last time' means and by the UI to explain the current state."""

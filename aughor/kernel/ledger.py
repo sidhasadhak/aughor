@@ -87,6 +87,23 @@ _PRUNE_KV_KEY = "last_pruned_at"
 _EVENT_PRUNE_KV_KEY = "events_last_pruned_at"
 #: Kinds treated as operational chatter. Anything not named here is never auto-deleted.
 _EVENT_OPS_KINDS = ("job.state", "automation.run")
+
+
+def _swept_kinds() -> tuple[str, ...]:
+    raw = os.environ.get("AUGHOR_EVENTS_PRUNE_KINDS")
+    return (tuple(k.strip() for k in raw.split(",") if k.strip())
+            if raw is not None else _EVENT_OPS_KINDS)
+
+
+def _swept_keep_days() -> int:
+    return int(os.environ.get("AUGHOR_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+
+
+def events_swept_sooner() -> tuple[tuple[str, ...], int]:
+    """The journal kinds `Ledger.events_prune` sweeps by age, and after how many days — read from
+    the same settings the sweep reads, so a reader saying how far back the journal reaches (Arc TC,
+    TC-5: the log search) cannot drift from what the sweep does."""
+    return _swept_kinds(), _swept_keep_days()
 #: Rows removed per sweep. The sweep runs inside `Ledger.__init__` (restart insurance),
 #: and a first sweep on a hoarding install has ~350,000 rows to clear — a single
 #: unbounded DELETE there would be a boot-time stall, and a migration back-fill that
@@ -1260,6 +1277,8 @@ class Ledger:
         since_seq: Optional[int] = None,
         org_id: Optional[str] = None,
         limit: int = 200,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
     ) -> list[dict]:
         """Read journal events, newest first.
 
@@ -1267,10 +1286,17 @@ class Ledger:
         ``None`` means no filter — localhost/identity-off, where one tenant owns
         every row — and a value scopes to rows emitted under it. Rows written before
         the tenant column existed read as ``'default'``, which is the org they in
-        fact ran under."""
+        fact ran under.
+
+        ``since``/``until`` bound ``at`` half-open, as ``session_events`` does (Arc TC,
+        TC-5: the governance feed's window); both ``None`` adds no clause."""
         q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
              "FROM events WHERE 1=1")
         args: list[Any] = []
+        if since is not None:
+            q += " AND at>=?"; args.append(since)
+        if until is not None:
+            q += " AND at<?"; args.append(until)
         if trace_id:
             q += " AND trace_id=?"; args.append(trace_id)
         if kind:
@@ -1294,6 +1320,66 @@ class Ledger:
                 "payload": json.loads(p) if p else None,
             })
         return out
+
+    # ── Arc TC, TC-5: the journal's run lines, read across runs (flag obs.log_search) ──
+
+    def run_lines(
+        self,
+        *,
+        since: str,
+        before_seq: Optional[int] = None,
+        text: str = "",
+        org_id: Optional[str] = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Journal lines written under a run (a non-empty ``trace_id``) at or after ``since``,
+        newest first, below ``before_seq`` when given — the rows ``/traces/{id}/logs`` reads one
+        run at a time, read across runs. ``text`` matches the line as it was kept, its kind and
+        its payload, case-folded, with LIKE's own wildcards escaped so a ``%`` or ``_`` in the
+        words is a character, never a pattern. Portable: no JSON operator, which Postgres lacks
+        here (``_backfill_payload_facts`` says why)."""
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
+             "FROM events WHERE trace_id <> '' AND at >= ?")
+        args: list[Any] = [since]
+        if before_seq is not None:
+            q += " AND seq < ?"; args.append(int(before_seq))
+        if org_id is not None:
+            q += " AND org_id = ?"; args.append(org_id)
+        if text:
+            needle = "%" + (text.lower().replace("\\", "\\\\").replace("%", "\\%")
+                            .replace("_", "\\_")) + "%"
+            q += (" AND (LOWER(kind) LIKE ? ESCAPE '\\'"
+                  " OR LOWER(COALESCE(payload, '')) LIKE ? ESCAPE '\\')")
+            args.extend([needle, needle])
+        q += " ORDER BY seq DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for seq, at, k, c, cv, j, p, tid, oid in rows:
+            try:
+                payload = json.loads(p) if p else None
+            except Exception:
+                payload = p
+            out.append({"seq": seq, "at": at, "kind": k, "conn_id": c, "canvas_id": cv,
+                        "job_id": j, "trace_id": tid, "org_id": oid, "payload": payload})
+        return out
+
+    def run_lines_extent(self, *, since: str, org_id: Optional[str] = None) -> dict:
+        """What a search over the run lines since ``since`` covers: how many runs, how many
+        lines, the oldest line kept, and the kinds of run those lines were written under (a
+        job's kind; ``""`` for a line written outside any job). Counted, never sampled."""
+        where, args = "e.trace_id <> '' AND e.at >= ?", [since]
+        if org_id is not None:
+            where += " AND e.org_id = ?"; args.append(org_id)
+        with self._lock:
+            runs, lines, oldest = self._conn.execute(
+                f"SELECT COUNT(DISTINCT e.trace_id), COUNT(*), MIN(e.at) FROM events e WHERE {where}",
+                args).fetchone()
+            kinds = self._conn.execute(
+                "SELECT DISTINCT COALESCE(j.kind, '') FROM events e LEFT JOIN jobs j ON j.id = e.job_id "
+                f"WHERE {where}", args).fetchall()
+        return {"runs": int(runs or 0), "lines": int(lines or 0), "oldest_at": oldest,
+                "run_kinds": sorted({str(k[0] or "") for k in kinds})}
 
     # ── task_history: spans as a queryable table (Rec 4, flag obs.task_table) ──
 
@@ -1703,14 +1789,12 @@ class Ledger:
         seqs in a subquery and delete by primary key.
         """
         if kinds is None:
-            raw = os.environ.get("AUGHOR_EVENTS_PRUNE_KINDS")
-            kinds = (tuple(k.strip() for k in raw.split(",") if k.strip())
-                     if raw is not None else _EVENT_OPS_KINDS)
+            kinds = _swept_kinds()
         kinds = tuple(kinds)
         if not kinds:
             return 0
         if keep_days is None:
-            keep_days = int(os.environ.get("AUGHOR_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+            keep_days = _swept_keep_days()
         if max_rows is None:
             max_rows = int(os.environ.get("AUGHOR_EVENTS_OPS_MAX_ROWS", "50000") or 0)
         if batch is None:
