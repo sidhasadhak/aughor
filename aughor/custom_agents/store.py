@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -338,8 +339,23 @@ def list_agents() -> list[UserAgent]:
 _PATCHABLE = ("name", "instructions", "purpose", "connection_id", "schema_scope",
               "doc_ids", "pack_ids", "tool_grants", "enabled")
 
+#: Arc TC-1 — one writer at a time from the read of an agent to its revision, so a save made against the revision
+#: its caller read cannot pass the check and then land over a save that moved the agent in between.
+_WRITE_LOCK = threading.RLock()
 
-def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
+
+class RevisionConflict(Exception):
+    """Arc TC-1 — a save made against a revision of the agent's configuration that is no longer the current one:
+    someone changed the agent since its caller read it. Nothing was written."""
+
+    def __init__(self, expected: str, current: str):
+        super().__init__(f"this agent was changed since it was read — read at revision {expected}, it is at "
+                         f"revision {current} now; read it again")
+        self.expected = expected
+        self.current = current
+
+
+def update_agent(agent_id: str, *, expected_rev: Optional[str] = None, **fields) -> Optional[UserAgent]:
     """Patch the provided fields (subset of ``_PATCHABLE``); returns the updated
     agent, or None when it doesn't exist.
 
@@ -348,37 +364,46 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
     alone — the chip is labelled stale by :attr:`UserAgent.eval_basis`, never deleted,
     because a past measurement of a past configuration is real evidence and erasing it
     would lose what the agent used to be able to do.
+
+    Arc TC-1 — with ``expected_rev`` (the ``config_rev`` its caller read), a save made against another revision
+    raises :class:`RevisionConflict` and writes nothing, not even a baseline. None is today's save, unconditional.
     """
     updates = {k: v for k, v in fields.items() if k in _PATCHABLE and v is not None}
-    if not updates:
-        return get_agent(agent_id)
-    # Before the write, not after: an agent that predates revision tracking has no
-    # history, and recording its CURRENT configuration first is what gives the edge about
-    # to be made something to be measured against. Without this the first edit produces a
-    # single entry with no predecessor — a history that cannot be read as a change.
-    before = get_agent(agent_id)
-    if before is not None:
-        from aughor.custom_agents.revisions import ensure_baseline
-        ensure_baseline(before)
-    sets, params = [], []
-    for k, v in updates.items():
-        sets.append(f"{k} = ?")
-        if k in ("doc_ids", "pack_ids", "tool_grants"):
-            params.append(json.dumps(list(v)))
-        elif k == "enabled":
-            params.append(int(bool(v)))
-        else:
-            params.append(v)
-    sets.append("updated_at = ?")
-    params.extend([_now(), agent_id])
-    with _connect() as conn:
-        cur = conn.execute(f"UPDATE user_agents SET {', '.join(sets)} WHERE id = ?", params)
-        if cur.rowcount == 0:
-            return None
-    agent = get_agent(agent_id)
+    with _WRITE_LOCK:
+        if expected_rev is not None:
+            current = get_agent(agent_id)
+            if current is not None and current.config_rev != expected_rev:
+                raise RevisionConflict(expected_rev, current.config_rev)
+        if not updates:
+            return get_agent(agent_id)
+        # Before the write, not after: an agent that predates revision tracking has no
+        # history, and recording its CURRENT configuration first is what gives the edge about
+        # to be made something to be measured against. Without this the first edit produces a
+        # single entry with no predecessor — a history that cannot be read as a change.
+        before = get_agent(agent_id)
+        if before is not None:
+            from aughor.custom_agents.revisions import ensure_baseline
+            ensure_baseline(before)
+        sets, params = [], []
+        for k, v in updates.items():
+            sets.append(f"{k} = ?")
+            if k in ("doc_ids", "pack_ids", "tool_grants"):
+                params.append(json.dumps(list(v)))
+            elif k == "enabled":
+                params.append(int(bool(v)))
+            else:
+                params.append(v)
+        sets.append("updated_at = ?")
+        params.extend([_now(), agent_id])
+        with _connect() as conn:
+            cur = conn.execute(f"UPDATE user_agents SET {', '.join(sets)} WHERE id = ?", params)
+            if cur.rowcount == 0:
+                return None
+        agent = get_agent(agent_id)
+        if agent is not None:
+            from aughor.custom_agents.revisions import record_revision
+            record_revision(agent)   # a no-op when only the name or the enabled switch moved
     if agent is not None:
-        from aughor.custom_agents.revisions import record_revision
-        record_revision(agent)   # a no-op when only the name or the enabled switch moved
         # AO-7d — a governing change re-measures the agent, behind the loop's flag, in the
         # background: the chip then says what THIS configuration passes, not the last one.
         if before is not None and before.config_rev != agent.config_rev:

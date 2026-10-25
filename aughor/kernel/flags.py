@@ -95,6 +95,12 @@ FLAG_ENV = {
     "agents.testing_centre": "AUGHOR_AGENTS_TESTING_CENTRE",
     # AO-7 (2026-10-03): one closed learning loop per custom agent.
     "agents.learning_loop": "AUGHOR_AGENTS_LEARNING_LOOP",
+    # Arc TC-1 (ROADMAP §3.59, the incorporation study of 2026-10-24). ON: every receipt a custom agent produced
+    # and every chat turn it answered carry the agent's `config_rev` as `rev` beside its id and name — the revision of the
+    # configuration the answer ran under — and the doors that change an agent's configuration (PATCH and restore) refuse
+    # with 409, naming both revisions, when the caller sends the `expected_rev` it read and the agent has moved since.
+    # OFF: a receipt names the agent by id and name, a turn carries no stamp, and `expected_rev` is ignored, as before.
+    "agents.revision_on_answers": "AUGHOR_AGENTS_REVISION_ON_ANSWERS",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     # "framing.choice_confidence" (AUGHOR_FRAMING_CHOICE_CONFIDENCE) was DELETED 2026-10-04 —
     # kill 6 of the 2027 study (ROADMAP §4.9): its grid was blocked on a corpus that never
@@ -522,6 +528,17 @@ FLAG_META = {
                        "question for a person to check with SQL. The Quality tab shows what the agent "
                        "learned and its pass rate before and after. Off: reviews are recorded and the "
                        "agent does not change.",
+    },
+    "agents.revision_on_answers": {
+        "label": "Name the agent's revision on its answers",
+        "summary": "Each answer a custom agent gives names the revision of its setup that gave it. "
+                   "A save made against an older revision is refused.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only custom agents"}],
+        "description": "A revision changes when the agent's instructions, data, documents, packs or allowed actions "
+                       "change; a rename does not. It is kept on the answer's receipt and on its chat turn. A save "
+                       "that says which revision it read is refused if the agent changed since. Off: answers name "
+                       "the agent only, and every save is taken.",
     },
     "slack.managed_supervisor": {
         "label": "Start the Slack bot automatically",
@@ -1086,6 +1103,13 @@ EXPERIMENT: dict = {
                             "agent? Falsifier (§3.52): two weeks of real use with the loop on and no "
                             "movement on any agent's suite → the 'corrected before' block is removed, "
                             "not kept; candidates from use stay only if a person certified one",
+    # Arc TC-1 (ROADMAP §3.59), 2026-10-26. It changes what a receipt and a stored turn carry, and adds a refusal to two
+    # doors, so it is watched before it graduates. No model calls.
+    "agents.revision_on_answers": "can a person tell which configuration of an agent gave an answer — for an agent "
+                                  "edited while it was answering, does each receipt and stored turn name the revision "
+                                  "it ran under, and is a save sent with a stale revision refused? Falsifier (§3.59): "
+                                  "an answer names a revision other than the one it ran under, or a save is taken over "
+                                  "a revision newer than the one its caller read — stop",
     # PENDING item 19 (ROADMAP §3.38) — the ML review's point 5, its first level: the warehouse's
     # measured data in the SQL writer's context. The context it adds is measured model-free
     # (evals/linker_recall_eval.py reports the recall it rides on; the block's size is pinned);
