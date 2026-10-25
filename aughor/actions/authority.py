@@ -57,6 +57,11 @@ def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 
+def _run_stamp() -> dict:
+    from aughor.actions.attribution import stamp
+    return stamp()
+
+
 # ── the declaration ────────────────────────────────────────────────────────────────────────
 
 def platform_performed(action) -> bool:
@@ -170,7 +175,9 @@ def book_action(*, action, params: dict, scope: str, actor: str, status: str, ou
                "action_pin": dict(pin or {}),
                "reversibility": getattr(action, "reversibility", "") or "",
                "undo": (action.undo.model_dump() if getattr(action, "undo", None) is not None else None),
-               "decision": decision_id, "at": _now(), **({"compensates": compensates} if compensates else {})}
+               "decision": decision_id, "at": _now(), **({"compensates": compensates} if compensates else {}),
+               # Arc TC, TC-2 — the run and trace it ran through (`actions.run_attribution`; nothing when off)
+               **_run_stamp()}
     edges = [("verification", payload["verification"].get("status", ""), (payload["verification"].get("why") or "")[:400])]
     if grant_id:
         edges.append(("under_grant", grant_id, "the standing grant that allowed it"))
@@ -218,7 +225,7 @@ def book_write(*, door: str, action_id: str, scope: str, actor: str, status: str
                "outcome": dict(outcome or {}) if isinstance(outcome, dict) else {},
                "under": under, "grant_id": "", "approved_by": "", "message": (message or "")[:400],
                "verification": {"status": "not_declared", "why": f"a write through the {door} door declares no verification read"},
-               "reversibility": "undeclared", "undo": None, "decision": "", "at": _now()}
+               "reversibility": "undeclared", "undo": None, "decision": "", "at": _now(), **_run_stamp()}
     return _ledger().artifact_write(ACTION_KIND, f"action:{scope}:{action_id}:{uuid.uuid4().hex[:12]}", payload,
                                     conn_id=None, lineage=[("through", door, under)])
 

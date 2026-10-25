@@ -6183,7 +6183,8 @@ async def stream_with_session_log(
     headline: str = ""
     receipt_id: str | None = None
     t0 = _t.monotonic()
-    with _tel.bind_trace(run_id):
+    # Arc TC, TC-2 — the turn is a run too, named by the same id as its trace: an edit or an action it makes says so
+    with _tel.bind_trace(run_id), _tel.bind_run(run_id, "chat"):
         session_log.emit(
             session_log.USER_REQUEST, name=door, trace_id=run_id, conn_id=conn_id,
             payload={"question": question, "depth": depth, "canvas_id": canvas_id,

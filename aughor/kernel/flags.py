@@ -217,6 +217,11 @@ FLAG_ENV = {
     # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
     # misses one way). OFF: decisions are booked, reviewed and scored as before.
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # Arc TC, TC-2 (ROADMAP §3.59). ON: every edit's history row, every action-audit row and every action's ledger entry
+    # names the run it was made through (a question asked, an automation, a monitor, an agent's job) and its trace, and
+    # the object timeline door reads one object's changes oldest first with each run's metered cost. OFF: they record who
+    # made them, as before, and the timeline door answers 404.
+    "actions.run_attribution": "AUGHOR_ACTIONS_RUN_ATTRIBUTION",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -681,6 +686,17 @@ FLAG_META = {
                        "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
                        "decisions are kept and reviewed as before.",
     },
+    "actions.run_attribution": {
+        "label": "Which run made each change",
+        "summary": "Every edit and action on an object records the run that made it. An object's timeline reads who "
+                   "changed it, through which run, at what cost.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "route", "text": "Adds a timeline per object"}],
+        "description": "An edit or action made inside a question asked, an automation, a monitor or an agent's work "
+                       "keeps that run and its trace. One made by a person outside any run says so. An object's "
+                       "timeline lists every change on it, oldest first, with the run's model cost when it was "
+                       "metered. Off: changes record who made them, as before.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -1046,6 +1062,11 @@ EXPERIMENT: dict = {
     "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",
+    # Arc TC, TC-2, 2026-10-26. It adds to what every change records, so it is watched before it graduates.
+    "actions.run_attribution": "does every change say what made it — of the edits and audited actions recorded in two "
+                               "weeks with it on, does each one made inside a run name that run, and is an object's "
+                               "timeline opened? Falsifier (§3.59, TC-2): an edit made by an automation shows no run "
+                               "— stop",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",

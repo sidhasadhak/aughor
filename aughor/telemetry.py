@@ -623,6 +623,35 @@ def bind_trace(trace_id: str) -> Generator[str, None, None]:
         _active_trace_id.reset(token)
 
 
+#: Arc TC, TC-2 — the RUN the code executes under, beside the trace it writes to: ``(run_id, kind)``, kind one of
+#: ``chat`` (a question asked at the ask door), ``automation``, ``monitor`` or ``agent`` (a kernel job a built-in agent
+#: runs). The trace alone cannot say it: a deep analysis keeps the asking turn's trace, and a nested chain its parent's.
+#: Bound where runs start — the ask door, `run_automation`, the kernel's job runner — and read by the edit layer and
+#: the action audit (flag `actions.run_attribution`), so no caller threads a run id.
+_active_run: contextvars.ContextVar[tuple[str, str]] = contextvars.ContextVar(
+    "aughor_active_run", default=("", ""))
+
+
+def current_run() -> tuple[str, str]:
+    """``(run_id, kind)`` of the innermost run this code executes under, ``("", "")`` outside any run."""
+    return _active_run.get()
+
+
+@contextmanager
+def bind_run(run_id: str, kind: str) -> Generator[str, None, None]:
+    """Pin ``(run_id, kind)`` as the run for the enclosed block — a correlation fact like :func:`bind_trace`, bound
+    whatever any flag says, and nested binds are honoured (innermost wins: a job an automation starts is its own run).
+    A falsy id is a no-op."""
+    if not run_id:
+        yield _active_run.get()[0]
+        return
+    token = _active_run.set((run_id, kind or ""))
+    try:
+        yield run_id
+    finally:
+        _active_run.reset(token)
+
+
 @contextmanager
 def _obs_span(task: str, trace_id: str, attributes: dict | None,
               *, span_kind: str = "node",

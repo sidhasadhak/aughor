@@ -151,12 +151,15 @@ def audit(action: str, scope: str, decision: str, *, actor: str = "", detail: st
 
     No ``actor`` inside a request is the person that request acts for (`current_actor`): a gated
     route a person called is theirs, not unattributed. Outside one it stays ``UNATTRIBUTED``."""
+    from aughor.actions.attribution import stamp
     from aughor.identity.resolver import attribution_key
     actor = actor or current_actor()
     Ledger.default().emit(_AUDIT_KIND, {
         "action": action, "risk": (risk or classify(action)).value, "decision": decision,
         "scope": scope or "", "actor": attribution_key(actor),
         "org_id": current_org_id(), "detail": detail,
+        # Arc TC, TC-2 — the run and trace this decision was made under (`actions.run_attribution`; nothing when off)
+        **stamp(),
     }, conn_id=(scope or None))
 
 

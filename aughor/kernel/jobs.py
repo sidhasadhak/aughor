@@ -484,6 +484,17 @@ class JobKernel:
             from aughor.kernel.errors import tolerate
             tolerate(_t_exc, "job trace binding is best-effort; the run proceeds",
                      counter="obs.job_trace")
+        # Arc TC, TC-2 — the job is its own run, bound always (unlike the trace, which a deep analysis inherits): an
+        # edit or an audited action inside it names this job, and the Watcher's as a monitor's run.
+        _run_cm = None
+        try:
+            from aughor import telemetry as _tel
+            _run_cm = _tel.bind_run(job_id, "monitor" if _agent_id == "watcher" else "agent")
+            _run_cm.__enter__()
+        except Exception as _r_exc:
+            _run_cm = None
+            from aughor.kernel.errors import tolerate
+            tolerate(_r_exc, "job run binding is best-effort; the run proceeds", counter="obs.job_trace")
         try:
             await coro_factory()
             final = JobState.SUCCEEDED
@@ -534,6 +545,12 @@ class JobKernel:
             if _model_token is not None:
                 from aughor.llm.provider import reset_run_model
                 reset_run_model(_model_token)
+            if _run_cm is not None:
+                try:
+                    _run_cm.__exit__(None, None, None)
+                except Exception as _r_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_r_exc, "job run unbind", counter="obs.job_trace")
             if _trace_cm is not None:
                 try:
                     _trace_cm.__exit__(None, None, None)

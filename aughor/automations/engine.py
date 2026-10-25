@@ -2821,11 +2821,17 @@ def run_automation(
         # A top-level run's trace IS its run id (VA-4d); a nested one keeps its parent's.
         trace_id=parent.trace_id or run_id,
         depth=parent.depth, dispatch=dispatch, sleeper=sleeper, rng=rng))
+    # Arc TC, TC-2 — the run every edit and action audit row under this chain names: its own id, even when nested (the
+    # trace is the parent's), and `monitor` for an adopted monitor. A contextvar, so no step threads it.
+    from aughor.automations.adopt import MONITOR_PREFIX
+    from aughor.telemetry import bind_run
+    kind = "monitor" if str(automation.id or "").startswith(MONITOR_PREFIX) else "automation"
     try:
-        return _walk_automation(
-            automation, now=now, probe=probe, dispatch=dispatch, sleeper=sleeper, rng=rng,
-            persist=persist, dry_run=dry_run, manual=manual, via=via, run_id=run_id,
-            until_alias=until_alias, resume=resume)
+        with bind_run(run_id, kind):
+            return _walk_automation(
+                automation, now=now, probe=probe, dispatch=dispatch, sleeper=sleeper, rng=rng,
+                persist=persist, dry_run=dry_run, manual=manual, via=via, run_id=run_id,
+                until_alias=until_alias, resume=resume)
     finally:
         _CHAIN.reset(token)
 
