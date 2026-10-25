@@ -44,6 +44,8 @@ const DRAWINGS = {
   "components/ontology/EntityTypeMap.tsx": "the entity-type map's link lines and arrowheads, computed per layout",
   "components/ontology/EntityTypeMap.test.tsx":
     "the svg a test draws one map link inside, to read its path and prove it straight — an edge, not a glyph",
+  "components/ontology/SourceMapping.tsx":
+    "the source mapping's connectors from a table's columns to a type's properties, with their end dots — edges computed per row, not a glyph",
   "components/dashboards/OntologyPieces.tsx": "a cockpit's chart of objects per day — bars, the line behind them, its axis",
   "components/dashboards/ObjectDashboardStarter.tsx": "the starter's preview of objects per day, drawn small from measured counts",
   "components/dashboards/AppPieces.tsx": "a timeline's bars between two moments, one lane per object, computed per page",

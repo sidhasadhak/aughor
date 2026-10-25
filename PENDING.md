@@ -678,3 +678,19 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
 - [x] §5 "a package's questions are not covered" — #539 merged them. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*
 - [x] §3.22 does not mark CP-1 and CP-2 as built (#542). *Corrected and merged 2026-10-04 · #565.*
 - [x] §3.5's "VA-10 is therefore not one band" and §5's "cross-user Know waits on VA-10" — sign-in shipped 2026-09-06; only the live IdP receipt is open. *2027 study: phase 0 — stale lines corrected with §0's restatement.* *Corrected in ROADMAP.md 2026-10-05 (phase 0).*
+60. [~] **The look, measured against Palantir's** (the user, 2026-10-25: *"Let's research how we can make Aughor look
+    more like Palantir"*) — **studied 2026-10-25**: `docs/PALANTIR_DESIGN_STUDY_2026-10-25.md` + the six-step
+    side-by-side `design-mockups/palantir-inspired/aughor-foundry-knobs-2026-10-25.png`. Decided the same day (ROADMAP
+    §6 item 53): the product look · a per-person **preset** with all six knobs · the chrome as a screenshot first.
+    *Built 2026-10-25: the Workbench preset (blue · slate · small · 95% · edges · Source Sans) and the two new knobs,
+    edges and typeface, in the Look panel and the preference store; tests green.* *Second step 2026-10-25: what uses
+    an entity behind `ontology.entity_usage` (dependents · dashboards · reads by month from the SQL audit) on the
+    entity Overview; Workshop's numbers into CLARITY §3; bordered state tags measured as no gap (no chip carries a
+    state; the surface badge is already bordered and tinted).* *The chrome (dark rail on light content) was built as a
+    seventh knob, shown live, and **REFUSED by the user the same day** — one theme for every panel, never half dark
+    and half light (ROADMAP §4.11); the commit was dropped unmerged.* *Evening: **depth** decided (study §10) — L3 light ·
+    D4 dark · all three pieces; the tokens built (ground · surface · control · lines, edges on by default in dark); the
+    seams, the icon squares and the Sources-tab mapping picture built the same night and proven live on the scratch
+    pair's demo ontology.* *Night: the last two closed — the dense table's row 36 → 30 px (one variable, measured; nav rows
+    and buttons were already under 30), and the entity-uses door proven live on the scratch's demo ontology (one audited
+    read counted in October 2026; no dependents, said).* Nothing owed from the look study.

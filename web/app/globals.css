@@ -939,3 +939,18 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
    row for nothing. In a ledger the first column is the statement, and it alone wraps. */
 [data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
 [data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Seams (2026-10-25, the look study §10: "fine grey lines at the right places") ─────────────────────────
+   Stacked blocks read as sections when a hairline stands between them; a tab panel's first section does not
+   draw its own top rule under the strip's underline, or two lines stand where one belongs. */
+.aug-stack-rules > * { padding: 14px 0; }
+.aug-stack-rules > :first-child { padding-top: 0; }
+.aug-stack-rules > :last-child { padding-bottom: 0; }
+.aug-stack-rules > * + * { border-top: 1px solid var(--b0); }
+.aug-sections > section:first-child { border-top: 0; }
+
+/* ── The dense table's row (2026-10-25, the look study §8 call 5 closed): Radix's size-1 table sets a 36px
+   minimum on every cell; the compact row an operations console reads at is 30px (the look study §8, call 5), and our
+   cells already pad 4px around a 20px line. One variable, scaled with the Theme; a cell holding two lines keeps its
+   own height. Applies to the dense table and the ledger alike, never to a Radix table a page uses raw. */
+:is([data-ledger], [data-slot="table"]) { --table-cell-min-height: calc(30px * var(--scaling)); }

@@ -197,6 +197,55 @@ class AuditLogger:
         return record_id
 
     @classmethod
+    def reads_by_month(
+        cls,
+        connection_id: str,
+        tables: list[str],
+        *,
+        months: int = 12,
+        org_id: str | None = None,
+        now: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """How many audited statements on ``connection_id`` named one of ``tables`` in each of the last
+        ``months`` calendar months, oldest first and every month present (a quiet month is 0, not absent).
+        A table is named when it stands as a whole word in the statement — ``events`` does not count a
+        read of ``event_log``; a schema-qualified ``shop.events`` counts. ``org_id`` is the tenant filter,
+        as in :meth:`recent`. An empty ``tables`` counts nothing."""
+        import re
+        from datetime import datetime, timezone
+        stamp = datetime.fromtimestamp(now if now is not None else time.time(), tz=timezone.utc)
+        keys: list[str] = []
+        year, month = stamp.year, stamp.month
+        for _ in range(max(1, months)):
+            keys.append(f"{year:04d}-{month:02d}")
+            month -= 1
+            if month == 0:
+                year, month = year - 1, 12
+        keys.reverse()
+        counts = {k: 0 for k in keys}
+        names = [t.strip() for t in tables if t and t.strip()]
+        if not names:
+            return [{"month": k, "reads": 0} for k in keys]
+        pattern = re.compile(r"(?<![A-Za-z0-9_])(?:" + "|".join(re.escape(n) for n in names) + r")(?![A-Za-z0-9_])",
+                             re.IGNORECASE)
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses = ["connection_id = ?", "ts >= ?"]
+            params: list[Any] = [connection_id, keys[0] + "-01T00:00:00Z"]
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            rows = c.execute(f"SELECT ts, sql_full FROM audit_log WHERE {' AND '.join(clauses)}", params).fetchall()
+        finally:
+            c.close()
+        for ts, sql in rows:
+            key = str(ts)[:7]
+            if key in counts and pattern.search(str(sql or "")):
+                counts[key] += 1
+        return [{"month": k, "reads": counts[k]} for k in keys]
+
+    @classmethod
     def recent(
         cls,
         limit: int = 100,

@@ -12381,6 +12381,16 @@ a screen nobody had looked at. A change to the rail is shown before anything is 
 
 Re-propose only on the user's word.
 
+### 4.11 · A dark rail on a light page — REFUSED on screen (2026-10-25)
+
+The look study (§6 item 53) measured Foundry's own shell: a dark navigation rail and strip around light content. It
+was built as a seventh knob of the look — `chrome: same | dark`, per person, off by default, outside the preset — and
+shown live on the scratch pair with the light skin. The user, on seeing it: *"Keep dark only and light only concept
+that change entirely for all panels (making it one theme).. I cannot have half dark and half light theme."* The
+commit was dropped before it was merged; nothing of it ships. What stands: the two skins, each one theme for every
+panel, switched by the one toggle; the Workbench preset (six knobs) and the entity's uses section are untouched by
+this. Rule in CLARITY §3: one skin across the shell and the page.
+
 ## 5 · Sequencing
 
 ```
@@ -14451,6 +14461,76 @@ the browser** · **measure the premise before building.**
         impacts are the one store, the model is not asked for causes, and the alert summary words the impacts.
     - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
+
+53. ✅ **DECIDED 2026-10-25 — the look of the product, measured against Palantir's; a preset, not a new
+    default** (`docs/PALANTIR_DESIGN_STUDY_2026-10-25.md`; the user: *"Let's research how we can make Aughor look
+    more like Palantir"*, then *"Product look, preset with all six, build the chrome screenshot"*).
+    - Measured from primary sources (Blueprint's token files, Palantir's own Workshop design rules, nine Foundry
+      screenshots, palantir.com's computed styles) against the live instance: the distance is surface — corners,
+      the tint of the greys, the accent, card edges, scale, the face — and four of the six were already the Look
+      panel's knobs. Aughor is Foundry-shaped where it counts (the Ontology tab, the cockpit-from-object pieces,
+      the icon rail, straight graph edges).
+    - **(1)** The product look, not the brand: Blueprint's cool slate, one blue, 4px, a 1px edge on every card,
+      Source Sans at 14px. The marketing black and the licensed face (Alliance) are left.
+    - **(2)** A **preset**, per person, in the Look panel — the platform's default (indigo · gray · large · 100%,
+      2026-10-06) and the dark charcoal skin (2026-10-05) do not move. The default moves, if ever, after a week of
+      real use and on a side-by-side as before.
+    - **(3)** The preset holds **all six**: two knobs of our own join Radix's four — **edges** (a card in the dark
+      skin boxed by the hairline the light skin draws) and **typeface** (Source Sans 3, OFL, self-hosted by
+      next/font) — each still its own knob afterwards. Named for what it does, as the vocabulary ratchet requires:
+      **Workbench** (blue · slate · small · 95% · edges on · Source Sans); the default preset is **Aughor**.
+    - **(4)** The dark-rail-on-light chrome (Foundry's own) is a **screenshot first**, built by hand on the live page
+      and shown; no code until it is seen (§4.10, the rail stays).
+    - Not taken now, recommended for later: Blueprint's 30px rows beyond scaling; Dependents and Usage sections on an
+      entity (needs usage attribution); Workshop's numbers written into CLARITY §3; bordered state tags.
+    - *Built 2026-10-25 on `claude/aughor-palantir-design-bddf88`: `lib/lookValues.ts` (EDGES, TYPEFACES, PRESETS),
+      `lib/themeBoot.ts` (two attributes of our own), `app/theme-root.tsx` (keeps them), `app/layout.tsx` (the
+      third family), `aughor-v2/theme/tokens-v2.css` (`[data-edges]`, `[data-typeface]`), `components/LookPanel.tsx`
+      (a Preset row, two knobs), `aughor/db/user_prefs.py` (two keys); tests in each. Off by default: a person who
+      chose nothing sees nothing move.*
+    - *Built 2026-10-25, second step, at the user's "continue building here": **what uses an entity**, behind
+      `ontology.entity_usage` (off by default; the type's detail is byte-for-byte what it was) — one door,
+      `GET /object-types/{type}/uses` (`aughor/ontology/entity_uses.py`), composing the dependents index (Arc OC-1),
+      the release strip's dashboards-reading door, and `AuditLogger.reads_by_month` (statements naming the entity's
+      tables as whole words, twelve calendar months, every month present); the entity Overview's new "Depends on it"
+      and "Reads · 12 months" (`TypeOverview.UsesSection`), what could not be read said in place. **Workshop's numbers
+      into CLARITY §3** as a "Count it" table. **Bordered state tags measured as no gap**: no chip carries a state word
+      or a state field, and the Radix `surface` badge is already tint, border and text of one hue. Not proven live:
+      the scratch connection has no ontology; the unit tests and the panel test hold it.*
+    - **(4), decided 2026-10-25 — REFUSED.** The chrome was built as a seventh knob (`same` · `dark`, per person,
+      outside the preset) and shown live on the scratch pair; the user, on the dark rail beside the light page: *"Keep
+      dark only and light only concept that change entirely for all panels (making it one theme).. I cannot have half
+      dark and half light theme."* The knob was dropped before it was merged (§4.11). The rule stands in CLARITY §3:
+      one skin across the shell and the page. In the same breath, on the six-step side-by-side of the Workbench knobs
+      (`design-mockups/palantir-inspired/aughor-foundry-knobs-2026-10-25.png`): *"Other than that, the transitions
+      shown here seem good to me"* — the preset's six knobs stand as built, per person; the default is unchanged.
+    - **(5), decided 2026-10-25 evening — DEPTH, the surface grammar** (study §10; the user, with five Foundry
+      screens: *"a sense of depth… white & light grey play between panels, fine grey lines at the right places,
+      filter/list of values having grey fill, icons well placed & clear.. also see how ontology is getting
+      created"*, then *"use similar logic for dark theme"*, then *"Go with L3 and D4, all three pieces, build
+      it"*). Tokens for everyone, one theme per skin: **light** ground gray 3, rail gray 2, cards white, controls
+      gray 3 (L3); **dark** cards gray 3 one step above the gray 1 ground, controls gray 1, rows gray 6, borders
+      gray 7, a card edge by default (D4) — which supersedes the 2026-10-10 "no border on a dark card"; the `edges`
+      knob off is the way back. Then three pieces: lines at the seams, icon squares for entities and property
+      kinds, and the mapping picture in the Sources tab. *Tokens built the same evening; the three pieces the same
+      night: **seams** — the entity Overview's blocks ruled apart (`.aug-stack-rules`), a tab panel's first section
+      without a second line under the strip (`.aug-sections`); **icon squares** — `ui/icon-square.tsx`, monochrome
+      on purpose (the column-type mark's own reason), on every entity in the rail and the panel's head and, by the
+      column's kind, on every property row (`ColumnTypeSquare`); **the mapping picture** —
+      `ontology/SourceMapping.tsx` in the Sources tab: the primary binding's table columns left, the type's
+      properties right, a connector per column read bending at right angles, the chosen pair in the accent with the
+      property's facts beneath, every absence said (a column not read, a property computed or read elsewhere, a
+      binding that reads a query, columns that could not be read). Proven live on the scratch pair's demo ontology,
+      built from the schema with no model: 7 of 7 properties of Customer drawn from main.customers.*
+    - **(6), closed 2026-10-25 night, at the user's "Close the two open items as well".** *Blueprint's 30px rows*:
+      measured first — at 100 % the dense table's row was 36 px (Radix's size-1 minimum), the rail's nav row 28 px and a
+      size-1 button 25 px, both already under Blueprint's 30; so the one place the product was looser than Blueprint's
+      compact was the table row. One variable on the dense table and the ledger (`--table-cell-min-height: 30px ×
+      scaling`, `app/globals.css`): the row is 30 px at 100 %, 28.5 at the preset's 95 %; a two-line cell keeps its
+      own height. No new knob — scaling stays the one knob for size (2026-10-06). *The entity-uses door proven live*:
+      on the scratch pair's demo ontology with `ontology.entity_usage` on, Customer's Overview read the door — no
+      dependent (said), twelve months of reads with one in October 2026 after one audited statement through the SQL
+      editor; the builder's own schema reads are not audited and do not count, which the count says by its source.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

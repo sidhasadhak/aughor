@@ -57,7 +57,7 @@ the first row still leaves with the answer.
 | Do | Don't |
 |---|---|
 | **A row of 3–4 figures** at the top: label (11.5px, muted) · value (22–30px) · one muted line ("of 125,080", "614 in the last 7 days") | A header bar of mixed links, counts and sentences |
-| **Cards on the ground**: `--bg-1` on `--bg-0`, radius `--r3`, no border, no shadow; 14px gaps | Borders around everything; nested boxes |
+| **Surfaces on a ground** (2026-10-25): a card `--bg-2` on the page `--bg-0` — a step lighter in dark, white on grey in light — with a hairline edge `--card-edge` in both skins, radius `--r3`, no shadow; a control `--bg-3` a step under the card it sits in; a 1px line wherever two surfaces meet; 14px gaps | Borders drawn twice (a boxed card inside a boxed card); shadows; a surface the same colour as its ground |
 | **Pairs side by side** — two related cards on one row (Tokens by model · Where tokens go) | One long column the reader scrolls past |
 | **Filters in a left column**: value · count · a 6px bar; the chosen row tinted; the set's size as "37,838 of 125,080" | Dropdown filters that hide the distribution |
 | **List rows: name · figure · one muted meta line**, with marks (`✓ key`, `● 1 proposed`) instead of words | A sentence per row |
@@ -65,8 +65,26 @@ the first row still leaves with the answer.
 | **Detail behind tabs or *Details*** (Overview · Properties · Links · Actions · Sources · History) | One panel of twelve sections that never ends |
 | **Tools in one menu** (*Tools ▾*) | A row of five tool buttons |
 | **Small uppercase section labels** (11px, letter-spaced, muted), the meta at their right end | Page title bars; a title that repeats the rail or tab |
+| **One skin across the shell and the page** — the rail, the top strip and the content share the skin the toggle set | A dark rail or strip on a light page, or the reverse: *"I cannot have half dark and half light theme"* (the user, 2026-10-25) |
 | **Graph connectors straight**, bending only at 90° or 45° (step edges, zero radius) | Curves (bezier edges) |
 | **A process as a funnel** — stage · bar · count — with each promise on one line and its overdue count as a button | A process described in prose |
+
+**Count it.** The design study of 2026-10-25 (in `docs/`, §2.3) measured the numbers a published guide to
+operational screens holds a screen to; they agree with the test in §1 and make it countable. Hold a screen to them before
+it ships:
+
+| Count | At most |
+|---|---|
+| Primary actions in a screen's top row (buttons a reader is meant to press first) | **5** |
+| Components visible at once — buttons, panels, cards, charts, tables | **10** |
+| Air — the share of the screen that is not ink | **30–40 %**, as a floor |
+| Regions with a shaded or raised style (a tinted panel, a shadow) | **1** per screen |
+| Header and tab rows that scroll away | **0** — the header and its tabs stay; only content scrolls |
+| A control's hit target where a section scrolls | **≥ 30 px** |
+| A dense table's row at 100 % (the ledger's too) — the compact row of an operations console, one variable in `app/globals.css` | **30 px** |
+
+Filters stand in the left column, the figures above the list, the detail to the right of it (§3's order and
+`cockpit-from-object.html`); a sideways scroll is a column to fit, never a scrollbar.
 
 ## 4. Colour and type — what each one means
 
@@ -74,7 +92,7 @@ Values are the app's tokens (`theme/tokens-v2.css`); the mockups use their compu
 
 | Token / use | Means | Never |
 |---|---|---|
-| `--bg-0` ground · `--bg-1` card · `--bg-2` raised, chips | Structure | — |
+| `--bg-0` ground · `--bg-1` chrome (rail, strips, table heads) · `--bg-2` card, panel · `--bg-3` control, inset | Structure: dark steps gray 1 · 2 · 3 · 1, light gray 3 · 2 · white · 3 | — |
 | `--t1` · `--t2` · `--t3` | Value · supporting · meta | Colouring text with a series colour |
 | Accent (indigo) + its soft fill | Selected, primary action, the chosen row | Decoration |
 | Amber + soft fill | Needs a person: a broken promise, no price, no cap | "Series 4" |

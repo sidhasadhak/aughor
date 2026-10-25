@@ -152,15 +152,17 @@ def preferred_timezone() -> str:
         return ""
 
 
-#: The look — the four knobs of Radix Themes' panel, kept per person (ROADMAP §6 item 44). The
-#: values are Radix's own and are spelled once more in `web/lib/look.ts`, which is what hands them
-#: to the Theme; `tests/unit/test_user_prefs_look.py` fails if the two lists part.
+#: The look — the four knobs of Radix Themes' panel and two of our own, kept per person (ROADMAP
+#: §6 items 44 and 53). The values are spelled once more in `web/lib/lookValues.ts`, which is what
+#: hands them to the Theme; `tests/unit/test_user_prefs_look.py` fails if the two lists part.
 LOOK_ACCENTS = ("gray", "gold", "bronze", "brown", "yellow", "amber", "orange", "tomato", "red", "ruby",
                 "crimson", "pink", "plum", "purple", "violet", "iris", "indigo", "blue", "cyan", "teal",
                 "jade", "green", "grass", "lime", "mint", "sky")
 LOOK_GREYS = ("gray", "mauve", "slate", "sage", "olive", "sand")
 LOOK_RADII = ("none", "small", "medium", "large", "full")
 LOOK_SCALINGS = ("90%", "95%", "100%", "105%", "110%")
+LOOK_EDGES = ("off", "on")
+LOOK_TYPEFACES = ("inter", "source-sans")
 
 ALLOWED_KEYS: dict[str, tuple] = {
     "theme": (_one_of("dark", "light", "system"), "UI theme"),
@@ -168,6 +170,8 @@ ALLOWED_KEYS: dict[str, tuple] = {
     "grey": (_one_of(*LOOK_GREYS), "the grey surfaces, lines and text are drawn in"),
     "radius": (_one_of(*LOOK_RADII), "how round corners are"),
     "scaling": (_one_of(*LOOK_SCALINGS), "the size of controls and their spacing"),
+    "edges": (_one_of(*LOOK_EDGES), "whether a card in the dark skin is boxed by a hairline"),
+    "typeface": (_one_of(*LOOK_TYPEFACES), "the face the interface is set in"),
     "default_connection": (_connection_id, "connection new conversations open on"),
     "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
     # The canvas (B1): the Briefing's switches. Cosmetic and self-scoped — which of its sections

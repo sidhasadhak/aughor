@@ -43,6 +43,7 @@ import { ActionDesigner } from "@/components/ontology/ActionDesigner";
 import { ProcessDesigner } from "@/components/ontology/ProcessDesigner";
 import { ProcessPanel } from "@/components/ontology/ProcessPanel";
 import { Button } from "@/components/ui/button";
+import { IconSquare } from "@/components/ui/icon-square";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -368,9 +369,11 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
         title={part ? `Open ${t.display_name}, a part of ${t.absorbed_into}` : `Light ${t.display_name} up on the map and open it here`}
         className="h-auto w-full justify-start py-1.5"
         style={current ? { background: "var(--bg-sel)" } : undefined}>
-        {/* A row is a name, its count of objects, and one line of marks — the approved mockup's rail (2026-10-10). */}
-        <span style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", columnGap: 8, rowGap: 1, width: "100%",
-                       textAlign: "left" }}>
+        {/* A row is a mark, a name, its count of objects, and one line of marks — the approved mockup's rail
+            (2026-10-10); the square (2026-10-25) says what kind of thing the name is, and every name starts at one x. */}
+        <span style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 8, rowGap: 1, width: "100%",
+                       textAlign: "left", alignItems: "center" }}>
+          <IconSquare name={part ? "layers" : "node"} title={part ? "a part of another type" : "an entity type"} />
           <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500, overflow: "hidden",
                                                 textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {t.display_name}
@@ -383,11 +386,11 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
               and the links off the rail's edge. */}
           {sources && t.connection_id && (
             <span className="aug-fs-xs" data-testid="entity-rail-connection" title={`read from ${nameOf(sources, t.connection_id)}`}
-              style={{ gridColumn: "1 / -1", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              style={{ gridColumn: "2 / -1", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               on {nameOf(sources, t.connection_id)}
             </span>
           )}
-          <span className="aug-fs-xs" style={{ gridColumn: "1 / -1", color: "var(--t3)" }}>
+          <span className="aug-fs-xs" style={{ gridColumn: "2 / -1", color: "var(--t3)" }}>
             {part ? `part of ${t.absorbed_into}` : (
               <>
                 <KeyMark verified={t.key_verified} />

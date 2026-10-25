@@ -87,10 +87,13 @@ contrast are in `docs/UI_UX_STUDY_2026-09-25.md` §9.2; the rules that differ be
 skins beyond tokens are at the end of `app/globals.css` and in §4 item 5 below. Three names
 were added: `--primary-hover`, `--accent`, `--accent-text`.
 
-- **Surfaces** `--bg-0` the page · `--bg-1` chrome · `--bg-2` a card: `--bg-1` in dark (one step
-  up), `--bg-0` in light (a box drawn by its border) · `--bg-3` inset / input · `--bg-4` pressed ·
-  `--bg-hover` · `--bg-nav` = `--bg-1` (the rail sits on chrome) · `--bg-sel` the selection tint ·
-  `--scrim` · `--code-bg`. `--bg-canvas` (the Data Canvas ground) = `--bg-0`.
+- **Surfaces** (the grammar since 2026-10-25, CLARITY §3 "Surfaces on a ground"): `--bg-0` the ground —
+  gray 1 in dark, gray 3 in light · `--bg-1` chrome: the rail, the strips, a table's head — gray 2 · `--bg-2`
+  a card, a panel — gray 3 in dark (one step above the ground), white in light — with its hairline
+  `--card-edge` in both skins · `--bg-3` inset / input / control — a step under the card: gray 1 in dark,
+  gray 3 in light · `--bg-4` pressed · `--bg-hover` · `--bg-nav` = `--bg-1` (the rail sits on chrome) ·
+  `--bg-sel` the selection tint · `--scrim` · `--code-bg` (inset like an input). `--bg-canvas` (the Data
+  Canvas ground) = `--bg-0`.
 - **Lines** `--b0` the row rule, the workhorse · `--b1` default border · `--b2` input border,
   strong divider · `--b3` hover border · `--bfocus` = `--blue3`.
 - **Text** `--t1` primary · `--t2` secondary · `--t3` captions and meta · `--t4` **never text** —
@@ -229,8 +232,10 @@ loops stop. The ⌘K palette has no entrance at all — it is summoned from the 
 **Decided 2026-09-14** (the Instrument Polish Review, against the better-ui and emil-design-eng
 skills): the Primary alone gets a press scale, and dense controls keep the background step; the
 Briefing enters verdict → numbers → cards once a session (`components/brief/firstOpen.ts`), never on
-Reload or Regenerate; depth stays a hairline, not a shadow — a card is the page's own plane, and on
-`#171717` (the canvas since the dark skin's neutrals moved to charcoal on 2026-10-05; `#191F24`, `#11171C`, `#181818` and `#101010` before it) a drop shadow would not show.
+Reload or Regenerate; depth stays a hairline and a step of grey, never a shadow — since 2026-10-25 a card
+stands one step above the ground in dark and white on a grey ground in light (CLARITY §3), and before that it
+was the page's own plane; on a charcoal ground (`#171717` since 2026-10-05; `#191F24`, `#11171C`, `#181818` and
+`#101010` before it) a drop shadow would not show.
 
 ## 8. Icons and density
 
