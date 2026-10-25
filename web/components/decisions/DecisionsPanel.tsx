@@ -815,7 +815,7 @@ function StepRow({ s }: { s: ThreadStep }) {
   return (
     <div style={{ marginBottom: 6 }}>
       <div className="aug-fs-ui" style={{ color: "var(--t1)", display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-        <span>{s.line}</span>
+        <span>{plainWho(s.line)}</span>
         {s.at && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{day(s.at)}</span>}
         {receipt.length > 0 && (
           <Button size="xs" variant="ghost" onClick={() => setOpen(v => !v)}>{open ? "Hide the receipt" : "Receipt"}</Button>
