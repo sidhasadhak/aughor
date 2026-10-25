@@ -27,7 +27,7 @@ const PROPOSAL: MissionProposal = {
 };
 
 beforeEach(() => {
-  rec.listMissionProposals.mockReset().mockResolvedValue({ mission: "m1", proposals: [PROPOSAL], from_report: "r1" });
+  rec.listMissionProposals.mockReset().mockResolvedValue({ mission: "m1", proposals: [PROPOSAL], objective: {} });
   rec.declareDecision.mockReset().mockResolvedValue({ id: "dec-9", review_on: "2026-11-09" });
 });
 
@@ -56,7 +56,7 @@ describe("the platform's proposal under a mission", () => {
   });
 
   it("with no declared kind for the objective, says how one is made", async () => {
-    rec.listMissionProposals.mockResolvedValue({ mission: "m1", proposals: [], from_report: "" });
+    rec.listMissionProposals.mockResolvedValue({ mission: "m1", proposals: [], objective: {} });
     render(<Proposals m={MISSION} onOpenDecision={() => {}} />);
     expect(await screen.findByText(/No declared kind of decision moves gmv/)).toBeInTheDocument();
   });

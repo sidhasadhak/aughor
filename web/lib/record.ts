@@ -574,7 +574,7 @@ export const listDecisionKinds = (state?: "active" | "retired") =>
   read<{ kinds: DecisionKind[] }>(`/record/decision-kinds${qs({ state })}`);
 export const declareDecisionKind = (body: DecisionKindBody) => send<DecisionKind>("/record/decision-kinds", body);
 export const listMissionProposals = (missionId: string) =>
-  read<{ mission: string; proposals: MissionProposal[]; from_report: string }>(
+  read<{ mission: string; proposals: MissionProposal[]; objective: Record<string, unknown> }>(
     `/record/missions/${encodeURIComponent(missionId)}/proposals`);
 
 /** One step of a decision's thread: its why in three layers — a line, a sentence, and the receipt — composed by code. */

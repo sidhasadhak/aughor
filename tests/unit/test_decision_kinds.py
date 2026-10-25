@@ -162,6 +162,10 @@ def test_the_routes_declare_as_the_person_signed_in_and_list_proposals(monkeypat
     m = _mission(conn)
     got = R.list_mission_proposals(m.id)
     assert got["mission"] == m.id and any(p["kind"] == out["key"] for p in got["proposals"])
+    # not acting is predicted from the objective measured NOW; a connection that cannot be opened is said, not guessed
+    assert got["objective"]["measurable"] is False and got["objective"]["note"]
+    hold = next(p for p in got["proposals"] if p["kind"] == out["key"])["options"][1]["predicted"]
+    assert hold["method"] == "history" and hold["says"] == got["objective"]["note"]
 
 
 def test_with_the_loop_off_a_kind_still_holds_its_rules():

@@ -499,6 +499,21 @@ def _tolerated(fn, default, label: str):
         return default
 
 
+def measure_objective(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = None) -> dict:
+    """The objective alone, measured now over the report's window against its own history — what a proposal under the
+    mission predicts not acting from (`record/kinds.proposals_for`). One query; nothing is booked."""
+    now = now or _now()
+    days = CADENCE_DAYS.get(m.review.cadence, 30)
+    conn = m.scope.connections[0] if m.scope.connections else ""
+    if not conn:
+        return {"measurable": False, "note": "the mission names no connection; nothing can be measured"}
+    try:
+        run_sql = run_sql_for(conn, internal=True)
+    except Exception as exc:  # noqa: BLE001 — an unreachable connection is said, never a guessed baseline
+        return {"measurable": False, "note": f"the connection could not be opened: {str(exc)[:160]}"}
+    return _measure(m.objective.spec, run_sql, end_day=now.date() - _dt.timedelta(days=1), days=days, connection_id=conn)
+
+
 def compose_report(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = None) -> dict:
     """The report, composed from fields by code — the objective against baseline first."""
     now = now or _now()

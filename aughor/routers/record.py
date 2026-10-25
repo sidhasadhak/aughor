@@ -370,9 +370,11 @@ def list_mission_proposals(mission_id: str) -> dict:
     if m is None or not all(_visible(c) for c in (m.scope.connections or [])):
         raise HTTPException(status_code=404, detail="No such mission")
     m = M.latest(m.key) or m
-    reports = M.reports_for(m)
-    latest = reports[0] if reports else None      # the objective's baseline, as the last report measured it
-    return {"mission": m.id, "proposals": proposals_for(m, report=latest), "from_report": (latest or {}).get("id") or ""}
+    from aughor.db.measure import run_sql_for
+    # not acting is predicted from the objective as it measures now — never from a report booked under older code
+    objective = M.measure_objective(m, run_sql_for=run_sql_for)
+    return {"mission": m.id, "proposals": proposals_for(m, report={"objective": objective}),
+            "objective": {k: objective.get(k) for k in ("measurable", "window", "actual", "baseline", "note")}}
 
 
 @router.get("/record/thread/{ref}")
