@@ -211,6 +211,19 @@ FLAG_ENV = {
     # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
     # misses one way). OFF: decisions are booked, reviewed and scored as before.
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # Arc TC, TC-5 (ROADMAP §3.59). ON: each automation and monitor on the hub map says how often its runs failed over a
+    # window (seven days unless asked), counted at the run store: "no runs" where none ran, never 0%, and "not permitted"
+    # where the reader may not see its runs, never left off. OFF: the map carries no failure rate.
+    "hub.failure_rate": "AUGHOR_HUB_FAILURE_RATE",
+    # Arc TC, TC-5. ON: GET /obs/logs searches the lines the journal kept for every run over the last thirty days — words,
+    # level, the kind of run — newest first from a cursor, saying how many runs it searched and how old its oldest line is.
+    # OFF: the route answers 404 and a run's lines are read one trace at a time (`/traces/{id}/logs`).
+    "obs.log_search": "AUGHOR_OBS_LOG_SEARCH",
+    # Arc TC, TC-5 (§6 item 4, "a reason recorded"). ON: the governance feed takes since, until and an opaque cursor and
+    # exports as CSV or JSON lines; reading a run's payload and exporting the ledger need a reason, refused by name without
+    # one, and each such read is journaled once as `access.justified`. OFF: the feed reads its newest thousand, and a
+    # payload read records who read it but not why.
+    "govern.justifications": "AUGHOR_GOVERN_JUSTIFICATIONS",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -664,6 +677,36 @@ FLAG_META = {
                        "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
                        "decisions are kept and reviewed as before.",
     },
+    "hub.failure_rate": {
+        "label": "Failure rate on the hub map",
+        "summary": "Each automation and monitor says how often its runs failed over the last week. One that did not "
+                   "run says no runs.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Says when you may not see"}],
+        "description": "A run failed when it broke, or when one of its steps failed. A node with no runs in the window "
+                       "says no runs, never 0%. One whose runs you may not see says not permitted. Off: the map "
+                       "shows no failure rate.",
+    },
+    "obs.log_search": {
+        "label": "Search logs across runs",
+        "summary": "Search the lines every run wrote over the last thirty days. It says how many runs it searched.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "For people who manage the organisation"}],
+        "description": "Words match a line as it was kept. You may narrow by level, error, warning or info, and by the "
+                       "kind of run. The newest lines come first, a page at a time. It says how old the oldest line "
+                       "searched is, since the log may keep fewer days. Off: a run's lines are read one run at a time.",
+    },
+    "govern.justifications": {
+        "label": "A reason to read a run's payload",
+        "summary": "Reading what a run was sent and said, or exporting the ledger, asks for a reason. The governance "
+                   "feed pages back by date.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Refusals say why"}],
+        "description": "Without a reason the read is refused, and says what is missing. Each read is recorded once with "
+                       "who read it, whose run it was and the reason. The governance feed takes a first and last date, "
+                       "pages past its newest thousand and exports as a file. Off: a payload read records who read it, "
+                       "not why.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -1029,6 +1072,16 @@ EXPERIMENT: dict = {
     "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",
+    # Arc TC, TC-5 (ROADMAP §3.59), 2026-10-26. No model call; each changes what an operator reads, so each is watched.
+    "hub.failure_rate": "does a failure rate change what is fixed — of the automations shown failing over a week, is one in "
+                        "three or more edited, paused or turned off within two weeks? Falsifier (§3.59, TC-5): a node with "
+                        "no runs, or one the reader may not see, reads as 0% — stop",
+    "obs.log_search": "do people find a failure across runs — of the searches made in two weeks, does one in three or more "
+                      "open a run from its results? Falsifier (§3.59, TC-5): a search that says it read further back than "
+                      "the oldest line it read — stop",
+    "govern.justifications": "are reasons written and read — within four weeks, is the reason readable as a reason in nine "
+                             "of ten payload reads, and is the feed exported at least once? Falsifier (§3.59, TC-5): a "
+                             "payload read or ledger export with no reason recorded beside it — stop",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",

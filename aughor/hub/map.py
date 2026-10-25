@@ -111,8 +111,75 @@ def _monitors(conn_id: str) -> list[tuple]:
         return []
 
 
-def hub_map(conn_id: str = "") -> dict:
-    """The map. One row per automation and per monitor, every column the roadmap names."""
+#: Arc TC, TC-5 — the failure-rate window, in days counting today, and the most a caller may ask.
+FAILURE_WINDOW_DAYS = 7
+FAILURE_WINDOW_MAX = 90
+
+
+def _readable_ids(autos: list) -> tuple[set[str], str]:
+    """The nodes whose runs this reader may see, and why the rest may not.
+
+    The same two rules the automations and monitors lists apply: the connection is in the
+    reader's organisation (DATA-06; every connection when identity is off), and the node is in
+    the active workspace — owned by it, or on one of its connections (`scoped_to_workspace`). A
+    check that cannot run fails closed and says so, rather than reading every node as allowed."""
+    try:
+        from aughor.metastore import scoped_to_workspace
+        from aughor.security.authz import org_visible_conn_ids
+        visible = org_visible_conn_ids()
+        in_org = [a for a in autos if visible is None or not a.conn_id or a.conn_id in visible]
+        return {a.id for a in scoped_to_workspace(in_org, key="conn_id")}, ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "hub map could not check who may see each node's runs; none is shown",
+                 counter="hub.map_failure_permission")
+        return set(), "who may see these runs could not be checked"
+
+
+def _failure_label(failed: int, ran: int) -> str:
+    pct = 100.0 * failed / ran
+    if 0 < pct < 1:
+        return "under 1% failed"
+    return f"{round(pct)}% failed"
+
+
+def failure_rates(autos: list, conn_id: str = "",
+                  window_days: int = FAILURE_WINDOW_DAYS) -> tuple[dict[str, dict], dict]:
+    """Arc TC, TC-5 — each node's failure rate over the window, from its run records.
+
+    Three answers kept apart, because each means something different to the reader:
+    *measured* (n runs, f failed); *no runs* — nothing ran in the window, which is not 0%; and
+    *not permitted* — the reader may not see this node's runs, so no count is given, and the node
+    stays on the map saying so rather than leaving it.
+    """
+    from datetime import date
+    from aughor.automations.store import failure_counts_since
+
+    days = max(1, min(int(window_days or FAILURE_WINDOW_DAYS), FAILURE_WINDOW_MAX))
+    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    readable, why_not = _readable_ids(autos)
+    counts = failure_counts_since(since, conn_id=conn_id or None)
+    out: dict[str, dict] = {}
+    for a in autos:
+        if a.id not in readable:
+            out[a.id] = {"state": "not_permitted", "window_days": days, "label": "not permitted",
+                         **({"why": why_not} if why_not else {})}
+            continue
+        c = counts.get(a.id) or {"ran": 0, "failed": 0, "gated": 0}
+        if not c["ran"]:
+            out[a.id] = {"state": "no_runs", "window_days": days, "ran": 0, "failed": 0,
+                         "rate": None, "gated": c["gated"], "label": "no runs"}
+            continue
+        out[a.id] = {"state": "measured", "window_days": days, "ran": c["ran"],
+                     "failed": c["failed"], "rate": round(c["failed"] / c["ran"], 4),
+                     "gated": c["gated"], "label": _failure_label(c["failed"], c["ran"])}
+    return out, {"days": days, "since": since}
+
+
+def hub_map(conn_id: str = "", window_days: int = FAILURE_WINDOW_DAYS) -> dict:
+    """The map. One row per automation and per monitor, every column the roadmap names.
+
+    ``window_days`` is read only while ``hub.failure_rate`` is on; off, the map is as it was."""
     from aughor.automations.models import now_iso_z
     from aughor.automations.store import get_runs, last_run, list_automations
     from aughor.govern.departure import GRADUATION_MIN_MARKED, GRADUATION_PRECISION
@@ -199,7 +266,7 @@ def hub_map(conn_id: str = "") -> dict:
             "exposed_as_tool": a.exposed_as_tool,
         })
 
-    return {
+    out = {
         "rows": rows, "window_days": WINDOW_DAYS, "generated_at": now_iso_z(),
         "totals": {
             "automations": sum(1 for r in rows if r["kind"] == "automation"),
@@ -208,3 +275,10 @@ def hub_map(conn_id: str = "") -> dict:
             "probation": sum(1 for r in rows if r["probation"]["on"]),
         },
     }
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("hub.failure_rate"):
+        rates, window = failure_rates([a for a, _ in autos], conn_id=conn_id, window_days=window_days)
+        for r in rows:
+            r["failure_rate"] = rates[r["id"]]
+        out["failure_window"] = window
+    return out

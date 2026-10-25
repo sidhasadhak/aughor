@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getHubMap, type HubMapResponse, type HubMapRow } from "@/lib/api";
 import {
-  costCaveat, costText, destinationText, ownerText, probationDetail, probationText,
-  stateColor,
+  costCaveat, costText, destinationText, failureColor, failureDetail, failureText, ownerText,
+  probationDetail, probationText, stateColor,
 } from "@/lib/hubMap";
 import { formatDateTime } from "@/lib/format";
 import { Term } from "@/components/agentops/Term";
@@ -176,6 +176,12 @@ function MapRow({ row, onOpenAgent, onOpenAutomation }: {
             </span>
           </div>
         ) : <Mono tint="var(--t3)">never</Mono>}
+        {row.failure_rate && (
+          <div className="aug-fs-xs" data-testid="hub-failure-rate" title={failureDetail(row.failure_rate)}
+               style={{ color: failureColor(row.failure_rate), whiteSpace: "nowrap" }}>
+            {failureText(row.failure_rate)}
+          </div>
+        )}
       </TableCell>
       <TableCell>
         <Mono>

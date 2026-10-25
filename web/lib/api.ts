@@ -6533,6 +6533,22 @@ export interface HubMapRow {
   cost: HubCost;
   probation: HubProbation;
   exposed_as_tool: boolean;
+  /** Arc TC, TC-5 (`hub.failure_rate`) — present only while the flag is on. */
+  failure_rate?: HubFailureRate;
+}
+
+/** How often a node's runs failed over the window, as the server counted it. "no runs" is
+ *  never 0%, and "not permitted" carries no count: the node stays, its runs are withheld. */
+export interface HubFailureRate {
+  state: "measured" | "no_runs" | "not_permitted";
+  window_days: number;
+  label: string;
+  ran?: number;
+  failed?: number;
+  rate?: number | null;
+  /** Ticks that never started (disabled, expired, muted) — counted toward neither. */
+  gated?: number;
+  why?: string;
 }
 
 export interface HubMapResponse {
@@ -6540,6 +6556,7 @@ export interface HubMapResponse {
   window_days: number;
   generated_at: string;
   totals: { automations: number; monitors: number; live: number; probation: number };
+  failure_window?: { days: number; since: string };
 }
 
 /** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel

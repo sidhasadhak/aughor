@@ -4,7 +4,7 @@ probation state). Agent Ops' Map answers this per agent; this door answers it hu
 assembled entirely from existing stores — a read, never a build."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from aughor.security.authz import connection_owner_guard
 
@@ -13,13 +13,20 @@ router = APIRouter(tags=["hub"], dependencies=[Depends(connection_owner_guard)])
 
 
 @router.get("/hub/map")
-def get_hub_map(conn_id: str = ""):
+def get_hub_map(conn_id: str = "",
+                window_days: int = Query(default=7, ge=1, le=90,
+                                         description="hub.failure_rate: the failure rate's window, "
+                                                     "in days counting today")):
     """The map. Omit `conn_id` for the whole hub; pass it to narrow to one connection.
 
     `cost` on every row is a floor, not a total (`floor: true` says so in the payload):
     it folds the session log over the traces this automation's recent runs caused, and
     carries `unpriced_calls`/`calls_without_usage` so an unknown price never renders as
     free. `probation.precision` is null until anything is marked — "not measured", never
-    0%."""
+    0%.
+
+    Arc TC, TC-5 (`hub.failure_rate`, off by default): each row's `failure_rate` over
+    `window_days` — measured, "no runs" (never 0%), or "not permitted" (no count, the node
+    kept). Off, `window_days` is read by nothing."""
     from aughor.hub.map import hub_map
-    return hub_map(conn_id=conn_id)
+    return hub_map(conn_id=conn_id, window_days=window_days)
