@@ -694,3 +694,13 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     pair's demo ontology.* *Night: the last two closed — the dense table's row 36 → 30 px (one variable, measured; nav rows
     and buttons were already under 30), and the entity-uses door proven live on the scratch's demo ontology (one audited
     read counted in October 2026; no dependents, said).* Nothing owed from the look study.
+61. [~] **Aughor as the centre piece of an organisation's decision intelligence — the framework, and a run** (the
+    user, 2026-10-25: *"how making Aughor truly a center piece of an organisation's decision intelligence"*, then
+    *"let's not haste into building something.. a framework that.. will take care of.. all of the points"*, then *"run
+    several scenarios from arising to learned loops.. run it for me"*) — `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`.
+    Decided (ROADMAP §6 item 54): the three readings taken as **B + C + A**; the framework before any build; Slack the
+    first door. *Run 2026-10-25/26 on LuxExperience, live: six decisions through the real doors, backdated so the hourly
+    review fell due; the reopen loop proven; every first review said cannot tell — a whole-SELECT metric could not be cut
+    by a segment, so the comparison review never ran on a metric defined today — **fixed** (`212fa3d1`); gross margin read
+    the all-time figure in every period (its date table on the optional side of a LEFT JOIN) — **fixed** on the same
+    branch; six more defects named in the study §6, open.* Next, in the study's §8 order; nothing of the framework built.

@@ -14532,6 +14532,26 @@ the browser** · **measure the premise before building.**
       dependent (said), twelve months of reads with one in October 2026 after one audited statement through the SQL
       editor; the builder's own schema reads are not audited and do not count, which the count says by its source.
 
+54. ✅ **DECIDED 2026-10-25 — Aughor as the centre piece of an organisation's decision intelligence: the
+    framework before the build; B + C + A** (the user: *"how making Aughor truly a center piece of an organisation's
+    decision intelligence"* · *"an advanced decision flow — forwards & backwards with loops where every decision and
+    their 'why' is readable if the user wishes to"* · *"let's not haste into building something.. invest much time
+    into what could be a framework.. the target should be to cover all"*). The study is
+    `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`; PENDING item 61.
+    **(a) ✅ The three readings of "centre piece" — A the place a decision is booked, B the place it is proposed, C the
+    place it is reviewed and learned from — taken as B + C + A** (the user: *"I like B + C + A"*); recommended: C as the
+    moat and the opening claim, A as its intake, B last and only through missions.
+    **(b) ✅ The framework first, covering every point** — the thread as a view over the Inquiry (no new store), invited
+    capture (never a crawl), the evidence envelope with conversation and meeting kinds, decision kinds declared by the
+    organisation, three layers of why composed by code; nothing of it built.
+    **(c) ✅ Slack is the first door; contract terms land in the warehouse** (the example organisation), so constraints
+    are measured, not declared. **Open:** an inbound-only email door (reverses §3.18's "no email in either direction");
+    the Google OAuth client for Sheets, Slides and Docs comments; the person-facing word for the vessel.
+    **(d) ✅ Run it live** — six decisions from arising to learned on LuxExperience (study §5), the user approving the
+    GMV metric, the live ledger and one Analyst run. Found and fixed on `claude/decision-review-segment-cut`: a
+    whole-SELECT metric could not be cut by a segment (`212fa3d1`), and a statement whose date table sits on the optional
+    side of an outer join read the whole history as a window. Six open defects in the study §6.
+
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
 - **Measure the premise before building.** Every wave in this arc moved its own scope at the
