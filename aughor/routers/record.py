@@ -388,6 +388,70 @@ def read_record_thread(ref: str) -> dict:
     return t
 
 
+# ── decisions taken in meetings (the decision-framework study §3.2) ───────────────────────────
+
+class MeetingNotesRequest(BaseModel):
+    connection_id: str = ""
+    title: str
+    held_on: str                     # ISO date the meeting was held
+    text: str = Field(min_length=1, max_length=200_000)
+    share_quotes: bool = False       # keep the quoted lines, not only their hash
+
+
+class ConfirmCandidateRequest(BaseModel):
+    chosen: str = ""                 # what was chosen, when the notes did not say or said it otherwise
+    question: str = ""
+
+
+class RefuseCandidateRequest(BaseModel):
+    why: str = ""
+
+
+@router.post("/record/meetings/candidates", status_code=201)
+def propose_meeting_candidates(req: MeetingNotesRequest, principal=Depends(get_principal)) -> dict:
+    """A meeting's notes, brought by a person: the model reads them once and proposes the decisions it finds, each
+    kept as a candidate a person confirms or refuses. One model call. Nothing is booked as a decision here."""
+    from aughor.record import meetings as MT
+    if req.connection_id and not _visible(req.connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    try:
+        return MT.propose(req.text, title=req.title, held_on=req.held_on, connection_id=req.connection_id,
+                          by=_who(principal), share_quotes=req.share_quotes)
+    except MT.MeetingRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 — the model's failure is said, never a silent empty list
+        raise HTTPException(status_code=502, detail=f"the notes could not be read by the model: {str(exc)[:200]}")
+
+
+@router.get("/record/meetings/candidates")
+def list_meeting_candidates(meeting: str = "", status: str = "", connection_id: str = "") -> dict:
+    from aughor.record import meetings as MT
+    rows = [c for c in MT.list_candidates(meeting=meeting, status=status, connection_id=connection_id)
+            if _visible(c.connection_id)]
+    return {"candidates": [c.model_dump() for c in rows]}
+
+
+@router.post("/record/meetings/candidates/{candidate_id}/confirm")
+def confirm_meeting_candidate(candidate_id: str, req: ConfirmCandidateRequest, principal=Depends(get_principal)) -> dict:
+    """A person confirms a candidate: booked as a decision they declared, dated the day of the meeting, the meeting
+    as its evidence."""
+    from aughor.record import meetings as MT
+    try:
+        c, did = MT.confirm(candidate_id, by=_who(principal), chosen=req.chosen, question=req.question)
+    except (MT.MeetingRefused, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"candidate": c.model_dump(), "decision": get_record_decision(did)}
+
+
+@router.post("/record/meetings/candidates/{candidate_id}/refuse")
+def refuse_meeting_candidate(candidate_id: str, req: RefuseCandidateRequest, principal=Depends(get_principal)) -> dict:
+    from aughor.record import meetings as MT
+    try:
+        return MT.refuse(candidate_id, by=_who(principal), why=req.why).model_dump()
+    except MT.MeetingRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 class AmendDecisionRequest(BaseModel):
     option: str = ""               # an option that was on the table
     dissent: Optional[DissentIn] = None

@@ -590,6 +590,23 @@ export interface DecisionThread {
 }
 export const getThread = (ref: string) => read<DecisionThread>(`/record/thread/${encodeURIComponent(ref)}`);
 
+/** A decision the model proposed from a meeting's notes — a proposal, never a fact, until a person confirms it. */
+export interface MeetingCandidate {
+  id: string; meeting: string; title: string; held_on: string; connection_id: string; question: string; chosen: string;
+  options: string[]; said_by: string; quote: string; quote_found: boolean; notes_hash: string;
+  status: "proposed" | "confirmed" | "refused"; brought_by: string; decided_as: string; answered_by: string; why: string;
+}
+export interface MeetingNotesBody { connection_id?: string; title: string; held_on: string; text: string; share_quotes?: boolean }
+export const proposeMeetingCandidates = (body: MeetingNotesBody) =>
+  send<{ meeting: string; candidates: MeetingCandidate[]; notes_hash: string; cut: string; dropped: number; beyond_cap: number }>(
+    "/record/meetings/candidates", body);
+export const listMeetingCandidates = (f: { meeting?: string; status?: string; connection_id?: string } = {}) =>
+  read<{ candidates: MeetingCandidate[] }>(`/record/meetings/candidates${qs({ ...f })}`);
+export const confirmMeetingCandidate = (id: string, body: { chosen?: string; question?: string } = {}) =>
+  send<{ candidate: MeetingCandidate; decision: DecisionDetail }>(`/record/meetings/candidates/${encodeURIComponent(id)}/confirm`, body);
+export const refuseMeetingCandidate = (id: string, why: string) =>
+  send<MeetingCandidate>(`/record/meetings/candidates/${encodeURIComponent(id)}/refuse`, { why });
+
 export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(
     `/record/missions/templates${qs({ connection_id: connectionId })}`);

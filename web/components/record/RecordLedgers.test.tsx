@@ -5,7 +5,7 @@
  * a group's heading; a row carries a chip only where it differs. The full text stays on the hover and in Copy · CSV.
  */
 import { Theme } from "@radix-ui/themes";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Connection } from "@/lib/api";
@@ -18,7 +18,7 @@ import { InquiriesPanel } from "@/components/inquiries/InquiriesPanel";
 
 const record = vi.hoisted(() => ({
   listInquiries: vi.fn(), listDecisions: vi.fn(), listClaims: vi.fn(), getCorrections: vi.fn(), getOnboarding: vi.fn(),
-  listDecisionKinds: vi.fn(),
+  listDecisionKinds: vi.fn(), listMeetingCandidates: vi.fn(), confirmMeetingCandidate: vi.fn(), refuseMeetingCandidate: vi.fn(),
 }));
 vi.mock("@/lib/record", async (original) => ({ ...(await original<typeof import("@/lib/record")>()), ...record }));
 
@@ -49,6 +49,7 @@ const mount = (el: React.ReactElement) => render(<Theme>{el}</Theme>);
 beforeEach(() => {
   for (const f of Object.values(record)) f.mockReset();
   record.listDecisionKinds.mockResolvedValue({ kinds: [] });
+  record.listMeetingCandidates.mockResolvedValue({ candidates: [] });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
 });
@@ -122,6 +123,25 @@ describe("Decisions", () => {
     expect(kinds).toHaveTextContent("moves gmv");
     expect(kinds).toHaveTextContent("reviewed after 14 days");
     expect(kinds).toHaveTextContent("must say what it expects");
+  });
+
+  it("lists a meeting's proposed decisions; confirming one books it and opens it", async () => {
+    record.listDecisions.mockResolvedValue([]);
+    record.listMeetingCandidates.mockResolvedValue({ candidates: [{
+      id: "cand-1", meeting: "meeting:weekly_trading:2026-07-29", title: "Weekly trading", held_on: "2026-07-29",
+      connection_id: "shop", question: "Do we cap markdown depth?", chosen: "cap it at 30%", options: ["cap it at 30%"],
+      said_by: "Ana", quote: "", quote_found: true, notes_hash: "x", status: "proposed", brought_by: "user:amit",
+      decided_as: "", answered_by: "", why: "",
+    }] });
+    record.confirmMeetingCandidate.mockResolvedValue({ candidate: {}, decision: { id: "dec-5" } });
+    const opened: (string | null)[] = [];
+    mount(<DecisionsPanel connections={CONNECTIONS} selectedConn="shop" openId={null} onOpen={id => opened.push(id)} onOpenClaim={noop} />);
+    const list = await screen.findByTestId("meeting-candidates");
+    expect(list).toHaveTextContent("Do we cap markdown depth?");
+    expect(list).toHaveTextContent("proposed by the model");
+    fireEvent.click(within(list).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(record.confirmMeetingCandidate).toHaveBeenCalledWith("cand-1", { chosen: "cap it at 30%" }));
+    await waitFor(() => expect(opened).toEqual(["dec-5"]));
   });
 
   it("says how many reviews reached a verdict, never that each can be scored", async () => {

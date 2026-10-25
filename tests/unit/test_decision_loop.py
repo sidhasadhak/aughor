@@ -587,6 +587,8 @@ def test_a_decision_said_in_slack_cites_the_threads_answer_and_its_card_books_ap
     assert out["cited"] == 1 and d.relied_on == [observation]
     assert d.decided_by == "person:Amit" and d.approvers == ["slack:U2", "slack:U3"] and d.chosen.startswith("pause")
     assert "Slack thread C1:1712.001" in d.extra["note"]
+    ev = d.extra["evidence"][0]                                    # where it was said: a conversation, with a hash
+    assert ev["kind"] == "conversation" and ev["ref"] == "slack:C1:1712.001" and len(ev["content_hash"]) == 64
     got = A.slack_decision_approval(out["decision_id"], A.SlackApproval(verdict="approve", author="Ana", author_ref="slack:U2"))
     assert got["booked"] and got["why"] == "approved by Ana"
     again = A.slack_decision_approval(out["decision_id"], A.SlackApproval(verdict="approve", author="Ana", author_ref="slack:U2"))

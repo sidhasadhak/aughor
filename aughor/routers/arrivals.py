@@ -188,12 +188,14 @@ def slack_decision(body: SlackDecision):
     approvers = [r.strip() for r in body.approver_refs if r.strip().startswith("slack:")][:10]
     from aughor.record import decisions as D
     from aughor.record.byproducts import NOT_ACT, declare_decision
+    from aughor.record.claims import said_warrant
+    said_in = said_warrant("conversation", f"slack:{ref}", text, shared=True, detail=f"said in Slack by {who}")
     try:
         did = declare_decision(
             question=question or f"Decided in Slack: {text}", chosen=text, options=[text, NOT_ACT],
             approvers=approvers, connection_id=conn, decided_by=f"person:{who}",
             note=f"decided in Slack thread {ref} by {who}" + (f" ({body.author_ref.strip()})" if body.author_ref.strip() else ""),
-            run_id=run)
+            run_id=run, evidence=[said_in.model_dump()])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     d = D.get_decision(did)

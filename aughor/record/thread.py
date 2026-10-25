@@ -104,6 +104,11 @@ def thread_of(ref: str) -> Optional[dict]:
         if d.extra.get(key):
             stages["arising"].append(_step("door", f"decided on {words}", str(d.extra.get("note") or ""),
                                            {key: d.extra.get(key)}))
+    for e in d.extra.get("evidence") or []:
+        where = {"conversation": "said in a conversation", "meeting": "taken in a meeting"}.get(str(e.get("kind")), "evidence")
+        stages["arising"].append(_step(str(e.get("kind") or "evidence"), where,
+                                       str(e.get("detail") or e.get("ref") or ""),
+                                       {"ref": e.get("ref"), "content_hash": e.get("content_hash"), "excerpt": e.get("excerpt")}))
     if d.objective:
         from aughor.record import mission as M
         m = M.get_mission(d.objective) or (M.latest(d.objective) if d.objective.startswith("mission:") else None)

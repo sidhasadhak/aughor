@@ -459,7 +459,9 @@ def book_said_claim(*, text: str, object_ref: str, connection_id: str, reply_id:
     verification = str(check.get("verification") or "unchecked")
     state = SAID_CLAIM_STATE.get(verification, "open")
     against = {k: v for k, v in (check.get("against") or {}).items() if isinstance(v, (int, float))}
-    warrants = []
+    # where it was said: the thread and the reply, the hash of the words read (the evidence envelope, study §3.2)
+    warrants = [_claims.said_warrant("conversation", f"slack:{thread_ref or object_ref}:{reply_id}", text,
+                                     detail="said in a Slack thread")]
     if verification in ("measured", "contradicted") and thread_ref:
         warrants.append(_claims.Warrant(kind="document", ref=f"thread:{thread_ref}",
                                         detail=("checked against the measures the thread was filed with: "

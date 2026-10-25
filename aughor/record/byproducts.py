@@ -427,7 +427,8 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                      objective: str = "", connection_id: str = "", decided_at: str = "",
                      decided_by: str = "", review_on: str = "", expectation: Optional[dict] = None,
                      note: str = "", finding_id: str = "", schema_name: str = "", run_id: str = "",
-                     figure: Optional[dict] = None, kind: str = "", revises: str = "") -> str:
+                     figure: Optional[dict] = None, kind: str = "", revises: str = "",
+                     evidence: Optional[list[dict]] = None) -> str:
     """A decision taken elsewhere, declared in its own words. Refuses a relied-on id that is not a
     claim (a decision cites what the Record holds, never a loose string). With the decision loop on, the server cites
     what the decision was taken on: an Explorer finding's claim (``finding_id``), the claims a run's receipt booked
@@ -495,6 +496,8 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                **({"run_id": run_id} if run_id and _dec.loop_on() else {}),
                **({"figure": dict(figure)} if figure and _dec.loop_on() else {}),
                **({"revises": revised.id} if revised is not None else {}),
+               # where it was taken — a conversation or a meeting, as a reference and a hash (study §3.2)
+               **({"evidence": list(evidence)} if evidence else {}),
                **({"relied_on_note": finding_note} if finding_note else {})},
     )
     return _dec.book_decision(decision, expectation=expectation_from(expectation), author=decided_by)

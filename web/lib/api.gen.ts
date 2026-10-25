@@ -15157,6 +15157,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/meetings/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Meeting Candidates */
+        get: operations["list_meeting_candidates_record_meetings_candidates_get"];
+        put?: never;
+        /**
+         * Propose Meeting Candidates
+         * @description A meeting's notes, brought by a person: the model reads them once and proposes the decisions it finds, each
+         *     kept as a candidate a person confirms or refuses. One model call. Nothing is booked as a decision here.
+         */
+        post: operations["propose_meeting_candidates_record_meetings_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/meetings/candidates/{candidate_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Meeting Candidate
+         * @description A person confirms a candidate: booked as a decision they declared, dated the day of the meeting, the meeting
+         *     as its evidence.
+         */
+        post: operations["confirm_meeting_candidate_record_meetings_candidates__candidate_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/meetings/candidates/{candidate_id}/refuse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refuse Meeting Candidate */
+        post: operations["refuse_meeting_candidate_record_meetings_candidates__candidate_id__refuse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/missions": {
         parameters: {
             query?: never;
@@ -17781,6 +17841,19 @@ export interface components {
              */
             kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created";
         };
+        /** ConfirmCandidateRequest */
+        ConfirmCandidateRequest: {
+            /**
+             * Chosen
+             * @default
+             */
+            chosen: string;
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+        };
         /** ConstraintIn */
         ConstraintIn: {
             /**
@@ -19256,6 +19329,25 @@ export interface components {
             /** Where */
             where?: components["schemas"]["ObjectFilter"][];
         };
+        /** MeetingNotesRequest */
+        MeetingNotesRequest: {
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Held On */
+            held_on: string;
+            /**
+             * Share Quotes
+             * @default false
+             */
+            share_quotes: boolean;
+            /** Text */
+            text: string;
+            /** Title */
+            title: string;
+        };
         /** MemberRequest */
         MemberRequest: {
             /** Principal */
@@ -20314,6 +20406,14 @@ export interface components {
             role: "reasoning";
         } & {
             [key: string]: unknown;
+        };
+        /** RefuseCandidateRequest */
+        RefuseCandidateRequest: {
+            /**
+             * Why
+             * @default
+             */
+            why: string;
         };
         /**
          * ReindexIn
@@ -49101,6 +49201,150 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_meeting_candidates_record_meetings_candidates_get: {
+        parameters: {
+            query?: {
+                meeting?: string;
+                status?: string;
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_meeting_candidates_record_meetings_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingNotesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_meeting_candidate_record_meetings_candidates__candidate_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refuse_meeting_candidate_record_meetings_candidates__candidate_id__refuse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefuseCandidateRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

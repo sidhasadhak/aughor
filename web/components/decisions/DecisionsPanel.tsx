@@ -20,8 +20,9 @@ import { countNoun, formatCount, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import { requestTab } from "@/lib/navigate";
 import {
-  amendDecision, bookOutcome, bookScenario, declareDecision, declareDecisionKind, decisionStands, getCalibration, getDecision,
-  getPastCases, getThread, listDecisionKinds, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
+  amendDecision, bookOutcome, bookScenario, confirmMeetingCandidate, declareDecision, declareDecisionKind, decisionStands,
+  getCalibration, getDecision, getPastCases, getThread, listDecisionKinds, listDecisions, listMeetingCandidates, listScenarios,
+  plainWho, proposeMeetingCandidates, refuseMeetingCandidate, verdictWords, whoLabel, type MeetingCandidate,
   type CalibrationRow, type Claim, type Decision, type DecisionDetail, type DecisionKind, type OutcomeVerdict, type Scenario,
   type ThreadLink, type ThreadStep,
   type ScenarioBody,
@@ -40,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Segmented } from "@/components/ui/segmented";
 import { Callout } from "@/components/ui/callout";
 
@@ -102,6 +104,7 @@ function DecisionLedger({ connections, selectedConn, onOpen }: {
           declaring={declaring} onDeclare={() => setDeclaring(v => !v)} />}
       </Gate>
       <KindsSection />
+      <MeetingSection connectionId={selectedConn} onOpen={onOpen} />
     </ClarityPage>
   );
 }
@@ -145,6 +148,102 @@ function KindsSection() {
         )}
       </Gate>
     </Section>
+  );
+}
+
+/** Decisions taken in a meeting (the decision-framework study §3.2): a person brings the notes, the model reads them
+ *  once and proposes the decisions it finds, and each is confirmed — booked as the person's decision, dated the
+ *  meeting's day — or refused and kept with why. Nothing is booked before a person confirms. */
+function MeetingSection({ connectionId, onOpen }: { connectionId: string; onOpen: (id: string) => void }) {
+  const load = useLoad(() => listMeetingCandidates({ status: "proposed" }), []);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [heldOn, setHeldOn] = useState("");
+  const [notes, setNotes] = useState("");
+  const [share, setShare] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  const read = async () => {
+    setBusy(true); setSaid("");
+    try {
+      const out = await proposeMeetingCandidates({ connection_id: connectionId, title: title.trim(), held_on: heldOn, text: notes,
+                                                   share_quotes: share });
+      setSaid([`${countNoun(out.candidates.length, "decision")} proposed from “${title.trim()}”`, out.cut,
+               out.dropped ? `${out.dropped} with no question left out` : ""].filter(Boolean).join(" · "));
+      setOpen(false); setNotes(""); load.reload();
+    } catch (e) { setSaid(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Section label="Decisions from a meeting" meta={load.data ? countNoun(load.data.candidates.length, "to confirm", "to confirm") : undefined}
+      action={<Button size="xs" variant="secondary" onClick={() => setOpen(v => !v)}>{open ? "Close" : "Bring a meeting's notes"}</Button>}>
+      {open && (
+        <div className="aug-form-grid" data-testid="meeting-form" style={{ marginBottom: 12 }}>
+          <label className="aug-fs-sm" htmlFor="mt-t">The meeting</label>
+          <Input id="mt-t" value={title} onChange={e => setTitle(e.target.value)} placeholder="Weekly trading" />
+          <label className="aug-fs-sm" htmlFor="mt-d">Held on</label>
+          <Input id="mt-d" type="date" value={heldOn} onChange={e => setHeldOn(e.target.value)} style={{ width: 170 }} />
+          <label className="aug-fs-sm" htmlFor="mt-n">Its notes</label>
+          <Textarea id="mt-n" value={notes} onChange={e => setNotes(e.target.value)} rows={8}
+            placeholder="Paste the notes or the transcript — nothing is fetched from a mailbox, a calendar or a drive" />
+          <span />
+          <label className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Checkbox checked={share} onChange={e => setShare(e.target.checked)} aria-label="Keep the quoted lines" />
+            Keep the lines each decision was read from — otherwise only a hash of the notes is kept
+          </label>
+          <span />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Button size="xs" disabled={busy || !title.trim() || !heldOn || !notes.trim()} onClick={() => void read()}>Find the decisions</Button>
+            <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>One model call reads the notes. It proposes; nothing is booked until you confirm.</span>
+          </div>
+        </div>
+      )}
+      {said && <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 8 }}>{said}</div>}
+      <Gate load={load} what="the meeting's proposals">
+        {r => r.candidates.length === 0 ? (
+          <Absent>Nothing waits to be confirmed. Bring a meeting&apos;s notes and the decisions in them are proposed here, each for a
+            person to confirm or refuse.</Absent>
+        ) : (
+          <div data-testid="meeting-candidates">
+            {r.candidates.map(c => <CandidateRow key={c.id} c={c} onAnswered={load.reload} onOpen={onOpen} />)}
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+function CandidateRow({ c, onAnswered, onOpen }: { c: MeetingCandidate; onAnswered: () => void; onOpen: (id: string) => void }) {
+  const [chosen, setChosen] = useState(c.chosen);
+  const [error, setError] = useState("");
+  const confirm = async () => {
+    setError("");
+    try { const out = await confirmMeetingCandidate(c.id, { chosen: chosen.trim() }); onAnswered(); onOpen(out.decision.id); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const refuse = async () => {
+    setError("");
+    try { await refuseMeetingCandidate(c.id, "not a decision the meeting took"); onAnswered(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  return (
+    <div className="aug-item">
+      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{c.question}</div>
+      <div className="aug-item-foot aug-fs-sm" style={{ alignItems: "center" }}>
+        <Input aria-label="What was chosen" value={chosen} onChange={e => setChosen(e.target.value)} placeholder="the meeting did not say — name it"
+          style={{ flex: "1 1 220px" }} />
+        <Button size="xs" disabled={!chosen.trim()} onClick={() => void confirm()}>Confirm</Button>
+        <Button size="xs" variant="ghost" onClick={() => void refuse()}>Not a decision</Button>
+      </div>
+      <div className="aug-item-foot aug-fs-xs" style={{ color: "var(--t3)" }}>
+        <span>{`“${c.title}”, ${day(c.held_on)}`}</span>
+        {c.said_by && <span>{`said by ${c.said_by}`}</span>}
+        <span>{c.quote_found ? "its line is in the notes" : "its line was not found in the notes — read it before confirming"}</span>
+        <span>proposed by the model</span>
+      </div>
+      {c.quote && <div className="aug-fs-sm" style={{ color: "var(--t2)", fontStyle: "italic" }}>{`“${c.quote}”`}</div>}
+      {error && <div className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</div>}
+    </div>
   );
 }
 

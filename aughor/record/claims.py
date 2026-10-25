@@ -43,7 +43,12 @@ TIERS: tuple[str, ...] = tuple(t for t in AUTHORITY_LADDER if t != "inferred")
 Status = Literal["Final", "Provisional", "To date"]
 AboutKind = Literal["object", "segment", "type", "connection", "domain", "organisation"]
 AuthorKind = Literal["person", "agent", "system"]
-WarrantKind = Literal["run", "document", "attestation", "claim"]
+#: ``conversation`` and ``meeting`` are the evidence envelope's two kinds (the decision-framework study §3.2): where a
+#: person said it — a Slack thread, a meeting's notes — kept as a reference, a hash of what was read, and the quoted
+#: words only when their author shared them. The platform keeps meaning and pointers, never copies of conversations.
+WarrantKind = Literal["run", "document", "attestation", "claim", "conversation", "meeting"]
+#: The warrant kinds that point at what people said, which carry a hash of what was read.
+SAID_WARRANTS: tuple[str, ...] = ("conversation", "meeting")
 
 
 class About(BaseModel):
@@ -66,8 +71,10 @@ class Statement(BaseModel):
 class Warrant(BaseModel):
     """Why the claim is entitled to be relied on."""
     kind: WarrantKind
-    ref: str                   # a receipt id (run) · a document locator · a verdict id · a claim id
+    ref: str                   # a receipt id (run) · a document locator · a verdict id · a claim id · a thread · a meeting
     detail: str = ""
+    content_hash: str = ""           # conversation · meeting: sha256 of the words read, so the pointer can be checked later
+    excerpt: str = ""          # conversation · meeting: the quoted words, only when their author shared them
     reproducible: Optional[bool] = None
     why_not: str = ""          # when reproducible is False
 
@@ -121,6 +128,17 @@ def claim_key(*parts: str) -> str:
     return "claim:" + ":".join(str(p).strip() for p in parts if str(p).strip())
 
 
+def said_warrant(kind: str, ref: str, text: str, *, shared: bool = False, detail: str = "") -> Warrant:
+    """A warrant on where a person said it: a reference, the hash of the words read, and the words themselves only
+    when their author shared them (the decision-framework study §3.2)."""
+    import hashlib
+    if kind not in SAID_WARRANTS:
+        raise ClaimRefused(f"{kind!r} is not where people say things; the kinds are {', '.join(SAID_WARRANTS)}")
+    words = (text or "").strip()
+    return Warrant(kind=kind, ref=ref, detail=detail[:400], content_hash=hashlib.sha256(words.encode()).hexdigest() if words else "",
+                   excerpt=words[:400] if shared else "")
+
+
 def _check(claim: Claim) -> None:
     if claim.tier not in TIERS:
         if claim.tier == "inferred":
@@ -130,6 +148,9 @@ def _check(claim: Claim) -> None:
     if not (claim.statement.text or "").strip():
         raise ClaimRefused("a claim states something; the statement's text is empty")
     kinds = {w.kind for w in claim.warrants}
+    for w in claim.warrants:
+        if w.kind in SAID_WARRANTS and not (w.ref and w.content_hash):
+            raise ClaimRefused(f"a {w.kind} warrant names where it was said and carries a hash of what was read")
     if claim.tier == "measured" and "run" not in kinds:
         raise ClaimRefused("tier 'measured' needs a run warrant — the receipt of the statement that "
                            "produced the number; without one the claim is at best 'said'")
@@ -146,6 +167,8 @@ def _payload(claim: Claim, *, supersedes: str = "") -> dict:
     data = claim.model_dump()
     for read_only in ("id", "key", "version", "recorded_at", "superseded_by", "confidence"):
         data.pop(read_only, None)
+    # a warrant that is not about something said keeps the shape it always had
+    data["warrants"] = [{k: v for k, v in w.items() if v or k not in ("content_hash", "excerpt")} for w in data.get("warrants") or []]
     data["supersedes"] = supersedes
     return data
 
