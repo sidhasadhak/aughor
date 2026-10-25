@@ -36,7 +36,9 @@ def loop_on() -> bool:
     return flag_enabled(LOOP_FLAG)
 
 SourceKind = Literal["recommendation", "approval", "declared", "autonomy"]
-Verdict = Literal["as_expected", "better", "worse", "cannot_tell"]
+#: ``missed`` — a *hold* that moved outside its band beyond the baseline's noise: it named no wanted side, so the
+#: move is neither better nor worse (the decision-framework run, defect 5).
+Verdict = Literal["as_expected", "better", "worse", "missed", "cannot_tell"]
 
 
 class Option(BaseModel):

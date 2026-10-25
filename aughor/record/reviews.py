@@ -84,10 +84,73 @@ def _label(w) -> str:
     return f"{w.start.isoformat()} → {w.last_day.isoformat()}"
 
 
+#: The grains whose periods thirty days can fall between: a month-end snapshot is never inside a window from the 1st
+#: to the 30th (the decision-framework run, defect 6 — Lux's inventory, dated on the last day of each month).
+PERIOD_GRAINS = ("month", "quarter", "year")
+_MONTHS = {"month": 1, "quarter": 3, "year": 12}
+
+
+def _period_start(d: _dt.date, grain: str) -> _dt.date:
+    step = _MONTHS[grain]
+    return _dt.date(d.year, ((d.month - 1) // step) * step + 1, 1)
+
+
+def _shift(d: _dt.date, months: int) -> _dt.date:
+    k = d.year * 12 + (d.month - 1) + months
+    return _dt.date(k // 12, k % 12 + 1, 1)
+
+
+def _period_windows(decided: _dt.date, grain: str) -> list:
+    """Whole periods of ``grain``: the first that starts on or after the decision, and the six before the one the
+    decision fell in — a period the decision split is neither before nor after it."""
+    from aughor.semantic.metric_time import Window
+    step = _MONTHS[grain]
+    anchor = _period_start(decided, grain)
+    start = anchor if anchor == decided else _shift(anchor, step)
+    current = Window("current", start, _shift(start, step))
+    prior = [Window(f"prior_{k}", _shift(anchor, -step * k), _shift(anchor, -step * (k - 1)))
+             for k in range(PRIOR_WINDOWS, 0, -1)]
+    return prior + [current]
+
+
+def _lag(conn_id: str) -> int:
+    try:
+        from aughor.settling.store import learned_lag_days
+        return int(learned_lag_days(conn_id) or 0) if conn_id else 0
+    except Exception as exc:  # noqa: BLE001 — an unreadable lag reads as none, and the review says nothing it did not
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the settling lag could not be read; a period's review waits for its end only",
+                 counter="record.review_lag", conn_id=conn_id or None)
+        return 0
+
+
+def _wait_for_period(d: _dec.Decision, grain: str, current, label: str, lag: int) -> None:
+    """The first whole period after the decision has not ended and settled: the decision's review date moves to when
+    it has — a new version, the earlier kept, the move said."""
+    cur = _dec._current(d)
+    cur.review_on = (current.end + _dt.timedelta(days=lag)).isoformat()
+    cur.extra["review_by"] = grain
+    cur.extra["review_on_why"] = (f"thirty days after the decision held no rows of {label}, which is dated by the "
+                                  f"{grain}: the review reads the first whole {grain} after it ({_label(current)}), "
+                                  f"once it has ended" + (f" and settled ({lag} days)" if lag else ""))
+    _dec.book_decision(cur)
+
+
+def _read(rows: list, by: Optional[str], part: str) -> tuple[dict, dict]:
+    readings: dict[str, dict[str, Optional[float]]] = {}
+    counts: dict[str, int] = {}
+    for r in rows:
+        group = str(r["group"]) if by else "_all"
+        readings.setdefault(r["window"], {})[group] = r["value"]
+        counts[r["window"]] = counts.get(r["window"], 0) + (r["n"] if (not by or group == part) else 0)
+    return readings, counts
+
+
 def review_decision(d: _dec.Decision, *, runner: Optional[Runner] = None, today: Optional[_dt.date] = None) -> Optional[str]:
-    """Measure one due decision and book its Outcome. Returns the outcome id; None when it already had one."""
+    """Measure one due decision and book its Outcome. Returns the outcome id; None when it already had one, or when
+    its review waits for the first whole period of the metric's grain to end (its review date moves, said)."""
     from aughor.record import scenario as S
-    from aughor.record.byproducts import against_expectation, verdict_against_baseline
+    from aughor.record.byproducts import against_expectation, band_of, verdict_against_baseline
     from aughor.semantic import metric_time as mt
     today = today or _today()
     if d.outcome:
@@ -108,27 +171,42 @@ def review_decision(d: _dec.Decision, *, runner: Optional[Runner] = None, today:
         return _outcome(d, today, "cannot_tell", f"{label} cannot be measured for a period: {why_not}",
                         against_expectation="cannot_tell")
     decided = _dt.date.fromisoformat((d.decided_at or today.isoformat())[:10])
-    windows = _windows(decided)
+    period = str(d.extra.get("review_by") or "")
+    period = period if period in PERIOD_GRAINS else ""
+    windows = _period_windows(decided, period) if period else _windows(decided)
     segment = pred.extra.get("segment") if isinstance(pred.extra.get("segment"), dict) else None
     by = str((segment or {}).get("dimension") or "") or None
     part = str((segment or {}).get("value") or "")
+    thirty = _label(_windows(decided)[-1])
     with (runner or _default_runner)(d.connection_id) as (run_sql, dialect):
         # a whole-statement metric is cut to the part and the rest of its group; an expression to every value
         rows, why = mt.run_measure(metric, windows, run_sql, dialect=dialect, by=by, part=part or None)
-    if why:
-        return _outcome(d, today, "cannot_tell", f"the review could not measure {label}: {why}",
-                        against_expectation="cannot_tell")
-    readings: dict[str, dict[str, Optional[float]]] = {}
-    counts: dict[str, int] = {}
-    for r in rows:
-        group = str(r["group"]) if by else "_all"
-        readings.setdefault(r["window"], {})[group] = r["value"]
-        counts[r["window"]] = counts.get(r["window"], 0) + (r["n"] if (not by or group == part) else 0)
+        if why:
+            return _outcome(d, today, "cannot_tell", f"the review could not measure {label}: {why}",
+                            against_expectation="cannot_tell")
+        readings, counts = _read(rows, by, part)
+        grain = mt.reported_grain(metric)
+        if not counts.get("current") and not period and grain in PERIOD_GRAINS:
+            # thirty days can fall between a metric's dates when it is dated by the month (or coarser): read whole
+            # periods of the grain it is reported by instead, once the first after the decision has ended
+            by_period = _period_windows(decided, grain)
+            lag = _lag(d.connection_id)
+            if by_period[-1].end + _dt.timedelta(days=lag) > today:
+                _wait_for_period(d, grain, by_period[-1], label, lag)
+                return None
+            rows2, why2 = mt.run_measure(metric, by_period, run_sql, dialect=dialect, by=by, part=part or None)
+            if not why2:
+                readings2, counts2 = _read(rows2, by, part)
+                if counts2.get("current"):
+                    windows, readings, counts, period = by_period, readings2, counts2, grain
     current = windows[-1]
     if not counts.get("current"):
+        span = f"the whole {period} after the decision" if period else "the thirty days after the decision"
         return _outcome(d, today, "cannot_tell",
-                        f"the thirty days after the decision ({_label(current)}) hold no rows of {label}"
-                        + (f" for {by} = {part}" if by else "") + " — the data ended before it, or has not arrived",
+                        f"{span} ({_label(current)}) hold{'s' if period else ''} no rows of {label}"
+                        + (f" for {by} = {part}" if by else "")
+                        + ("" if period or grain not in PERIOD_GRAINS else f", nor does the whole {grain} after it")
+                        + " — the data ended before it, or has not arrived",
                         against_expectation="cannot_tell", extra={"review_window": _label(current)})
     key = part if by else "_all"
     actual = readings.get("current", {}).get(key)
@@ -144,16 +222,22 @@ def review_decision(d: _dec.Decision, *, runner: Optional[Runner] = None, today:
                                                              if readings.get(w.label, {}).get(key) is not None])
         method = "history"
         drift = S.drift_words(d.connection_id, name)
-    against, _ = against_expectation(d, actual, before)
+    # a relative band is read against what would have happened anyway — the baseline the verdict is read against —
+    # and against the window before only when no baseline could be drawn (the decision-framework run, defect 8)
+    reference = proj.value if proj.value is not None else before
+    against, _ = against_expectation(d, actual, reference)
     verdict, why, effect = verdict_against_baseline(
         actual=actual, baseline=proj.value, low=proj.low, high=proj.high,
         direction=str(pred.extra.get("direction") or ""), against=against,
-        history_note=proj.note, drift=drift, method=method)
+        history_note=proj.note, drift=drift, method=method, band=band_of(pred))
     shared = _overlapping(d, name, part, decided)
     if shared:
         why += (f"; {len(shared)} other decision{'s' if len(shared) != 1 else ''} on {label} in the same weeks "
                 f"({', '.join(shared[:3])}) — the effect is theirs too, and is not split")
     extra = {"review_window": _label(current), "before": before, "after": actual, "method": method,
+             **({"review_by": period, "thirty_days_held_none": thirty} if period else {}),
+             **({"band_read_against": "baseline" if proj.value is not None else "before"}
+                if pred.statement.unit == "%" else {}),
              "baseline_says": proj.must_say, **({"segment": {"dimension": by, "value": part}} if by else {}),
              **({"drift": drift} if drift else {}), **({"shared_with": shared} if shared else {}),
              "review": "decision_loop"}

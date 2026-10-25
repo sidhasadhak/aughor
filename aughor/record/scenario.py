@@ -332,6 +332,7 @@ def intervention(*, metric: str, connection_id: str = "", action_id: str = "", l
     low, high = mu - _Z80 * sd, mu + _Z80 * sd
     return Projection(method="intervention", value=round(mu, 6), low=round(low, 6), high=round(high, 6), coverage=coverage, unit=unit,
                       backtest={"n": n, "held": held, "worse": sum(1 for c in cases if c["verdict"] == "worse"),
+                                "missed": sum(1 for c in cases if c["verdict"] == "missed"),
                                 "cannot_tell": sum(1 for c in cases if c["verdict"] == "cannot_tell")},
                       inputs={"cases": [c["outcome"] for c in cases], "matched_on": sorted({c["matched_on"] for c in cases})},
                       must_say=[f"{n} past decision{'s' if n != 1 else ''} of this kind on this install, each measured against the "

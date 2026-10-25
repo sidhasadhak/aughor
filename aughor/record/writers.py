@@ -180,6 +180,15 @@ def book_from_receipt(*, kind: str, natural_key: str, receipt_id: Optional[str],
         out["findings"] = book_deep_findings(investigation_id=str(extra["investigation_id"]),
                                              connection_id=connection_id, receipt_id=receipt_id,
                                              agent=agent, about=about)
+        # the run reached its inquiry before this receipt was written: what it established goes there now
+        try:
+            from aughor.record.inquiry import attach_run_claims
+            attach_run_claims(str(extra["investigation_id"]), connection_id,
+                              [c for c in [out["observation"], *out["findings"]] if c])
+        except Exception as exc:  # noqa: BLE001 — the claims stand in the Record without the inquiry's link
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the run's claims could not reach its inquiry; they stand in the Record",
+                     counter="inquiry.claims", conn_id=connection_id or None)
     return out
 
 

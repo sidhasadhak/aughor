@@ -55,8 +55,15 @@ def _claim_view(c: C.Claim) -> dict:
     return view
 
 
-def _decision_view(d: D.Decision) -> dict:
-    return d.model_dump()
+def _decision_view(d: D.Decision, *, verdict: bool = False) -> dict:
+    """A decision as the API returns it; ``verdict`` adds its outcome's verdict, so a list can say how many reviews
+    reached one rather than claiming that each can (the decision-framework run: every review said cannot tell while
+    the card read "each can be scored")."""
+    view = d.model_dump()
+    if verdict:
+        o = D.outcome_by_id(d.outcome) if d.outcome else None
+        view["outcome_verdict"] = o.verdict if o is not None else ""
+    return view
 
 
 def _who(principal) -> str:
@@ -259,7 +266,7 @@ def list_record_decisions(connection_id: Optional[str] = None, due: bool = False
     if due and connection_id:
         rows = [d for d in rows if d.connection_id == connection_id]
     ok = _gate()
-    return [_decision_view(d) for d in rows if ok(d.connection_id)][:limit]
+    return [_decision_view(d, verdict=True) for d in rows if ok(d.connection_id)][:limit]
 
 
 @router.get("/record/decisions/{decision_id}")
@@ -926,8 +933,8 @@ def book_record_outcome(decision_id: str, req: OutcomeIn, principal=Depends(get_
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")
-    if req.verdict not in ("as_expected", "better", "worse", "cannot_tell"):
-        raise HTTPException(status_code=422, detail="verdict is one of as_expected · better · worse · cannot_tell")
+    if req.verdict not in ("as_expected", "better", "worse", "missed", "cannot_tell"):
+        raise HTTPException(status_code=422, detail="verdict is one of as_expected · better · worse · missed · cannot_tell")
     try:
         oid = D.book_outcome(D.Outcome(
             of=decision_id, measured_on=req.measured_on, actual=req.actual, baseline=req.baseline,

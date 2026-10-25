@@ -260,6 +260,43 @@ def test_run_analyst_streams_phases_and_synthesizes(monkeypatch, traffic_db, fau
     assert seen["n_phases"] == 2
 
 
+def test_a_persisted_report_writes_its_deep_receipt_so_its_conclusion_reaches_the_record(monkeypatch, traffic_db, faux_llm):
+    """The decision-framework run (2026-10-26): an Analyst run wrote a receipt per query and none for its report, so
+    nothing it concluded was booked as a claim and the decision taken on it could not cite it. Persisted, the report
+    writes the deep report's receipt — the one that books its headline and findings — and says its id."""
+    from aughor.llm.faux import FauxToolCall
+
+    def _baseline(state, conn):
+        return {"investigation_phases": state.get("investigation_phases", []) + [{
+            "phase_id": "baseline", "phase_name": "Baseline", "phase_icon": "📊", "status": "complete",
+            "summary": "", "findings": [{"finding_id": "b1", "title": "t", "sql": "SELECT SUM(sessions) FROM traffic",
+                                          "columns": ["s"], "rows": [[30]], "row_count": 1, "error": None,
+                                          "interpretation": "", "key_numbers": [], "chart_type": "line",
+                                          "stat_note": None, "is_significant": True}]}]}
+
+    _patch_seams(monkeypatch, traffic_db,
+                 intake=lambda state, conn=None: {"_ada_intake": {"metric_label": "sessions"}, "investigation_phases": []},
+                 baseline=_baseline,
+                 synthesize=lambda state: {"answer_report": {"headline": "Sessions rose on direct traffic",
+                                                             "phases": state.get("investigation_phases") or []}})
+    import aughor.db.history as H
+    import aughor.routers.investigations as R
+    monkeypatch.setattr(H, "create_investigation", lambda *a, **k: "inv-77")
+    monkeypatch.setattr(H, "complete_investigation", lambda *a, **k: None)
+    written = []
+    monkeypatch.setattr(R, "write_answer_receipt", lambda **kw: written.append(kw) or {"receipt_id": "rcpt-77"})
+    faux_llm.set_responses([FauxToolCall(payload={}, name="baseline"), "direct traffic"])
+    frames: list[tuple] = []
+    an.run_analyst("conn-t", "why did sessions rise?", emit=lambda t, p: frames.append((t, p)))
+    assert len(written) == 1, written
+    w = written[0]
+    from aughor.kernel.ledger import DEEP_REPORT_KIND
+    assert w["kind"] == DEEP_REPORT_KIND and w["natural_key"] == "ada:conn-t:inv-77"
+    assert w["headline"] == "Sessions rose on direct traffic" and w["payload_extra"]["investigation_id"] == "inv-77"
+    assert w["sqls"] == ["SELECT SUM(sessions) FROM traffic"]
+    assert ("receipt_id", {"receipt_id": "rcpt-77"}) in frames
+
+
 def test_a_stop_over_flagged_rows_alone_goes_back_to_the_analyst_once(monkeypatch, traffic_db, faux_llm):
     """The run's loop carries the check (`_every_result_warned`): the first stop over a flagged result is handed
     back, and the second is the conclusion."""

@@ -106,6 +106,22 @@ describe("Decisions", () => {
     expect(within(screen.getByTestId("fig-dec-expect")).getByText("1 cannot be scored")).toBeInTheDocument();
     expect(within(screen.getByTestId("decision-needs")).getByText("Nothing needs you")).toBeInTheDocument();
   });
+
+  it("says how many reviews reached a verdict, never that each can be scored", async () => {
+    // The decision-framework run: every review said cannot tell while the card read "each can be scored".
+    const row = (id: string, verdict: string) => ({
+      id, key: id, version: 2, question: `Decision ${id}`, owner: "", approvers: [], options: [], chosen: "go",
+      dissent: [], relied_on: [], objective: "", decided_at: "2026-08-01T09:00:00Z", decided_by: "ana",
+      review_on: "2026-09-01", expectation_claim: `p-${id}`, actions: [], outcome: `o-${id}`, reopened_by: "",
+      source: { kind: "declared", ref: id, detail: "" }, connection_id: "shop", extra: {}, recorded_at: "",
+      superseded_by: "", outcome_verdict: verdict,
+    } as unknown as Decision);
+    record.listDecisions.mockResolvedValue([row("d1", "cannot_tell"), row("d2", "missed")]);
+    mount(<DecisionsPanel connections={CONNECTIONS} selectedConn="shop" openId={null} onOpen={noop} onOpenClaim={noop} />);
+    const card = await screen.findByTestId("fig-dec-expect");
+    expect(within(card).getByText("1 of 2 reviewed reached a verdict")).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/each can be scored/);
+  });
 });
 
 describe("Claims", () => {

@@ -387,21 +387,64 @@ def spec_for_metric(metric: str, connection_id: str = "") -> Optional[dict]:
 
 # ── the report ─────────────────────────────────────────────────────────────────────────────
 
-def _measure(spec: Optional[dict], run_sql, *, end_day: _dt.date, days: int) -> dict:
+def _governed(spec: dict, connection_id: str):
+    """The governed metric a spec was resolved from, when the period compiler can measure it for a range — the path
+    the Briefing and a decision's review read a period by. None otherwise, and the spec's own one-table path reads it."""
+    name = str(spec.get("metric_name") or "")
+    if not name:
+        return None
+    try:
+        from aughor.semantic import metric_time as mt
+        from aughor.semantic.metrics import get_metric
+        m = get_metric(name, connection_id=connection_id or None)
+        return m if m is not None and mt.measurable(m)[0] else None
+    except Exception as exc:  # noqa: BLE001 — an unreadable store falls back to the spec's own path, said by it
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the governed metric could not be read for a mission's report", counter="mission.spec")
+        return None
+
+
+def _by_period(metric, run_sql, *, end_day: _dt.date, days: int) -> tuple[Optional[float], str, str, list[float], list[str]]:
+    """``(actual, label, why, prior values, prior labels)`` — the metric over the report's window and the six windows
+    of the same length before it, compiled by `metric_time` (a whole statement scoped to its date's table, CTEs and
+    subqueries and all). The decision-framework run, defect 2: the spec's one-table path read a statement whose date
+    sits inside its subquery on the statement's first listed table, where the date is not."""
+    from aughor.semantic import metric_time as mt
+    stop = end_day + _dt.timedelta(days=1)
+    windows = [mt.Window(f"prior_{k}", stop - _dt.timedelta(days=days * (k + 1)), stop - _dt.timedelta(days=days * k))
+               for k in range(6, 0, -1)] + [mt.Window("current", stop - _dt.timedelta(days=days), stop)]
+    label = f"{windows[-1].start.isoformat()} → {end_day.isoformat()} ({days} day{'s' if days != 1 else ''})"
+    rows, why = mt.run_measure(metric, windows, run_sql, dialect="duckdb")
+    if why:
+        return None, label, f"measurement failed: {why}", [], []
+    got = {r["window"]: r for r in rows}
+    cur = got.get("current")
+    if cur is None or not cur["n"] or cur["value"] is None:
+        return None, label, "the window holds no rows", [], []
+    prior = [(w, got[w.label]["value"]) for w in windows[:-1] if got.get(w.label) and got[w.label]["value"] is not None]
+    return (cur["value"], label, "", [v for _, v in prior],
+            [f"{w.start.isoformat()} → {w.last_day.isoformat()}" for w, _ in prior])
+
+
+def _measure(spec: Optional[dict], run_sql, *, end_day: _dt.date, days: int, connection_id: str = "") -> dict:
     """The objective (or a constraint) measured over the report's window and against the metric's
     own history (method 3) — or why it could not be."""
     if not spec:
         return {"measurable": False, "note": "no measurable definition: the metric is not a governed metric with "
                                              "an approved statement over one table, or none of that name exists"}
     from aughor.playbook.outcomes import measure_spec
-    from aughor.record.scenario import history
+    from aughor.record.scenario import history, history_of
     s = {**spec, "window_days": days}
-    actual, label, why = measure_spec(s, run_sql, end_day=end_day)
+    governed = _governed(spec, connection_id)
+    if governed is not None:
+        actual, label, why, prior, labels = _by_period(governed, run_sql, end_day=end_day, days=days)
+    else:
+        actual, label, why = measure_spec(s, run_sql, end_day=end_day)
     out: dict[str, Any] = {"measurable": True, "window": label, "actual": actual, "note": why}
     if actual is None:
         return out
     try:
-        p = history(s, run_sql, end_day=end_day)
+        p = history_of(prior, days=days, labels=labels) if governed is not None else history(s, run_sql, end_day=end_day)
     except Exception as exc:  # noqa: BLE001 — a baseline that cannot be read is a note, never a number
         p = None
         out["baseline_note"] = f"history baseline failed: {str(exc)[:160]}"
@@ -478,7 +521,7 @@ def compose_report(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = Non
     def measured(spec):
         if run_sql is None:
             return {"measurable": False, "note": conn_note}
-        return _measure(spec, run_sql, end_day=end_day, days=days)
+        return _measure(spec, run_sql, end_day=end_day, days=days, connection_id=conn)
 
     objective = measured(m.objective.spec)
     verdict, why = _objective_verdict(m.objective, objective)

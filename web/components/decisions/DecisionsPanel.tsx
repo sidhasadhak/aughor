@@ -57,7 +57,7 @@ export function reviewState(d: Pick<Decision, "outcome" | "review_on">): "review
 
 const REVIEW_HUE: Record<string, ChipHue> = { reviewed: "muted", due: "caution", waiting: "info" };
 const REVIEW_WORDS: Record<string, string> = { reviewed: "reviewed", due: "review due", waiting: "awaiting its date" };
-const VERDICT_HUE: Record<string, ChipHue> = { as_expected: "positive", better: "positive", worse: "negative", cannot_tell: "muted" };
+const VERDICT_HUE: Record<string, ChipHue> = { as_expected: "positive", better: "positive", worse: "negative", missed: "caution", cannot_tell: "muted" };
 
 const SOURCE_WORDS: Record<string, string> = {
   declared: "declared in a sentence",
@@ -121,6 +121,8 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
   const next = all.filter(d => reviewState(d) === "waiting" && d.review_on).map(d => d.review_on).sort()[0] ?? "";
   const oldestDue = due.map(d => d.review_on).sort()[0] ?? "";
   const withExpectation = all.filter(d => d.expectation_claim).length;
+  const scored = all.filter(d => d.expectation_claim && d.outcome);
+  const told = scored.filter(d => d.outcome_verdict && d.outcome_verdict !== "cannot_tell").length;
   const notes = [...new Set(all.filter(d => !d.expectation_claim)
     .map(d => (typeof d.extra.expectation_note === "string" ? d.extra.expectation_note.replace(/^none:\s*/, "") : ""))
     .filter(Boolean))];
@@ -160,7 +162,9 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
         <Figure label="With an expectation" value={`${formatCount(withExpectation)} of ${formatCount(all.length)}`}
           testId="fig-dec-expect"
           title={notes.length ? notes.join(" · ") : undefined}
-          sub={withExpectation === all.length ? "each can be scored against what was expected"
+          sub={withExpectation === all.length
+            ? (scored.length ? `${formatCount(told)} of ${formatCount(scored.length)} reviewed reached a verdict`
+              : "each is scored on its review date")
             : <Chip title={notes.join(" · ") || undefined}>{`${formatCount(all.length - withExpectation)} cannot be scored`}</Chip>} />
       </Figures>
 
@@ -752,7 +756,7 @@ function ProjectForm({ decision, actor, onBooked, onCancel }: {
   );
 }
 
-const VERDICTS: OutcomeVerdict[] = ["as_expected", "better", "worse", "cannot_tell"];
+const VERDICTS: OutcomeVerdict[] = ["as_expected", "better", "worse", "missed", "cannot_tell"];
 
 /** The review date has come: what was measured, against the expectation and the baseline. */
 function OutcomeForm({ decisionId, actor, onBooked }: {

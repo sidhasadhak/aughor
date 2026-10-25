@@ -449,6 +449,10 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
 #: (agent/converse_tools.py) writes a receipt for a primitive answer the same way the
 #: core writes one for its own — one writer, two callers, one receipt shape.
 write_answer_receipt = _write_answer_receipt
+#: The executed SQL of a deep report and the subject its frame gave it — read by the Analyst's own receipt
+#: (`agent/analyst._write_report_receipt`), the same two the graph path's receipt reads.
+deep_report_sqls = _ada_sqls
+frame_about_of = _frame_about_of
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)

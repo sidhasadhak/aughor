@@ -602,6 +602,26 @@ def attach_run_result(*, run_id: str, connection_id: str, question: str, report:
     return _book(q)
 
 
+def attach_run_claims(run_id: str, connection_id: str, claim_ids: list[str]) -> Optional[Inquiry]:
+    """What a run established reaches its inquiry when the receipt writer books it. The run lands on its inquiry at
+    completion (:func:`attach_run_result`), and its receipt — which books the claims — is written after, so the
+    inquiry read none: 23 inquiries with runs on the live install held 0 claims (the decision-framework run, 2026-10-26;
+    a decision could not cite what its inquiry found). A new version, only when something is added; None without an
+    inquiry for the run."""
+    ids = [c for c in (claim_ids or []) if c]
+    if not (run_id and ids):
+        return None
+    q = for_run(run_id, conn_id=connection_id or None)
+    if q is None:
+        return None
+    q = _current(q)
+    added = [c for c in ids if c not in q.claims]
+    if not added:
+        return q
+    q.claims = list(q.claims) + added
+    return _book(q, lineage=[("established", c, f"booked from run {run_id}'s receipt") for c in added])
+
+
 def attach_run_failure(*, run_id: str, connection_id: str, status: str, reason: str,
                        now: Optional[_dt.datetime] = None) -> Optional[Inquiry]:
     """A run that ended without an answer: the typed verdict booked, the inquiry left OPEN

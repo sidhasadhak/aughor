@@ -252,9 +252,12 @@ export interface Decision {
   recorded_at: string;
   /** The version that replaced this one — "" on the current version. */
   superseded_by: string;
+  /** The verdict of its outcome, on a list's rows; "" before its review. */
+  outcome_verdict?: OutcomeVerdict | "";
 }
 
-export type OutcomeVerdict = "as_expected" | "better" | "worse" | "cannot_tell";
+/** ``missed`` — a hold that moved outside its band: it named no wanted side, so neither better nor worse. */
+export type OutcomeVerdict = "as_expected" | "better" | "worse" | "missed" | "cannot_tell";
 
 export interface Outcome {
   id: string;
@@ -810,6 +813,7 @@ export const VERDICT_WORDS: Record<string, string> = {
   as_expected: "as expected",
   better: "better than expected",
   worse: "worse than expected",
+  missed: "moved outside its hold",
   cannot_tell: "cannot tell",
 };
 

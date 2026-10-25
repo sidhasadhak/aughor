@@ -360,3 +360,149 @@ def test_what_adds_up_across_parts():
     assert not adds_up({"sql": "COUNT(DISTINCT order_id)"}) and not adds_up({"sql": "AVG(price)"})
     assert not adds_up({"sql": "SAFE_DIVIDE(SUM(sale_price), COUNT(DISTINCT order_id))"})
     assert not adds_up({"sql": "SUM(CASE WHEN sold_at IS NOT NULL THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0)"})
+
+
+# ── the decision-framework run of 2026-10-25/26: a hold, and the band's reference (defects 5 and 8) ──────────────
+
+HOLD3 = (-3.0, 3.0, "%")
+
+
+def test_a_hold_that_moved_outside_its_band_is_missed_never_better_or_worse():
+    """Scenario 3 on Lux: Mytheresa read +10% against the other shops under "hold within 3%", beyond the noise, and
+    the review said cannot tell because a hold names no wanted direction. It missed — and says it is neither side."""
+    v, why, e = B.verdict_against_baseline(actual=110.0, baseline=100.0, low=95.0, high=105.0, direction="hold",
+                                           against="above", history_note="", band=HOLD3)
+    assert v == "missed" and "above the ±3% its hold allowed" in why and "neither better nor worse" in why, why
+    v, why, _ = B.verdict_against_baseline(actual=90.0, baseline=100.0, low=95.0, high=105.0, direction="hold",
+                                           against="below", history_note="", band=HOLD3)
+    assert v == "missed" and "below" in why
+
+
+def test_a_hold_that_moved_inside_its_band_or_whose_noise_fits_it_held():
+    v, why, _ = B.verdict_against_baseline(actual=101.0, baseline=100.0, low=99.5, high=100.5, direction="hold",
+                                           against="inside", history_note="", band=HOLD3)
+    assert v == "as_expected" and "inside the ±3%" in why, why
+    v, why, _ = B.verdict_against_baseline(actual=100.5, baseline=100.0, low=98.0, high=102.0, direction="hold",
+                                           against="inside", history_note="", band=HOLD3)
+    assert v == "as_expected" and why.startswith("held:"), why
+
+
+def test_a_hold_inside_a_noise_wider_than_its_band_cannot_tell():
+    v, why, _ = B.verdict_against_baseline(actual=100.5, baseline=100.0, low=90.0, high=110.0, direction="hold",
+                                           against="inside", history_note="", band=HOLD3)
+    assert v == "cannot_tell" and "wider than the ±3% its hold allowed" in why, why
+
+
+def test_a_hold_in_the_metrics_own_unit_is_where_the_level_may_land():
+    v, why, _ = B.verdict_against_baseline(actual=0.36, baseline=0.32, low=0.31, high=0.33, direction="hold",
+                                           against="above", history_note="", band=(0.30, 0.34, ""))
+    assert v == "missed" and "the 0.3 to 0.34 its hold allowed" in why, why
+
+
+def test_a_hold_with_no_band_says_so_and_a_comparison_names_its_baseline():
+    v, why, _ = B.verdict_against_baseline(actual=110.0, baseline=100.0, low=95.0, high=105.0, direction="hold",
+                                           against="no expectation", history_note="", band=None)
+    assert v == "cannot_tell" and "named no band" in why
+    v, why, _ = B.verdict_against_baseline(actual=110.0, baseline=100.0, low=95.0, high=105.0, direction="hold",
+                                           against="above", history_note="", band=HOLD3, method="comparison")
+    assert v == "missed" and "against its comparison group" in why and "own history" not in why, why
+
+
+def test_a_hold_on_a_part_that_moved_is_missed_live_through_the_review(on, metric):
+    conn = _conn()
+    metric["revenue"] = _revenue(conn)
+    d = _declare(conn, expectation={"metric": "revenue", "direction": "hold", "low": -3.0, "mid": 0.0, "high": 3.0,
+                                    "unit": "%", "segment_dimension": "category", "segment_value": "Jeans"})
+    o = D.outcome_by_id(RV.review_decision(d, runner=_shop(effect_on="Jeans", effect=0.20), today=TODAY))
+    assert o.effect.method == "comparison"
+    assert o.verdict == "missed" and o.against_expectation == "above", o.why
+    assert o.extra["band_read_against"] == "baseline"
+
+
+def test_a_relative_band_is_read_against_the_baseline_not_the_window_before(on, metric, monkeypatch):
+    """Defect 8: "hold within 3% of the other shops" was read against the part's own prior window, so a business
+    growing 10% a month put every do-nothing part above its band while the verdict, against the group, read nothing.
+    Both now read the same baseline."""
+    monkeypatch.setitem(globals(), "GROWTH", 0.10)
+    conn = _conn()
+    metric["revenue"] = _revenue(conn)
+    d = _declare(conn, expectation={"metric": "revenue", "direction": "hold", "low": -3.0, "mid": 0.0, "high": 3.0,
+                                    "unit": "%", "segment_dimension": "category", "segment_value": "Jeans"})
+    o = D.outcome_by_id(RV.review_decision(d, runner=_shop(), today=TODAY))
+    assert o.extra["after"] / o.extra["before"] > 1.04, o.extra          # read against it, above a 3% band
+    assert o.against_expectation == "inside", (o.against_expectation, o.why)
+    assert o.verdict != "missed", o.why
+    claim = S._claims.latest(D.get_decision(o.of).expectation_claim and
+                             S._claims.get(D.get_decision(o.of).expectation_claim).key)
+    assert claim.extra["scored_against"] == "inside"
+
+
+# ── defect 6: a metric dated by the month, between two thirty-day windows ─────────────────────────────────────────
+
+def _month_ends(first: dt.date = dt.date(2025, 1, 1), last: dt.date = dt.date(2026, 12, 1)) -> list[dt.date]:
+    out, k = [], first
+    while k <= last:
+        nxt = dt.date(k.year + (k.month == 12), k.month % 12 + 1, 1)
+        out.append(nxt - dt.timedelta(days=1))
+        k = nxt
+    return out
+
+
+def _snapshots(lift_from: dt.date = dt.date(2099, 1, 1)):
+    """Inventory dated on the last day of each month, as Lux's is: Bologna's cover 16 weeks, the others 12."""
+    con = duckdb.connect()
+    con.execute("CREATE TABLE snaps (snapshot_date DATE, warehouse VARCHAR, cover DOUBLE)")
+    for day in _month_ends():
+        con.execute("INSERT INTO snaps VALUES (?, 'Bologna', ?)", [day, 16.0 + (4.0 if day >= lift_from else 0.0)])
+        con.execute("INSERT INTO snaps VALUES (?, 'Venlo', 12.0)", [day])
+
+    @contextmanager
+    def runner(conn_id):
+        def run_sql(sql):
+            try:
+                cur = con.execute(sql)
+                return [d[0] for d in cur.description], cur.fetchall(), None
+            except Exception as exc:  # noqa: BLE001
+                return [], [], str(exc)
+        yield run_sql, "duckdb"
+    return runner
+
+
+def _cover(conn: str) -> MetricDefinition:
+    return MetricDefinition(name="cover", connection=conn, label="Weeks of cover",
+                            sql="SELECT AVG(cover) AS cover FROM snaps", tables=["snaps"], status="approved",
+                            time_column="snaps.snapshot_date", time_kind="flow")
+
+
+def test_a_monthly_snapshot_between_two_thirty_day_windows_is_read_by_the_month(on, metric):
+    """Scenario 6 on Lux: decided on 1 March, the thirty days ran to the 30th and the snapshot is dated the 31st —
+    "no rows", every time. Read by the month the metric is reported by, March holds its snapshot."""
+    conn = _conn()
+    metric["cover"] = _cover(conn)
+    decided = dt.date(2026, 3, 1)
+    d = _declare(conn, decided=decided, expectation={"metric": "cover", "direction": "up", "low": 18.0, "high": 22.0,
+                                                     "segment_dimension": "warehouse", "segment_value": "Bologna"})
+    o = D.outcome_by_id(RV.review_decision(d, runner=_snapshots(lift_from=decided), today=TODAY))
+    assert o.extra["review_by"] == "month" and o.extra["review_window"] == "2026-03-01 → 2026-03-31", o.why
+    assert o.extra["thirty_days_held_none"] == "2026-03-01 → 2026-03-30"
+    assert o.actual == 20.0 and o.extra["before"] == 16.0, (o.actual, o.extra)
+
+
+def test_a_month_that_has_not_ended_moves_the_review_date_and_says_why(on, metric):
+    conn = _conn()
+    metric["cover"] = _cover(conn)
+    d = _declare(conn, decided=dt.date(2026, 3, 1), expectation={"metric": "cover", "direction": "up"})
+    assert RV.review_decision(d, runner=_snapshots(), today=dt.date(2026, 3, 31)) is None
+    moved = D.latest_decision(d.source)
+    assert moved.id != d.id and moved.review_on == "2026-04-01" and not moved.outcome
+    assert moved.extra["review_by"] == "month" and "dated by the month" in moved.extra["review_on_why"]
+    o = D.outcome_by_id(RV.review_decision(moved, runner=_snapshots(), today=dt.date(2026, 4, 2)))
+    assert o.extra["review_by"] == "month" and o.actual == 14.0, o.why
+
+
+def test_a_month_with_no_rows_either_says_both_were_read(on, metric):
+    conn = _conn()
+    metric["cover"] = _cover(conn)
+    d = _declare(conn, decided=dt.date(2027, 3, 1), expectation={"metric": "cover", "direction": "up"})
+    o = D.outcome_by_id(RV.review_decision(d, runner=_snapshots(), today=dt.date(2027, 6, 1)))
+    assert o.verdict == "cannot_tell" and "nor does the whole month after it" in o.why, o.why

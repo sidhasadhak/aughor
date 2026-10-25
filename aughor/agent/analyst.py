@@ -2310,6 +2310,8 @@ def run_analyst(
                 complete_investigation(inv_id, report=save, hypotheses=[],
                                        query_history=[], question=question,
                                        connection_id=eff_conn_id)
+                _write_report_receipt(report, inv_id=inv_id, connection_id=eff_conn_id, question=question,
+                                      canvas_id=canvas_id or "", emit=emit)
             elif answer:
                 # The loop concluded in prose without a synthesized report (it may
                 # have answered from run_sql evidence alone). The row records what
@@ -2337,6 +2339,31 @@ def run_analyst(
         reinjection_ratio=result.reinjection_ratio,
         context_timings=context_timings,
     )
+
+
+def _write_report_receipt(report: dict, *, inv_id: str, connection_id: str, question: str, canvas_id: str,
+                          emit: Optional[Emit]) -> Optional[str]:
+    """The deep report's Trust Receipt, as the graph path writes one — what books the report's headline and findings
+    as claims in the Record and lands them on the run's inquiry (the decision-framework run, 2026-10-26: an Analyst
+    run wrote a receipt per query and none for its report, so nothing it concluded reached the Record and a decision
+    could not cite it). Best-effort: the report already reached the reader."""
+    try:
+        from aughor.kernel.ledger import DEEP_REPORT_KIND
+        from aughor.routers.investigations import deep_report_sqls, frame_about_of, write_answer_receipt
+        written = write_answer_receipt(
+            kind=DEEP_REPORT_KIND, natural_key=f"ada:{connection_id}:{inv_id}", question=question,
+            sqls=deep_report_sqls(report), headline=str(report.get("headline") or ""), schema="",
+            connection_id=connection_id, canvas_id=canvas_id,
+            payload_extra={"investigation_id": inv_id, **frame_about_of(report)})
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the deep report stands; its receipt could not be written", counter="analyst.receipt",
+                 conn_id=connection_id or None)
+        return None
+    rid = (written or {}).get("receipt_id")
+    if rid and emit is not None:
+        emit("receipt_id", {"receipt_id": rid})
+    return rid
 
 
 def _tables_of(sql: str) -> list[str]:
