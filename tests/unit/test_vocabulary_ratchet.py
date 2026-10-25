@@ -206,6 +206,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "tests/unit/test_action_pins.py",
          "tests/unit/test_platform_owned_case.py",
          "tests/unit/test_rbac_policy.py",
+         # Arc TC, TC-2 (2026-10-26), RC-3's ground: the run-attribution suite drives `execute_kinetic_action`, the one
+         # executor, builds its automation step with the frozen effect kind `kinetic_action`, and reads the audit rows the
+         # executor files under the frozen `kinetic.<id>` name. Every line a reader sees, and `actions/attribution.py`,
+         # say "action".
+         "tests/unit/test_run_attribution.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The

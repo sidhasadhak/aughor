@@ -111,6 +111,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/actions/edits/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Timeline
+         * @description Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
+         *     what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
+         *     cost when it was metered — "not metered" said, never zero. Read as the edit history is: with object security on, a
+         *     masked property's values are emptied and an object outside the reader's rows is withheld and counted.
+         */
+        get: operations["get_object_timeline_actions_edits_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/logs": {
         parameters: {
             query?: never;
@@ -23438,6 +23461,39 @@ export interface operations {
                 object_type?: string;
                 row_key?: string;
                 column?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_object_timeline_actions_edits_timeline_get: {
+        parameters: {
+            query: {
+                object_type: string;
+                row_key: string;
+                connection_id?: string;
             };
             header?: never;
             path?: never;

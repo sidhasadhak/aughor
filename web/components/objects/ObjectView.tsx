@@ -354,6 +354,8 @@ function EditHistory({ connectionId, objectType, rowKey, column }: {
                   : r.event === "withdrawn" ? `withdrawn (was ${r.previous || "unset"})`
                   : `set to ${r.body}${r.previous ? ` (was ${r.previous})` : ""}`}
                 {" "}by {r.actor || "—"} · {r.at.slice(0, 16).replace("T", " ")}
+                {/* Arc TC, TC-2 — which run made it, when the install records it */}
+                {r.run_said && <span style={{ display: "block" }} data-testid="edit-history-run">{r.run_said}</span>}
               </span>
             ))}
         </span>
