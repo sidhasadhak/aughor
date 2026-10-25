@@ -1389,7 +1389,7 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
     debounce state and the emitted ``monitor.alert`` event are byte-identical to the legacy path;
     the only thing that changed is which loop called it."""
     from aughor.db.connection import open_connection_for
-    from aughor.monitors.runner import check_monitor, health_alert
+    from aughor.monitors.runner import check_monitor, health_alert, outcome_words
     from aughor.monitors.store import append_alert, get_monitor
 
     monitor_id = str(effect.config.get("monitor_id", ""))
@@ -1419,6 +1419,18 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
     from aughor.monitors.runner import reading_words
     read = reading_words(monitor, run)
     if alert is None:
+        from aughor.monitors import recovery
+        if recovery.enabled():
+            # Arc TC, TC-4 — a quiet check says which it was: within its limit, or held back by the grace period; and
+            # the first check within its limit after an alert closes it, with one recovery, recorded and never sent.
+            said = outcome_words(monitor, run)
+            closing = recovery.recovery_alert(monitor, run)
+            if closing is not None:
+                append_alert(closing[0])
+                said += f" · recovered: {recovery.closes_words(closing[1])} (recorded here; a recovery is not sent)"
+            if said:
+                return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
+                                     message=said + (f" · {read}" if read else ""))
         # What it read, said with the verdict (the Olist study, Gap 36): "no alert · read 848,860.1 (warning below 900,000)".
         return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
                              message="no alert" + (f" · {read}" if read else ""))

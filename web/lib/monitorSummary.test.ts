@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { MonitorAlert, MonitorProof } from "./api";
 import {
-  alertText, alertsByWeek, channelWords, checksPerDay, foldAlerts, fromRemovedMonitors, proofState, proofWords, removedWords, ruleWords,
-  scheduleMix, short,
+  alertText, alertsByWeek, channelWords, checksPerDay, firedOnly, foldAlerts, fromRemovedMonitors, isOpen, proofState, proofWords,
+  removedWords, ruleWords, scheduleMix, short,
 } from "./monitorSummary";
 
 const proof = (over: Partial<MonitorProof>): MonitorProof => ({ monitor_id: "m", sentence: "", last_drill: null, ...over });
@@ -103,6 +103,26 @@ describe("foldAlerts", () => {
     // Sun 23 Aug falls in the week of Mon 17 Aug, Mon 24 Aug starts the next
     expect(aug.map(w => [w.start.getDate(), w.n])).toEqual([[17, 1], [24, 1]]);
     expect(aug[0].bySeverity).toEqual({ critical: 1 });
+  });
+});
+
+describe("an alert a recovery closed (TC-4)", () => {
+  // the server says which recovery closed an alert (`closed_by`) and which alert a recovery closes (`closes`)
+  const breach = alert({ id: "b1", acknowledged: false, closed_by: "r1", closed_at: "2026-08-24T07:00:00Z" });
+  const repeat = alert({ id: "b0", acknowledged: false, triggered_at: "2026-08-24T05:00:00Z", closed_by: "r1" });
+  const recovered = alert({ id: "r1", acknowledged: false, alert_on: "recovered", severity: "info", closes: "b1",
+    triggered_at: "2026-08-24T07:00:00Z", message: "Active Customer Count: back within its limit — read 19,800." });
+
+  it("is no longer open, and neither is the recovery — it waits on nobody", () => {
+    expect([breach, repeat, recovered].map(isOpen)).toEqual([false, false, false]);
+    expect(isOpen(alert({ acknowledged: false }))).toBe(true);
+    expect(isOpen(alert({ acknowledged: true }))).toBe(false);
+  });
+
+  it("folds into a settled group, the recovery a row of its own, and only alerts that fired are counted", () => {
+    const groups = foldAlerts([recovered, breach, repeat, alert({ id: "live", acknowledged: false, monitor_id: "m2", message: "x" })]);
+    expect(groups.map(g => [g.latest.id, g.count, g.open])).toEqual([["live", 1, ["live"]], ["r1", 1, []], ["b1", 2, []]]);
+    expect(firedOnly([recovered, breach]).map(a => a.id)).toEqual(["b1"]);
   });
 });
 

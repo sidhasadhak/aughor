@@ -512,8 +512,10 @@ def compose_report(m: Mission, *, run_sql_for, now: Optional[_dt.datetime] = Non
         row = {"kind": w.kind, "ref": w.ref, "label": w.label}
         if w.kind == "monitor":
             def _alerts(ref=w.ref):
+                from aughor.monitors.recovery import RECOVERED
                 from aughor.monitors.store import get_alerts
-                return [a for a in get_alerts(monitor_id=ref, limit=200) if str(getattr(a, "triggered_at", "") or "") >= since]
+                return [a for a in get_alerts(monitor_id=ref, limit=200) if str(getattr(a, "triggered_at", "") or "") >= since
+                        and getattr(a, "alert_on", "") != RECOVERED]     # a recovery (TC-4) closes an alert; it never fired
             fired = _tolerated(_alerts, None, "monitor alerts")
             row["state"] = "unreadable" if fired is None else (f"fired {len(fired)} time{'s' if len(fired) != 1 else ''} this period" if fired else "quiet this period")
         elif w.kind == "claim":

@@ -211,6 +211,13 @@ FLAG_ENV = {
     # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
     # misses one way). OFF: decisions are booked, reviewed and scored as before.
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # Arc TC, TC-4 (ROADMAP §3.59). ON: the first check back within its limit after an alert writes one *recovered*
+    # alert naming the alert it closes, when, and the value that came back; the alert lists and the Monitors page read
+    # that alert as closed; a check says "within its limit" apart from "suppressed by its grace period"; and a recovery
+    # ends the grace period, so the next alert opens a new one. A recovery is recorded and listed in alert summaries,
+    # never sent as an alert. OFF: an alert stays open until a person acknowledges it, and a quiet check says "no alert"
+    # whichever it was.
+    "monitors.recovery": "AUGHOR_MONITORS_RECOVERY",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -664,6 +671,17 @@ FLAG_META = {
                        "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
                        "decisions are kept and reviewed as before.",
     },
+    "monitors.recovery": {
+        "label": "Alerts that close when a metric recovers",
+        "summary": "The first check back within its limit after an alert closes that alert. A check also says "
+                   "whether its grace period held an alert back.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "A recovery is never sent alone"}],
+        "description": "The recovery names the alert it closes, when it fired and the value that came back. A second "
+                       "quiet check writes nothing more, and the next alert after a recovery opens a new one. A "
+                       "recovery is shown here and in alert summaries, never sent as an alert. Off: an alert stays "
+                       "open until someone acknowledges it.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -1029,6 +1047,14 @@ EXPERIMENT: dict = {
     "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",
+    # Arc TC, TC-4 (ROADMAP §3.59), 2026-10-26. It changes what an open alert means and lets a recovery end the grace
+    # period, so it is watched before it graduates.
+    "monitors.recovery": "do alerts close on their own — over two weeks on live monitors, is every alert that came back "
+                         "within its limit closed by exactly one recovery, and does the open count fall to the alerts "
+                         "still out of limit? Falsifiers (set with the wave; §3.59 named none): a monitor writes two "
+                         "recoveries for one alert, or a "
+                         "monitor flapping across its line writes more than two alerts a day that its grace period used "
+                         "to fold — either stops it",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",

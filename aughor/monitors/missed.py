@@ -111,9 +111,12 @@ def _monitor_watch(monitor, day: date, value: float, history: list[float]) -> Wa
 
 
 def _fired_around(monitor_id: str, day: date) -> list[str]:
+    from aughor.monitors.recovery import RECOVERED
     from aughor.monitors.store import get_alerts
     out = []
     for a in get_alerts(monitor_id=monitor_id, limit=200):
+        if getattr(a, "alert_on", "") == RECOVERED:
+            continue                        # a recovery (TC-4) closes an alert; it is not one that fired
         at = _day(a.triggered_at)
         if at is not None and day <= at <= day + timedelta(days=14):
             out.append(a.triggered_at)

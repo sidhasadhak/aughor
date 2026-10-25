@@ -364,6 +364,24 @@ def get_alerts(
             conn.close()
 
 
+def alert_timeline(monitor_ids: list[str]) -> list[dict]:
+    """Every alert of these monitors, oldest first, as ``id · monitor_id · triggered_at · alert_on · severity`` only —
+    what `monitors.recovery.links` reads to say which alerts a recovery closed. [] for no monitors."""
+    if not monitor_ids:
+        return []
+    marks = ",".join("?" * len(monitor_ids))
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT id, monitor_id, triggered_at, alert_on, severity FROM monitor_alerts "
+                f"WHERE monitor_id IN ({marks}) ORDER BY monitor_id, triggered_at", list(monitor_ids),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
 def get_alert(alert_id: str) -> Optional[MonitorAlert]:
     """Fetch a single alert by id (used for object-level authz — an alert's org is
     its connection's org). Returns None when the id is unknown."""

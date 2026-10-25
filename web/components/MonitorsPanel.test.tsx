@@ -9,6 +9,7 @@ import { Theme } from "@radix-ui/themes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MonitorAlert, MonitorDef, MonitorProof } from "@/lib/api";
+import { dayMonth } from "@/lib/monitorSummary";
 import { optionsOf } from "@/lib/testing";
 
 const monitor = (over: Partial<MonitorDef>): MonitorDef => ({
@@ -122,6 +123,41 @@ describe("MonitorsPanel", () => {
     expect(rows[1]).toHaveTextContent("acknowledged");
     expect(rows[1]).toHaveTextContent("since removed");
     expect(rows[0]).not.toHaveTextContent("since removed");
+  });
+
+  it("reads an alert a recovery closed as closed, and draws the recovery as one row with its own chip (TC-4)", async () => {
+    const at = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    serve([
+      alert({ id: "r1", alert_on: "recovered", severity: "info", triggered_at: at(1), closes: "b1", current_value: 90.1,
+        previous_value: 81.2, message: "Average Order Value: back within its limit — read 90.1 (warning below 86). "
+          + "Closes the warning alert of 2026-10-24 09:00 UTC, which read 81.2." }),
+      alert({ id: "b1", triggered_at: at(50), closed_by: "r1", closed_at: at(1) }),
+      alert({ id: "b2", triggered_at: at(80), acknowledged: true, current_value: 79,
+        message: "Average Order Value: 79 below warning threshold 86" }),
+    ]);
+    panel();
+    // nothing is open: the alert is closed by its recovery, and the recovery waits on nobody
+    await waitFor(() => expect(screen.getByTestId("fig-open")).toHaveTextContent("0"));
+    // "last" is the last alert that fired, two days back — not the recovery an hour ago
+    expect(screen.getByTestId("fig-open")).toHaveTextContent(`1 acknowledged · 1 closed by a recovery · last ${dayMonth(at(50))}`);
+    expect(screen.queryByTestId("needs-open")).toBeNull();
+    // the recovery is no alert that fired: the twelve weeks count the two that did
+    expect(screen.getByTestId("monitor-alert-weeks")).toHaveTextContent("2 alerts");
+    expect(within(screen.getAllByTestId("monitor-row")[0]).queryByText(/open/)).toBeNull();
+    expect(screen.getAllByTestId("monitor-row")[0]).toHaveTextContent("last fired 2d ago");
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /Alerts/ }));     // a Radix tab turns on the press, not the click
+    const rows = await screen.findAllByTestId("alert-row");
+    expect(rows).toHaveLength(3);
+    const rec = rows.find(r => r.textContent?.includes("back within its limit"))!;
+    expect(within(rec).getByText("recovered")).toBeInTheDocument();
+    expect(within(rec).queryByRole("button")).toBeNull();
+    expect(rec).not.toHaveTextContent("was 81.2");
+    const closed = rows.find(r => r.textContent?.includes("81.2 below warning threshold"))!;
+    expect(within(closed).getByText("closed")).toHaveAttribute("title", expect.stringMatching(/^Closed by a recovery/));
+    expect(within(closed).queryByRole("button", { name: /Acknowledge/ })).toBeNull();
+    expect(rows.find(r => r.textContent?.includes("79 below warning threshold"))).toHaveTextContent("acknowledged");
+    expect(screen.getByTestId("alert-list")).toHaveTextContent("3 · 0 open");
   });
 
   it("says nothing needs the reader, in one line, when nothing does", async () => {
