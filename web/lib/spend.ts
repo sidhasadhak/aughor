@@ -378,3 +378,10 @@ export function sinceWords(events: AuditFeedEvent[], now = Date.now()): string {
 
 /** An event's identity inside one fetched window — what "View" uses to show exactly its rows. */
 export const eventKey = (e: AuditFeedEvent): string => `${e.at}|${e.kind}|${e.summary}`;
+
+/** Arc TC, TC-5 — the day after a picked `YYYY-MM-DD`, so a "To" day is read inclusive by a feed
+ *  whose `until` is exclusive. Computed on the calendar, never through a local clock. */
+export function dayAfter(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}

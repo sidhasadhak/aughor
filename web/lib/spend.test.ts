@@ -7,9 +7,17 @@ import { describe, expect, it } from "vitest";
 
 import { CALLER_FEATURES, type AuditFeedEvent, type UsageReport, type UsageRow, type UsageSummary } from "@/lib/api";
 import {
-  actionWords, failedLine, foldFeed, modelBars, modelName, sinceWords, spendTotals, spentFigure, tokens,
+  actionWords, dayAfter, failedLine, foldFeed, modelBars, modelName, sinceWords, spendTotals, spentFigure, tokens,
   unpricedModels, whereTokensGo,
 } from "@/lib/spend";
+
+describe("dayAfter (TC-5: a To day read inclusive)", () => {
+  it("steps one calendar day, across a month and a year", () => {
+    expect(dayAfter("2026-10-20")).toBe("2026-10-21");
+    expect(dayAfter("2026-02-28")).toBe("2026-03-01");
+    expect(dayAfter("2026-12-31")).toBe("2027-01-01");
+  });
+});
 
 function usageRow(over: Partial<UsageRow>): UsageRow {
   return {

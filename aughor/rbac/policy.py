@@ -75,6 +75,8 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
+    # Arc TC, TC-5 — the feed's window as a file carries what the feed does, so it sits beside it.
+    ("GET", "/audit/feed/export"): P.ADMIN_MANAGE_ORG,
     # VA-10 — the admin view across users. Metadata only (§6.4: counts, costs, roles);
     # it names users, so it sits with org administration, never the open-read floor.
     ("GET", "/admin/users"): P.ADMIN_MANAGE_ORG,

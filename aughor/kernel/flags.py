@@ -1530,6 +1530,13 @@ def flag_enabled(name: str) -> bool:
     return _env_resolved(name)
 
 
+def env_enabled(name: str) -> bool:
+    """What the environment alone says of a flag, with its default — the answer `flag_enabled`
+    falls back to when no override is set. For a caller whose override store could not be read
+    (Arc TC, TC-5: `govern/justifications.required`), so it degrades exactly as an unset override does."""
+    return _env_resolved(_canonical(name))
+
+
 def flag_state(name: str) -> str:
     """The Capabilities UI's view of a flag: ``"on"`` or ``"off"``.
 

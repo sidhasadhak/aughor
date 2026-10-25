@@ -57,6 +57,7 @@ CATALOGUE: dict[str, dict[str, Any]] = {
     "chat.feedback": {"what": "a person's verdict on a chat turn", "payload": ["turn_id", "verdict", "note"], "emitted_by": "routers/query"},
     "trace.feedback": {"what": "a person's verdict on a run", "payload": ["trace_id", "verdict", "note", "by"], "emitted_by": "routers/obs"},
     "trace.payload_access": {"what": "a run's captured payload was read", "payload": ["trace_id"], "emitted_by": "routers/obs"},
+    "access.justified": {"what": "a person gave a reason to read a run's payload or to export the ledger, and read it", "payload": ["what", "reason", "by", "trace_id", "span_id", "subject_user_id", "content_events", "kinds", "connection_id"], "emitted_by": "govern/justifications.record"},
     "monitor.alert": {"what": "a monitor fired an alert", "payload": ["monitor_id", "monitor_name", "severity", "metric", "current_value", "message"], "emitted_by": "monitors/store"},
     "automation.run": {"what": "an automation ticked: its outcome, reason and effects", "payload": ["automation_id", "automation_name", "outcome", "reason", "effects"], "emitted_by": "automations/store"},
     "brief.delivered": {"what": "a scheduled Briefing was delivered, or failed to be", "payload": ["subscription_id", "name", "period", "status", "error"], "emitted_by": "briefing/delivery"},

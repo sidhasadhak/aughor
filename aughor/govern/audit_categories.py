@@ -26,8 +26,11 @@ approval decisions under a third — that knowledge is exactly what goes stale.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+import base64
+import json
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Iterator, Optional
 
 #: The reader-facing vocabulary. Small on purpose: a category nobody would filter by is a
 #: category that only adds a decision to whoever emits the next event.
@@ -78,6 +81,10 @@ KIND_CATEGORY: dict[str, str] = {
     # auditable. Filed as data_access because that is what an auditor asking "who saw
     # what" filters on; the `kind` separates it from query execution within that view.
     "trace.payload_access": "data_access",
+    # Arc TC, TC-5 (`govern.justifications`, §6 item 4: "a reason recorded") — a person read a
+    # run's payload or exported the ledger and gave the reason. ONE kind for every door that asks
+    # for a reason, so "why was this read" is one filter, never one per door.
+    "access.justified": "data_access",
     # DE-2b — every call an outside agent (the MCP client) makes to the API, allowed or
     # refused, with its principal, the tool it named, the level the route needed and the
     # policy's, and bounded arguments. Data access because that is the question an auditor
@@ -182,6 +189,10 @@ class AuditEvent:
     conn_id: str = ""
     summary: str = ""
     detail: dict[str, Any] | None = None
+    #: Arc TC, TC-5 — which row of which sink this is (``ledger:<seq>``, ``session:<seq>``,
+    #: ``audit:<id>``): the tiebreak that gives every event one place in the feed. Never in
+    #: ``to_dict``, so the feed reads as it did.
+    key: str = field(default="", repr=False, compare=False)
 
     def to_dict(self) -> dict:
         return {"category": self.category, "kind": self.kind, "at": self.at,
@@ -203,7 +214,21 @@ def uncategorized_kinds(emitted_kinds: set[str]) -> list[str]:
     return sorted(k for k in emitted_kinds if k not in KIND_CATEGORY)
 
 
-def _ledger_events(kind: str, limit: int) -> list[dict]:
+def _window(since: Optional[str], until: Optional[str]) -> dict:
+    """The time bounds a reader passes on to its store — none at all when the feed asked for
+    none, so the unwindowed feed calls every reader exactly as it always did."""
+    return {k: v for k, v in (("since", since), ("until", until)) if v is not None}
+
+
+def _seq_key(source: str, seq: Any) -> str:
+    try:
+        return f"{source}:{int(seq):012d}"
+    except (TypeError, ValueError):
+        return f"{source}:{seq}"
+
+
+def _ledger_events(kind: str, limit: int, since: Optional[str] = None,
+                   until: Optional[str] = None) -> list[dict]:
     """Journal events for one governance kind, tenant-scoped (DATA-06).
 
     Scoped on the ``org_id`` COLUMN (ledger Migration 8), never on ``payload.org_id``:
@@ -218,7 +243,7 @@ def _ledger_events(kind: str, limit: int) -> list[dict]:
 
     try:
         return Ledger.default().events(kind=kind, limit=limit,
-                                       org_id=tenant_scope()) or []
+                                       org_id=tenant_scope(), **_window(since, until)) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 
@@ -227,10 +252,12 @@ def _ledger_events(kind: str, limit: int) -> list[dict]:
         return []
 
 
-def _from_ledger(kind: str, limit: int) -> list[AuditEvent]:
+def _from_ledger(kind: str, limit: int, since: Optional[str] = None,
+                 until: Optional[str] = None) -> list[AuditEvent]:
     category = KIND_CATEGORY[kind]
     out: list[AuditEvent] = []
-    for e in _ledger_events(kind, limit):
+    window = _window(since, until)
+    for e in (_ledger_events(kind, limit, **window) if window else _ledger_events(kind, limit)):
         p = e.get("payload") or {}
         out.append(AuditEvent(
             # The ledger's column is `at`. `created_at` was read for as long as this
@@ -242,7 +269,7 @@ def _from_ledger(kind: str, limit: int) -> list[AuditEvent]:
                       or p.get("read_by") or p.get("by") or ""),
             org_id=str(p.get("org_id") or e.get("org_id") or ""),
             conn_id=str(e.get("conn_id") or p.get("scope") or ""),
-            summary=_summarize(kind, p), detail=p))
+            summary=_summarize(kind, p), detail=p, key=_seq_key("ledger", e.get("seq"))))
     return out
 
 
@@ -310,6 +337,15 @@ def _summarize(kind: str, p: dict) -> str:
         note = str(p.get("note") or "").strip()
         return (f"{p.get('verdict', '?')} on {str(subject)[:12]}"
                 + (f" — {note[:60]}" if note else ""))
+    if kind == "access.justified":
+        who = p.get("by") or "unidentified"
+        why = str(p.get("reason") or "").strip()
+        if p.get("what") == "ledger_export":
+            what = f"exported the ledger ({p.get('kinds') or 'every kind'})"
+        else:
+            what = (f"read run {str(p.get('trace_id') or '?')[:12]}'s payload "
+                    f"({p.get('subject_user_id') or 'unattributed'})")
+        return f"{who} {what} — “{why[:120]}”"
     if kind == "trace.payload_access":
         who = p.get("read_by") or "unidentified"
         whose = p.get("subject_user_id") or "unattributed"
@@ -341,7 +377,8 @@ def _summarize(kind: str, p: dict) -> str:
     return kind
 
 
-def _from_session_log(limit: int) -> list[AuditEvent]:
+def _from_session_log(limit: int, since: Optional[str] = None,
+                      until: Optional[str] = None) -> list[AuditEvent]:
     """Model calls — read through ``session_events``, NOT ``events``.
 
     The session log is a separate query path on the Ledger, and the generic ``events``
@@ -359,7 +396,8 @@ def _from_session_log(limit: int) -> list[AuditEvent]:
         # Tenant-scoped (DATA-06): session events carry an org_id column, and a model-call
         # row names the model another org runs and what it costs them.
         rows = Ledger.default().session_events(kind=LLM_CALL, limit=limit,
-                                               org_id=tenant_scope()) or []
+                                               org_id=tenant_scope(),
+                                               **_window(since, until)) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 
@@ -377,11 +415,13 @@ def _from_session_log(limit: int) -> list[AuditEvent]:
             summary=f"{p.get('role') or 'model'} call · {e.get('model') or '?'}",
             detail={"provider": e.get("provider"), "model": e.get("model"),
                     "total_tokens": e.get("total_tokens"), "ok": e.get("ok"),
-                    "duration_ms": e.get("duration_ms")}))
+                    "duration_ms": e.get("duration_ms")},
+            key=_seq_key("session", e.get("seq"))))
     return out
 
 
-def _from_session_replays(limit: int) -> list[AuditEvent]:
+def _from_session_replays(limit: int, since: Optional[str] = None,
+                          until: Optional[str] = None) -> list[AuditEvent]:
     """Replay captures — read through ``session_events``, like model calls, and for the same
     reason: the generic ``events`` reader returns NOTHING for a session-event kind. Pointing a
     ledger sink at ``decision_replay`` would satisfy the categorisation ratchet and render an
@@ -398,7 +438,8 @@ def _from_session_replays(limit: int) -> list[AuditEvent]:
 
     try:
         rows = Ledger.default().session_events(kind=DECISION_REPLAY, limit=limit,
-                                               org_id=tenant_scope()) or []
+                                               org_id=tenant_scope(),
+                                               **_window(since, until)) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 
@@ -418,11 +459,13 @@ def _from_session_replays(limit: int) -> list[AuditEvent]:
                     "decision_id": p.get("decision_id"),
                     "prompt_fingerprint": p.get("prompt_fingerprint"),
                     "truncated": sorted(k for k, v in p.items()
-                                        if k.endswith("_truncated") and v)}))
+                                        if k.endswith("_truncated") and v)},
+            key=_seq_key("session", e.get("seq"))))
     return out
 
 
-def _from_session_guardrails(limit: int) -> list[AuditEvent]:
+def _from_session_guardrails(limit: int, since: Optional[str] = None,
+                             until: Optional[str] = None) -> list[AuditEvent]:
     """Guardrail BLOCKS — a session-event kind, like model calls, and read the same way.
 
     Both halves of a guardrail verdict are written (`govern/guardrails.py`: a rate needs its
@@ -431,14 +474,24 @@ def _from_session_guardrails(limit: int) -> list[AuditEvent]:
     was stopped, and why" wants, and nothing an allow would drown. The allow count stays
     where the block rate is computed from it. Over-read by a margin so a window of allows
     still yields the blocks inside it; the merged feed re-sorts and caps.
+
+    Read by a window (Arc TC, TC-5), the blocks are asked of the store — a block is written
+    ``ok=False`` — because a page that over-read allows and found too few blocks would let the
+    cursor step past the blocks it never reached.
     """
     from aughor.kernel.ledger import Ledger
     from aughor.obs.session_log import GUARDRAIL
     from aughor.security.authz import tenant_scope
 
+    window = _window(since, until)
     try:
-        rows = Ledger.default().session_events(kind=GUARDRAIL, limit=max(limit, 1) * 4,
-                                               org_id=tenant_scope()) or []
+        if window:
+            rows = Ledger.default().session_events(kind=GUARDRAIL, limit=max(limit, 1),
+                                                   errors_only=True, org_id=tenant_scope(),
+                                                   **window) or []
+        else:
+            rows = Ledger.default().session_events(kind=GUARDRAIL, limit=max(limit, 1) * 4,
+                                                   org_id=tenant_scope()) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 
@@ -458,13 +511,15 @@ def _from_session_guardrails(limit: int) -> list[AuditEvent]:
             org_id=str(e.get("org_id") or ""), conn_id=str(e.get("conn_id") or ""),
             summary=_summarize("guardrail", p),
             detail={"guardrail": p.get("guardrail"), "detail": p.get("detail"),
-                    "agent_id": p.get("agent_id")}))
+                    "agent_id": p.get("agent_id")},
+            key=_seq_key("session", e.get("seq"))))
         if len(out) >= limit:
             break
     return out
 
 
-def _from_audit_table(limit: int) -> list[AuditEvent]:
+def _from_audit_table(limit: int, since: Optional[str] = None,
+                      until: Optional[str] = None) -> list[AuditEvent]:
     """The append-only query-execution log — the one non-Ledger sink.
 
     Tenant-scoped (DATA-06): each event's ``detail`` is the whole audit row, ``sql_full``
@@ -474,7 +529,8 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
         from aughor.security.audit import AuditLogger
         from aughor.security.authz import tenant_scope
 
-        records = AuditLogger.recent(limit=limit, org_id=tenant_scope()) or []
+        records = AuditLogger.recent(limit=limit, org_id=tenant_scope(),
+                                     **_window(since, until)) or []
     except Exception as exc:
         from aughor.kernel.errors import tolerate
 
@@ -489,7 +545,7 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
             at=str(r.get("ts") or r.get("timestamp") or r.get("created_at") or ""),  # audit_log.ts
             actor=str(r.get("org_id") or ""), org_id=str(r.get("org_id") or ""),
             conn_id=str(r.get("connection_id") or ""),
-            summary=f"query {verdict}", detail=r))
+            summary=f"query {verdict}", detail=r, key=f"audit:{r.get('id') or ''}"))
     return out
 
 
@@ -505,36 +561,39 @@ def _from_audit_table(limit: int) -> list[AuditEvent]:
 SESSION_EVENT_KINDS: frozenset[str] = frozenset({"llm_call", "decision_replay", "guardrail"})
 
 
-_SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
+#: Each reader takes ``(per_sink)``, as ``feed`` has always called it, and — for the windowed
+#: feed (Arc TC, TC-5) — ``since``/``until`` passed on to its store.
+_SINKS: list[tuple[str, Callable[..., list[AuditEvent]]]] = [
     ("data_access", _from_audit_table),
-    ("data_access", lambda n: _from_ledger("trace.payload_access", n)),
-    ("data_access", lambda n: _from_ledger("mcp.tool_call", n)),
-    ("action_decision", lambda n: _from_ledger("action.approval", n)),
-    ("action_decision", lambda n: _from_ledger("action.autonomous", n)),
-    ("action_decision", lambda n: _from_ledger("action.undone", n)),
-    ("governance_change", lambda n: _from_ledger("govern.tag", n)),
-    ("governance_change", lambda n: _from_ledger("metric.governance", n)),
-    ("governance_change", lambda n: _from_ledger("trusted_query.governance", n)),
-    ("governance_change", lambda n: _from_ledger("intake.governance", n)),
-    ("governance_change", lambda n: _from_ledger("pack.installed", n)),
-    ("governance_change", lambda n: _from_ledger("authority.graduated", n)),
-    ("governance_change", lambda n: _from_ledger("authority.demoted", n)),
-    ("governance_change", lambda n: _from_ledger("authority.ceiling", n)),
-    ("governance_change", lambda n: _from_ledger("service_principal.minted", n)),
-    ("governance_change", lambda n: _from_ledger("mcp.oauth", n)),
-    ("governance_change", lambda n: _from_ledger("method.registered", n)),
+    ("data_access", lambda n, **w: _from_ledger("trace.payload_access", n, **w)),
+    ("data_access", lambda n, **w: _from_ledger("access.justified", n, **w)),
+    ("data_access", lambda n, **w: _from_ledger("mcp.tool_call", n, **w)),
+    ("action_decision", lambda n, **w: _from_ledger("action.approval", n, **w)),
+    ("action_decision", lambda n, **w: _from_ledger("action.autonomous", n, **w)),
+    ("action_decision", lambda n, **w: _from_ledger("action.undone", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("govern.tag", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("metric.governance", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("trusted_query.governance", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("intake.governance", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("pack.installed", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("authority.graduated", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("authority.demoted", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("authority.ceiling", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("service_principal.minted", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("mcp.oauth", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("method.registered", n, **w)),
     ("model_call", _from_session_log),
     ("data_access", _from_session_replays),
     # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.
     # The two lists are parallel and hand-maintained, which is why the ratchet now
     # asserts they agree rather than trusting that whoever edited one edited the other.
-    ("human_verdict", lambda n: _from_ledger("chat.feedback", n)),
-    ("human_verdict", lambda n: _from_ledger("trace.feedback", n)),
+    ("human_verdict", lambda n, **w: _from_ledger("chat.feedback", n, **w)),
+    ("human_verdict", lambda n, **w: _from_ledger("trace.feedback", n, **w)),
     # Phase 0 (2026-10-04) — the enforcement trail, one sink per kind.
-    ("enforcement", lambda n: _from_ledger("govern.cap", n)),
-    ("enforcement", lambda n: _from_ledger("budget.exceeded", n)),
-    ("enforcement", lambda n: _from_ledger("exploration.budget_override", n)),
-    ("enforcement", lambda n: _from_ledger("metric.enforcement", n)),
+    ("enforcement", lambda n, **w: _from_ledger("govern.cap", n, **w)),
+    ("enforcement", lambda n, **w: _from_ledger("budget.exceeded", n, **w)),
+    ("enforcement", lambda n, **w: _from_ledger("exploration.budget_override", n, **w)),
+    ("enforcement", lambda n, **w: _from_ledger("metric.enforcement", n, **w)),
     ("enforcement", _from_session_guardrails),
 ]
 
@@ -571,3 +630,182 @@ def feed(*, category: Optional[str] = None, limit: int = 100,
                      counter="govern.audit_feed_sink")
     events.sort(key=lambda e: e.at, reverse=True)
     return events[:max(1, int(limit))]
+
+
+# ── Arc TC, TC-5 (`govern.justifications`) — the feed by a window, from a cursor ─────────────
+#
+# `feed` reads each sink's newest `per_sink` rows and keeps the newest `limit` (at most 1,000) of
+# their union: no window, no way past the first page, no export. The windowed read below pushes
+# `since`/`until` to every sink's store and pages by a cursor that is a POSITION in one fixed
+# sequence — (when, which row of which sink) — so a page boundary never moves as new events arrive,
+# and nothing is read twice or skipped. Still nothing here writes; still no sixth sink.
+
+#: The most rows one sink is asked for in one page while it keeps finding rows the window or the
+#: cursor excludes at a boundary second.
+WINDOW_READ_MAX = 20_000
+#: Rows per page while exporting.
+EXPORT_PAGE = 500
+EXPORT_COLUMNS: tuple[str, ...] = ("at", "category", "kind", "actor", "org_id", "conn_id", "summary", "detail")
+
+_LOW, _HIGH = "0000-01-01T00:00:00", "9999-12-31T23:59:59"
+
+
+class BadWindow(ValueError):
+    """A ``since``, ``until`` or cursor the feed cannot read — said, never read as no events."""
+
+
+def parse_when(raw: Optional[str], name: str) -> Optional[datetime]:
+    """A date (``2026-10-01``) or a moment (ISO-8601, ``Z`` or an offset; naive is UTC)."""
+    if raw is None or not str(raw).strip():
+        return None
+    s = str(raw).strip().replace(" ", "T", 1)
+    if s.endswith(("Z", "z")):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError as exc:
+        raise BadWindow(f"`{name}` must be a date or an ISO-8601 moment, not {raw!r}") from exc
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _order_at(raw: str) -> str:
+    """A sortable UTC spelling of an event's ``at``, whichever form its sink wrote. An ``at``
+    that cannot be read sorts last and is never inside a window."""
+    try:
+        dt = parse_when(raw, "at")
+    except BadWindow:
+        return ""
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if dt else ""
+
+
+def _store_bound(dt: datetime) -> str:
+    # Every sink writes ISO-8601 with a `T` (`_now()` in the ledger, `%Y-%m-%dT%H:%M:%SZ` in
+    # audit_log), so a seconds-precision bound compares lexically on all of them.
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def encode_feed_cursor(at_key: str, key: str) -> str:
+    raw = json.dumps({"a": at_key, "k": key}, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def decode_feed_cursor(cursor: str) -> tuple[str, str]:
+    try:
+        d = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode())
+        at_key, key = str(d["a"]), str(d["k"])
+        if parse_when(at_key, "cursor") is None:
+            raise ValueError("empty")
+        return at_key, key
+    except Exception as exc:
+        raise BadWindow("this cursor was not written by the governance feed; start again without one") from exc
+
+
+def feed_page(*, category: Optional[str] = None, limit: int = 100, since: Optional[str] = None,
+              until: Optional[str] = None, cursor: Optional[str] = None) -> dict:
+    """One page of the feed, newest first: events with ``since <= at < until`` that come after
+    ``cursor`` in the feed's sequence, and the cursor to the next page (``None`` when there is none).
+
+    Per sink, the newest ``limit + 1`` rows inside the bounds are enough to place the page
+    exactly — the classic k-way merge — so each sink is asked for exactly those, and asked again
+    for more only while rows at a boundary second are excluded (a store is bounded to the
+    second; the window and the cursor are exact). A sink that still cannot fill its share at
+    :data:`WINDOW_READ_MAX` is refused by name rather than paged past: the next page would
+    start beyond rows nobody read."""
+    if category is not None and category not in CATEGORIES:
+        raise ValueError(f"unknown audit category {category!r} — known: {list(CATEGORIES)}")
+    lo, hi = parse_when(since, "since"), parse_when(until, "until")
+    if lo and hi and lo >= hi:
+        raise BadWindow("`since` must come before `until`")
+    after: Optional[tuple[str, str]] = decode_feed_cursor(cursor) if cursor else None
+    lo_key = lo.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if lo else None
+    hi_key = hi.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if hi else None
+
+    store_lo = _store_bound(lo) if lo else _LOW
+    store_hi = _store_bound(hi) if hi else _HIGH
+    if hi and hi.microsecond:
+        store_hi = _store_bound(hi + timedelta(seconds=1))
+    if after:
+        # One second past the cursor's moment: every row at or before it is inside, and the
+        # rows of that second after the cursor are trimmed below by their position.
+        cursor_at = parse_when(after[0], "cursor")
+        store_hi = min(store_hi, _store_bound(cursor_at + timedelta(seconds=1)))
+
+    def keep(e: AuditEvent) -> bool:
+        at = _order_at(e.at)
+        if not at or (lo_key and at < lo_key) or (hi_key and at >= hi_key):
+            return False
+        return after is None or (at, e.key) < after
+
+    need = max(1, min(int(limit), 1000)) + 1
+    events: list[AuditEvent] = []
+    for sink_category, read in _SINKS:
+        if category is not None and sink_category != category:
+            continue
+        n = need
+        while True:
+            try:
+                got = read(n, since=store_lo, until=store_hi)
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+
+                tolerate(exc, "one audit sink being unreadable must not blank the whole feed",
+                         counter="govern.audit_feed_sink")
+                got = []
+            kept = [e for e in got if keep(e)]
+            if len(kept) >= need or len(got) < n:
+                break
+            if n >= WINDOW_READ_MAX:
+                raise BadWindow(
+                    f"more than {WINDOW_READ_MAX:,} {got[-1].kind} events fall in one second at the "
+                    "edge of this page, so it cannot be cut exactly; narrow `since`/`until`")
+            n = min(n * 4, WINDOW_READ_MAX)
+        events.extend(kept)
+
+    events.sort(key=lambda e: (_order_at(e.at), e.key), reverse=True)
+    page = events[:need - 1]
+    more = len(events) > len(page)
+    last = page[-1] if page else None
+    return {
+        "events": page,
+        "next_cursor": encode_feed_cursor(_order_at(last.at), last.key) if (more and last) else None,
+        "since": lo_key, "until": hi_key,
+    }
+
+
+def export_rows(*, fmt: str, category: Optional[str] = None, since: Optional[str] = None,
+                until: Optional[str] = None) -> Iterator[str]:
+    """The whole window, page by page through the cursor, as CSV (with a header) or JSON lines.
+    The first page is read before anything is returned, so a bad window is refused rather than
+    streamed as an empty file."""
+    import csv
+    import io
+
+    if fmt not in ("csv", "jsonl"):
+        raise BadWindow("`format` is csv or jsonl")
+    first = feed_page(category=category, limit=EXPORT_PAGE, since=since, until=until)
+
+    def csv_line(values: list) -> str:
+        buf = io.StringIO()
+        csv.writer(buf).writerow(values)
+        return buf.getvalue()
+
+    def lines() -> Iterator[str]:
+        page = first
+        if fmt == "csv":
+            yield csv_line(list(EXPORT_COLUMNS))
+        while True:
+            for e in page["events"]:
+                d = e.to_dict()
+                if fmt == "jsonl":
+                    yield json.dumps(d, default=str) + "\n"
+                else:
+                    yield csv_line([*(d[c] for c in EXPORT_COLUMNS[:-1]),
+                                    json.dumps(d["detail"], default=str)])
+            if not page["next_cursor"]:
+                return
+            page = feed_page(category=category, limit=EXPORT_PAGE, since=since, until=until,
+                             cursor=page["next_cursor"])
+
+    return lines()

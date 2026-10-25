@@ -111,29 +111,64 @@ def _audit_payload_access(trace_id: str, events: list[dict],
         from aughor.org.context import current_user_id
         Ledger.default().emit(
             "trace.payload_access",
-            {
-                "trace_id": trace_id,
-                "investigation_id": investigation_id,
-                # Whose run this was. Empty on an unidentified/local run, which is the
-                # honest answer rather than a guess.
-                "subject_user_id": next(
-                    (e["user_id"] for e in events if e.get("user_id")), ""),
-                "subject_agent_id": next(
-                    (e["agent_id"] for e in events if e.get("agent_id")), ""),
-                "read_by": current_user_id(),
-                "events": len(events),
-                # The two facts that make the record worth reading: whether prompt
-                # CONTENT was actually exposed by this read, and whether anything was
-                # masked on the way out.
-                "content_events": sum(1 for e in events if e.get("content_captured")),
-                "credentials_masked": sum(int(e.get("credentials_masked") or 0)
-                                          for e in events),
-            },
+            {**_payload_read_facts(trace_id, events, investigation_id),
+             "read_by": current_user_id(), **_payload_read_counts(events)},
             trace_id=trace_id,
         )
     except Exception as exc:
         tolerate(exc, "payload-access journal is best-effort; the read still returns",
                  counter="obs.trace.payload_access_audit")
+
+
+def _payload_read_facts(trace_id: str, events: list[dict], investigation_id: str | None) -> dict:
+    return {
+        "trace_id": trace_id,
+        "investigation_id": investigation_id,
+        # Whose run this was. Empty on an unidentified/local run, which is the
+        # honest answer rather than a guess.
+        "subject_user_id": next(
+            (e["user_id"] for e in events if e.get("user_id")), ""),
+        "subject_agent_id": next(
+            (e["agent_id"] for e in events if e.get("agent_id")), ""),
+    }
+
+
+def _payload_read_counts(events: list[dict]) -> dict:
+    return {
+        "events": len(events),
+        # The two facts that make the record worth reading: whether prompt
+        # CONTENT was actually exposed by this read, and whether anything was
+        # masked on the way out.
+        "content_events": sum(1 for e in events if e.get("content_captured")),
+        "credentials_masked": sum(int(e.get("credentials_masked") or 0)
+                                  for e in events),
+    }
+
+
+def _payload_reason(reason: Optional[str]) -> Optional[str]:
+    """Arc TC, TC-5 — while `govern.justifications` is on, the reason this payload read must
+    carry (a 422 that names it when there is none), checked BEFORE anything is read; off, None."""
+    from aughor.govern import justifications
+    return justifications.require_reason(reason, "run_payload") if justifications.required() else None
+
+
+def _journal_payload_read(trace_id: str, events: list[dict], investigation_id: str | None,
+                          reason: str | None, span_id: str | None = None) -> None:
+    """Who read whose run's payload — and, with a reason (`govern.justifications` on), why.
+
+    With a reason: the read is journaled ONCE as `access.justified`, carrying every fact
+    `trace.payload_access` carried plus the reason, and a read that cannot be recorded is not
+    served (`justifications.record` raises a 503). Without: the best-effort
+    `trace.payload_access` record, exactly the call it always was."""
+    if reason is None:
+        _audit_payload_access(trace_id, events, investigation_id)
+        return
+    from aughor.govern import justifications
+    justifications.record(
+        "run_payload", reason,
+        **_payload_read_facts(trace_id, events, investigation_id),
+        **({"span_id": span_id} if span_id else {}),
+        **_payload_read_counts(events))
 
 
 # ── CR1: traces ──────────────────────────────────────────────────────────────────
@@ -209,7 +244,7 @@ def list_traces(limit: int = 50, offset: int = 0,
 
 
 @router.get("/traces/{trace_id}")
-def get_trace(trace_id: str):
+def get_trace(trace_id: str, reason: Optional[str] = None):
     """One run's full event log plus its span tree — the waterfall.
 
     The tree is honest about what the data supports: tool spans pair their
@@ -217,7 +252,11 @@ def get_trace(trace_id: str):
     nest by `parent_span_id`; events with no span id (`llm_call`,
     `user_request`, `final_response`, `execution_error`) are TRACE-LEVEL, kept
     in `events` seq order and never given invented parents.
+
+    Arc TC, TC-5 (`govern.justifications`, off by default): this hands over the run's
+    payloads, so it needs a `reason` — refused by name without one, and recorded with it.
     """
+    why = _payload_reason(reason)
     events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
     if not events:
         raise HTTPException(status_code=404, detail="No events for this trace")
@@ -281,7 +320,7 @@ def get_trace(trace_id: str):
     from aughor.obs.trace_tree import build_timeline, flow_edges
     timeline = build_timeline(events)
 
-    _audit_payload_access(trace_id, events, inv_id)
+    _journal_payload_read(trace_id, events, inv_id, why)
 
     return {
         "measured": True,
@@ -348,13 +387,17 @@ def get_trace_trajectory(trace_id: str):
 
 
 @router.get("/traces/{trace_id}/spans/{span_id}")
-def get_trace_span(trace_id: str, span_id: str):
+def get_trace_span(trace_id: str, span_id: str, reason: Optional[str] = None):
     """One span's input and output — the paged drill-down the summary points at.
 
     This is the "never load whole" half of the roadmap's own risk note: an agent that
     has found the slow step from the summary pays for that step alone, instead of pulling
     every payload in the run to read one.
+
+    Arc TC, TC-5 (`govern.justifications`, off by default): a span's input and output are
+    payloads, so this needs a `reason`, as the whole run does.
     """
+    why = _payload_reason(reason)
     events = session_log.recover_session(trace_id, org_id=current_org_id() or None)
     if not events:
         raise HTTPException(status_code=404, detail="No events for this trace")
@@ -364,7 +407,7 @@ def get_trace_span(trace_id: str, span_id: str):
     span = span_payload(trace_id, events, span_id)
     if span is None:
         raise HTTPException(status_code=404, detail="No such span in this trace")
-    _audit_payload_access(trace_id, events, None)
+    _journal_payload_read(trace_id, events, None, why, span_id=span_id)
     return span
 
 

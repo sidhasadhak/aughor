@@ -25,13 +25,13 @@
 
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
-  deleteUsageCap, getAuditFeed, getConnections, getCostSql, getRouteMix, getUsageCaps, getUsageReport,
-  getUsageSummary, putUsageCap,
+  deleteUsageCap, downloadAuditFeed, getAuditFeed, getConnections, getCostSql, getRouteMix, getSystemFlags,
+  getUsageCaps, getUsageReport, getUsageSummary, putUsageCap,
   type AuditFeedEvent, type UsageCap, type UsageCapsResponse, type UsageReport, type UsageSummary,
 } from "@/lib/api";
 import { compactNumber, countNoun, formatCount, formatTimestamp, pct } from "@/lib/format";
 import {
-  capAmount, eventKey, failedLine, foldFeed, modelBars, money, sinceWords, spendTotals, spentFigure,
+  capAmount, dayAfter, eventKey, failedLine, foldFeed, modelBars, money, sinceWords, spendTotals, spentFigure,
   tightestCap, tokens, unpricedModels, whereTokensGo,
   type FeedFold, type FoldTone,
 } from "@/lib/spend";
@@ -428,6 +428,9 @@ function GovernanceCard() {
   const [full, setFull] = useState(false);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [shown, setShown] = useState<AuditFeedEvent[] | null>(null);
+  // Arc TC, TC-5 — with `govern.justifications` on, the full feed takes dates and exports its
+  // whole window from the server. A flag that cannot be read leaves both out.
+  const [windowed, setWindowed] = useState(false);
 
   const read = useCallback(() => {
     setErr(null);
@@ -437,6 +440,7 @@ function GovernanceCard() {
     read();
     // Names a connection on a folded row; a read that fails leaves the name out, never the row.
     getConnections().then(cs => setNames(new Map(cs.map(c => [c.id, c.name])))).catch(() => setNames(new Map()));
+    getSystemFlags().then(f => setWindowed(!!f["govern.justifications"]?.value)).catch(() => setWindowed(false));
   }, [read]);
 
   const events = useMemo(() => feed?.events ?? [], [feed]);
@@ -482,7 +486,7 @@ function GovernanceCard() {
           </div>
         ))}
       {full && feed && (
-        <FullFeed base={events} categories={feed.categories} focus={focus}
+        <FullFeed base={events} categories={feed.categories} focus={focus} windowed={windowed}
           onClearFocus={() => setFocus(null)} onRows={setShown} />
       )}
     </section>
@@ -556,8 +560,8 @@ function FeedRow({ ev }: { ev: AuditFeedEvent }) {
  *  SERVER filter (the endpoint rejects an unknown one rather than answering empty); event, actor
  *  and search narrow the fetched window in memory — which is why the count says how many of how
  *  many, rather than presenting a slice as the whole. */
-function FullFeed({ base, categories, focus, onClearFocus, onRows }: {
-  base: AuditFeedEvent[]; categories: string[]; focus: Focus | null;
+function FullFeed({ base, categories, focus, windowed = false, onClearFocus, onRows }: {
+  base: AuditFeedEvent[]; categories: string[]; focus: Focus | null; windowed?: boolean;
   onClearFocus: () => void; onRows: (rows: AuditFeedEvent[]) => void;
 }) {
   const [category, setCategory] = useState("");
@@ -568,15 +572,32 @@ function FullFeed({ base, categories, focus, onClearFocus, onRows }: {
   const [sort, setSort] = useState<FeedSort>({ key: "at", desc: true });
   const [err, setErr] = useState("");
   const [attempt, setAttempt] = useState(0);
+  // TC-5: a first and last day, read by the server; "more" when the window holds more than one read.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [more, setMore] = useState(false);
+  const [exportErr, setExportErr] = useState("");
+  const dated = windowed && Boolean(from || to);
+  const serverRead = Boolean(category) || dated;
 
   useEffect(() => {
     setByCategory(null);
     setErr("");
-    if (!category) return;
-    getAuditFeed(category, FEED_WINDOW).then(r => setByCategory(r.events)).catch(e => setErr(say(e)));
-  }, [category, attempt]);
+    setMore(false);
+    if (!serverRead) return;
+    const dates = dated ? { since: from || undefined, until: to ? dayAfter(to) : undefined } : undefined;
+    getAuditFeed(category, FEED_WINDOW, dates)
+      .then(r => { setByCategory(r.events); setMore(Boolean(r.next_cursor)); })
+      .catch(e => setErr(say(e)));
+  }, [category, from, to, dated, serverRead, attempt]);
 
-  const events = useMemo(() => (category ? byCategory ?? [] : base), [category, byCategory, base]);
+  const exportFile = () => {
+    setExportErr("");
+    downloadAuditFeed("csv", { category, since: from, until: to ? dayAfter(to) : "" })
+      .catch(e => setExportErr(say(e)));
+  };
+
+  const events = useMemo(() => (serverRead ? byCategory ?? [] : base), [serverRead, byCategory, base]);
   // The vocabularies come from the rows themselves, never a hand-written list: a hard-coded kind
   // list goes stale the moment a sink emits a new one, and the filter would then hide events.
   const actors = useMemo(() => [...new Set(events.map(e => e.actor).filter(Boolean))].sort(), [events]);
@@ -601,7 +622,7 @@ function FullFeed({ base, categories, focus, onClearFocus, onRows }: {
   }, [events, focus, actor, kind, q, sort]);
   useEffect(() => { onRows(rows); }, [rows, onRows]);
 
-  const loading = Boolean(category) && byCategory === null && !err;
+  const loading = serverRead && byCategory === null && !err;
   const toggleSort = (key: FeedSort["key"]) => setSort(s => (s.key === key ? { key, desc: !s.desc } : { key, desc: true }));
 
   return (
@@ -622,8 +643,17 @@ function FullFeed({ base, categories, focus, onClearFocus, onRows }: {
         </SelectField>
         <Input style={{ ...field, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search summary, event, actor…" aria-label="Search the feed" data-testid="feed-search" />
-        {(category || kind || actor || q) && (
-          <Button size="xs" variant="ghost" onClick={() => { setCategory(""); setKind(""); setActor(""); setQ(""); }}>
+        {windowed && (
+          <>
+            <Input type="date" style={{ ...field, width: 150 }} value={from} max={to || undefined}
+              onChange={e => setFrom(e.target.value)} aria-label="From" title="From this day" data-testid="feed-since" />
+            <Input type="date" style={{ ...field, width: 150 }} value={to} min={from || undefined}
+              onChange={e => setTo(e.target.value)} aria-label="To" title="To this day, inclusive" data-testid="feed-until" />
+          </>
+        )}
+        {(category || kind || actor || q || from || to) && (
+          <Button size="xs" variant="ghost"
+            onClick={() => { setCategory(""); setKind(""); setActor(""); setQ(""); setFrom(""); setTo(""); }}>
             Clear filters
           </Button>
         )}
@@ -632,8 +662,16 @@ function FullFeed({ base, categories, focus, onClearFocus, onRows }: {
           {rows.length !== events.length
             ? `${formatCount(rows.length)} of ${formatCount(events.length)} events`
             : countNoun(rows.length, "event")}
+          {more ? ` — the newest ${formatCount(events.length)}; the export has every one` : ""}
         </span>
+        {windowed && (
+          <Button size="xs" variant="ghost" onClick={exportFile} data-testid="feed-export"
+            title="Every event in the chosen dates and category, as a CSV file">
+            <Icon name="download" size={12} /> Export
+          </Button>
+        )}
       </div>
+      {exportErr && <div className="aug-fs-xs" style={{ color: "var(--red4)", marginBottom: 8 }}>{exportErr}</div>}
       {focus && (
         <div className="aug-fs-xs" style={{ ...row, ...muted, marginBottom: 8 }} data-testid="feed-focus">
           {`Showing the ${focus.keys.size === 1 ? "event" : `${formatCount(focus.keys.size)} events`} behind “${focus.label}”`}

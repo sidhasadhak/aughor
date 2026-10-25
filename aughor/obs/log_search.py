@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -78,12 +77,10 @@ def decode_cursor(cursor: str) -> tuple[int, str]:
 
 
 def _kept_sooner() -> dict:
-    """The kinds the journal sweeps before the window ends, and after how many days."""
-    from aughor.kernel.ledger import _EVENT_OPS_KINDS
-    raw = os.environ.get("AUGHOR_EVENTS_PRUNE_KINDS")
-    kinds = (tuple(k.strip() for k in raw.split(",") if k.strip()) if raw is not None
-             else _EVENT_OPS_KINDS)
-    days = int(os.environ.get("AUGHOR_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+    """The kinds the journal sweeps before the window ends, and after how many days — asked of
+    the sweep's own settings, never restated here."""
+    from aughor.kernel.ledger import events_swept_sooner
+    kinds, days = events_swept_sooner()
     return {"kinds": list(kinds), "keep_days": days} if kinds and days else {}
 
 

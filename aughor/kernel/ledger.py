@@ -87,6 +87,23 @@ _PRUNE_KV_KEY = "last_pruned_at"
 _EVENT_PRUNE_KV_KEY = "events_last_pruned_at"
 #: Kinds treated as operational chatter. Anything not named here is never auto-deleted.
 _EVENT_OPS_KINDS = ("job.state", "automation.run")
+
+
+def _swept_kinds() -> tuple[str, ...]:
+    raw = os.environ.get("AUGHOR_EVENTS_PRUNE_KINDS")
+    return (tuple(k.strip() for k in raw.split(",") if k.strip())
+            if raw is not None else _EVENT_OPS_KINDS)
+
+
+def _swept_keep_days() -> int:
+    return int(os.environ.get("AUGHOR_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+
+
+def events_swept_sooner() -> tuple[tuple[str, ...], int]:
+    """The journal kinds `Ledger.events_prune` sweeps by age, and after how many days — read from
+    the same settings the sweep reads, so a reader saying how far back the journal reaches (Arc TC,
+    TC-5: the log search) cannot drift from what the sweep does."""
+    return _swept_kinds(), _swept_keep_days()
 #: Rows removed per sweep. The sweep runs inside `Ledger.__init__` (restart insurance),
 #: and a first sweep on a hoarding install has ~350,000 rows to clear — a single
 #: unbounded DELETE there would be a boot-time stall, and a migration back-fill that
@@ -1260,6 +1277,8 @@ class Ledger:
         since_seq: Optional[int] = None,
         org_id: Optional[str] = None,
         limit: int = 200,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
     ) -> list[dict]:
         """Read journal events, newest first.
 
@@ -1267,10 +1286,17 @@ class Ledger:
         ``None`` means no filter — localhost/identity-off, where one tenant owns
         every row — and a value scopes to rows emitted under it. Rows written before
         the tenant column existed read as ``'default'``, which is the org they in
-        fact ran under."""
+        fact ran under.
+
+        ``since``/``until`` bound ``at`` half-open, as ``session_events`` does (Arc TC,
+        TC-5: the governance feed's window); both ``None`` adds no clause."""
         q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
              "FROM events WHERE 1=1")
         args: list[Any] = []
+        if since is not None:
+            q += " AND at>=?"; args.append(since)
+        if until is not None:
+            q += " AND at<?"; args.append(until)
         if trace_id:
             q += " AND trace_id=?"; args.append(trace_id)
         if kind:
@@ -1763,14 +1789,12 @@ class Ledger:
         seqs in a subquery and delete by primary key.
         """
         if kinds is None:
-            raw = os.environ.get("AUGHOR_EVENTS_PRUNE_KINDS")
-            kinds = (tuple(k.strip() for k in raw.split(",") if k.strip())
-                     if raw is not None else _EVENT_OPS_KINDS)
+            kinds = _swept_kinds()
         kinds = tuple(kinds)
         if not kinds:
             return 0
         if keep_days is None:
-            keep_days = int(os.environ.get("AUGHOR_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+            keep_days = _swept_keep_days()
         if max_rows is None:
             max_rows = int(os.environ.get("AUGHOR_EVENTS_OPS_MAX_ROWS", "50000") or 0)
         if batch is None:
