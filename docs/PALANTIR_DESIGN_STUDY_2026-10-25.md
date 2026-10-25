@@ -366,7 +366,10 @@ pair in the accent, the property's inspector beside it — Ontology Manager's sc
 ### 10.4 The calls
 
 **Taken 2026-10-25, evening** (the user: *"Go with L3 and D4, all three pieces, build it"*): 1 = L3 · 2 = D4 · 3 = yes,
-edges on by default · 4 = all three pieces built, the mapping picture included.
+edges on by default · 4 = all three pieces built, the mapping picture included. **Built the same night:** the tokens
+(§10.3's table, as decided), the seams, the icon squares (monochrome, by the column-type mark's own reason), and the
+mapping picture in the Sources tab — proven live on the scratch pair's demo ontology, which the schema builder makes
+without a model.
 
 1. **Light ground**: L3 (`gray-3` ground, `gray-2` rail, `gray-3` controls), or L4 (white rail)? — *Recommended: L3.*
 2. **Dark**: D4 (one step up, lines a step stronger, edges on by default), or D3 (the whole skin lifted)? —

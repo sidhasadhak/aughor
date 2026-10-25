@@ -21,14 +21,17 @@ import Link from "next/link";
 
 import { MakeDashboard } from "@/components/dashboards/MakeDashboard";
 import { DerivedList } from "@/components/ontology/ProcessPanel";
+import { SourceMapping } from "@/components/ontology/SourceMapping";
 import { Label, NeedsRow, ProcessFlow, SetChips, TypeFigures, UsedBy, UsesSection } from "@/components/ontology/TypeOverview";
+import { IconSquare } from "@/components/ui/icon-square";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { countNoun, formatCount } from "@/lib/format";
-import { getOntologyKeys, keyVocabularyEntry, type VocabularyKey } from "@/lib/api";
+import { getOntologyKeys, getTableColumns, keyVocabularyEntry, type TableColumn, type VocabularyKey } from "@/lib/api";
+import { ColumnTypeSquare } from "@/components/icons/columnType";
 import { declaredActionsHref } from "@/lib/objectLinks";
 import {
   addBinding,
@@ -246,7 +249,7 @@ function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenP
     const quiet = !needs.length && !flows.length && !detail.segments.length && !detail.derived?.segments.length
       && !detail.metrics.length && !detail.actions.length;
     body = (
-      <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }} data-testid="entity-overview">
+      <div className="aug-stack-rules" style={{ padding: "14px 16px", display: "flex", flexDirection: "column" }} data-testid="entity-overview">
         {needs.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <Label>Needs you</Label>
@@ -315,6 +318,7 @@ function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenP
     <Editing.Provider value={editing}>
       <header style={{ padding: "14px 16px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <IconSquare name="node" size={20} title="an entity type" />
           <h2 className="aug-fs-h1" style={{ margin: 0, color: "var(--t1)" }} title={detail.object_type}>{detail.display_name}</h2>
           {detail.domain && <span className="aug-tag aug-tag-gray">{detail.domain}</span>}
           <span className="aug-tag aug-tag-gray">{ROLE[detail.role] ?? detail.role}</span>
@@ -355,7 +359,7 @@ function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenP
       </header>
       <TabStrip<PanelTab> label={`About ${detail.display_name}`} size="1" value={tab} onChange={setTab} tabs={tabs}
         style={{ padding: "0 2px" }} />
-      <div role="tabpanel" aria-label={TAB_NAME[tab]} data-testid={`entity-tab-${tab}`}>{body}</div>
+      <div role="tabpanel" aria-label={TAB_NAME[tab]} data-testid={`entity-tab-${tab}`} className="aug-sections">{body}</div>
     </Editing.Provider>
   );
 }
@@ -1217,9 +1221,13 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
             const source = sourceText(p.source);
             return (
               <TableRow key={p.name} style={{ borderTop: RULE }}>
-                <TableCell style={{ ...cell, ...MONO, ...clip, color: "var(--t1)" }} title={p.description || p.name}>
-                  {p.is_key && <span style={{ color: "var(--t3)", marginRight: 3, display: "inline-flex" }}><Icon name="key" size={11} label="Key" /></span>}
-                  {p.name}
+                <TableCell style={{ ...cell, ...MONO, color: "var(--t1)" }} title={p.description || p.name}>
+                  {/* the kind's mark in a square first, so every name starts at one x (2026-10-25); the key's mark after it */}
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <ColumnTypeSquare type={p.data_type} size={14} />
+                    {p.is_key && <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="key" size={11} label="Key" /></span>}
+                    <span style={clip}>{p.name}</span>
+                  </span>
                 </TableCell>
                 <TableCell style={{ ...cell, ...clip, color: "var(--t2)" }} title={p.data_type || undefined}>{p.role || "—"}</TableCell>
                 <TableCell style={{ ...cell, ...MONO, ...clip, color: "var(--t2)" }} title={source.full}>{source.short}</TableCell>
@@ -1507,6 +1515,25 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
   };
   // An API older than ON-1b sends no proposals; the panel must not fall over while the two deploy apart.
   const proposals = detail.proposed_bindings ?? [];
+  // The mapping picture (2026-10-25): the primary binding's table, its columns read once from the connection; what
+  // could not be read is said in the picture's own column, and the bindings below stand whatever happens here.
+  const picture = detail.bindings.find((b) => b.primary) ?? detail.bindings[0];
+  const pictureTable = picture && picture.reads === "table" ? picture.table || "" : "";
+  const pictureConnection = picture?.connection_id || connectionId;
+  const [columns, setColumns] = useState<TableColumn[] | null>(null);
+  const [columnsSaid, setColumnsSaid] = useState("");
+  useEffect(() => {
+    let live = true;
+    setColumns(null);
+    setColumnsSaid("");
+    if (!pictureTable) return;
+    const dot = pictureTable.lastIndexOf(".");
+    const [schemaOf, tableOf] = dot > 0 ? [pictureTable.slice(0, dot), pictureTable.slice(dot + 1)] : [schema, pictureTable];
+    getTableColumns(pictureConnection, tableOf, schemaOf)
+      .then((cols) => { if (live) setColumns(cols); })
+      .catch((e: unknown) => { if (live) { setColumns([]); setColumnsSaid(`The table’s columns could not be read: ${errorText(e)}`); } });
+    return () => { live = false; };
+  }, [pictureTable, pictureConnection, schema]);
   const act = async (name: string, write: () => Promise<void>) => {
     setBusy(name);
     setProblem("");
@@ -1521,6 +1548,7 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
   };
   return (
     <Section title="Bindings" aside="where its properties are read from">
+      {picture && <SourceMapping detail={detail} binding={picture} columns={columns} said={columnsSaid || undefined} />}
       {detail.bindings.map((b, i) => (
         <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name} source={sourceOf(b)}
           onRemove={!b.primary && editing

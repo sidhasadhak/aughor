@@ -939,3 +939,12 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
    row for nothing. In a ledger the first column is the statement, and it alone wraps. */
 [data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
 [data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Seams (2026-10-25, the look study §10: "fine grey lines at the right places") ─────────────────────────
+   Stacked blocks read as sections when a hairline stands between them; a tab panel's first section does not
+   draw its own top rule under the strip's underline, or two lines stand where one belongs. */
+.aug-stack-rules > * { padding: 14px 0; }
+.aug-stack-rules > :first-child { padding-top: 0; }
+.aug-stack-rules > :last-child { padding-bottom: 0; }
+.aug-stack-rules > * + * { border-top: 1px solid var(--b0); }
+.aug-sections > section:first-child { border-top: 0; }

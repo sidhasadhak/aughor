@@ -44,6 +44,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getOntologyKeys: async () => ({ connection_id: "c1", schema_name: "s", entities: [], metrics: [], vocabulary: words.vocabulary }),
   keyVocabularyEntry: (...a: unknown[]) => keyVocabularyEntry(...a),
+  // the Sources tab's mapping picture reads the table's columns; a test never reaches a connection for them
+  getTableColumns: async () => [{ name: "product_id", type: "BIGINT" }, { name: "title", type: "VARCHAR" }],
 }));
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({

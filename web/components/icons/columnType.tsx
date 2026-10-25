@@ -28,6 +28,7 @@
  */
 import { columnTypeKind, COLUMN_KIND_LABEL, type ColumnTypeKind } from "@/lib/format";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { IconSquare } from "@/components/ui/icon-square";
 
 /** Kind → the role this product asks the icon set for. WHICH DRAWING answers each role
  *  is chosen in `components/ui/icon.tsx` and nowhere else. `unknown` gets a neutral
@@ -58,4 +59,11 @@ export function ColumnTypeIcon({
       <Icon name={GLYPH[kind]} size={size} />
     </span>
   );
+}
+
+/** The same mark set in a square (2026-10-25) — for a list where the mark is the row's first column and every
+ *  name should start at the same x: the entity's properties, a table's columns in the source mapping. */
+export function ColumnTypeSquare({ type, size = 16, title }: { type?: string | null; size?: number; title?: string }) {
+  const kind = columnTypeKind(type);
+  return <IconSquare name={GLYPH[kind]} size={size} title={title ?? (type || COLUMN_KIND_LABEL[kind])} />;
 }

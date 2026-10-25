@@ -14512,7 +14512,16 @@ the browser** · **measure the premise before building.**
       gray 3 (L3); **dark** cards gray 3 one step above the gray 1 ground, controls gray 1, rows gray 6, borders
       gray 7, a card edge by default (D4) — which supersedes the 2026-10-10 "no border on a dark card"; the `edges`
       knob off is the way back. Then three pieces: lines at the seams, icon squares for entities and property
-      kinds, and the mapping picture in the Sources tab. *Tokens built the same evening; the pieces follow.*
+      kinds, and the mapping picture in the Sources tab. *Tokens built the same evening; the three pieces the same
+      night: **seams** — the entity Overview's blocks ruled apart (`.aug-stack-rules`), a tab panel's first section
+      without a second line under the strip (`.aug-sections`); **icon squares** — `ui/icon-square.tsx`, monochrome
+      on purpose (the column-type mark's own reason), on every entity in the rail and the panel's head and, by the
+      column's kind, on every property row (`ColumnTypeSquare`); **the mapping picture** —
+      `ontology/SourceMapping.tsx` in the Sources tab: the primary binding's table columns left, the type's
+      properties right, a connector per column read bending at right angles, the chosen pair in the accent with the
+      property's facts beneath, every absence said (a column not read, a property computed or read elsewhere, a
+      binding that reads a query, columns that could not be read). Proven live on the scratch pair's demo ontology,
+      built from the schema with no model: 7 of 7 properties of Customer drawn from main.customers.*
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
