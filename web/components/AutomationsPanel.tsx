@@ -20,6 +20,9 @@ import {
   pauseAutomation,
   runAutomation,
   getAutomationRuns,
+  getAutomationVersions,
+  type AutomationVersion,
+  type AutomationVersions,
   getProposals,
   supersedeProposal,
   getGrants,
@@ -90,6 +93,9 @@ export function AutomationsPanel({ connId, focusId }: Props) {
   // runs view
   const [runsFor, setRunsFor] = useState<Automation | null>(null);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
+  /** TC-3 — the chosen automation's kept versions: null while versions are off, "failed"
+   *  when they could not be read (said, never shown as an empty history). */
+  const [versions, setVersions] = useState<AutomationVersions | null | "failed">(null);
 
   // inbox view
   const [proposals, setProposals] = useState<StagedProposal[]>([]);
@@ -225,8 +231,9 @@ export function AutomationsPanel({ connId, focusId }: Props) {
   useEffect(() => { if (view === "inbox") loadInbox(); }, [view, loadInbox]);
 
   const openRuns = useCallback(async (a: Automation) => {
-    setRunsFor(a); setView("runs");
+    setRunsFor(a); setView("runs"); setVersions(null);
     try { setRuns(await getAutomationRuns(a.id)); } catch { setRuns([]); }
+    try { setVersions(await getAutomationVersions(a.id)); } catch { setVersions("failed"); }
   }, []);
 
   /** DS-15 — ask the agent for a chain, then draw the draft on a fresh canvas.
@@ -473,7 +480,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
         )}
 
         {view === "runs" && !showSpinner && (
-          <RunsView automations={automations} runsFor={runsFor} runs={runs} onPick={openRuns} />
+          <RunsView automations={automations} runsFor={runsFor} runs={runs} versions={versions} onPick={openRuns} />
         )}
 
         {view === "inbox" && !showSpinner && (
@@ -660,8 +667,50 @@ export function collapseQuietTicks(runs: AutomationRun[]): RunRow[] {
 }
 
 
-function RunsView({ automations, runsFor, runs, onPick }: {
+/** TC-3 — one kept version in words: who saved it, when, and how it came to be kept when that
+ *  was not a save. Nobody is named for a version no save recorded. */
+export function versionLine(v: AutomationVersion): string {
+  const who = v.saved_by ? `saved by ${v.saved_by.replace(/^user:/, "")}` : "who saved it was not recorded";
+  const how = v.source && v.source !== "saved" ? ` · ${v.source}` : "";
+  return `${who} · ${relTime(v.saved_at)}${how}`;
+}
+
+/** TC-3 — what a run card says about its version: nothing while versions are off (the key is
+ *  absent), "no version kept" when the run kept none, else the number. */
+export function runVersionLabel(run: AutomationRun): string {
+  if (run.version === undefined) return "";
+  return run.version === null ? "no version kept" : `v${run.version}`;
+}
+
+/** TC-3 — the definitions this automation has had, newest first. Nothing while versions are off. */
+export function VersionsList({ versions }: { versions: AutomationVersions | null | "failed" }) {
+  if (versions === null) return null;
+  if (versions === "failed") {
+    return <div className="aug-fs-sm" style={{ color: "var(--t3)", marginBottom: 14 }}>Its versions could not be read.</div>;
+  }
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", fontWeight: 600, marginBottom: 4 }}>
+        Versions{versions.current_version != null ? ` · runs as v${versions.current_version}` : ""}
+      </div>
+      {!versions.current_kept && versions.why_not && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 4 }}>{versions.why_not}</div>
+      )}
+      {versions.versions.length === 0
+        ? <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>None kept yet.</div>
+        : versions.versions.map(v => (
+          <div key={v.version_id} className="aug-fs-xs" style={{ display: "flex", gap: 6, color: "var(--t3)" }}>
+            <span style={{ color: "var(--t2)", fontWeight: 600 }}>v{v.version}</span>
+            <span>{versionLine(v)}</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function RunsView({ automations, runsFor, runs, versions, onPick }: {
   automations: Automation[]; runsFor: Automation | null; runs: AutomationRun[];
+  versions: AutomationVersions | null | "failed";
   onPick: (a: Automation) => void;
 }) {
   return (
@@ -672,6 +721,7 @@ function RunsView({ automations, runsFor, runs, onPick }: {
         ))}
       </div>
       {!runsFor && <div style={{ color: "var(--t3)", fontSize: 13 }}>Pick an automation to see its tick history.</div>}
+      {runsFor && <VersionsList versions={versions} />}
       {runsFor && runs.length === 0 && <div style={{ color: "var(--t3)", fontSize: 13 }}>No ticks yet — hit “Run now”.</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {collapseQuietTicks(runs).map(row => row.kind === "quiet" ? (
@@ -700,7 +750,9 @@ function RunsView({ automations, runsFor, runs, onPick }: {
               <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"} style={{ textTransform: "uppercase" }}>{r.outcome.replace("_", " ")}</Badge>
               <span style={{ fontSize: 12, color: "var(--t2)" }}>{r.reason}</span>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11, color: "var(--t3)" }}>{relTime(r.started_at)} · {r.duration_ms}ms</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>
+                {relTime(r.started_at)} · {r.duration_ms}ms{runVersionLabel(r) ? ` · ${runVersionLabel(r)}` : ""}
+              </span>
             </div>
             {r.effects.length > 0 && (
               <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 3, paddingLeft: 4 }}>

@@ -1845,6 +1845,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/runs/{run_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Run
+         * @description Walk a past run again as a dry run: its own version against its kept trigger.
+         *
+         *     Nothing is sent, no action runs, no model is called and nothing is written — the B2 dry-run
+         *     seam, handed the run's version and trigger. Refused with 409, by name, when the run's version
+         *     or its trigger payload was not kept. Returns the same ``{run, graph}`` a dry run returns.
+         */
+        post: operations["replay_run_automations_runs__run_id__replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/runs/{run_id}/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Version
+         * @description The version this run ran under and the trigger that started it, as kept — the tick, who
+         *     asked, each condition's verdict and the payload a trigger handed the chain (capped, and the
+         *     cap said). A run that kept neither says so, and says whether it can be replayed and why not.
+         */
+        get: operations["run_version_automations_runs__run_id__version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/tools": {
         parameters: {
             query?: never;
@@ -2144,6 +2190,28 @@ export interface paths {
         };
         /** Runs */
         get: operations["runs_automations__automation_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Automation Versions
+         * @description TC-3 — every kept version of this automation, newest first, each with who saved it, when,
+         *     and how it came to be kept; and which one is current. Superseded, never deleted: an automation
+         *     that was deleted still answers with its versions.
+         */
+        get: operations["automation_versions_automations__automation_id__versions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10699,6 +10767,28 @@ export interface paths {
          *     sent: the scheduled check owns the record and the send.
          */
         post: operations["trigger_monitor_monitors__monitor_id__trigger_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/monitors/{monitor_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monitor Versions
+         * @description TC-3 — every kept version of this monitor, newest first, each with who saved it, when and
+         *     how it came to be kept; and which one is current. 404 while ``automations.versions`` is off.
+         *     Superseded, never deleted: a deleted monitor still answers with its versions.
+         */
+        get: operations["monitor_versions_monitors__monitor_id__versions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -26655,6 +26745,68 @@ export interface operations {
             };
         };
     };
+    replay_run_automations_runs__run_id__replay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_version_automations_runs__run_id__version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     exposed_tools_automations_tools_get: {
         parameters: {
             query?: {
@@ -27134,6 +27286,39 @@ export interface operations {
         };
     };
     runs_automations__automation_id__runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    automation_versions_automations__automation_id__versions_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -41695,6 +41880,41 @@ export interface operations {
         parameters: {
             query?: {
                 connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    monitor_versions_monitors__monitor_id__versions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
             };
             header?: never;
             path: {

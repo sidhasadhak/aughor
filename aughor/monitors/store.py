@@ -159,6 +159,11 @@ def upsert_monitor(monitor: Monitor) -> Monitor:
     if not monitor.created_at:
         monitor = monitor.model_copy(update={"created_at": now})
     monitor = monitor.model_copy(update={"updated_at": now})
+    # TC-3 — with `automations.versions` on, the definition is kept as a version before the row
+    # is replaced (and the one it replaces first, if nothing kept it); a save whose version
+    # cannot be kept is refused. Off, this reads nothing.
+    from aughor.automations.versions import keep_monitor_version
+    keep_monitor_version(monitor)
 
     params = monitor.model_dump()
     # Persist post-schema fields in the `extra` JSON blob (no column migration). A field left out of it is never

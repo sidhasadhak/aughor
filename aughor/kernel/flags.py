@@ -229,6 +229,12 @@ FLAG_ENV = {
     # never sent as an alert. OFF: an alert stays open until a person acknowledges it, and a quiet check says "no alert"
     # whichever it was.
     "monitors.recovery": "AUGHOR_MONITORS_RECOVERY",
+    # Arc TC, TC-3 (ROADMAP §3.59, 2026-10-26). ON: every save of an automation or a monitor keeps the definition it
+    # replaces as a numbered version in the ledger (superseded, never deleted) with who saved it and when; every
+    # recorded run keeps beside its row the version it ran under and its trigger as received (the payload capped at
+    # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
+    # replaces the definition, runs keep neither, and the version and replay doors answer 404.
+    "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -715,6 +721,17 @@ FLAG_META = {
                        "recovery is shown here and in alert summaries, never sent as an alert. Off: an alert stays "
                        "open until someone acknowledges it.",
     },
+    "automations.versions": {
+        "label": "Versions and replays for automations",
+        "summary": "Each save of an automation or a monitor keeps the one before it as a version. Each run "
+                   "names its version and keeps what started it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Nothing is deleted"}],
+        "description": "A version says who saved it and when. A run keeps what started it, up to 16 KB, and says "
+                       "when it kept less. A past run can be replayed: its own version walks what started it, and "
+                       "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
+                       "keeps neither.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -1093,6 +1110,12 @@ EXPERIMENT: dict = {
                          "recoveries for one alert, or a "
                          "monitor flapping across its line writes more than two alerts a day that its grace period used "
                          "to fold — either stops it",
+    # Arc TC, TC-3 (ROADMAP §3.59), 2026-10-26. It keeps more of every save and every run, so it is watched before it
+    # graduates.
+    "automations.versions": "is a past run replayed or an earlier version read — within four weeks, is one in three or "
+                            "more of the automations changed in that time opened at a version or a replay? Falsifier "
+                            "(§3.59, TC-3): a replay sends a message, runs an action, calls a model or writes a run — "
+                            "stop",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",

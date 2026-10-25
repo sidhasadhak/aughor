@@ -194,7 +194,7 @@ def create_monitor(req: CreateMonitorRequest, request: Request) -> dict:
     except ValidationError as e:
         detail = "; ".join(f"{er['loc'][-1]}: {er['msg']}" for er in e.errors())
         raise HTTPException(status_code=422, detail=f"Invalid monitor configuration — {detail}")
-    saved = upsert_monitor(monitor)
+    saved = _upsert(monitor)
     # No scheduler sync: the automation heartbeat reads the monitor store live each
     # tick (virtual adoption), so an upserted row is already scheduled.
     return saved.model_dump()
@@ -212,8 +212,34 @@ def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
     # Merge non-None fields
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     updated = existing.model_copy(update=updates)
-    saved = upsert_monitor(updated)
+    saved = _upsert(updated)
     return saved.model_dump()
+
+
+def _upsert(monitor: Monitor) -> Monitor:
+    """Save, turning TC-3's refusal into a 503 that says it: with versions on, a save whose
+    version cannot be kept saves nothing, and that is not the author's mistake to fix."""
+    from aughor.automations.versions import VersionNotKept
+    try:
+        return upsert_monitor(monitor)
+    except VersionNotKept as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/monitors/{monitor_id}/versions")
+def monitor_versions(monitor_id: str, limit: int = 50) -> dict:
+    """TC-3 — every kept version of this monitor, newest first, each with who saved it, when and
+    how it came to be kept; and which one is current. 404 while ``automations.versions`` is off.
+    Superseded, never deleted: a deleted monitor still answers with its versions."""
+    from aughor.automations.versions import MONITOR_KIND, history, keeping, monitor_definition
+    if not keeping():
+        raise HTTPException(status_code=404, detail="versions need the 'automations.versions' flag")
+    m = get_monitor(monitor_id)
+    out = history(MONITOR_KIND, monitor_id, monitor_definition(m) if m is not None else None,
+                  limit=limit)
+    if m is None and not out["versions"]:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    return {"monitor_id": monitor_id, **out}
 
 
 @router.delete("/monitors/{monitor_id}", status_code=204)

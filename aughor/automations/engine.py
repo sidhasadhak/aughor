@@ -361,7 +361,8 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
                         probe: Optional[ConditionProbe] = None,
                         manual: bool = False,
                         via: str = "hand",
-                        trigger_data: Optional[dict] = None) -> tuple[bool, list[str], str]:
+                        trigger_data: Optional[dict] = None,
+                        verdicts: Optional[list] = None) -> tuple[bool, list[str], str]:
     """Evaluate every condition under ``condition_logic``. Returns ``(fired, details, reason)``.
 
     Deliberately evaluates ALL conditions rather than short-circuiting: the run history is meant to
@@ -412,6 +413,13 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
             if ok and len(r) > 2 and isinstance(r[2], dict) and trigger_data is not None:
                 trigger_data.update(r[2])
             results.append((ok, detail))
+
+    # TC-3 — each condition's verdict, in declared order, for a run that keeps its trigger:
+    # what a replay re-reads under the version's own `all`/`any`. Collected into the caller's
+    # list, like `trigger_data`, so the return shape stays what every caller expects.
+    if verdicts is not None:
+        verdicts.extend({"kind": c.kind, "held": ok, "detail": d[:500]}
+                        for c, (ok, d) in zip(automation.conditions, results))
 
     fired_details = [d for ok, d in results if ok]
     quiet_details = [d for ok, d in results if not ok]
@@ -2094,6 +2102,7 @@ def _walk_automation(
     run_id: Optional[str] = None,
     until_alias: Optional[str] = None,
     resume: Optional[dict] = None,
+    replay: Optional[dict] = None,
 ) -> AutomationRun:
     """Run one automation through the full pipeline and return its :class:`AutomationRun`.
 
@@ -2127,8 +2136,17 @@ def _walk_automation(
     Guards are **reported, never decided** (see the chain loop): a sample cannot answer
     "will tomorrow's number clear this threshold", and a preview that pretended to would
     be worse than one that says when the question gets asked.
+
+    **TC-3 · ``replay``** — a past run's kept trigger (``versions.replay`` passes it with the
+    run's own version). A replay IS a dry run, with one difference: the conditions are not
+    described but re-read — the kept verdicts under this version's own ``all``/``any`` — and
+    the payload the trigger handed the chain is handed to it again, so a step bound to
+    ``trigger.<key>`` reads the value that run read rather than a sample.
     """
     now = now or datetime.now(timezone.utc)
+    if replay is not None:
+        # A replay is a dry run, always: there is no replay that dispatches.
+        dry_run = True
     if dry_run:
         # A preview never writes: not the run row, not a delivery claim, not a baseline.
         # `dispatch` is OVERRIDDEN, not defaulted: a preview that can be handed a real
@@ -2144,6 +2162,16 @@ def _walk_automation(
     started = now.isoformat().replace("+00:00", "Z")
     t0 = _time.monotonic()
     dispatch_fn = dispatch or default_dispatch
+    # TC-3 — with `automations.versions` on, a RECORDED run keeps beside its row the version it
+    # ran under and the trigger that started it: the tick, who asked, each condition's verdict
+    # and the payload a trigger handed the chain. Never on a preview or a replay (`persist` is
+    # off for both), and never on a resume — the run's first walk kept its stamp.
+    kept: Optional[dict] = None
+    if persist and not resume:
+        from aughor.automations.versions import keeping, version_for_run
+        if keeping():
+            kept = {"version": version_for_run(automation),
+                    "trigger": {"at": started, "via": via if manual else "tick"}}
 
     def _finish(run: AutomationRun, *, finished: bool = True) -> AutomationRun:
         elapsed_ms = int((_time.monotonic() - t0) * 1000) + int(
@@ -2162,7 +2190,11 @@ def _walk_automation(
             return run
         # A resumed run UPDATES the row it parked in — one run, one trace id, a human in
         # its middle. `append_run` is INSERT OR IGNORE, so it would silently do nothing.
-        return update_run(run) if resume else append_run(run)
+        saved = update_run(run) if resume else append_run(run)
+        if kept is not None:
+            from aughor.automations.versions import keep_run
+            keep_run(saved, kept)
+        return saved
 
     # VA-4d — allocated up front so the run id can BE the trace id: clicking a run in
     # `Activity → Runs` then lands on exactly this AutomationRun, with no second
@@ -2202,6 +2234,8 @@ def _walk_automation(
         # an automation must not strand a governed write a person already said yes to —
         # that is a half-executed chain, which is worse than either finishing or not
         # starting. Disabling still stops the NEXT tick, which is what disabling is for.
+        if kept is not None:
+            kept["trigger"]["gated"] = gate_reason
         return _finish(AutomationRun(**base, outcome="gated", reason=gate_reason))
 
     # 2 — conditions
@@ -2217,6 +2251,22 @@ def _walk_automation(
         fired = True
         details = list((resume.get("conditions_fired") or []))
         reason = str(resume.get("reason") or "")
+    elif replay is not None:
+        # TC-3 — re-read, not re-probed. The world the conditions read has moved on, so a
+        # replay takes the run's kept verdicts and decides them under THIS version's logic;
+        # what the trigger handed the chain is handed to it again below (`trigger` alias).
+        held = [v for v in (replay.get("conditions") or []) if isinstance(v, dict)]
+        verdicts_ = [bool(v.get("held")) for v in held]
+        fired = bool(verdicts_) and (any(verdicts_) if automation.condition_logic == "any"
+                                     else all(verdicts_))
+        details = [str(v.get("detail") or "") for v in held if v.get("held")]
+        if not fired:
+            quiet = "; ".join(str(v.get("detail") or "") for v in held if not v.get("held"))
+            return _finish(AutomationRun(
+                **base, outcome="not_fired",
+                reason="replay — nothing was sent; " + (quiet or "its conditions did not hold")))
+        trigger_data.update(dict(replay.get("data") or {}))
+        reason = "replay — nothing was sent"
     elif dry_run:
         # Described, not evaluated. The reason line carries BOTH facts a reader needs:
         # that nothing was sent, and what WOULD gate this today — so a preview of a
@@ -2229,15 +2279,20 @@ def _walk_automation(
         reason = "dry run — nothing was sent" + (f"; {gate_reason}" if gate_reason else "")
     else:
         try:
-            fired, details, reason = evaluate_conditions(automation, now=now, probe=probe,
-                                                         manual=manual, via=via,
-                                                         trigger_data=trigger_data)
+            fired, details, reason = evaluate_conditions(
+                automation, now=now, probe=probe, manual=manual, via=via,
+                trigger_data=trigger_data,
+                verdicts=kept["trigger"].setdefault("conditions", []) if kept is not None else None)
         except Exception as exc:
             logger.warning("automation %s condition evaluation failed: %s",
                            automation.id, exc)
+            if kept is not None:
+                kept["trigger"]["error"] = f"{type(exc).__name__}: {exc}"[:500]
             return _finish(AutomationRun(**base, outcome="error",
                                          reason="condition evaluation failed",
                                          error=f"{type(exc).__name__}: {exc}"))
+        if kept is not None:
+            kept["trigger"]["data"] = dict(trigger_data)
         if not fired:
             return _finish(AutomationRun(**base, outcome="not_fired", reason=reason))
 
@@ -2809,6 +2864,7 @@ def run_automation(
     run_id: Optional[str] = None,
     until_alias: Optional[str] = None,
     resume: Optional[dict] = None,
+    replay: Optional[dict] = None,
 ) -> AutomationRun:
     """Run one automation. The public door; :func:`_walk_automation` is the chain itself.
 
@@ -2843,7 +2899,7 @@ def run_automation(
             return _walk_automation(
                 automation, now=now, probe=probe, dispatch=dispatch, sleeper=sleeper, rng=rng,
                 persist=persist, dry_run=dry_run, manual=manual, via=via, run_id=run_id,
-                until_alias=until_alias, resume=resume)
+                until_alias=until_alias, resume=resume, replay=replay)
     finally:
         _CHAIN.reset(token)
 
