@@ -139,7 +139,8 @@ def test_the_cursor_pages_without_repeats_or_gaps_and_holds_as_events_arrive(cli
 
     first = client.get("/audit/feed", params=_window(day, limit=3)).json()
     assert _summaries(first["events"]) == whole[:3] and first["next_cursor"]
-    _tag(f"{day}T12:00:00.000000+00:00", "late")           # arrives between the pages, inside page 1's span
+    # A newer event arrives between the pages: an offset would now repeat a row on page two.
+    _tag(f"{day}T23:59:59.999500+00:00", "late")
     pages, cursor = list(first["events"]), first["next_cursor"]
     while cursor:
         page = client.get("/audit/feed", params=_window(day, limit=3, cursor=cursor)).json()
@@ -149,16 +150,31 @@ def test_the_cursor_pages_without_repeats_or_gaps_and_holds_as_events_arrive(cli
     assert got == whole, "a page repeated, skipped or moved when an event arrived"
 
 
+def test_a_block_behind_newer_allows_is_still_on_its_page(client, monkeypatch):
+    """The guardrail trail is mostly allows. Read by a window, the blocks are asked of the store:
+    a reader that took the newest rows and dropped the allows would find none, read as a sink with
+    nothing more, and the cursor would step past the block for good."""
+    monkeypatch.setenv(_ENV, "1")
+    day = "2001-07-03"
+    _guardrail(f"{day}T01:00:00.000000+00:00", blocked=True)
+    for hour in ("02", "03", "04"):
+        _guardrail(f"{day}T{hour}:00:00.000000+00:00", blocked=False)
+    page = client.get("/audit/feed", params=_window(day, category="enforcement", limit=1)).json()
+    assert _summaries(page["events"]) == ["guardrail tc5 blocked — tc5 seeded"]
+
+
 def test_a_boundary_second_is_cut_exactly_or_refused_by_name(client, monkeypatch):
     """A store is bounded to the second; the window is exact. Rows past `until` inside its
     second are read and dropped, and the sink is asked again until it yields what the page
     needs — or, past the read cap, the page is refused by name, never paged past rows unread."""
     monkeypatch.setenv(_ENV, "1")
     day = "2001-06-03"
-    _tag(f"{day}T10:00:00.700000+00:00", "late-a")
-    _tag(f"{day}T10:00:00.600000+00:00", "late-b")
-    inside = _tag(f"{day}T10:00:00.200000+00:00", "inside")
+    # Seeded in time order, as the journal writes them: a store returns its newest rows by seq.
     _metric_change(f"{day}T09:00:00.000000+00:00", "earlier")
+    inside = _tag(f"{day}T10:00:00.200000+00:00", "inside")
+    _tag(f"{day}T10:00:00.500000+00:00", "on-the-edge")      # exactly `until`: outside
+    _tag(f"{day}T10:00:00.600000+00:00", "late-b")
+    _tag(f"{day}T10:00:00.700000+00:00", "late-a")
     window = {"since": day, "until": f"{day}T10:00:00.500Z", "limit": 1}
 
     first = client.get("/audit/feed", params=window).json()
