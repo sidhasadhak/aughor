@@ -113,7 +113,8 @@ def review_decision(d: _dec.Decision, *, runner: Optional[Runner] = None, today:
     by = str((segment or {}).get("dimension") or "") or None
     part = str((segment or {}).get("value") or "")
     with (runner or _default_runner)(d.connection_id) as (run_sql, dialect):
-        rows, why = mt.run_measure(metric, windows, run_sql, dialect=dialect, by=by)
+        # a whole-statement metric is cut to the part and the rest of its group; an expression to every value
+        rows, why = mt.run_measure(metric, windows, run_sql, dialect=dialect, by=by, part=part or None)
     if why:
         return _outcome(d, today, "cannot_tell", f"the review could not measure {label}: {why}",
                         against_expectation="cannot_tell")

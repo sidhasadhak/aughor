@@ -275,6 +275,21 @@ def test_a_real_effect_on_the_part_is_measured_against_its_group(on, metric):
     assert o.verdict == "as_expected"
 
 
+def test_a_statement_metric_is_judged_against_its_group_too(on, metric):
+    """The Lux run of 2026-10-25: the metrics door accepts only whole SELECT statements now, and the review could cut
+    only an expression by a segment — so every decision's review on a metric defined today said cannot tell. The
+    same decision on the same business, with revenue written as a statement, reads the same comparison."""
+    conn = _conn()
+    metric["revenue"] = _revenue(conn, sql="SELECT SUM(amount) AS revenue FROM sales")
+    d = _declare(conn, expectation={"metric": "revenue", "direction": "up", "segment_dimension": "category",
+                                    "segment_value": "Jeans"})
+    o = D.outcome_by_id(RV.review_decision(d, runner=_shop(effect_on="Jeans", effect=0.20), today=TODAY))
+    assert o.effect.method == "comparison", o.why
+    assert 0.17 < o.effect.value / o.baseline < 0.23, o.why        # the +20% read as about +20%
+    assert o.verdict == "as_expected"
+    assert o.extra["segment"] == {"dimension": "category", "value": "Jeans"}
+
+
 def test_a_whole_metric_whose_band_drifts_one_way_says_cannot_tell(on, metric, monkeypatch):
     conn = _conn()
     metric["revenue"] = _revenue(conn)

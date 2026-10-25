@@ -509,11 +509,12 @@ def bound_outcome(expr, outcome: str, as_of: date):
 
 
 def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
-                by: Optional[str] = None) -> tuple[Optional[str], str]:
+                by: Optional[str] = None, part: Optional[str] = None) -> tuple[Optional[str], str]:
     """One statement measuring ``metric`` for every window — ``_w`` (the window's label),
     ``_g`` (the group, when ``by``), ``_v`` (the value), ``_first`` / ``_last`` (the first and
     last day its rows cover), ``_n`` (the rows behind it). ``(sql, "")`` or ``(None, why)``;
-    never raises."""
+    never raises. An expression grouped ``by`` a column yields every value of it; a whole
+    statement yields the named ``part`` and :data:`REST_GROUP`, and needs the part."""
     import sqlglot
     from sqlglot import exp
 
@@ -531,7 +532,7 @@ def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
     outcome = split_grain(_get(metric, "outcome_column"))[1]
     if is_statement(formula):
         return _measure_statement_sql(formula, kind, grain_table or (tables[0] if tables else ""),
-                                      time_col, until, outcome, windows, dialect=dialect, by=by)
+                                      time_col, until, outcome, windows, dialect=dialect, by=by, part=part)
     if not formula or not tables:
         return None, "its formula is not an aggregate over a named table"
     try:
@@ -579,27 +580,38 @@ def measure_sql(metric: Any, windows: list[Window], *, dialect: str = "duckdb",
         return None, f"its query could not be built ({type(exc).__name__})"
 
 
+#: The group a statement's review reads beside the named part: every other row of the grain table under the same
+#: window (the part's column another value, or empty). `scenario.comparison` sums every group that is not the part,
+#: so one "rest" group is the whole rest.
+REST_GROUP = "_rest"
+
+
 def _measure_statement_sql(statement: str, kind: str, grain_table: str, time_col: str, until: str,
                            outcome: str, windows: list[Window], *, dialect: str,
-                           by: Optional[str]) -> tuple[Optional[str], str]:
+                           by: Optional[str], part: Optional[str] = None) -> tuple[Optional[str], str]:
     """A STATEMENT measured for every window (2026-09-26): the table its grain names is
     replaced, inside the statement, by itself filtered to the window — so the statement's own
     arithmetic, CTEs and all, runs over one window's rows — and the statement stands as the
     ``_v`` scalar beside ``_first`` / ``_last`` / ``_n`` read from the grain table under the
-    same filter. The same five columns the expression path returns, so `run_measure` reads
-    both alike.
+    same filter. The same columns the expression path returns, so `run_measure` reads both alike.
 
-    What a statement cannot have: a segment (``by``) — the platform does not know where in
-    a whole query a group would go — and, for a stock, a level at a PAST date when the
-    statement itself tests its until column (the platform never rewrites what a statement
-    says; the grain's filter still bounds the rows). Both are said, never approximated."""
+    A segment (``by``) cuts a statement only with its ``part`` named (2026-10-26): the platform
+    does not know where in a whole query a GROUP BY would go, but it can filter the grain table to
+    the part — ``by = part`` — and to the rest of its group, and run the statement's own
+    arithmetic over each. Two rows per window, ``_g`` the part and :data:`REST_GROUP`, which is
+    what a decision's review compares (`record/reviews`). The part's column must be a column of
+    the grain table; one that is not fails the query, and the failure is said. A segment with no
+    part is still refused by name: the expression path groups every value, a statement cannot.
+    For a stock, a level at a PAST date when the statement itself tests its until column is
+    refused too (the platform never rewrites what a statement says; the grain's filter still
+    bounds the rows)."""
     import sqlglot
     from sqlglot import exp
 
     from aughor.semantic.metric_statement import scoped_statement
 
-    if by:
-        return None, "a whole query cannot be cut by a segment — its segments are its own"
+    if by and not part:
+        return None, f"a whole query is cut by a segment only when its part is named — which {by}"
     if not grain_table:
         return None, "its date names no table and its definition names none"
     if not time_col:
@@ -621,28 +633,42 @@ def _measure_statement_sql(statement: str, kind: str, grain_table: str, time_col
             if not outcome:
                 return None, "a cohort needs the column that completes it"
             rewrite = (lambda tree, _as_of=w.as_of: bound_outcome(tree, outcome, _as_of))
-        scoped, why, _n = scoped_statement(statement, grain_table, when, dialect=dialect, rewrite=rewrite)
-        if scoped is None:
-            return None, why
-        try:
-            inner = sqlglot.parse_one(scoped, read=dialect)
-        except Exception:  # noqa: BLE001
-            return None, "its scoped statement does not parse"
-        rows = (exp.select(exp.alias_(exp.Min(this=day.copy()), "_first"),
-                           exp.alias_(exp.Max(this=day.copy()), "_last"),
-                           exp.alias_(exp.Count(this=exp.Star()), "_n"))
-                .from_(_table(grain_table, dialect)).where(when.copy()))
-        q = exp.select(
-            exp.alias_(exp.Literal.string(w.label), "_w"),
-            exp.alias_(exp.Subquery(this=inner), "_v"),
-            exp.alias_(exp.Subquery(this=exp.select(exp.column("_first")).from_(
-                exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_first"),
-            exp.alias_(exp.Subquery(this=exp.select(exp.column("_last")).from_(
-                exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_last"),
-            exp.alias_(exp.Subquery(this=exp.select(exp.column("_n")).from_(
-                exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_n"),
-        )
-        selects.append(q)
+        if by:
+            # the part, and the rest of its group — the column another value, or empty
+            col, lit = exp.column(by), exp.Literal.string(str(part))
+            groups = [
+                (str(part), exp.and_(when.copy(), exp.EQ(this=col.copy(), expression=lit.copy()))),
+                (REST_GROUP, exp.and_(when.copy(), exp.paren(exp.or_(
+                    exp.NEQ(this=col.copy(), expression=lit.copy()),
+                    exp.Is(this=col.copy(), expression=exp.Null()))))),
+            ]
+        else:
+            groups = [(None, when)]
+        for group, predicate in groups:
+            scoped, why, _n = scoped_statement(statement, grain_table, predicate, dialect=dialect, rewrite=rewrite)
+            if scoped is None:
+                return None, why
+            try:
+                inner = sqlglot.parse_one(scoped, read=dialect)
+            except Exception:  # noqa: BLE001
+                return None, "its scoped statement does not parse"
+            rows = (exp.select(exp.alias_(exp.Min(this=day.copy()), "_first"),
+                               exp.alias_(exp.Max(this=day.copy()), "_last"),
+                               exp.alias_(exp.Count(this=exp.Star()), "_n"))
+                    .from_(_table(grain_table, dialect)).where(predicate.copy()))
+            cols = [exp.alias_(exp.Literal.string(w.label), "_w")]
+            if by:
+                cols.append(exp.alias_(exp.Literal.string(str(group)), "_g"))
+            cols += [
+                exp.alias_(exp.Subquery(this=inner), "_v"),
+                exp.alias_(exp.Subquery(this=exp.select(exp.column("_first")).from_(
+                    exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_first"),
+                exp.alias_(exp.Subquery(this=exp.select(exp.column("_last")).from_(
+                    exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_last"),
+                exp.alias_(exp.Subquery(this=exp.select(exp.column("_n")).from_(
+                    exp.Subquery(this=rows.copy(), alias=exp.TableAlias(this=exp.to_identifier("_r"))))), "_n"),
+            ]
+            selects.append(exp.select(*cols))
     try:
         stmt = reduce(lambda a, b: exp.union(a, b, distinct=False), selects)
         return stmt.sql(dialect=dialect), ""
@@ -676,10 +702,11 @@ def _as_date(v) -> Optional[date]:
 
 
 def run_measure(metric: Any, windows: list[Window], run_sql: RunSql, *, dialect: str = "duckdb",
-                by: Optional[str] = None) -> tuple[list[dict], str]:
+                by: Optional[str] = None, part: Optional[str] = None) -> tuple[list[dict], str]:
     """Measure ``metric`` for every window. ``([{"window", "group", "value", "first", "last",
-    "n"}], "")`` or ``([], why)`` — a failed query is said with its error, never read as zero."""
-    sql, why = measure_sql(metric, windows, dialect=dialect, by=by)
+    "n"}], "")`` or ``([], why)`` — a failed query is said with its error, never read as zero.
+    ``part`` names the one group a whole statement is cut to, beside the rest (`measure_sql`)."""
+    sql, why = measure_sql(metric, windows, dialect=dialect, by=by, part=part)
     if sql is None:
         return [], why
     try:

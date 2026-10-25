@@ -144,8 +144,29 @@ def test_a_cohort_statement_takes_the_as_of_bound_like_its_expression(con):
     assert round(_values(expr)["current"][0], 4) == round(1 / 3, 4) == round(_values(stmt)["current"][0], 4)
 
 
+def test_a_statement_is_cut_to_a_named_part_and_the_rest_of_its_group(con):
+    """The Lux run of 2026-10-25: every metric defined today is a whole SELECT, and every decision's review said
+    cannot tell — "a whole query cannot be cut by a segment". A statement is cut to the part and to the rest by
+    filtering its grain table, so its own arithmetic (the CTE's Cancelled filter included) runs over each."""
+    run = _runner(con)
+    rows, why = mt.run_measure(REVENUE_STMT, WINDOWS, run, by="status", part="Complete")
+    assert why == ""
+    got = {(r["window"], r["group"]): r for r in rows}
+    assert set(got) == {("current", "Complete"), ("current", mt.REST_GROUP),
+                        ("previous", "Complete"), ("previous", mt.REST_GROUP)}
+    assert got[("current", "Complete")]["value"] == 100.0           # row 1; row 7 is the day after the range
+    assert got[("current", mt.REST_GROUP)]["value"] == 80.0         # rows 2 + 3; row 4 is Cancelled, cut by the CTE
+    assert got[("current", "Complete")]["n"] == 1                    # the grain rows behind the part
+    assert got[("current", mt.REST_GROUP)]["n"] == 3                 # rows 2, 3, 4 — the grain under the window
+    assert got[("previous", "Complete")]["value"] is None            # no Complete row 7–17 Aug: no figure, not zero
+    assert got[("previous", mt.REST_GROUP)]["value"] == 60.0         # row 6 alone
+    whole, _ = mt.run_measure(REVENUE_STMT, WINDOWS, run)
+    assert {r["window"]: r["value"] for r in whole}["current"] == 180.0 == 100.0 + 80.0   # the parts add up to the whole
+
+
 def test_what_a_statement_cannot_have_is_said(con):
-    assert mt.measure_sql(REVENUE_STMT, WINDOWS, by="status") == (None, "a whole query cannot be cut by a segment — its segments are its own")
+    assert mt.measure_sql(REVENUE_STMT, WINDOWS, by="status") == \
+        (None, "a whole query is cut by a segment only when its part is named — which status")
     sql, why = mt.measure_sql({**REVENUE_STMT, "time_column": "customers.created_at"}, WINDOWS)
     assert sql is None and "does not read customers" in why
     sql, why = mt.measure_sql({**REVENUE_STMT, "time_column": "created_at"}, WINDOWS)
