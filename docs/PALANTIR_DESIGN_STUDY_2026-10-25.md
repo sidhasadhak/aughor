@@ -369,7 +369,10 @@ pair in the accent, the property's inspector beside it — Ontology Manager's sc
 edges on by default · 4 = all three pieces built, the mapping picture included. **Built the same night:** the tokens
 (§10.3's table, as decided), the seams, the icon squares (monochrome, by the column-type mark's own reason), and the
 mapping picture in the Sources tab — proven live on the scratch pair's demo ontology, which the schema builder makes
-without a model.
+without a model. **Calls 5 and 6 closed the same night** (the user: *"Close the two open items as well"*): the dense
+table's row measured 36 px against Blueprint's compact 30 while nav rows (28) and buttons (25) were already under it, so
+one variable took the row to 30 px — no density knob, scaling stays the one knob for size; and the entity-uses door read
+live on the demo ontology, one audited statement counted in its month and no dependent, both said.
 
 1. **Light ground**: L3 (`gray-3` ground, `gray-2` rail, `gray-3` controls), or L4 (white rail)? — *Recommended: L3.*
 2. **Dark**: D4 (one step up, lines a step stronger, edges on by default), or D3 (the whole skin lifted)? —

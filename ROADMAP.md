@@ -14522,6 +14522,15 @@ the browser** · **measure the premise before building.**
       property's facts beneath, every absence said (a column not read, a property computed or read elsewhere, a
       binding that reads a query, columns that could not be read). Proven live on the scratch pair's demo ontology,
       built from the schema with no model: 7 of 7 properties of Customer drawn from main.customers.*
+    - **(6), closed 2026-10-25 night, at the user's "Close the two open items as well".** *Blueprint's 30px rows*:
+      measured first — at 100 % the dense table's row was 36 px (Radix's size-1 minimum), the rail's nav row 28 px and a
+      size-1 button 25 px, both already under Blueprint's 30; so the one place the product was looser than Blueprint's
+      compact was the table row. One variable on the dense table and the ledger (`--table-cell-min-height: 30px ×
+      scaling`, `app/globals.css`): the row is 30 px at 100 %, 28.5 at the preset's 95 %; a two-line cell keeps its
+      own height. No new knob — scaling stays the one knob for size (2026-10-06). *The entity-uses door proven live*:
+      on the scratch pair's demo ontology with `ontology.entity_usage` on, Customer's Overview read the door — no
+      dependent (said), twelve months of reads with one in October 2026 after one audited statement through the SQL
+      editor; the builder's own schema reads are not audited and do not count, which the count says by its source.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

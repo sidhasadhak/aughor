@@ -691,5 +691,6 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     and half light (ROADMAP §4.11); the commit was dropped unmerged.* *Evening: **depth** decided (study §10) — L3 light ·
     D4 dark · all three pieces; the tokens built (ground · surface · control · lines, edges on by default in dark); the
     seams, the icon squares and the Sources-tab mapping picture built the same night and proven live on the scratch
-    pair's demo ontology.* Owed: Blueprint's 30px rows beyond scaling; the entity-uses door proven live on a connection
-    with an ontology (the scratch's demo ontology now exists — the next session can).
+    pair's demo ontology.* *Night: the last two closed — the dense table's row 36 → 30 px (one variable, measured; nav rows
+    and buttons were already under 30), and the entity-uses door proven live on the scratch's demo ontology (one audited
+    read counted in October 2026; no dependents, said).* Nothing owed from the look study.

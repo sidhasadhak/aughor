@@ -81,6 +81,7 @@ it ships:
 | Regions with a shaded or raised style (a tinted panel, a shadow) | **1** per screen |
 | Header and tab rows that scroll away | **0** — the header and its tabs stay; only content scrolls |
 | A control's hit target where a section scrolls | **≥ 30 px** |
+| A dense table's row at 100 % (the ledger's too) — the compact row of an operations console, one variable in `app/globals.css` | **30 px** |
 
 Filters stand in the left column, the figures above the list, the detail to the right of it (§3's order and
 `cockpit-from-object.html`); a sideways scroll is a column to fit, never a scrollbar.
