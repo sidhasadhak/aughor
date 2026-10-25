@@ -427,7 +427,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                      objective: str = "", connection_id: str = "", decided_at: str = "",
                      decided_by: str = "", review_on: str = "", expectation: Optional[dict] = None,
                      note: str = "", finding_id: str = "", schema_name: str = "", run_id: str = "",
-                     figure: Optional[dict] = None, kind: str = "") -> str:
+                     figure: Optional[dict] = None, kind: str = "", revises: str = "") -> str:
     """A decision taken elsewhere, declared in its own words. Refuses a relied-on id that is not a
     claim (a decision cites what the Record holds, never a loose string). With the decision loop on, the server cites
     what the decision was taken on: an Explorer finding's claim (``finding_id``), the claims a run's receipt booked
@@ -437,6 +437,12 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         raise ValueError("a decision states what was being decided")
     if not (chosen or "").strip():
         raise ValueError("a decision names what was chosen")
+    revised = None
+    if (revises or "").strip():
+        # a modifying decision names the decision it changes; the thread reads backwards to it (study §3.1)
+        revised = _dec.get_decision(revises.strip())
+        if revised is None:
+            raise ValueError(f"{revises!r} is not a decision in the Record; a decision revises one it can name")
     declared_kind = None
     if (kind or "").strip():
         # a decision of a declared kind keeps its kind's rules at the door (the decision-framework study §3.1)
@@ -488,6 +494,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                **({"finding_id": finding_id} if finding_id and _dec.loop_on() else {}),
                **({"run_id": run_id} if run_id and _dec.loop_on() else {}),
                **({"figure": dict(figure)} if figure and _dec.loop_on() else {}),
+               **({"revises": revised.id} if revised is not None else {}),
                **({"relied_on_note": finding_note} if finding_note else {})},
     )
     return _dec.book_decision(decision, expectation=expectation_from(expectation), author=decided_by)

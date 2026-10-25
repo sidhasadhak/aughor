@@ -15378,6 +15378,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/thread/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Record Thread
+         * @description The thread of a decision — where it arose, what it stood on, its options, who decided and approved, what ran
+         *     under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
+         *     what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
+         *     relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked.
+         */
+        get: operations["read_record_thread_record_thread__ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/you": {
         parameters: {
             query?: never;
@@ -18104,6 +18127,11 @@ export interface components {
              * @default
              */
             review_on: string;
+            /**
+             * Revises
+             * @default
+             */
+            revises: string;
             /**
              * Run Id
              * @default
@@ -49511,6 +49539,39 @@ export interface operations {
                 "application/json": components["schemas"]["aughor__routers__record__RestoreRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_record_thread_record_thread__ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

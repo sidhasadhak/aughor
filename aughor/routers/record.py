@@ -252,6 +252,8 @@ class DeclareDecisionRequest(BaseModel):
     figure: Optional[FigureIn] = None
     # The declared kind of decision it is (`record/kinds.py`): its rules hold at the door.
     kind: str = ""
+    # The decision it changes — a modifying decision (study §3.1); the thread reads backwards to it.
+    revises: str = ""
 
 
 class OutcomeIn(BaseModel):
@@ -317,7 +319,7 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
             decided_by=who, review_on=req.review_on,
             expectation=req.expectation.model_dump() if req.expectation else None, note=req.note,
             finding_id=req.finding_id, schema_name=req.schema_name, run_id=req.run_id,
-            figure=req.figure.model_dump() if req.figure else None, kind=req.kind)
+            figure=req.figure.model_dump() if req.figure else None, kind=req.kind, revises=req.revises)
     except (ValueError, C.ClaimRefused) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return get_record_decision(did)
@@ -371,6 +373,19 @@ def list_mission_proposals(mission_id: str) -> dict:
     reports = M.reports_for(m)
     latest = reports[0] if reports else None      # the objective's baseline, as the last report measured it
     return {"mission": m.id, "proposals": proposals_for(m, report=latest), "from_report": (latest or {}).get("id") or ""}
+
+
+@router.get("/record/thread/{ref}")
+def read_record_thread(ref: str) -> dict:
+    """The thread of a decision — where it arose, what it stood on, its options, who decided and approved, what ran
+    under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
+    what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
+    relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked."""
+    from aughor.record.thread import thread_of
+    t = thread_of(ref)
+    if t is None or not _visible(t.get("connection_id") or ""):
+        raise HTTPException(status_code=404, detail="No decision reads from that reference")
+    return t
 
 
 class AmendDecisionRequest(BaseModel):

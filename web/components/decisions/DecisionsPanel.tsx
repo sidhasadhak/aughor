@@ -18,10 +18,12 @@ import { useMemo, useState } from "react";
 import type { Connection } from "@/lib/api";
 import { countNoun, formatCount, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
+import { requestTab } from "@/lib/navigate";
 import {
   amendDecision, bookOutcome, bookScenario, declareDecision, declareDecisionKind, decisionStands, getCalibration, getDecision,
-  getPastCases, listDecisionKinds, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
+  getPastCases, getThread, listDecisionKinds, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
   type CalibrationRow, type Claim, type Decision, type DecisionDetail, type DecisionKind, type OutcomeVerdict, type Scenario,
+  type ThreadLink, type ThreadStep,
   type ScenarioBody,
 } from "@/lib/record";
 import {
@@ -319,10 +321,13 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
 const num = (v: string): number | null => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
 /** "We decided this elsewhere" — the question, what was chosen, and the expectation booked with it. */
-function DeclareForm({ connectionId, onBooked, onCancel }: {
+function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQuestion = "" }: {
   connectionId: string; onBooked: (d: DecisionDetail) => void; onCancel: () => void;
+  /** The decision this one changes — a modifying decision; its thread reads backwards to it (study §3.1). */
+  revises?: string;
+  initialQuestion?: string;
 }) {
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion);
   const [chosen, setChosen] = useState("");
   const [others, setOthers] = useState("");
   const [metric, setMetric] = useState("");
@@ -346,6 +351,7 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
       const d = await declareDecision({
         question: question.trim(), chosen: chosen.trim(), options, connection_id: connectionId, review_on: reviewOn,
         decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined, ...(kind ? { kind } : {}),
+        ...(revises ? { revises } : {}),
         expectation: metric.trim()
           ? { metric: metric.trim(), low: lo, high: hi, mid: lo !== null && hi !== null ? (lo + hi) / 2 : null, unit: unit.trim(), settles_on: reviewOn }
           : null,
@@ -358,7 +364,7 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
     }
   };
   return (
-    <Section label="Record a decision">
+    <Section label={revises ? "Revise this decision" : "Record a decision"}>
       <div className="aug-form-grid">
         <label className="aug-fs-sm" htmlFor="dec-q">What was being decided</label>
         <Input id="dec-q" value={question} onChange={e => setQuestion(e.target.value)} placeholder="Do we extend the promotion by two weeks?" />
@@ -455,6 +461,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   const [option, setOption] = useState("");
   const [dissentWho, setDissentWho] = useState("");
   const [dissentWhy, setDissentWhy] = useState("");
+  const [revising, setRevising] = useState(false);
   const [standsWhy, setStandsWhy] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -500,6 +507,14 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   );
   return (
     <Page rail={rail}>
+      {revising ? (
+        <DeclareForm connectionId={d.connection_id} revises={d.id} initialQuestion={d.question}
+          onCancel={() => setRevising(false)} onBooked={next => { setRevising(false); requestTab("decisions", { id: next.id }); }} />
+      ) : current && (
+        <div style={{ marginBottom: 12 }}>
+          <Button size="xs" variant="secondary" onClick={() => setRevising(true)}>Revise this decision</Button>
+        </div>
+      )}
       {d.superseded_by && (
         <Callout tone="amber" style={{ marginBottom: 16 }}>
           <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is the decision as first booked; it has been restated since. </span>
@@ -654,7 +669,76 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
           </Absent>
         )}
       </Section>
+      <ThreadSection id={d.id} version={d.version} />
     </Page>
+  );
+}
+
+// ── the thread: where it arose to what was learned (the decision-framework study §3.1, §3.3) ─────────────
+
+/** The decision read as one thread, stage by stage — each step a line, its why in a sentence, and its receipt
+ *  behind a click — with its loops, what it revises and what revised it. Composed by code from the Record. */
+export function ThreadSection({ id, version }: { id: string; version: number }) {
+  const load = useLoad(() => getThread(id), [id, version]);
+  return (
+    <Section label="From where it arose to what was learned" meta="read forwards and backwards">
+      <Gate load={load} what="the thread">
+        {t => (
+          <div data-testid="decision-thread">
+            {t.backwards.map(l => <LinkRow key={`b:${l.decision}`} l={l} />)}
+            {t.stages.map(st => (
+              <div key={st.stage} style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
+                borderTop: "1px solid var(--b1)" }}>
+                <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{st.words}</span>
+                <div>{st.steps.map((s, i) => <StepRow key={`${st.stage}:${s.ref || s.kind}:${i}`} s={s} />)}</div>
+              </div>
+            ))}
+            {t.loops.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
+                borderTop: "1px solid var(--b1)" }}>
+                <span className="aug-fs-sm" style={{ color: "var(--amb4)" }}>Loops</span>
+                <div>{t.loops.map((s, i) => <StepRow key={`loop:${i}`} s={s} />)}</div>
+              </div>
+            )}
+            {t.forwards.map(l => <LinkRow key={`f:${l.decision}`} l={l} />)}
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6 }}>Composed by {t.composed_by}.</div>
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+function StepRow({ s }: { s: ThreadStep }) {
+  const [open, setOpen] = useState(false);
+  const receipt = Object.entries(s.receipt);
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div className="aug-fs-ui" style={{ color: "var(--t1)", display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span>{s.line}</span>
+        {s.at && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{day(s.at)}</span>}
+        {receipt.length > 0 && (
+          <Button size="xs" variant="ghost" onClick={() => setOpen(v => !v)}>{open ? "Hide the receipt" : "Receipt"}</Button>
+        )}
+      </div>
+      {s.why && <div className="aug-fs-sm" style={{ color: "var(--t2)", maxWidth: "78ch" }}>{plainWho(s.why)}</div>}
+      {open && (
+        <div className="aug-fs-xs" data-testid="thread-receipt" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
+          {receipt.map(([k, v]) => <div key={k}>{`${k.replace(/_/g, " ")}: ${Array.isArray(v) ? v.join(", ") : String(v)}`}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinkRow({ l }: { l: ThreadLink }) {
+  return (
+    <div className="aug-item-foot aug-fs-sm" style={{ padding: "6px 0" }}>
+      <span style={{ color: "var(--t3)" }}>{l.why}:</span>
+      <span style={{ color: "var(--t1)" }}>{`${l.question} → ${l.chosen}`}</span>
+      <span>{day(l.decided_at)}</span>
+      <Button size="xs" variant="link" onClick={() => requestTab("decisions", { id: l.decision })}>Open it →</Button>
+    </div>
   );
 }
 

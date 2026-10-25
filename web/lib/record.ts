@@ -577,6 +577,19 @@ export const listMissionProposals = (missionId: string) =>
   read<{ mission: string; proposals: MissionProposal[]; from_report: string }>(
     `/record/missions/${encodeURIComponent(missionId)}/proposals`);
 
+/** One step of a decision's thread: its why in three layers — a line, a sentence, and the receipt — composed by code. */
+export interface ThreadStep {
+  kind: string; line: string; why: string; receipt: Record<string, unknown>; at: string; ref: string;
+}
+export interface ThreadLink { decision: string; question: string; chosen: string; decided_at: string; why: string }
+/** A decision read from where it arose to what was learned, forwards and backwards (the decision-framework study §3.1). */
+export interface DecisionThread {
+  decision: string; question: string; connection_id: string;
+  stages: { stage: string; words: string; steps: ThreadStep[] }[];
+  loops: ThreadStep[]; backwards: ThreadLink[]; forwards: ThreadLink[]; composed_by: string;
+}
+export const getThread = (ref: string) => read<DecisionThread>(`/record/thread/${encodeURIComponent(ref)}`);
+
 export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(
     `/record/missions/templates${qs({ connection_id: connectionId })}`);
