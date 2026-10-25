@@ -269,7 +269,8 @@ def test_the_heartbeat_reports_the_missions_whose_date_has_come(monkeypatch):
     due = M.write_mission(_mission(conn, review=M.Review(cadence="weekly", next_report_on="2026-10-01")), by="user:ana")
     M.write_mission(_mission(conn, name="Later " + uuid.uuid4().hex[:4],
                              review=M.Review(cadence="weekly", next_report_on="2099-01-01")), by="user:ana")
-    assert [x.id for x in M.due_reports(NOW)] == [due.id]
+    # the ledger is shared across the suite: the missions due are read on this test's own connection
+    assert [x.id for x in M.due_reports(NOW) if conn in x.scope.connections] == [due.id]
     import aughor.rbac.routing as routing
     monkeypatch.setattr(routing, "route", lambda securable, **kw: [])
     import aughor.db.measure as measure

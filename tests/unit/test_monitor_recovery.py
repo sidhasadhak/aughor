@@ -330,7 +330,7 @@ def test_a_missions_watch_counts_the_alerts_that_fired_not_their_recovery(heartb
     conn = heartbeat.watch.conn_id
     m = M.write_mission(M.Mission(
         name="Keep units up " + uuid.uuid4().hex[:4], objective=M.Objective(metric="units", direction="up", spec=None),
-        scope=M.Scope(connections=[conn]), owner="user:ana", review=M.Review(cadence="weekly"), state="active",
+        scope=M.Scope(connections=[conn]), owner="user:ana", review=M.Review(cadence="weekly", next_report_on="2099-01-01"), state="active",
         watches=[M.Watch(kind="monitor", ref=heartbeat.watch.id, label="units")]), by="user:ana")
     report = M.compose_report(m, run_sql_for=lambda c: (lambda sql: []), now=datetime.now(timezone.utc) + timedelta(hours=1))
     assert report["watches"][0]["state"] == "fired 1 time this period"
