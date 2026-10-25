@@ -119,10 +119,29 @@ CREATE TABLE IF NOT EXISTS automation_layouts (
     PRIMARY KEY (automation_id, user_id)
 );
 
+-- TC-3: what a run kept beside its row — the version of the definition it ran under and
+-- the trigger that started it, as received. A sidecar keyed by run id, for `probe_state`'s
+-- reason: written only while `automations.versions` is on, so with it off the run row, the
+-- model and every response that serialises one stay what they were. `version` is NULL when
+-- none was kept, and `why_not` then says why — a missing version is said, never implied.
+CREATE TABLE IF NOT EXISTS automation_run_stamps (
+    run_id         TEXT PRIMARY KEY,
+    automation_id  TEXT NOT NULL,
+    conn_id        TEXT NOT NULL DEFAULT '',
+    version        INTEGER,
+    version_id     TEXT NOT NULL DEFAULT '',
+    why_not        TEXT NOT NULL DEFAULT '',
+    trigger        TEXT NOT NULL DEFAULT '{}',
+    trigger_bytes  INTEGER NOT NULL DEFAULT 0,
+    trigger_capped INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_auto_conn      ON automations (conn_id);
 CREATE INDEX IF NOT EXISTS idx_runs_automation ON automation_runs (automation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_conn       ON automation_runs (conn_id);
 CREATE INDEX IF NOT EXISTS idx_runs_time       ON automation_runs (started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stamps_automation ON automation_run_stamps (automation_id);
 """
 
 # Base DDL is conceptually v1; every later additive change is a versioned step (DATA-05).
@@ -395,6 +414,12 @@ def upsert_automation(automation: Automation) -> Automation:
     if not automation.created_at:
         automation = automation.model_copy(update={"created_at": now})
     automation = automation.model_copy(update={"updated_at": now})
+    # TC-3 — with `automations.versions` on, the definition is kept as a version BEFORE the
+    # row is replaced, and the one it replaces is kept first if nothing kept it yet. Before
+    # the row, so the store never holds a definition whose version was not kept: a save
+    # that cannot keep its version is refused (`VersionNotKept`). Off, this reads nothing.
+    from aughor.automations.versions import keep_automation_version
+    keep_automation_version(automation)
 
     with _LOCK:
         conn = _connect()
@@ -467,6 +492,10 @@ def delete_automation(automation_id: str) -> bool:
         try:
             cur = conn.execute("DELETE FROM automations WHERE id = ?", (automation_id,))
             conn.execute("DELETE FROM automation_runs WHERE automation_id = ?", (automation_id,))
+            # TC-3 — a run's stamp goes with the run it describes. The automation's VERSIONS
+            # stay in the ledger (supersede, never delete); a connection removal takes them.
+            conn.execute("DELETE FROM automation_run_stamps WHERE automation_id = ?",
+                         (automation_id,))
             conn.execute("DELETE FROM probe_state WHERE automation_id = ?", (automation_id,))
             # The arrangement goes with the thing it arranged — otherwise a new automation
             # that reused the id would open onto a stranger's layout.
@@ -548,8 +577,8 @@ def pause_automation(automation_id: str, until_iso: Optional[str]) -> Optional[A
 
 
 def purge_connection(conn_id: str) -> int:
-    """Delete every automation, run, and probe baseline for a connection (catalog-delete
-    cascade). Returns the total rows removed across the three tables. Probe state goes first —
+    """Delete every automation, run, run stamp and probe baseline for a connection (catalog-delete
+    cascade). Returns the total rows removed across the four tables. Probe state goes first —
     it is keyed by automation_id, so it must be resolved while the automations rows still exist."""
     with _LOCK:
         conn = _connect()
@@ -559,6 +588,8 @@ def purge_connection(conn_id: str) -> int:
                 "(SELECT id FROM automations WHERE conn_id = ?)", (conn_id,)).rowcount
             n += conn.execute("DELETE FROM automations WHERE conn_id = ?", (conn_id,)).rowcount
             n += conn.execute("DELETE FROM automation_runs WHERE conn_id = ?", (conn_id,)).rowcount
+            n += conn.execute("DELETE FROM automation_run_stamps WHERE conn_id = ?",
+                              (conn_id,)).rowcount
             conn.commit()
             return n
         finally:
@@ -791,6 +822,75 @@ def paused_runs(conn_id: Optional[str] = None, limit: int = 100) -> list[Automat
         finally:
             conn.close()
     return [_row_to_run(r) for r in rows]
+
+
+# ── Run stamps (TC-3) ─────────────────────────────────────────────────────────
+
+def _row_to_stamp(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    try:
+        d["trigger"] = json.loads(d.get("trigger") or "{}")
+    except (TypeError, ValueError):
+        # A stamp whose payload cannot be read is a payload that was not kept, and the
+        # replay refuses it by that name rather than walking a chain on nothing.
+        d["trigger"] = {}
+        d["trigger_capped"] = 1
+    d["trigger_capped"] = bool(d.get("trigger_capped"))
+    return d
+
+
+def put_run_stamp(*, run_id: str, automation_id: str, conn_id: str = "",
+                  version: Optional[int], version_id: str = "", why_not: str = "",
+                  trigger: dict, trigger_bytes: int = 0, trigger_capped: bool = False) -> None:
+    """Keep what one run ran under. First write wins (``INSERT OR IGNORE``), like the run
+    row itself: a resumed run is the same run, and its stamp is the one its first walk kept."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO automation_run_stamps (
+                    run_id, automation_id, conn_id, version, version_id, why_not,
+                    trigger, trigger_bytes, trigger_capped, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (run_id, automation_id, conn_id or "", version, version_id or "", why_not or "",
+                  json.dumps(trigger or {}, default=str), int(trigger_bytes),
+                  int(bool(trigger_capped)), now_iso_z()))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_run_stamp(run_id: str) -> Optional[dict]:
+    """The stamp one run kept, or None when it kept none (it ran while versions were off)."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT * FROM automation_run_stamps WHERE run_id = ?",
+                               (run_id,)).fetchone()
+        finally:
+            conn.close()
+    return _row_to_stamp(row) if row else None
+
+
+def get_run_stamps(run_ids: Sequence[str]) -> dict[str, dict]:
+    """Stamps for many runs at once, by run id — one query for a run list, not one per row."""
+    ids = [str(r) for r in run_ids if r]
+    if not ids:
+        return {}
+    out: dict[str, dict] = {}
+    with _LOCK:
+        conn = _connect()
+        try:
+            for i in range(0, len(ids), 500):
+                batch = ids[i:i + 500]
+                rows = conn.execute(
+                    f"SELECT * FROM automation_run_stamps WHERE run_id IN "
+                    f"({', '.join('?' * len(batch))})", batch).fetchall()
+                for r in rows:
+                    out[str(r["run_id"])] = _row_to_stamp(r)
+        finally:
+            conn.close()
+    return out
 
 
 # ── Probe baselines (A3) ──────────────────────────────────────────────────────

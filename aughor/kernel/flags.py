@@ -211,6 +211,12 @@ FLAG_ENV = {
     # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
     # misses one way). OFF: decisions are booked, reviewed and scored as before.
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # Arc TC, TC-3 (ROADMAP §3.59, 2026-10-26). ON: every save of an automation or a monitor keeps the definition it
+    # replaces as a numbered version in the ledger (superseded, never deleted) with who saved it and when; every
+    # recorded run keeps beside its row the version it ran under and its trigger as received (the payload capped at
+    # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
+    # replaces the definition, runs keep neither, and the version and replay doors answer 404.
+    "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -664,6 +670,17 @@ FLAG_META = {
                        "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
                        "decisions are kept and reviewed as before.",
     },
+    "automations.versions": {
+        "label": "Versions and replays for automations",
+        "summary": "Each save of an automation or a monitor keeps the one before it as a version. Each run "
+                   "names its version and keeps what started it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Nothing is deleted"}],
+        "description": "A version says who saved it and when. A run keeps what started it, up to 16 KB, and says "
+                       "when it kept less. A past run can be replayed: its own version walks what started it, and "
+                       "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
+                       "keeps neither.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -1029,6 +1046,12 @@ EXPERIMENT: dict = {
     "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",
+    # Arc TC, TC-3 (ROADMAP §3.59), 2026-10-26. It keeps more of every save and every run, so it is watched before it
+    # graduates.
+    "automations.versions": "is a past run replayed or an earlier version read — within four weeks, is one in three or "
+                            "more of the automations changed in that time opened at a version or a replay? Falsifier "
+                            "(§3.59, TC-3): a replay sends a message, runs an action, calls a model or writes a run — "
+                            "stop",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",

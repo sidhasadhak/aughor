@@ -233,6 +233,57 @@ def all_runs(conn_id: Optional[str] = None, limit: int = 100):
                      for r in get_runs(conn_id=conn_id, limit=min(int(limit), 500))]}
 
 
+# ── TC-3 · versions, and a run's version and trigger ───────────────────────────
+#
+# Each 404s while `automations.versions` is off, so the surface is what it was. Declared before
+# `/automations/{automation_id}` with the other static `runs` route (FastAPI matches in order).
+
+def _versions_on() -> None:
+    from aughor.automations.versions import keeping
+    if not keeping():
+        raise HTTPException(status_code=404,
+                            detail="versions need the 'automations.versions' flag")
+
+
+def _owned_run(run_id: str, request: Request):
+    """The run, or 404; and 403 when its connection is another organisation's."""
+    from aughor.security.authz import check_owner, get_principal
+    run = get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="no such run")
+    if run.conn_id:
+        check_owner("connection", run.conn_id, get_principal(request))
+    return run
+
+
+@router.get("/automations/runs/{run_id}/version")
+def run_version(run_id: str, request: Request):
+    """The version this run ran under and the trigger that started it, as kept — the tick, who
+    asked, each condition's verdict and the payload a trigger handed the chain (capped, and the
+    cap said). A run that kept neither says so, and says whether it can be replayed and why not."""
+    _versions_on()
+    from aughor.automations.versions import stamp_view
+    return stamp_view(_owned_run(run_id, request))
+
+
+@router.post("/automations/runs/{run_id}/replay")
+def replay_run(run_id: str, request: Request):
+    """Walk a past run again as a dry run: its own version against its kept trigger.
+
+    Nothing is sent, no action runs, no model is called and nothing is written — the B2 dry-run
+    seam, handed the run's version and trigger. Refused with 409, by name, when the run's version
+    or its trigger payload was not kept. Returns the same ``{run, graph}`` a dry run returns."""
+    _versions_on()
+    from aughor.automations.versions import NotReplayable, replay
+    run = _owned_run(run_id, request)
+    try:
+        automation, dry, version = replay(run)
+    except NotReplayable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"replay_of": run_id, "version": version, "run": dry.model_dump(),
+            "graph": {**build_graph(automation, dry), "dry_run": True}}
+
+
 @router.post("/automations/propose")
 def propose(body: ProposeRequest):
     """DS-15 — describe an outcome, get a drawn chain with a dry-run receipt.
@@ -396,12 +447,17 @@ def _save(automation: Automation) -> dict:
     # renders, like every other refusal on this path.
     from aughor.automations.authored_sql import (AuthoredSqlRefused,
                                                  materialise_authored_sql)
+    from aughor.automations.versions import VersionNotKept
     try:
         automation = materialise_authored_sql(automation)
     except AuthoredSqlRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         return upsert_automation(automation).model_dump()
+    except VersionNotKept as exc:
+        # TC-3 — not the author's mistake, so not a 422: the definition is fine and nothing was
+        # saved, because its version could not be kept. Said, so a retry is the obvious move.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -758,4 +814,36 @@ def graph(automation_id: str, run: str = ""):
 
 @router.get("/automations/{automation_id}/runs")
 def runs(automation_id: str, limit: int = 50):
-    return {"runs": [r.model_dump() for r in get_runs(automation_id=automation_id, limit=limit)]}
+    rows = get_runs(automation_id=automation_id, limit=limit)
+    from aughor.automations.versions import keeping
+    if not keeping():
+        return {"runs": [r.model_dump() for r in rows]}
+    # TC-3 — each run names the version it ran under (null when it kept none: a run from before
+    # versions were on, or one whose version could not be kept — its own route says which).
+    from aughor.automations.store import get_run_stamps
+    stamps = get_run_stamps([r.id for r in rows])
+    return {"runs": [{**r.model_dump(), "version": (stamps.get(r.id) or {}).get("version")}
+                     for r in rows]}
+
+
+@router.get("/automations/{automation_id}/versions")
+def automation_versions(automation_id: str, request: Request, limit: int = 50):
+    """TC-3 — every kept version of this automation, newest first, each with who saved it, when,
+    and how it came to be kept; and which one is current. Superseded, never deleted: an automation
+    that was deleted still answers with its versions."""
+    _versions_on()
+    from aughor.automations.versions import (AUTOMATION_KIND, automation_definition, history)
+    from aughor.security.authz import check_owner, get_principal
+    a = get_automation(automation_id)
+    if a is not None and a.conn_id:
+        check_owner("connection", a.conn_id, get_principal(request))
+    out = history(AUTOMATION_KIND, automation_id,
+                  automation_definition(a) if a is not None else None, limit=limit)
+    if a is None and not out["versions"]:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    if a is None:
+        # Deleted: its versions are kept, so their connection is the one to ask about.
+        conn = str((out["versions"][0]["definition"] or {}).get("conn_id") or "")
+        if conn:
+            check_owner("connection", conn, get_principal(request))
+    return {"automation_id": automation_id, **out}

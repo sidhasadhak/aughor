@@ -6443,6 +6443,38 @@ export interface AutomationRun {
   error: string;
   /** DS-8 — engine-internal resume state. Present only while `outcome === "paused"`. */
   checkpoint?: Record<string, unknown>;
+  /** TC-3 — the version this run ran under. Absent while versions are off; null when the run
+   *  kept none (it ran before versions were on, or its version could not be kept). */
+  version?: number | null;
+}
+
+/** TC-3 — one kept version of an automation's definition. */
+export interface AutomationVersion {
+  version: number;
+  version_id: string;
+  /** `user:<id>`, or "" when no save recorded who (one kept before versions, or at a run). */
+  saved_by: string;
+  saved_at: string;
+  /** How it came to be kept: "saved", "in place when versions began" or "kept when it ran". */
+  source: string;
+  superseded_by: string;
+  definition: Record<string, unknown>;
+}
+
+export interface AutomationVersions {
+  automation_id: string;
+  versions: AutomationVersion[];
+  current_version: number | null;
+  current_kept: boolean;
+  why_not: string;
+}
+
+/** TC-3 — an automation's kept versions, newest first; null while versions are off (404). */
+export async function getAutomationVersions(id: string): Promise<AutomationVersions | null> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/versions`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await refused(res, "Reading the automation's versions");
+  return res.json();
 }
 
 export type NewAutomation = {
