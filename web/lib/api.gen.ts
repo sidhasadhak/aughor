@@ -1450,8 +1450,34 @@ export interface paths {
          *     Five sinks record governance-relevant events and none knows about the others; this
          *     reads them under one category vocabulary. An unknown category is a 400 rather than an
          *     empty list — "no events" and "that category does not exist" are different answers.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): `since`/`until` bound the window
+         *     and `cursor` pages past the newest thousand — a position in the feed's own order, so a
+         *     page never shifts as events arrive. Off, those three are read by nothing.
          */
         get: operations["get_audit_feed_audit_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/feed/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Audit Feed
+         * @description Arc TC, TC-5 (`govern.justifications`) — the feed's whole window as a file, streamed
+         *     page by page through the same cursor, with the same filters as the feed. Off: the answer
+         *     of a route that does not exist.
+         */
+        get: operations["export_audit_feed_audit_feed_export_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7396,6 +7422,10 @@ export interface paths {
          *     carries `unpriced_calls`/`calls_without_usage` so an unknown price never renders as
          *     free. `probation.precision` is null until anything is marked — "not measured", never
          *     0%.
+         *
+         *     Arc TC, TC-5 (`hub.failure_rate`, off by default): each row's `failure_rate` over
+         *     `window_days` — measured, "no runs" (never 0%), or "not permitted" (no count, the node
+         *     kept). Off, `window_days` is read by nothing.
          */
         get: operations["get_hub_map_hub_map_get"];
         put?: never;
@@ -9218,6 +9248,9 @@ export interface paths {
          * Export Ledger
          * @description The ledger as JSON lines — every current entry of the kinds asked (default: every kind the
          *     Record writes), so adopting the platform is not a trap.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): an export needs a `reason`, refused
+         *     by name without one, and is recorded with it (`access.justified`) before the first line.
          */
         get: operations["export_ledger_ledger_v1_export_get"];
         put?: never;
@@ -11204,6 +11237,34 @@ export interface paths {
          *     population it saw" is the answer somebody debugging a rule actually needs.
          */
         post: operations["test_agent_alert_rule_obs_agent_alerts_rules__rule_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Run Logs
+         * @description Arc TC, TC-5 (`obs.log_search`, off by default) — the lines `/traces/{id}/logs` reads
+         *     for one run, searched across every run of the last thirty days: words, a level (``error`` ·
+         *     ``warning`` · ``info``) and the kind of run, newest first, a page at a time from an opaque
+         *     cursor. No copy of the lines: the journal's own rows, read in place.
+         *
+         *     The answer says what it searched — the runs and lines in the window and the oldest line
+         *     kept there — because the journal sweeps some kinds within days, and a search that read two
+         *     days must not read as thirty. Off: the answer of a route that does not exist, byte for byte,
+         *     and a run's lines are read one trace at a time.
+         */
+        get: operations["search_run_logs_obs_logs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -16509,6 +16570,9 @@ export interface paths {
          *     nest by `parent_span_id`; events with no span id (`llm_call`,
          *     `user_request`, `final_response`, `execution_error`) are TRACE-LEVEL, kept
          *     in `events` seq order and never given invented parents.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): this hands over the run's
+         *     payloads, so it needs a `reason` — refused by name without one, and recorded with it.
          */
         get: operations["get_trace_traces__trace_id__get"];
         put?: never;
@@ -16606,6 +16670,9 @@ export interface paths {
          *     This is the "never load whole" half of the roadmap's own risk note: an agent that
          *     has found the slow step from the summary pays for that step alone, instead of pulling
          *     every payload in the run to read one.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): a span's input and output are
+         *     payloads, so this needs a `reason`, as the whole run does.
          */
         get: operations["get_trace_span_traces__trace_id__spans__span_id__get"];
         put?: never;
@@ -26105,6 +26172,47 @@ export interface operations {
                 /** @description data_access | governance_change | action_decision | model_call | human_verdict | enforcement */
                 category?: string | null;
                 limit?: number;
+                /** @description govern.justifications: from this date or moment (ISO-8601), inclusive */
+                since?: string | null;
+                /** @description govern.justifications: before this date or moment, exclusive */
+                until?: string | null;
+                /** @description govern.justifications: the `next_cursor` of the page before */
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_audit_feed_audit_feed_export_get: {
+        parameters: {
+            query?: {
+                /** @description csv | jsonl */
+                format?: string;
+                category?: string | null;
+                since?: string | null;
+                until?: string | null;
             };
             header?: never;
             path?: never;
@@ -36121,6 +36229,8 @@ export interface operations {
         parameters: {
             query?: {
                 conn_id?: string;
+                /** @description hub.failure_rate: the failure rate's window, in days counting today */
+                window_days?: number;
             };
             header?: never;
             path?: never;
@@ -38929,6 +39039,7 @@ export interface operations {
                 kinds?: string | null;
                 connection_id?: string | null;
                 limit?: number;
+                reason?: string | null;
             };
             header?: never;
             path?: never;
@@ -42637,6 +42748,41 @@ export interface operations {
             path: {
                 rule_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_run_logs_obs_logs_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                level?: string | null;
+                run_kind?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -51960,7 +52106,9 @@ export interface operations {
     };
     get_trace_traces__trace_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header?: never;
             path: {
                 trace_id: string;
@@ -52092,7 +52240,9 @@ export interface operations {
     };
     get_trace_span_traces__trace_id__spans__span_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header?: never;
             path: {
                 trace_id: string;

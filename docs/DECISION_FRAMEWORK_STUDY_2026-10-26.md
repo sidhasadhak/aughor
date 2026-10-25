@@ -268,17 +268,20 @@ scenario decisions: the six first attempts with their failed reviews and the six
 |---|---|---|---|
 | 1 | a whole-SELECT metric could not be cut by a segment, and the metrics door accepts nothing else — so D-3's comparison review never ran on a metric defined today (it had passed on theLook only on grandfathered expression metrics) | the honest review was switched off | **fixed**, `212fa3d1` |
 | 7 | a statement whose date table sits on the optional side of an outer join is not bounded by the window: Lux's gross margin (`order_items LEFT JOIN orders`, dated on orders) read the all-time 40.73% in every period — 703 of 273,917 items matched the filter, the rest stayed in the sum. Affects every period reading, the Briefing included, not only reviews | serious, pre-existing | **fixed** on this branch: `scoped_statement` refuses the grain table on the optional side of a LEFT, RIGHT or FULL join, by name |
-| 2 | the mission report cannot read `repeat_purchase_rate`: "the date column orders.order_date is not on customers" — the period compiler reads the subquery's alias | medium | open |
-| 3 | the Corrections view counts a *scored* expectation claim as a "restatement" (85 after the run) | copy / meaning | open |
-| 4 | the Record panel kept showing theLook's decisions after a workspace switch until a reload | UI | open |
-| 5 | a "hold" expectation that moves outside its band reads as *cannot tell*, since hold names no wanted direction — scenario 3 moved clearly above and the platform shrugged | verdict logic | open |
-| 6 | a month-end snapshot table never falls inside a 30-day review window ending on the 30th | window vs grain | open |
-| 8 | the expectation band is judged against the *prior window* ("before"), the verdict against the *baseline* — a "hold within 3% of the other shops" expectation is read against the wrong thing | semantics | open |
+| 2 | the mission report cannot read `repeat_purchase_rate`: "the date column orders.order_date is not on customers" — the period compiler reads the subquery's alias | medium | **fixed**, `216196c6`: a governed metric is measured by the period compiler |
+| 3 | the Corrections view counts a *scored* expectation claim as a "restatement" (85 after the run) | copy / meaning | **fixed**, `216196c6`: only a changed statement is a restatement |
+| 4 | the Record panel kept showing theLook's decisions after a workspace switch until a reload | UI | **fixed**, `216196c6`: the Record remounts on a workspace switch |
+| 5 | a "hold" expectation that moves outside its band reads as *cannot tell*, since hold names no wanted direction — scenario 3 moved clearly above and the platform shrugged | verdict logic | **fixed**, `216196c6`: a fifth verdict, *missed* |
+| 6 | a month-end snapshot table never falls inside a 30-day review window ending on the 30th | window vs grain | **fixed**, `216196c6`: whole periods of the reported grain, and the review waits for one to end |
+| 8 | the expectation band is judged against the *prior window* ("before"), the verdict against the *baseline* — a "hold within 3% of the other shops" expectation is read against the wrong thing | semantics | **fixed**, `216196c6`: the band reads the verdict's baseline |
 
 Three more, outside the review: an Analyst run's findings are not booked as claims (the inquiry held the run, `claims:
 []`), so a decision cannot cite what the inquiry found; a plain query's figure cannot be cited as a claim either (the
 "Decide on a figure" door should book the figure as a reading); and the card "With an expectation · each can be scored"
-overstated while every outcome said cannot tell.
+overstated while every outcome said cannot tell. **All three fixed** (§9): the Analyst writes its deep report's receipt
+and every receipt lands its claims on the run's inquiry (none of the 23 live inquiries with runs held one); a Briefing
+figure is measured and booked as a reading when a decision is taken on it; the card says how many reviews reached a
+verdict.
 
 ## 7 · What not to do
 
@@ -286,16 +289,51 @@ No new decision store · no crawl of mail, Drive or Slack · no model authoring 
 claim on a company-wide total without a holdout or a comparison group · no money value without a confirmed currency · the
 learning-from-runs study (PENDING 56) stays parked · no renaming for an analogy.
 
-## 8 · Next, in order — none of it started
+## 8 · Next, in order — the state on 2026-10-27 (what was built is in §9)
 
-1. The open defects above, cheapest first: 5 and 8 together (the hold expectation and the band's reference), 3 (copy), 6
+1. ✅ The open defects above, cheapest first: 5 and 8 together (the hold expectation and the band's reference), 3 (copy), 6
    (a window that ends on the grain's own boundary), 2 (the period compiler on a subquery), 4 (the UI refetch).
-2. Arc TC (§3.59) as the plumbing under every reading — the run and version edges the thread's ACTING step needs.
-3. The intake doors, cheapest first: the Decide button on a Question's answer and on the Briefing; the Slack verb, attach
-   and decision card; the inbound email address once the user decides; Google comments once the OAuth client exists.
-4. Decision kinds as declarations, then the agent's proposal of a declared kind under a mission (reading B).
+2. ✅ Arc TC (§3.59) as the plumbing under every reading — TC-1 to TC-5 built, each behind its own flag, off.
+3. ✅ The intake doors, cheapest first: the Decide button on a Question's answer and on the Briefing; the Slack verb and
+   decision card (a reaction attaching a message waits: a reply in the thread is already a said claim). **Waiting on the
+   user:** the inbound email address (reverses §3.18) and Google comments (the OAuth client).
+4. ✅ Decision kinds as declarations, then the platform's proposal of a declared kind under a mission (reading B) —
+   composed by code from the kind, the mission and the Record; the agent's own proposal (a model writing options) is not
+   built, and the law that a model proposes only is kept by the proposal having no model in it at all.
 5. The falsifier stands: five decisions with a verdict other than cannot tell by 2026-12-05 (PENDING 57, §5.2), or the
    doors were the bottleneck, not the scoring.
+
+Beyond §8, from §3, also built: the decision's reading from where it arose to what was learned (§3.1, §3.3), the
+modifying decision, the evidence envelope's conversation and meeting kinds, and the meeting door (§3.2).
+
+## 9 · Built, 2026-10-26/27 — the study continued, fully
+
+The user, on 2026-10-26: *"Lets continue as per the decision framework study fully, back to back.. ask questions right
+now if you have any.. else, go for everything without stopping."* Nothing below needed an answer first; the calls that
+are the user's are listed at the end. Branch `claude/decision-review-segment-cut`.
+
+| What | Where | The law it keeps |
+|---|---|---|
+| The six open defects and the three gaps (§6) | `216196c6` | a verdict says what was measured; a hold names no wanted side, so a move outside it is *missed*, never better or worse |
+| A decision on a dashboard Question's answer cites what its run booked; on a Briefing figure, the figure is measured for the edition's days and booked as a *reading* with its own receipt | `fbbdb495` | the server cites, never the page; what could not be cited is said |
+| `@bot decide: … — approvers @a @b` books a decision from a Slack thread citing the thread's answer; the card's ✅ is the named approver's approval, its ❌ a dissent | `fbbdb495` | a ✅ on an answer stays a verdict (TJ-4); someone not named cannot approve |
+| Decision kinds, declared by people; a decision of a kind keeps its rules; method 4 reads past decisions of the same kind; under a mission the platform proposes a decision of each kind that moves the objective | `9f4da21b` | a model never authors a kind; the proposal is composed by code, booked by nobody until a person chooses |
+| The decision read from where it arose to what was learned, forwards and backwards, its why in three layers; a modifying decision names the one it revises | `493ec8bd` | a view over the Record, never a new store; a stage with nothing in it says so |
+| The evidence envelope's *conversation* and *meeting* kinds; the meeting door — the model proposes the decisions it finds in pasted notes, a person confirms or refuses each | `afcabccc` | invited, never crawled; a reference and a hash, the words only when shared; a candidate is never a fact |
+| Arc TC-1…TC-5 — an answer names its agent's revision; an edit names its run; automations and monitors keep versions and replay as a dry run; alerts close; operations read across runs | merged from five branches | each behind its own flag, off, byte-identical off |
+
+**Proven live on LuxExperience** — §9.1, filled in after the deploy.
+
+**Not built, and why.** The inbound email door and Google comments wait on the user's calls. A Slack reaction that
+attaches a message waits: a reply in a thread the platform filed is already a said claim, and the decision card carries
+the thread as its evidence. The agent's own proposal — a model writing options — is not built: the proposal under a
+mission is composed by code, which keeps "a model proposes only" by having no model in it. The meeting door was not run
+live: it spends one model call, and none was authorised.
+
+**The user's calls, still open.** The inbound email door (it reverses §3.18); the Google OAuth client; the person-facing
+word for the vessel (the decision's reading avoids the noun); which real decisions to rebuild by hand; whether *missed* is
+the word for a hold that moved; *timeline* now names both a dashboard piece (AP-4) and TC-2's object read; and each TC
+flag's switch.
 
 ## Sources
 

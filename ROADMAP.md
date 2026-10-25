@@ -12093,7 +12093,7 @@ dashboard piece says a cut read beside its caveats (`answerSays`).
   completeness to the model.
 - Platform-owned types' doors carry the field without a test of their own.
 
-### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
+### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · ✅ TC-1…TC-5 BUILT 2026-10-26/27, each behind its flag, off; PENDING lists each wave's premise corrections)
 
 **The premise, measured.** Provenance is Aughor's first law, and these places do not yet keep it:
 
@@ -14551,6 +14551,12 @@ the browser** · **measure the premise before building.**
     GMV metric, the live ledger and one Analyst run. Found and fixed on `claude/decision-review-segment-cut`: a
     whole-SELECT metric could not be cut by a segment (`212fa3d1`), and a statement whose date table sits on the optional
     side of an outer join read the whole history as a window. Six open defects in the study §6.
+    **(e) ✅ Continue as the study says, fully** (the user, 2026-10-26: *"Lets continue as per the decision framework
+    study fully, back to back"*). Built in §8's order and beyond it, on the same branch: the six defects; Arc TC; the
+    intake doors (a Question's answer, a Briefing figure, `@bot decide:` and its card); decision kinds and the proposal
+    under a mission; the decision's reading forwards and backwards with the modifying decision; the evidence envelope's
+    conversation and meeting kinds and the meeting door. Two words chosen in building, each the user's to overrule: a
+    hold that moved outside its band is **missed** (a fifth verdict), and the reading's section avoids the vessel's noun.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
