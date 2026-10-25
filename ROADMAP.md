@@ -14504,6 +14504,15 @@ the browser** · **measure the premise before building.**
       one skin across the shell and the page. In the same breath, on the six-step side-by-side of the Workbench knobs
       (`design-mockups/palantir-inspired/aughor-foundry-knobs-2026-10-25.png`): *"Other than that, the transitions
       shown here seem good to me"* — the preset's six knobs stand as built, per person; the default is unchanged.
+    - **(5), decided 2026-10-25 evening — DEPTH, the surface grammar** (study §10; the user, with five Foundry
+      screens: *"a sense of depth… white & light grey play between panels, fine grey lines at the right places,
+      filter/list of values having grey fill, icons well placed & clear.. also see how ontology is getting
+      created"*, then *"use similar logic for dark theme"*, then *"Go with L3 and D4, all three pieces, build
+      it"*). Tokens for everyone, one theme per skin: **light** ground gray 3, rail gray 2, cards white, controls
+      gray 3 (L3); **dark** cards gray 3 one step above the gray 1 ground, controls gray 1, rows gray 6, borders
+      gray 7, a card edge by default (D4) — which supersedes the 2026-10-10 "no border on a dark card"; the `edges`
+      knob off is the way back. Then three pieces: lines at the seams, icon squares for entities and property
+      kinds, and the mapping picture in the Sources tab. *Tokens built the same evening; the pieces follow.*
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

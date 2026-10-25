@@ -11,7 +11,7 @@ export const ACCENTS = [
 export const GREYS = ["gray", "mauve", "slate", "sage", "olive", "sand"] as const;
 export const RADII = ["none", "small", "medium", "large", "full"] as const;
 export const SCALINGS = ["90%", "95%", "100%", "105%", "110%"] as const;
-/** Whether a card in the dark skin is boxed by a hairline (the light skin always is). */
+/** Whether a card is boxed by a hairline — on is the skin's own grammar since 2026-10-25; off takes it away. */
 export const EDGES = ["off", "on"] as const;
 /** The face the interface is set in. Figures, ids and code keep their own. */
 export const TYPEFACES = ["inter", "source-sans"] as const;
@@ -26,10 +26,10 @@ export interface Look {
   accent: Accent; grey: Grey; radius: Radius; scaling: Scaling; edges: Edges; typeface: Typeface;
 }
 
-/** What the user chose for everyone who has not chosen for themselves (2026-10-06; the two
- *  knobs added 2026-10-25 default to what the page already was). */
+/** What the user chose for everyone who has not chosen for themselves (2026-10-06; typeface, added
+ *  2026-10-25, defaults to what the page was; edges defaults to the skin's own grammar, on). */
 export const DEFAULT_LOOK: Look = {
-  accent: "indigo", grey: "gray", radius: "large", scaling: "100%", edges: "off", typeface: "inter",
+  accent: "indigo", grey: "gray", radius: "large", scaling: "100%", edges: "on", typeface: "inter",
 };
 
 /** A preset is all six knobs at once, named for what it does. `aughor` is the default; `workbench`

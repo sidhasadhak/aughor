@@ -38,14 +38,14 @@ describe("the theme boot script", () => {
 
   it("leaves the default — dark, indigo — when nothing is stored", () => {
     boot();
-    expect(attrs()).toEqual({ theme: "dark", classes: ["dark"], scheme: "dark", accent: "indigo", grey: "gray", radius: "large", scaling: "100%", edges: "off", typeface: "inter" });
+    expect(attrs()).toEqual({ theme: "dark", classes: ["dark"], scheme: "dark", accent: "indigo", grey: "gray", radius: "large", scaling: "100%", edges: "on", typeface: "inter" });
   });
 
   it("puts a knob it cannot read back to the default, and never throws", () => {
     localStorage.setItem(THEME_KEY, "sepia");
     localStorage.setItem(LOOK_KEY, JSON.stringify({ accent: "plaid", radius: "large", edges: "sometimes" }));
     boot();
-    expect(attrs()).toMatchObject({ theme: "dark", accent: "indigo", radius: "large", edges: "off" });
+    expect(attrs()).toMatchObject({ theme: "dark", accent: "indigo", radius: "large", edges: "on" });
     localStorage.setItem(LOOK_KEY, "{not json");
     expect(() => boot()).not.toThrow();
   });

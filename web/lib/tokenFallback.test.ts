@@ -9,16 +9,23 @@ import { radixValueAt } from "../scripts/radix-tokens.mjs";
 
 const SHEET = readFileSync(join(__dirname, "../aughor-v2/theme/tokens-v2.css"), "utf8");
 const ROOT = SHEET.slice(SHEET.indexOf(":root {"), SHEET.indexOf('[data-theme="light"] {'));
+// The light skin re-declares the surfaces that differ from dark's (2026-10-25): its block is read first
+// for light, as the cascade reads it on <html data-theme="light">, then the root for the rest.
+const LIGHT = SHEET.slice(SHEET.indexOf('[data-theme="light"] {'));
+const LIGHT_BLOCK = LIGHT.slice(0, LIGHT.indexOf("\n}") + 2);
 
-function declared(name: string): string | null {
-  const m = ROOT.match(new RegExp(`(?:^|[\\s;{])${name}:\\s*([^;]+);`, "m"));
+function declaredIn(block: string, name: string): string | null {
+  const m = block.match(new RegExp(`(?:^|[\\s;{])${name}:\\s*([^;]+);`, "m"));
   return m ? m[1].trim() : null;
+}
+function declared(name: string, mode: "light" | "dark"): string | null {
+  return (mode === "light" ? declaredIn(LIGHT_BLOCK, name) : null) ?? declaredIn(ROOT, name);
 }
 
 /** A token's value in one skin at the default look: through our sheet's aliases, then into Radix's. */
 function resolve(name: string, mode: "light" | "dark", depth = 0): string {
   if (depth > 8) throw new Error(`${name} does not resolve`);
-  const ours = declared(name);
+  const ours = declared(name, mode);
   if (ours) {
     const alias = ours.match(/^var\(\s*(--[a-zA-Z0-9-]+)\s*\)$/);
     return alias ? resolve(alias[1], mode, depth + 1) : ours;

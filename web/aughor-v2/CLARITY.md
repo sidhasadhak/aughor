@@ -57,7 +57,7 @@ the first row still leaves with the answer.
 | Do | Don't |
 |---|---|
 | **A row of 3–4 figures** at the top: label (11.5px, muted) · value (22–30px) · one muted line ("of 125,080", "614 in the last 7 days") | A header bar of mixed links, counts and sentences |
-| **Cards on the ground**: `--bg-1` on `--bg-0`, radius `--r3`, no border, no shadow; 14px gaps | Borders around everything; nested boxes |
+| **Surfaces on a ground** (2026-10-25): a card `--bg-2` on the page `--bg-0` — a step lighter in dark, white on grey in light — with a hairline edge `--card-edge` in both skins, radius `--r3`, no shadow; a control `--bg-3` a step under the card it sits in; a 1px line wherever two surfaces meet; 14px gaps | Borders drawn twice (a boxed card inside a boxed card); shadows; a surface the same colour as its ground |
 | **Pairs side by side** — two related cards on one row (Tokens by model · Where tokens go) | One long column the reader scrolls past |
 | **Filters in a left column**: value · count · a 6px bar; the chosen row tinted; the set's size as "37,838 of 125,080" | Dropdown filters that hide the distribution |
 | **List rows: name · figure · one muted meta line**, with marks (`✓ key`, `● 1 proposed`) instead of words | A sentence per row |
@@ -91,7 +91,7 @@ Values are the app's tokens (`theme/tokens-v2.css`); the mockups use their compu
 
 | Token / use | Means | Never |
 |---|---|---|
-| `--bg-0` ground · `--bg-1` card · `--bg-2` raised, chips | Structure | — |
+| `--bg-0` ground · `--bg-1` chrome (rail, strips, table heads) · `--bg-2` card, panel · `--bg-3` control, inset | Structure: dark steps gray 1 · 2 · 3 · 1, light gray 3 · 2 · white · 3 | — |
 | `--t1` · `--t2` · `--t3` | Value · supporting · meta | Colouring text with a series colour |
 | Accent (indigo) + its soft fill | Selected, primary action, the chosen row | Decoration |
 | Amber + soft fill | Needs a person: a broken promise, no price, no cap | "Series 4" |

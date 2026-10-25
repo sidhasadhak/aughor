@@ -56,12 +56,12 @@ export const CHART_DEEMPH: Record<ChartMode, string> = {
   dark: "#4E5A6A",
 };
 
-/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2, which is
- *  Radix's solid panel at the product's default grey: gray 2 in dark, white in light. A person
- *  who picks another grey moves the live surface by a shade; the palette is validated here. */
+/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2 at the product's
+ *  default grey: gray 3 in dark (a card one step above the ground since 2026-10-25), white in light. A
+ *  person who picks another grey moves the live surface by a shade; the palette is validated here. */
 export const CHART_SURFACE: Record<ChartMode, string> = {
   light: "#FFFFFF",
-  dark: "#191919",
+  dark: "#222222",
 };
 
 /** Sign-diverging pair (change metrics: positive/negative). Sign is a good/bad meaning,

@@ -33,8 +33,8 @@ const TYPEFACE_WORD: Record<Typeface, string> = { inter: "Inter", "source-sans":
 const PRESET_WORD: Record<Preset, string> = { aughor: "Aughor", workbench: "Workbench" };
 /** What a preset sets, said once on hover — the knobs below show it anyway. */
 const PRESET_SAID: Record<Preset, string> = {
-  aughor: "Indigo · gray · large corners · 100% · no edges · Inter — the default",
-  workbench: "Blue · slate · small corners · 95% · boxed cards · Source Sans — a denser, cooler look",
+  aughor: "Indigo · gray · large corners · 100% · Inter — the default",
+  workbench: "Blue · slate · small corners · 95% · Source Sans — a denser, cooler look",
 };
 const title = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 

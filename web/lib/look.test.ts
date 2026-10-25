@@ -6,8 +6,8 @@ import { DEFAULT_LOOK, LOOK_VALUES, PRESETS, cleanLook, forgetLook, getLook, set
 describe("the look", () => {
   afterEach(() => { window.localStorage.clear(); forgetLook(); });
 
-  it("defaults to what the user chose for everyone: indigo, gray, large, 100%, no edges, Inter", () => {
-    expect(getLook()).toEqual({ accent: "indigo", grey: "gray", radius: "large", scaling: "100%", edges: "off", typeface: "inter" });
+  it("defaults to what the user chose for everyone: indigo, gray, large, 100%, edges on, Inter", () => {
+    expect(getLook()).toEqual({ accent: "indigo", grey: "gray", radius: "large", scaling: "100%", edges: "on", typeface: "inter" });
   });
 
   it("offers presets that are all six knobs, each a value the knob admits", () => {
@@ -17,8 +17,9 @@ describe("the look", () => {
         expect(LOOK_VALUES[key]).toContain(look[key]);
       }
     }
-    // the second preset moves every knob: a preset that left one as it was would be a surprise
-    expect(Object.keys(LOOK_VALUES).filter(key => PRESETS.workbench[key as keyof typeof PRESETS.workbench] !== DEFAULT_LOOK[key as keyof typeof DEFAULT_LOOK]).length).toBe(6);
+    // the second preset moves every knob but edges, which the skin's own grammar already has on
+    const moved = Object.keys(LOOK_VALUES).filter(key => PRESETS.workbench[key as keyof typeof PRESETS.workbench] !== DEFAULT_LOOK[key as keyof typeof DEFAULT_LOOK]);
+    expect(moved.sort()).toEqual(["accent", "grey", "radius", "scaling", "typeface"]);
   });
 
   it("never hands the Theme a value that is not one of a knob's own", () => {

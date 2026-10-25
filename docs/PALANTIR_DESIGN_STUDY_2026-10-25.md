@@ -295,3 +295,84 @@ were approved on the same image: *"Other than that, the transitions shown here s
   `workshop/example-dashboard-combo-rows.png`, `getting-started/homepage.png`, `getting-started/apps-portal.png`,
   `getting-started/nav-sidebar.png`, `ontology-manager/oma-user-interface-overview-annotated.png`,
   `object-views/standard-full-and-panel-object-view.png`). They are Palantir's and are not copied into this repo.
+
+## 10. Depth — the surface grammar (added 2026-10-25, evening)
+
+The user, with five Foundry screens (a Workshop module dialog, the widget picker, the Flight Alert inbox, Quiver, and
+Ontology Manager's property mapping): *"there is a sense of depth that Palantir UI has.. like white & light grey play
+between panels, fine grey lines at the right places, filter/list of values having grey fill, icons well placed &
+clear.. also see how ontology is getting created"* — then *"this is for light theme.. use similar logic for dark
+theme."* This is a different thing from the six knobs: not colour or density but how **surfaces are layered**.
+
+### 10.1 What the five screens do, read as rules
+
+| Rule | Light (Blueprint) | Dark (Blueprint) |
+|---|---|---|
+| **Ground** — the page, canvases, step rails, inspectors | LIGHT_GRAY5 `#F6F7F9` (v3 `#F5F8FA`) | DARK_GRAY1 `#1C2127` |
+| **Surface** — a panel, a card, a table, a dialog | white, with a 1px edge `rgba(17,20,24,.15)` and at most a faint shadow | DARK_GRAY2 `#252A31`, a 1px edge `rgba(255,255,255,.2)`, a half-pixel inner highlight |
+| **Line** — wherever two surfaces meet: rail/content, header/content, table rows, card sections | 1px, the divider colour | 1px, `rgba(255,255,255,.2)` |
+| **Control fill** — inputs, selects, filter rows, the "Add filter" button | a grey a step under the surface (`#F6F7F9` on white) + 1px border + inset shadow | a step *darker* than the surface, inset |
+| **Chosen row** | a tint of the accent (light blue) with accent text | the same, dark |
+| **Icon squares** | a 16px coloured square for an object type (the red ✕ for Flight Alert); a grey square with the kind's glyph for a property (📅 date · 99 text · 123 number) | the same |
+| **Tag** | outline: 1px border + tinted text, no fill | the same |
+| **Mapping picture** (Ontology Manager) | two white columns — the table's columns, the type's properties — joined by straight lines from radio dots, the chosen pair in blue, the property's inspector beside it | the same |
+
+Aughor's light skin today is **white on white**: page white, cards white boxed by a hairline, rail `gray-2` (`#F9F9FB`,
+contrast 1.03 to white), inputs the page's own colour. The dark skin is `gray-1` under `gray-2` cards with no edge
+(the 10-10 decision) — the step from page to card is 1.11:1. Neither has a ground distinct from its surfaces, so
+nothing reads as a panel *on* something.
+
+### 10.2 The side-by-sides (`design-mockups/palantir-inspired/aughor-surface-depth-2026-10-25.png`)
+
+The live Ontology tab on theLook, in the Workbench knobs (approved), one layer added per step, injected and not
+stored. Every value is a Radix step so the proposal maps straight onto `tokens-v2.css`:
+
+| # | Changed (light) | | # | Changed (dark) |
+|---|---|---|---|---|
+| L1 | today | | D1 | today (edges on, as the preset has them) |
+| L2 | ground `gray-2`, controls `gray-2` | | D2 | cards `gray-3` (one step above the ground), controls inset `gray-1` |
+| **L3** | ground `gray-3`, rail `gray-2`, controls `gray-3` | | D3 | the whole skin lifted one step: ground `gray-2`, rail `gray-3`, cards `gray-4`, edges `gray-7` |
+| L4 | ground `gray-3`, rail white, row lines `gray-6` | | **D4** | D2 + row lines `gray-6`, borders `gray-7` |
+
+Readings: L2 is too subtle to be a ground (a 1.03 step). **L3** gives the grammar — cards stand white on a grey
+ground, the rail is a quieter grey, inputs sit a step under the card — with nothing else moved. L4 trades the rail's
+grey for white, which loses the rail as a frame. In the dark skin the steps are faint at a glance (Radix's dark
+greys sit 6–8 RGB apart): **D4** is the honest mirror of L3 — a card one step above the ground, controls a step
+below, lines a step stronger — while D3 is a different decision (a lighter dark, Blueprint's own `#1C2127`), kept
+as a variant only.
+
+### 10.3 What building it means — tokens, not knobs
+
+This is the **skin's own grammar, for everyone**, not a per-person knob: the user asked for one theme per skin. In
+`tokens-v2.css`, in the names the app already reads:
+
+| Token | Light today → proposed | Dark today → proposed |
+|---|---|---|
+| `--bg-0` ground | white → `gray-3` | `gray-1` (as is) |
+| `--bg-1` chrome: rail, top strip, tab strips, table headers | `gray-2` (as is) | `gray-2` (as is) |
+| `--bg-2` card, panel | white (as is) | `gray-2` → `gray-3` |
+| `--bg-3` inset, input | white → `gray-3` | `gray-1` (as is; now a step under the card) |
+| `--card-edge` | `gray-6` (as is) | transparent → `gray-6` (edges by default; the knob keeps the way back) |
+| `--b0` row rule | `gray-5` → `gray-6` | `gray-5` → `gray-6` |
+| `--b1` border | `gray-6` (as is) | `gray-6` → `gray-7` |
+
+Then the three things tokens cannot do, each a small piece: **lines at the seams** where today there are none
+(the tab strip's foot, a card's section head, the detail panel's left edge — a sweep, not a rule); **icon squares**
+for an entity (its colour, 16px, in the entity list, the object tables and the type chips) and for a property's
+kind (grey square, the kind's glyph, in the Properties tab and the mapping); and the **mapping picture** for the
+Sources tab — the table's columns left, the type's properties right, straight connectors bending at 90°, the chosen
+pair in the accent, the property's inspector beside it — Ontology Manager's screen in our own grammar.
+
+### 10.4 The calls
+
+**Taken 2026-10-25, evening** (the user: *"Go with L3 and D4, all three pieces, build it"*): 1 = L3 · 2 = D4 · 3 = yes,
+edges on by default · 4 = all three pieces built, the mapping picture included.
+
+1. **Light ground**: L3 (`gray-3` ground, `gray-2` rail, `gray-3` controls), or L4 (white rail)? — *Recommended: L3.*
+2. **Dark**: D4 (one step up, lines a step stronger, edges on by default), or D3 (the whole skin lifted)? —
+   *Recommended: D4; D3 reopens the 2026-10-05 charcoal decision and should be its own side-by-side if ever.*
+3. **Edges on by default in dark** (the 10-10 "no borders on a dark card" reversed, the knob kept)? —
+   *Recommended: yes — "fine grey lines at the right places" is the ask.*
+4. **The three pieces** — seams, icon squares, the mapping picture — build all three, or the first two now and the
+   mapping as a mockup first? — *Recommended: seams and icon squares now; the mapping picture as a mockup first,
+   it is a new screen.*

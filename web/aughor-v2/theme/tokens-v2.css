@@ -75,28 +75,32 @@
 
 /* ── DARK · and LIGHT: each name is a Radix step, and the step flips with the skin ─── */
 :root {
-  /* surfaces */
-  --bg-0: var(--color-background);   /* the page: Radix's own — gray 1 in dark, white in light */
-  --bg-1: var(--gray-2);             /* chrome: topbar, rail, content header, a table's header row */
-  --bg-2: var(--color-panel-solid);  /* a card: Radix's panel — gray 2 in dark, white in light */
-  --bg-3: var(--color-background);   /* inset, input: the page colour, boxed by --b2 */
+  /* surfaces — the grammar since 2026-10-25 (the look study §10, the user's L3 and D4): a GROUND, the
+     SURFACES that stand on it a step lighter (dark) or white (light), a CONTROL a step under the surface
+     it sits in, and a hairline wherever two surfaces meet. The dark values are here; the light block
+     at the foot re-declares the ones that differ. */
+  --bg-0: var(--gray-1);             /* the ground: the page, canvases — dark gray 1; light gray 3 below */
+  --bg-1: var(--gray-2);             /* chrome: topbar, rail, tab strips, a table's header row */
+  --bg-2: var(--gray-3);             /* a card, a panel: one step above the ground in dark; white in light */
+  --bg-3: var(--gray-1);             /* inset, input: a step under the card in dark; gray 3 in light */
   --bg-4: var(--gray-5);             /* pressed, the active segment */
   --bg-hover: var(--gray-4);         /* row and nav hover */
   --bg-nav: var(--bg-1);             /* the rail sits on chrome */
   --bg-sel: var(--accent-4);         /* selected row, active nav: a tint of the accent */
   --bg-canvas: var(--bg-0);          /* the Data Canvas ground: no tinted ground on chrome */
   --scrim: var(--color-overlay);
-  --code-bg: var(--gray-3);          /* SQL, logs, pre — reads on the page and in a card */
+  --code-bg: var(--gray-1);          /* SQL, logs, pre — inset like an input: under the card in dark, gray 4 in light */
 
-  /* lines — b0 is the row rule and carries most of the structure; b2 is a border you can see */
-  --b0: var(--gray-5);
-  --b1: var(--gray-6);
+  /* lines — b0 is the row rule and carries most of the structure; b2 is a border you can see.
+     In dark a step stronger than before (2026-10-25, D4): rows gray 6, borders gray 7. */
+  --b0: var(--gray-6);
+  --b1: var(--gray-7);
   --b2: var(--gray-7);
   --b3: var(--gray-8);
   --bfocus: var(--focus-8);
-  /* a card's edge: none in dark, where a card stands on the page by its own fill (CLARITY.md, "cards on the
-     ground"); the hairline in light, where a white card on a white page would otherwise not be there at all */
-  --card-edge: transparent;
+  /* a card's edge, in both skins since 2026-10-25 ("fine grey lines at the right places"); the `edges` knob
+     turned off takes it away. Before: none in dark (the 2026-10-10 "cards on the ground"). */
+  --card-edge: var(--gray-6);
 
   /* text — Radix has two text steps; t2 and t3 share the quieter one. t4 is never text */
   --t1: var(--gray-12);
@@ -196,9 +200,16 @@
   --shell-measure: 700px;
 }
 
-/* ── LIGHT · only what is a literal: the chart palette and the shadows. Every other name
-   above is a Radix step and has already flipped. ── */
+/* ── LIGHT · the chart palette and the shadows (literals), and the surfaces that differ from dark's
+   (2026-10-25, L3): the ground is gray 3, a card is white, a control is gray 3, lines a step softer. ── */
 [data-theme="light"] {
+  --bg-0: var(--gray-3);
+  --bg-2: var(--color-panel-solid);
+  --bg-3: var(--gray-3);
+  --code-bg: var(--gray-4);
+  --b0: var(--gray-5);
+  --b1: var(--gray-6);
+
   --chart-1: #0F6CBD;
   --chart-2: #1E7B45;
   --chart-3: #6B3FA0;
@@ -217,11 +228,12 @@
 
 /* ── The look's two knobs of our own (2026-10-25, ROADMAP §6 item 53). Each is an attribute on
    <html>, painted before the first frame by lib/themeBoot.ts and kept by app/theme-root.tsx;
-   off and inter are what the page was, so a person who chose nothing sees nothing move. ── */
+   inter is what the page was, and edges on is the skin's own grammar, so a person who chose
+   nothing sees the skin as it is drawn. ── */
 
-/* edges: a card in the dark skin boxed by the same hairline the light skin draws */
-:root[data-edges="on"] {
-  --card-edge: var(--b1);
+/* edges: on by default in both skins since 2026-10-25; off takes the card's hairline away */
+:root[data-edges="off"] {
+  --card-edge: transparent;
 }
 
 /* typeface: the interface set in Source Sans 3 instead of Inter. --font-ui is what the body

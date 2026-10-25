@@ -688,5 +688,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     entity Overview; Workshop's numbers into CLARITY §3; bordered state tags measured as no gap (no chip carries a
     state; the surface badge is already bordered and tinted).* *The chrome (dark rail on light content) was built as a
     seventh knob, shown live, and **REFUSED by the user the same day** — one theme for every panel, never half dark
-    and half light (ROADMAP §4.11); the commit was dropped unmerged.* Owed: Blueprint's 30px rows beyond scaling; the
+    and half light (ROADMAP §4.11); the commit was dropped unmerged.* *Evening: **depth** decided (study §10) — L3 light ·
+    D4 dark · all three pieces; the tokens built (ground · surface · control · lines, edges on by default in dark); the
+    seams, the icon squares and the Sources-tab mapping picture follow.* Owed: Blueprint's 30px rows beyond scaling; the
     entity-uses door proven live on a connection with an ontology.
