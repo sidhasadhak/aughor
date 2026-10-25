@@ -54,9 +54,11 @@ class _Cap:
 def cap_ledger(monkeypatch):
     from aughor.kernel.ledger import Ledger
     cap = _Cap()
-    real = Ledger.default()
-    monkeypatch.setattr(real, "artifact_write", cap.artifact_write)
-    monkeypatch.setattr(real, "emit", lambda *a, **k: None)
+    # On the CLASS: patching the shared default instance leaves the class's own method pinned on it when the patch is
+    # undone (the undo sets the bound method back as an instance attribute), so every later test that patches
+    # `Ledger.artifact_write` patches nothing for that instance.
+    monkeypatch.setattr(Ledger, "artifact_write", lambda self, *a, **k: cap.artifact_write(*a, **k))
+    monkeypatch.setattr(Ledger, "emit", lambda self, *a, **k: None)
     return cap
 
 

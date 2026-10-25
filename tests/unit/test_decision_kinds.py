@@ -112,7 +112,9 @@ def test_method_4_reads_the_past_decisions_of_the_same_declared_kind():
 def _mission(conn: str, metric: str = "gmv") -> M.Mission:
     return M.write_mission(M.Mission(
         name=_name("Grow GMV in Canada"), objective=M.Objective(metric=metric, direction="up"),
-        scope=M.Scope(connections=[conn]), owner="user:amit", state="active"), by="user:amit")
+        scope=M.Scope(connections=[conn]), owner="user:amit", state="active",
+        # never due: the ledger is shared across tests, and the heartbeat's test counts the missions that are
+        review=M.Review(cadence="monthly", next_report_on="2099-01-01")), by="user:amit")
 
 
 def test_under_a_mission_the_platform_proposes_each_declared_kind_that_moves_its_objective():

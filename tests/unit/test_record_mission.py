@@ -333,7 +333,8 @@ def test_a_whole_statement_whose_date_is_on_its_subquery_s_table_is_reported(mon
                 return [], [], str(exc)
         return run_sql
     m = M.write_mission(_mission("c-lux", objective=M.Objective(metric="repeat_purchase_rate", direction="up", spec=spec),
-                                 constraints=[]), by="user:ana")
+                                 constraints=[], review=M.Review(cadence="monthly", next_report_on="2099-01-01")),
+                        by="user:ana")
     obj = M.compose_report(m, run_sql_for=run_sql_for, now=NOW)["objective"]
     assert obj["measurable"] and obj["note"] == "", obj
     assert obj["actual"] is not None and 0.0 < obj["actual"] < 1.0, obj

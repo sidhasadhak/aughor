@@ -27,7 +27,7 @@ Every run books one, never an empty result: `answered` · `contradicted` · `no_
 - **statuses**: `Final`, `Provisional`, `To date`
 - **about**: `object`, `segment`, `type`, `connection`, `domain`, `organisation`
 - **author kinds**: `person`, `agent`, `system`
-- **warrants**: `run`, `document`, `attestation`, `claim`
+- **warrants**: `run`, `document`, `attestation`, `claim`, `conversation`, `meeting`
 - **fields an author writes**: `kind`, `about`, `statement`, `tier`, `status`, `as_of`, `valid_from`, `valid_until`, `warrants`, `falsifier`, `next_check`, `owner`, `author`, `author_kind`, `definition_version`, `state`, `extra`
 - **filled by the ledger, never by an author**: `id`, `key`, `version`, `recorded_at`, `supersedes`, `superseded_by`, `confidence`
 - **states**: hypothesis open · supported · refuted · abandoned; prediction open · scored
