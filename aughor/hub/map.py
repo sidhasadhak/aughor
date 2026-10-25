@@ -152,11 +152,11 @@ def failure_rates(autos: list, conn_id: str = "",
     *not permitted* — the reader may not see this node's runs, so no count is given, and the node
     stays on the map saying so rather than leaving it.
     """
-    from datetime import date
     from aughor.automations.store import failure_counts_since
 
     days = max(1, min(int(window_days or FAILURE_WINDOW_DAYS), FAILURE_WINDOW_MAX))
-    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    # The UTC day, as every run's `started_at` is written — a local date shifts the floor a day.
+    since = (datetime.now(timezone.utc).date() - timedelta(days=days - 1)).isoformat()
     readable, why_not = _readable_ids(autos)
     counts = failure_counts_since(since, conn_id=conn_id or None)
     out: dict[str, dict] = {}
