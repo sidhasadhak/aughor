@@ -267,9 +267,12 @@ def get_monitor_alerts(
 ) -> list[dict]:
     if not get_monitor(monitor_id):
         raise HTTPException(status_code=404, detail="Monitor not found")
-    return [a.model_dump() for a in get_alerts(
+    from aughor.monitors.recovery import annotate
+    # TC-4 — with `monitors.recovery` on, a closed alert says which recovery closed it and when, and a recovery which
+    # alert it closes. Off, the rows are as they were.
+    return annotate([a.model_dump() for a in get_alerts(
         monitor_id=monitor_id, limit=limit, unacknowledged_only=unacknowledged_only
-    )]
+    )])
 
 
 @router.get("/alerts")
@@ -285,16 +288,18 @@ def get_all_alerts(
     from aughor.metastore import accessible_catalog_ids
     from aughor.security.authz import org_visible_conn_ids
 
+    from aughor.monitors.recovery import annotate
+
     allowed = accessible_catalog_ids(workspace_id)
     org_conns = org_visible_conn_ids()  # DATA-06: cross-org alerts never leak into the feed
-    return [
+    return annotate([   # TC-4 — a closed alert names its recovery when `monitors.recovery` is on
         a.model_dump()
         for a in get_alerts(
             conn_id=conn_id, limit=limit, unacknowledged_only=unacknowledged_only
         )
         if (allowed is None or a.conn_id in allowed)
         and (org_conns is None or a.conn_id in org_conns)
-    ]
+    ])
 
 
 @router.post("/alerts/{alert_id}/acknowledge")

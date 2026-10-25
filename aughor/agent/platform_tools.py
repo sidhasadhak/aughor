@@ -235,8 +235,9 @@ def list_monitors(connection_id: str, args: dict) -> dict:
             "id": m.id, "name": m.name, "watches": watches,
             "kind": m.alert_on, "enabled": m.enabled, "cadence": m.check_cron,
         })
-    unacked = _store.get_alerts(conn_id=connection_id, unacknowledged_only=True,
-                                limit=100)
+    from aughor.monitors.recovery import still_open
+    # TC-4 — a recovery waits on nobody, and with `monitors.recovery` on neither does an alert one closed.
+    unacked = still_open(_store.get_alerts(conn_id=connection_id, unacknowledged_only=True, limit=100))
     recent = [{
         "monitor": a.monitor_name, "severity": a.severity,
         "triggered_at": a.triggered_at, "message": str(a.message or "")[:200],

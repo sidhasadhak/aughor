@@ -124,20 +124,22 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
 
     # ── 1. Monitor alerts ───────────────────────────────────────────────────
     try:
+        from aughor.monitors.recovery import RECOVERED
         from aughor.monitors.store import get_alerts
         all_alerts = get_alerts(conn_id=conn_id, limit=200)
         recent_alerts = [
             a for a in all_alerts
             if a.triggered_at >= since_iso
         ]
-        alert_count = len(recent_alerts)
+        # TC-4 — a recovery is listed beside the alerts it closes, never counted as one of them.
+        alert_count = sum(1 for a in recent_alerts if getattr(a, "alert_on", "") != RECOVERED)
         critical_count = sum(1 for a in recent_alerts if a.severity == "critical")
 
         if recent_alerts:
             items = []
             for a in recent_alerts[:10]:          # cap to avoid wall of text
                 ts = a.triggered_at[:16].replace("T", " ")
-                badge = "🔴" if a.severity == "critical" else "🟡"
+                badge = "🟢" if getattr(a, "alert_on", "") == RECOVERED else "🔴" if a.severity == "critical" else "🟡"
                 items.append(f"{badge} [{ts}] {a.message}")
             if len(recent_alerts) > 10:
                 items.append(f"… and {len(recent_alerts) - 10} more alerts")

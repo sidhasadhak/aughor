@@ -3,7 +3,8 @@
 /**
  * The counts behind the rail's badges, from reads that change nothing:
  *
- *   unackedAlerts   unacknowledged monitor alerts (GET /alerts) — amber: each one waits on a human
+ *   unackedAlerts   open monitor alerts (GET /alerts) — not acknowledged and not closed by a recovery (`isOpen`) —
+ *                   amber: each one waits on a human
  *   runningRuns     agent runs in flight (GET /investigations, status "running") — neutral: a count
  *   decisionsDue    decisions whose review date has come with no outcome booked (GET /record/decisions?due)
  *   inquiriesDue    waiting inquiries whose check date has come (GET /record/inquiries?due)
@@ -23,6 +24,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { getAllAlerts, getDepartureSummary, getDepartures } from "@/lib/api";
+import { isOpen } from "@/lib/monitorSummary";
 import { getApiBase } from "@/lib/config";
 import { owes } from "@/lib/departures";
 import { subscribeKernelEvents } from "@/lib/events";
@@ -51,7 +53,7 @@ export function useNavCounts(workspaceId?: string): NavCounts {
     let alive = true;
     const load = () => {
       getAllAlerts(undefined, 100, workspaceId || undefined)
-        .then(alerts => { if (alive) setCounts(c => ({ ...c, unackedAlerts: alerts.filter(a => !a.acknowledged).length })); })
+        .then(alerts => { if (alive) setCounts(c => ({ ...c, unackedAlerts: alerts.filter(isOpen).length })); })
         .catch(() => {});
       fetch(`${getApiBase()}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
         .then(r => (r.ok ? r.json() : []))

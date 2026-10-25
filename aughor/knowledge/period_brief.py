@@ -350,9 +350,11 @@ def _in_window(stamp: str, window: PeriodWindow) -> bool:
 def alert_findings(conn_id: str, window: PeriodWindow) -> list[dict]:
     """Monitor alerts that fired inside the window, as dated candidate findings."""
     try:
+        from aughor.monitors.recovery import RECOVERED
         from aughor.monitors.store import get_alerts
+        # a recovery (TC-4) is no alert that fired: "the alert fired: back within its limit" would say the opposite
         alerts = [a for a in get_alerts(conn_id=conn_id, limit=500)
-                  if _in_window(a.triggered_at, window)]
+                  if _in_window(a.triggered_at, window) and getattr(a, "alert_on", "") != RECOVERED]
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the period brief reads no alerts when the alert store is unreadable",

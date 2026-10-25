@@ -137,6 +137,18 @@ def covered_words() -> str:
     return next(iter(_COVERED.get() or []), "")
 
 
+#: Arc TC, TC-4 — the value a rule judged and found within its limit, with what the judgement says in words ("" when
+#: `reading_words` says it). Marked only where a rule has a limit and read a value against it: a check that read
+#: nothing, a change monitor and a trend monitor are never "within" anything.
+_JUDGED: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar("monitor_judged", default=None)
+
+
+def _within_limit(value: float, words: str = "") -> None:
+    seen = _JUDGED.get()
+    if seen is not None:
+        seen.append((value, words))
+
+
 def _reading_sql(monitor: Monitor, db) -> tuple[Optional[str], Optional[str]]:
     """``(sql, dialect)`` a single-value check reads — the threshold, any-change and trend-reversal monitors.
 
@@ -206,9 +218,12 @@ _SCAN = 50
 
 def _metric_alerts(monitor_id: str, limit: int) -> list[MonitorAlert]:
     """This monitor's most recent persisted alerts about its METRIC, newest first — an alert about whether the
-    monitor could run is no reading, so it never becomes a baseline, a trend point or the debounce's last alert."""
+    monitor could run is no reading, so it never becomes a baseline, a trend point or the debounce's last alert. Nor is
+    a recovery (TC-4): it closes an alert, and taking it for one would make it a baseline and a trend point too."""
+    from aughor.monitors.recovery import RECOVERED
     from aughor.monitors.store import get_alerts
-    return [a for a in get_alerts(monitor_id=monitor_id, limit=limit + _SCAN) if a.alert_on not in _HEALTH][:limit]
+    return [a for a in get_alerts(monitor_id=monitor_id, limit=limit + _SCAN)
+            if a.alert_on not in _HEALTH and a.alert_on != RECOVERED][:limit]
 
 
 def _last_alert(monitor_id: str) -> Optional[MonitorAlert]:
@@ -258,6 +273,11 @@ def _suppressed_by_grace(monitor: Monitor, alert: MonitorAlert) -> bool:
         return False  # first alert always fires
     if _SEVERITY_RANK.get(alert.severity, 0) > _SEVERITY_RANK.get(last.severity, 0):
         return False  # escalation fires immediately
+    from aughor.monitors import recovery
+    if recovery.enabled() and recovery.recovered_after(monitor.id, last):
+        # TC-4 — the alert this window was folding repeats of is closed: what fired now is a new one, and holding it back
+        # would leave the monitor reading "recovered" while its metric is out of limit again.
+        return False
     age = _age_hours(last.triggered_at)
     return age is not None and age < grace
 
@@ -345,6 +365,8 @@ def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     from aughor.monitors.rules import threshold_verdict
     verdict = threshold_verdict(current, direction=direction, warning=monitor.warning_threshold,
                                 critical=monitor.critical_threshold)
+    if not verdict.fired and (monitor.warning_threshold is not None or monitor.critical_threshold is not None):
+        _within_limit(current)          # judged against a line it has, and on the right side of it
     if not verdict.fired or verdict.threshold is None:
         return None
     over = covered_words()
@@ -538,6 +560,8 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
             f"{verdict.direction} rolling mean ({verdict.mean:.4g})",
             current_value=current, previous_value=verdict.mean,
         )
+    _within_limit(current, f"{plain_figure(current)} is {verdict.z:.1f}σ from its rolling mean "
+                           f"({plain_figure(verdict.mean)}), inside {monitor.sigma_threshold:g}σ")
     return None
 
 
@@ -632,6 +656,7 @@ def run_drift_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
             f"Top shifted segment: {top_segment} = {current_dist[top_segment]:.4g}",
             current_value=p_value,
         )
+    _within_limit(p_value, f"p={p_value:.4f}, at or above {monitor.drift_p_threshold:g}")
     return None
 
 
@@ -684,6 +709,7 @@ def run_freshness_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
                 current_value=staleness_hours,
                 threshold=sla,
             )
+        _within_limit(staleness_hours, f"{table} last updated {staleness_hours:.1f}h ago, inside its {sla:.0f}h")
     except QueryRefused:
         raise
     except Exception as exc:
@@ -694,6 +720,14 @@ def run_freshness_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
+#: Arc TC, TC-4 — what a check found, each said apart: its rule judged the value within its limit, an alert fired, or an
+#: alert fired and its grace period held it back. "" is none of them: the query could not run, it read no value, or
+#: its rule has no limit (a change monitor, a trend monitor) and did not fire.
+WITHIN = "within"
+FIRED = "fired"
+SUPPRESSED = "suppressed"
+
+
 @dataclass
 class MonitorRun:
     """One check of a monitor: the alert it raised, or — when its query could not run — why."""
@@ -703,6 +737,13 @@ class MonitorRun:
     reading: Optional[float] = None
     #: What that reading covers, in words — its period, or "all history" and why; "" when nothing said it.
     covered: str = ""
+    #: WITHIN · FIRED · SUPPRESSED, or "" (TC-4).
+    outcome: str = ""
+    #: The alert the grace period held back, when it did — kept so the run can say which it was; never filed.
+    held: Optional[MonitorAlert] = None
+    #: The value a rule judged within its limit, and what that judgement says in words ("" when the reading says it).
+    judged: Optional[float] = None
+    judged_words: str = ""
 
 
 def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[MonitorAlert]:
@@ -713,7 +754,7 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
 
 def check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     """See ``_check_monitor``; this keeps the value the check read on the run it returns (Gap 36)."""
-    token, over = _READINGS.set([]), _COVERED.set([])
+    token, over, judged = _READINGS.set([]), _COVERED.set([]), _JUDGED.set([])
     try:
         run = _check_monitor(monitor, db, suppress)
         read = _READINGS.get() or []
@@ -724,6 +765,7 @@ def check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     finally:
         _READINGS.reset(token)
         _COVERED.reset(over)
+        _JUDGED.reset(judged)
 
 
 def _check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
@@ -770,8 +812,25 @@ def _check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     # Anti-flap: debounce a repeat alert of the same-or-lower severity within the grace window.
     if suppress and alert is not None and _suppressed_by_grace(monitor, alert):
         logger.debug("Monitor %s (%s): %s alert suppressed (grace window)", monitor.id, monitor.name, alert.severity)
-        return MonitorRun()
-    return MonitorRun(alert=alert)
+        return MonitorRun(outcome=SUPPRESSED, held=alert)
+    if alert is not None:
+        return MonitorRun(alert=alert, outcome=FIRED)
+    judged = _JUDGED.get() or []
+    if judged:
+        return MonitorRun(outcome=WITHIN, judged=judged[0][0], judged_words=judged[0][1])
+    return MonitorRun()
+
+
+def outcome_words(monitor: Monitor, run: MonitorRun) -> str:
+    """A check that filed no alert, said as what it was (TC-4): "within its limit", or "suppressed by its grace period"
+    with the alert it held back — never "no alert" for both. "" for a check that was neither."""
+    if run.outcome == WITHIN:
+        return "within its limit"
+    if run.outcome == SUPPRESSED and run.held is not None:
+        grace = getattr(monitor, "grace_period_hours", 0.0) or 0.0
+        return (f"suppressed by its grace period: a {run.held.severity} alert inside {grace:g}h of the last one, "
+                f"not filed")
+    return ""
 
 
 def failure_alert(monitor: Monitor, failed: str) -> MonitorAlert:

@@ -131,6 +131,12 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
     that failed to fire.
     """
     try:
+        from aughor.monitors.recovery import RECOVERED
+        if alert.alert_on == RECOVERED:
+            # TC-4 — a recovery is recorded, never sent and never asked about: the send log and the departure record key
+            # a send by monitor, not by alert, so neither can say where the alert being closed went; and nothing moved
+            # that needs an inquiry.
+            return None
         if monitor is None:
             from aughor.monitors.store import get_monitor
             monitor = get_monitor(alert.monitor_id)

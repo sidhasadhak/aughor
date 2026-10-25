@@ -140,6 +140,21 @@ export function removedWords(alerts: Pick<MonitorAlert, "monitor_id">[], live: R
   return gone.length === alerts.length ? `all from ${monitors}` : `${formatCount(gone.length)} from ${monitors}`;
 }
 
+/** Arc TC, TC-4 — the kind of the alert a monitor writes on its first check back within its limit after an alert: it
+ *  closes that alert (`aughor/monitors/recovery.py`, flag `monitors.recovery`). Recorded here, never sent. */
+export const RECOVERED = "recovered";
+
+export const isRecovery = (a: Pick<MonitorAlert, "alert_on">): boolean => a.alert_on === RECOVERED;
+
+/** An alert still waiting on a person: not acknowledged, not a recovery, and not closed by one. */
+export const isOpen = (a: Pick<MonitorAlert, "acknowledged" | "alert_on" | "closed_by">): boolean =>
+  !a.acknowledged && !isRecovery(a) && !a.closed_by;
+
+/** The alerts that fired — a recovery closes one and is none, so it is never counted, charted or "last fired". */
+export function firedOnly<T extends Pick<MonitorAlert, "alert_on">>(alerts: T[]): T[] {
+  return alerts.filter(a => !isRecovery(a));
+}
+
 /** Alerts that say the same thing, said once: one group per monitor, severity, message and caveat. */
 export interface AlertGroup {
   key: string;
@@ -147,7 +162,7 @@ export interface AlertGroup {
   count: number;
   first: string;
   last: string;
-  /** The ids not yet acknowledged. */
+  /** The ids still open (`isOpen`): not acknowledged, and not closed by a recovery. */
   open: string[];
 }
 
@@ -157,11 +172,11 @@ export function foldAlerts(alerts: MonitorAlert[]): AlertGroup[] {
     const key = `${a.monitor_id}|${a.severity}|${a.message}|${a.caveat ?? ""}`;
     const g = m.get(key);
     if (!g) {
-      m.set(key, { key, latest: a, count: 1, first: a.triggered_at, last: a.triggered_at, open: a.acknowledged ? [] : [a.id] });
+      m.set(key, { key, latest: a, count: 1, first: a.triggered_at, last: a.triggered_at, open: isOpen(a) ? [a.id] : [] });
       continue;
     }
     g.count++;
-    if (!a.acknowledged) g.open.push(a.id);
+    if (isOpen(a)) g.open.push(a.id);
     if (a.triggered_at > g.last) { g.last = a.triggered_at; g.latest = a; }
     if (a.triggered_at < g.first) g.first = a.triggered_at;
   }

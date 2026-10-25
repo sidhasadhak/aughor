@@ -5285,6 +5285,11 @@ export interface MonitorAlert {
   caveat?: string | null;
   acknowledged: boolean;
   acknowledged_at: string | null;
+  /** Arc TC, TC-4 (`monitors.recovery` on) — the recovery that closed this alert, and when. Absent while it is open. */
+  closed_by?: string;
+  closed_at?: string;
+  /** On a recovery (`alert_on: "recovered"`): the alert it closes — the one its message names. */
+  closes?: string;
 }
 
 export interface DigestSection {

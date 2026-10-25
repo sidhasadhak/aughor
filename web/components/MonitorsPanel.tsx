@@ -39,8 +39,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/ui/icon";
 import { formatCount, relTime } from "@/lib/format";
 import {
-  alertText, alertsByWeek, channelWords, checksPerDay, dayMonth, FIRES, foldAlerts, fromRemovedMonitors, proofState, proofWords,
-  removedWords, ruleWords,
+  alertText, alertsByWeek, channelWords, checksPerDay, dayMonth, FIRES, firedOnly, foldAlerts, fromRemovedMonitors, isOpen,
+  isRecovery, proofState, proofWords, removedWords, ruleWords,
   scheduleMix, scheduleWords, short, type AlertGroup, type ProofState,
 } from "@/lib/monitorSummary";
 import {
@@ -301,7 +301,8 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
     }
   }
 
-  const unacked = useMemo(() => alerts.filter(a => !a.acknowledged), [alerts]);
+  // open: not acknowledged, and not closed by a recovery (TC-4) — a recovery itself waits on nobody
+  const openAlerts = useMemo(() => alerts.filter(isOpen), [alerts]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -313,7 +314,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
         style={{ padding: "12px 20px 0", flexShrink: 0 }}
         tabs={[
           { id: "list" as View, label: "Overview" },
-          { id: "alerts" as View, label: "Alerts", badge: unacked.length },
+          { id: "alerts" as View, label: "Alerts", badge: openAlerts.length },
           ...(view === "form" ? [{ id: "form" as View, label: "Configure" }] : []),
         ]}
         trailing={<>
@@ -349,7 +350,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
           {loaded && !readFailed && view === "alerts" && <AlertsList alerts={alerts} monitors={monitors} onAck={ack} />}
           {loaded && !readFailed && view === "list" && (monitors.length === 0
             ? <EmptyState onAdd={openCreate} />
-            : <Overview monitors={monitors} alerts={alerts} unacked={unacked} proofs={proofs} metrics={metrics} triggers={triggers}
+            : <Overview monitors={monitors} alerts={alerts} openAlerts={openAlerts} proofs={proofs} metrics={metrics} triggers={triggers}
                 checking={checking} runResult={runResult} openRows={openRows}
                 onToggleRow={id => setOpenRows(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
                 onAck={ack} onSeeAlerts={() => setView("alerts")} onCheckRules={checkRules} onEdit={openEdit}
@@ -363,11 +364,11 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
 
 // ── The overview: figures, Needs you, the picture, the list ───────────────────
 
-function Overview({ monitors, alerts, unacked, proofs, metrics, triggers, checking, runResult, openRows, onToggleRow, onAck,
+function Overview({ monitors, alerts, openAlerts, proofs, metrics, triggers, checking, runResult, openRows, onToggleRow, onAck,
   onSeeAlerts, onCheckRules, onEdit, onDelete, onRun, onToggle, onProofChanged }: {
   monitors: MonitorDef[];
   alerts: MonitorAlert[];
-  unacked: MonitorAlert[];
+  openAlerts: MonitorAlert[];
   proofs: Record<string, MonitorProof | null>;
   metrics: Metric[];
   triggers: ActionTrigger[] | null;
@@ -394,27 +395,31 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, triggers, checki
   const broken = read.filter(m => stateOf(m) === "silent" || stateOf(m) === "undelivered");
   const perDay = on.map(m => checksPerDay(m.check_cron));
   const known = perDay.filter((n): n is number => n != null);
-  const lastAlert = [...alerts].sort((a, b) => b.triggered_at.localeCompare(a.triggered_at))[0];
+  // a recovery (TC-4) closes an alert and is none: never counted, charted or "last"
+  const fired = firedOnly(alerts);
+  const lastAlert = [...fired].sort((a, b) => b.triggered_at.localeCompare(a.triggered_at))[0];
+  const acked = fired.filter(a => a.acknowledged).length;
+  const closed = fired.filter(a => !a.acknowledged && a.closed_by).length;
 
   const openByMonitor = new Map<string, MonitorAlert[]>();
-  for (const a of unacked) openByMonitor.set(a.monitor_id, [...(openByMonitor.get(a.monitor_id) ?? []), a]);
+  for (const a of openAlerts) openByMonitor.set(a.monitor_id, [...(openByMonitor.get(a.monitor_id) ?? []), a]);
   const alertsOf = (id: string) => alerts.filter(a => a.monitor_id === id);
 
-  const weeks = alertsByWeek(alerts, new Date(), 12);
+  const weeks = alertsByWeek(fired, new Date(), 12);
   const inWeeks = weeks.reduce((s, w) => s + w.n, 0);
   // an alert outlives its monitor (supersede, do not delete): said apart, as Notifications says its removed triggers
   const since = weeks[0]?.start.toISOString() ?? "";
-  const removedInWeeks = removedWords(alerts.filter(a => a.triggered_at >= since), monitors);
-  const removed = removedWords(alerts, monitors);
+  const removedInWeeks = removedWords(fired.filter(a => a.triggered_at >= since), monitors);
+  const removed = removedWords(fired, monitors);
 
   return (
     <>
       <Figures testId="monitor-figures">
         <Figure label="Monitors" value={formatCount(monitors.length)} testId="fig-monitors"
           sub={on.length === monitors.length ? "all on" : `${on.length} on · ${monitors.length - on.length} off`} />
-        <Figure label="Open alerts" value={formatCount(unacked.length)} tone={unacked.length ? "amber" : undefined} testId="fig-open"
-          sub={alerts.length === 0 ? "none has fired here yet"
-            : `${formatCount(alerts.length - unacked.length)} acknowledged · last ${dayMonth(lastAlert.triggered_at)}${removed ? ` · ${removed}` : ""}`} />
+        <Figure label="Open alerts" value={formatCount(openAlerts.length)} tone={openAlerts.length ? "amber" : undefined} testId="fig-open"
+          sub={fired.length === 0 ? "none has fired here yet"
+            : `${formatCount(acked)} acknowledged${closed ? ` · ${formatCount(closed)} closed by a recovery` : ""} · last ${dayMonth(lastAlert.triggered_at)}${removed ? ` · ${removed}` : ""}`} />
         <Figure label="Proven to fire" testId="fig-proven"
           value={read.length < monitors.length ? "—" : `${fires.length} of ${monitors.length}`}
           sub={read.length < monitors.length ? "reading their proofs…"
@@ -508,8 +513,8 @@ function MonitorRow({ monitor, first, proof, proofRead, metricLabel, channel, al
   onToggle: () => void;
   onProofChanged: () => void;
 }) {
-  const lastAlert = [...alerts].sort((a, b) => b.triggered_at.localeCompare(a.triggered_at))[0];
-  const unacked = alerts.filter(a => !a.acknowledged).length;
+  const lastAlert = [...firedOnly(alerts)].sort((a, b) => b.triggered_at.localeCompare(a.triggered_at))[0];
+  const unacked = alerts.filter(isOpen).length;
   const state = proofRead ? proofState(proof) : "unknown";
   const meta = [
     ruleWords(monitor), scheduleWords(monitor.check_cron), channel,
@@ -658,7 +663,7 @@ export function MonitorProofRow({ monitorId, proof: given, onChanged }: {
 
 function AlertsList({ alerts, monitors, onAck }: { alerts: MonitorAlert[]; monitors: MonitorDef[]; onAck: (ids: string[]) => void }) {
   const groups = useMemo(() => foldAlerts(alerts), [alerts]);
-  const open = alerts.filter(a => !a.acknowledged).length;
+  const open = alerts.filter(isOpen).length;
   const gone = useMemo(() => new Set(fromRemovedMonitors(alerts, monitors).map(a => a.monitor_id)), [alerts, monitors]);
   return (
     <section aria-label="Alerts" data-testid="alert-list" style={CARD}>
@@ -675,27 +680,34 @@ function AlertsList({ alerts, monitors, onAck }: { alerts: MonitorAlert[]; monit
 function AlertRow({ g, first, removed, onAck }: { g: AlertGroup; first: boolean; removed: boolean; onAck: () => void }) {
   const a = g.latest;
   const settled = g.open.length === 0;
+  // TC-4 — a recovery is one row of its own, nothing to acknowledge; the alert it closed reads "closed", not "acknowledged"
+  const recovery = isRecovery(a);
   const when = g.count === 1 ? `${relTime(a.triggered_at)} ago`
     : dayMonth(g.first) === dayMonth(g.last) ? `${g.count} times · ${dayMonth(g.last)}` : `${g.count} times · ${dayMonth(g.first)} – ${dayMonth(g.last)}`;
   return (
     <div data-testid="alert-row" style={{ borderTop: first ? undefined : "1px solid var(--b0)", padding: "8px 2px", opacity: settled ? 0.6 : 1 }}>
       <div style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto auto", gap: 10, alignItems: "center" }}>
-        <Dot hue={SEVERITY_HUE[a.severity] ?? "grey"} title={a.severity} />
+        <Dot hue={recovery ? "green" : SEVERITY_HUE[a.severity] ?? "grey"} title={recovery ? "recovered" : a.severity} />
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <span className="aug-fs-chrome" style={{ ...ONE_LINE, fontWeight: 500, color: "var(--t1)" }}>{a.monitor_name}</span>
-            <span className="aug-fs-xs" style={MUTED}>{a.severity}</span>
+            {recovery
+              ? <Chip tone="up" title="Back within its limit. A recovery is recorded here and never sent.">recovered</Chip>
+              : <span className="aug-fs-xs" style={MUTED}>{a.severity}</span>}
             {a.caveat && <Chip tone="amber" title={a.caveat}>value may be mis-computed</Chip>}
             {removed && <Chip title="This monitor no longer exists — these alerts are history">since removed</Chip>}
           </div>
           <div className="aug-fs-xs" title={a.message} style={{ ...MUTED, ...ONE_LINE }}>
-            {alertText(a.message)}{a.previous_value != null ? ` · was ${short(a.previous_value)}` : ""} · {when}
+            {alertText(a.message)}{a.previous_value != null && !recovery ? ` · was ${short(a.previous_value)}` : ""} · {when}
           </div>
         </div>
         <span className="aug-fs-chrome" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums", minWidth: 24, textAlign: "right" }}>
           {g.count > 1 ? `×${g.count}` : ""}
         </span>
-        {settled ? <span className="aug-fs-xs" style={MUTED}>acknowledged</span>
+        {recovery ? <span />
+          : settled ? (a.closed_by && !a.acknowledged
+            ? <span className="aug-fs-xs" style={MUTED} title={a.closed_at ? `Closed by a recovery ${relTime(a.closed_at)} ago` : undefined}>closed</span>
+            : <span className="aug-fs-xs" style={MUTED}>acknowledged</span>)
           : <Button size="xs" variant="secondary" onClick={onAck}>{g.open.length > 1 ? `Acknowledge ${g.open.length}` : "Acknowledge"}</Button>}
       </div>
     </div>
