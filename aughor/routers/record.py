@@ -220,6 +220,12 @@ class DissentIn(BaseModel):
     why: str
 
 
+class FigureIn(BaseModel):
+    metric: str
+    start: str                     # ISO date, inclusive
+    end: str                       # ISO date, exclusive — the day after the edition's last day
+
+
 class DeclareDecisionRequest(BaseModel):
     question: str
     chosen: str
@@ -239,6 +245,11 @@ class DeclareDecisionRequest(BaseModel):
     # server, with the decision loop on (PENDING 57, D-1). The schema, when the page knows it.
     finding_id: str = ""
     schema_name: str = ""
+    # The run whose answer it was taken on (a dashboard Question's, a chat answer): the server cites the claims the
+    # run's receipt booked. The Briefing figure it was taken on: the server measures it for those days and books the
+    # reading to cite (the decision-framework study §3.2). Both with the decision loop on.
+    run_id: str = ""
+    figure: Optional[FigureIn] = None
 
 
 class OutcomeIn(BaseModel):
@@ -303,7 +314,8 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
             objective=req.objective, connection_id=req.connection_id, decided_at=req.decided_at,
             decided_by=who, review_on=req.review_on,
             expectation=req.expectation.model_dump() if req.expectation else None, note=req.note,
-            finding_id=req.finding_id, schema_name=req.schema_name)
+            finding_id=req.finding_id, schema_name=req.schema_name, run_id=req.run_id,
+            figure=req.figure.model_dump() if req.figure else None)
     except (ValueError, C.ClaimRefused) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return get_record_decision(did)

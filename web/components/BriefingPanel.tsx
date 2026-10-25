@@ -83,6 +83,7 @@ import {
 import { getBriefingDesk, type BriefingDesk } from "@/lib/api";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
+import { DecideDoor } from "@/components/decisions/DecideDoor";
 import { EditionCovers, scrollToCovers } from "@/components/brief/EditionCovers";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
@@ -3490,7 +3491,14 @@ export function BriefingPanel({
       : `No finding could be measured for ${reask.covers}${ranged && ranged.elsewhere ? `. ${ranged.elsewhere === 1 ? "The 1 finding is" : `All ${ranged.elsewhere} are`} about all history: ${reasonWords(ranged.reasons)}` : ""}.`;
     return (
       <>
-        {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote} />} />}
+        {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote}
+          after={rangeBlock && !canvasId ? (
+            // a decision taken on an edition's figure cites that figure, measured for the edition's days (study §3.2)
+            <DecideDoor connectionId={connectionId} question={`${rangeBlock.label}: ${rangeBlock.covers || `${rangeBlock.start} to ${rangeBlock.last_day}`}`}
+              on={{ kind: "figure", start: rangeBlock.start, end: rangeBlock.end,
+                    figures: rangeBlock.measured.filter(m => m.current !== null).map(m => ({ metric: m.metric, label: m.name })) }}
+              testId="briefing-decide" />
+          ) : undefined} />} />}
         {rangeSelected && editionBlock?.data_ended && (
           <EditionCovers connectionId={connectionId} schema={schema} workspaceId={workspaceId} current={editionBlock.preset} />
         )}

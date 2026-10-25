@@ -807,10 +807,11 @@ function DashboardNote({ element }: ComponentRenderProps<{ text: string; size?: 
 
 /** PENDING 54 — a question the agent answers on its rhythm. The dashboard reads the answers kept and never asks. */
 function DashboardQuestion({ element }: ComponentRenderProps<{ automation: string; first?: string; size?: Size | null }>) {
+  const { connectionId } = useDashboard();
   return (
     <Cell type="Question" props={element.props as Record<string, unknown>} size={element.props.size ?? "wide"} testid="dashboard-question-cell"
       extra={{ attrs: { "data-automation": element.props.automation } }}>
-      {() => <QuestionPiece automation={element.props.automation} first={element.props.first} />}
+      {() => <QuestionPiece automation={element.props.automation} first={element.props.first} connectionId={connectionId} />}
     </Cell>
   );
 }

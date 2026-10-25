@@ -307,6 +307,10 @@ export interface DeclareDecisionBody {
   /** The Explorer finding it was decided on: the server cites the finding's claim (PENDING 57, decision loop on). */
   finding_id?: string;
   schema_name?: string;
+  /** The run whose answer it was decided on (a dashboard Question's, a chat answer): the server cites its claims. */
+  run_id?: string;
+  /** The Briefing figure it was decided on: the server measures it for these days and books that reading to cite. */
+  figure?: { metric: string; start: string; end: string };
 }
 
 export interface OutcomeBody {

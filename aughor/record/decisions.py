@@ -388,6 +388,28 @@ def amend_decision(decision_id: str, *, by: str = "", option: str = "", dissent_
     return get_decision(new_id) or d
 
 
+def approve_decision(decision_id: str, *, by: str, ref: str = "", where: str = "") -> tuple[Decision, bool]:
+    """An approval given where the approver works — a ✅ on the decision card in Slack (the decision-framework study
+    §3.2) — booked as a new version of the decision, the earlier kept, dated and named. ``ref`` is the approver's
+    address there (``slack:U123``); one of the decision's named approvers is said to be one. The same person approving
+    twice adds nothing: ``(decision, False)``."""
+    asked = get_decision(decision_id)
+    if asked is None:
+        raise ValueError(f"no decision {decision_id!r}")
+    who = (by or "").strip()
+    if not who:
+        raise ValueError("an approval names who gave it")
+    d = _current(asked)
+    approvals = list(d.extra.get("approvals") or [])
+    if any((ref and a.get("ref") == ref) or a.get("by") == who for a in approvals):
+        return d, False
+    approvals.append({"by": who, "ref": ref, "where": where, "at": _now(),
+                      "named": bool(ref) and ref in (d.approvers or [])})
+    d.extra["approvals"] = approvals
+    new_id = book_decision(d)
+    return get_decision(new_id) or d, True
+
+
 def reopen_for_claim(claim_id: str, *, restated_as: str = "", why: str = "") -> list[Decision]:
     """A claim was restated or marked wrong: every decision that relied on it — as recorded at the
     moment of deciding — is reopened, naming the version that replaced what it stood on. A

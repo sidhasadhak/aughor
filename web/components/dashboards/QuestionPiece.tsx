@@ -11,6 +11,7 @@
 import { useState, type CSSProperties } from "react";
 
 import { Chip, Label, MUTED, NUM, ROW } from "@/components/clarity/kit";
+import { DecideDoor } from "@/components/decisions/DecideDoor";
 import { Gate, useLoad } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
 import { askQuestionNow, readQuestion, type DashboardQuestion, type QuestionAnswer, type RunCostEstimate } from "@/lib/api";
@@ -132,7 +133,11 @@ function Earlier({ q }: { q: DashboardQuestion }) {
   );
 }
 
-export function QuestionPiece({ automation, first }: { automation: string; first?: string }) {
+export function QuestionPiece({ automation, first, connectionId = "" }: {
+  automation: string; first?: string;
+  /** The connection the dashboard reads — where a decision taken on an answer is booked (the Decide door). */
+  connectionId?: string;
+}) {
   const load = useLoad(() => readQuestion(automation, first), [automation, first]);
   const [confirming, setConfirming] = useState(false);
   const [asked, setAsked] = useState<string | null>(null);
@@ -167,7 +172,14 @@ export function QuestionPiece({ automation, first }: { automation: string; first
                 {q.running && <Chip tone="violet">asking now</Chip>}
               </span>
             </div>
-            {q.latest ? <Answer a={q.latest} /> : (
+            {q.latest ? (
+              <>
+                <Answer a={q.latest} />
+                {/* a decision taken on this answer cites what its run booked (the decision-framework study §3.2) */}
+                <DecideDoor connectionId={connectionId} question={q.question} on={{ kind: "run", runId: q.latest.id }}
+                  testId="question-decide" />
+              </>
+            ) : (
               <p className="aug-fs-sm" data-testid="question-waiting" style={{ margin: "12px 0 4px", color: "var(--t2)" }}>
                 {q.next_at ? <>No answer yet. The first comes <b>{whenWords(q.next_at, true)}</b>, for the last complete period
                   against the one before.</> : "No answer yet. It is asked only when you ask."}

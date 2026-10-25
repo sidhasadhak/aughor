@@ -506,3 +506,98 @@ def test_a_month_with_no_rows_either_says_both_were_read(on, metric):
     d = _declare(conn, decided=dt.date(2027, 3, 1), expectation={"metric": "cover", "direction": "up"})
     o = D.outcome_by_id(RV.review_decision(d, runner=_snapshots(), today=dt.date(2027, 6, 1)))
     assert o.verdict == "cannot_tell" and "nor does the whole month after it" in o.why, o.why
+
+
+# ── the intake doors (the decision-framework study §3.2, §8 step 3) ───────────────────────────────────────────────
+
+def _run_with_answer(conn: str, run: str = "") -> tuple[str, str]:
+    from aughor.kernel.ledger import DEEP_REPORT_KIND
+    run = run or "inv-" + uuid.uuid4().hex[:6]
+    out = W.book_from_receipt(kind=DEEP_REPORT_KIND, natural_key=f"ada:{conn}:{run}", receipt_id="rcpt-" + run,
+                              connection_id=conn, question="What did paid social bring?",
+                              headline="Paid social brought 132 of 923 orders", sql="SELECT 1",
+                              payload_extra={"investigation_id": run})
+    return run, out["observation"]
+
+
+def test_a_decision_on_a_runs_answer_cites_what_its_receipt_booked(on):
+    """A dashboard Question's answer or a chat answer is a run: the decision taken on it cites the claims the run's
+    receipt booked, chosen by the server — a run that booked none is said, never guessed at."""
+    conn = _conn()
+    run, observation = _run_with_answer(conn)
+    did = B.declare_decision(question="Pause paid social?", chosen="pause it", options=["pause it", B.NOT_ACT],
+                             connection_id=conn, decided_by="user:amit", run_id=run)
+    d = D.get_decision(did)
+    assert d.relied_on == [observation] and d.extra["run_id"] == run
+    did = B.declare_decision(question="Pause paid social?", chosen="pause it", connection_id=conn,
+                             decided_by="user:amit", run_id="inv-none")
+    d = D.get_decision(did)
+    assert d.relied_on == [] and "booked no claim" in d.extra["relied_on_note"]
+
+
+def test_a_decision_on_a_briefing_figure_books_the_reading_it_relied_on(on, metric, monkeypatch):
+    """The Briefing figure is measured for the edition's days by the metric's own compiler and booked as a reading
+    with its own receipt — the page's number is never taken on trust — and the decision cites it."""
+    conn = _conn()
+    metric["revenue"] = _revenue(conn)
+    import aughor.knowledge.period_brief as PB
+    import aughor.routers.investigations as INV
+    monkeypatch.setattr(PB, "connection_runner", _shop())
+    receipts = []
+    monkeypatch.setattr(INV, "write_answer_receipt", lambda **kw: receipts.append(kw) or {"receipt_id": "rcpt-fig"})
+    did = B.declare_decision(question="The week: 3 to 9 August", chosen="cut Jeans' discount", connection_id=conn,
+                             decided_by="user:amit", figure={"metric": "revenue", "start": "2026-08-03",
+                                                             "end": "2026-08-10"})
+    d = D.get_decision(did)
+    assert len(d.relied_on) == 1 and d.extra["figure"]["metric"] == "revenue"
+    reading = S._claims.get(d.relied_on[0])
+    assert reading.kind == "reading" and reading.tier == "measured" and reading.statement.metric == "revenue"
+    assert reading.statement.range_start == "2026-08-03" and reading.statement.range_end == "2026-08-10"
+    assert reading.statement.value and reading.warrants[0].ref == "rcpt-fig" and reading.status == "Final"
+    assert receipts[0]["sqls"][0] and "2026-08-03 to 2026-08-09" in receipts[0]["question"]
+    # a figure with no rows, or no such metric, is said and nothing is cited
+    did = B.declare_decision(question="2030", chosen="x", connection_id=conn, decided_by="user:amit",
+                             figure={"metric": "revenue", "start": "2030-01-01", "end": "2030-01-08"})
+    assert D.get_decision(did).relied_on == [] and "holds no rows" in D.get_decision(did).extra["relied_on_note"]
+    did = B.declare_decision(question="?", chosen="x", connection_id=conn, decided_by="user:amit",
+                             figure={"metric": "nope", "start": "2026-08-03", "end": "2026-08-10"})
+    assert "not a metric on this connection" in D.get_decision(did).extra["relied_on_note"]
+
+
+def test_with_the_loop_off_a_run_or_figure_is_not_cited(off):
+    conn = _conn()
+    run, _obs = _run_with_answer(conn)
+    did = B.declare_decision(question="Pause?", chosen="pause it", connection_id=conn, decided_by="user:amit",
+                             run_id=run, figure={"metric": "revenue", "start": "2026-08-03", "end": "2026-08-10"})
+    d = D.get_decision(did)
+    assert d.relied_on == [] and "run_id" not in d.extra and "figure" not in d.extra
+
+
+def test_a_decision_said_in_slack_cites_the_threads_answer_and_its_card_books_approvals(on):
+    from fastapi import HTTPException
+
+    from aughor.routers import arrivals as A
+    conn = _conn()
+    run, observation = _run_with_answer(conn)
+    out = A.slack_decision(A.SlackDecision(
+        channel="C1", thread_ts="1712.001", text="pause paid social on Mytheresa for September",
+        question="What did paid social bring?", investigation_id=run, connection_id=conn, author="Amit",
+        author_ref="slack:U9", approver_refs=["slack:U2", "slack:U3", "mailto:x"]))
+    d = D.get_decision(out["decision_id"])
+    assert out["cited"] == 1 and d.relied_on == [observation]
+    assert d.decided_by == "person:Amit" and d.approvers == ["slack:U2", "slack:U3"] and d.chosen.startswith("pause")
+    assert "Slack thread C1:1712.001" in d.extra["note"]
+    got = A.slack_decision_approval(out["decision_id"], A.SlackApproval(verdict="approve", author="Ana", author_ref="slack:U2"))
+    assert got["booked"] and got["why"] == "approved by Ana"
+    again = A.slack_decision_approval(out["decision_id"], A.SlackApproval(verdict="approve", author="Ana", author_ref="slack:U2"))
+    assert not again["booked"]
+    A.slack_decision_approval(out["decision_id"], A.SlackApproval(verdict="dissent", author="Eve", author_ref="slack:U5"))
+    now = D.latest_decision(d.source)
+    assert now.extra["approvals"][0]["by"] == "person:Ana" and now.extra["approvals"][0]["named"] is True
+    assert now.dissent[-1].who == "person:Eve" and "decision card" in now.dissent[-1].why
+    with pytest.raises(HTTPException) as e:
+        A.slack_decision_approval("no-such", A.SlackApproval())
+    assert e.value.status_code == 404
+    with pytest.raises(HTTPException) as e:
+        A.slack_decision(A.SlackDecision(channel="C1", thread_ts="1.2", text="   "))
+    assert e.value.status_code == 422

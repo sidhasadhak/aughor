@@ -16,7 +16,7 @@ consumer, no connector code here.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aughor.security.authz import connection_owner_guard
 
@@ -130,6 +130,94 @@ def slack_arrival(body: SlackArrival):
             "check": check.to_dict() if check is not None else None,
             "claim": claim_id,
             "why": outcome.reason}
+
+
+#: What was decided, as said: a sentence, capped like a decision's question is.
+MAX_DECISION_CHARS = 500
+
+
+class SlackDecision(BaseModel):
+    channel: str
+    thread_ts: str
+    text: str                   # what was decided, as written after `decide:`
+    question: str = ""          # what was being decided: the question the thread's answer was to
+    investigation_id: str = ""  # the answer's run — its claims are what the decision cites
+    connection_id: str = ""
+    author: str = ""
+    author_ref: str = ""        # "slack:U123"
+    approver_refs: list[str] = Field(default_factory=list)
+
+
+class SlackApproval(BaseModel):
+    verdict: str = "approve"    # approve | dissent
+    author: str = ""
+    author_ref: str = ""
+
+
+def _said(text: str, cap: int) -> str:
+    from aughor.security.pii import redact_text
+    from aughor.util.prompt_safety import sanitize_db_text
+    return redact_text(sanitize_db_text(text or "")[:cap].strip())
+
+
+@router.post("/arrivals/slack/decision")
+def slack_decision(body: SlackDecision):
+    """The decide verb (the decision-framework study §3.2): a decision said in a Slack thread is booked in the Record —
+    decided by the person who said it, citing the answer the bot gave in that thread (its run's claims), the people
+    named after the verb as its approvers, the thread as where it was taken. Through the same customs as a note: capped,
+    control-stripped, PII redacted; what was said is the decision's words, never an instruction."""
+    channel, thread_ts = body.channel.strip(), body.thread_ts.strip()
+    if not channel or not thread_ts:
+        raise HTTPException(status_code=422, detail="channel and thread_ts are required")
+    text = _said(body.text, MAX_DECISION_CHARS)
+    if not text:
+        raise HTTPException(status_code=422, detail="the message said nothing after decide:")
+    question = _said(body.question, MAX_DECISION_CHARS)
+    run = body.investigation_id.strip()
+    conn = body.connection_id.strip()
+    if not conn and run:
+        try:
+            from aughor.db.history import get_investigation
+            conn = str((get_investigation(run) or {}).get("connection_id") or "")
+        except Exception:  # noqa: BLE001 — an unreadable run names no connection, and the refusal below says so
+            conn = ""
+    if not conn:
+        raise HTTPException(status_code=422, detail="the decision names no connection, and no answer in the thread does")
+    ref = f"{channel}:{thread_ts}"
+    who = _said(body.author, 80) or body.author_ref.strip() or "someone in Slack"
+    approvers = [r.strip() for r in body.approver_refs if r.strip().startswith("slack:")][:10]
+    from aughor.record import decisions as D
+    from aughor.record.byproducts import NOT_ACT, declare_decision
+    try:
+        did = declare_decision(
+            question=question or f"Decided in Slack: {text}", chosen=text, options=[text, NOT_ACT],
+            approvers=approvers, connection_id=conn, decided_by=f"person:{who}",
+            note=f"decided in Slack thread {ref} by {who}" + (f" ({body.author_ref.strip()})" if body.author_ref.strip() else ""),
+            run_id=run)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    d = D.get_decision(did)
+    return {"decision_id": did, "review_on": d.review_on if d else "", "cited": len(d.relied_on) if d else 0,
+            "why": str((d.extra.get("relied_on_note") if d else "") or ""), "thread": ref}
+
+
+@router.post("/arrivals/slack/decision/{decision_id}/approval")
+def slack_decision_approval(decision_id: str, body: SlackApproval):
+    """A ✅ on a decision card is the reacting person's approval; a ❌ is their dissent, kept on the decision with the
+    rest — never a verdict on an answer (TJ-4 reads the answer's ✅). 404 for a decision the Record does not hold."""
+    from aughor.record import decisions as D
+    if D.get_decision(decision_id) is None:
+        raise HTTPException(status_code=404, detail=f"no decision {decision_id}")
+    who = _said(body.author, 80) or body.author_ref.strip() or "someone in Slack"
+    if body.verdict == "dissent":
+        D.amend_decision(decision_id, by=f"person:{who}", dissent_who=f"person:{who}",
+                         dissent_why="a ❌ on the decision card in Slack")
+        return {"booked": True, "why": f"{who}'s dissent is kept on the decision"}
+    if body.verdict != "approve":
+        raise HTTPException(status_code=422, detail="verdict is approve or dissent")
+    d, added = D.approve_decision(decision_id, by=f"person:{who}", ref=body.author_ref.strip(), where="Slack")
+    return {"booked": added, "decision_id": d.id,
+            "why": (f"approved by {who}" if added else f"{who} had already approved it")}
 
 
 @router.get("/arrivals/claims")

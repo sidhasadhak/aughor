@@ -19,7 +19,9 @@ import { Chat, StreamingPlan, type Adapter, type FileUpload, type Message, type 
 
 import { csvFilename, type Grid, type TableRenderer } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
-import type { ArrivalPoster, AskChunk, AskStream, FactChecker, TurnArtifacts, VerdictPoster } from "./aughor.js";
+import type {
+  ApprovalPoster, ArrivalPoster, AskChunk, AskStream, DecisionPoster, FactChecker, TurnArtifacts, VerdictPoster,
+} from "./aughor.js";
 import { createTurnMap } from "./turnmap.js";
 
 export const BOT_USERNAME = "aughor";
@@ -37,6 +39,28 @@ const NOTE_VERB = /^note:\s*/i;
 /** Idea 7 — the check verb: "@aughor check: <memo>" checks every number in the memo
  *  against the data instead of asking a question. The COLON is the verb, as for `note:`. */
 const CHECK_VERB = /^check:\s*/i;
+
+/** The decision-framework study §3.2 — the decide verb: "@aughor decide: pause paid social on Mytheresa — approvers
+ *  @ana @ben" books a decision from the thread, citing the answer the bot gave in it, and posts a decision CARD whose
+ *  ✅ is the named approvers' approval — told apart from a ✅ on an answer, which is a verdict (TJ-4). */
+const DECIDE_VERB = /^decide:\s*/i;
+const MENTION = /<@([A-Z0-9]+)(?:\|[^>]*)?>|@([UW][A-Z0-9]{7,})\b/g;
+
+/** What was decided and who approves it, from a `decide:` message as it arrived: the people mentioned AFTER the verb
+ *  are its approvers (the bot's own mention comes before it), and a trailing "approvers" word is the label, not the
+ *  decision. */
+export function parseDecision(raw: string): { decided: string; approverIds: string[] } {
+  const at = (raw ?? "").search(/decide:/i);
+  if (at < 0) return { decided: "", approverIds: [] };
+  const rest = raw.slice(at + "decide:".length);
+  const ids = [...rest.matchAll(MENTION)].map(m => m[1] ?? m[2]).filter((x): x is string => Boolean(x));
+  const decided = rest.replace(MENTION, " ").replace(/\s+/g, " ")
+    .replace(/[\s,;:—–-]*\b(approvers?|approved by|to approve)\b[\s,;:—–-]*$/i, "")
+    .replace(/[\s,;:—–-]+$/, "").trim();
+  return { decided, approverIds: [...new Set(ids)] };
+}
+
+const mention = (ref: string) => `<@${ref.replace(/^slack:/, "")}>`;
 
 /** A Slack thread id's (channel, root ts), for the arrivals door. The adapter's ids
  *  are colon-joined and prefixed ("slack:C123:1712.34"); the root ts is always the
@@ -69,6 +93,8 @@ export function buildBot({
   postArrival,
   factCheck,
   postVerdict,
+  postDecision,
+  postApproval,
   turnMapFile,
   rehearse = false,
 }: {
@@ -85,6 +111,10 @@ export function buildBot({
   factCheck?: FactChecker;
   /** TJ-4 — a reaction is a verdict; absent in tests that only exercise the ask half. */
   postVerdict?: VerdictPoster;
+  /** The decide verb's door; absent, "decide:" is asked as a question like any other text. */
+  postDecision?: DecisionPoster;
+  /** A ✅ / ❌ on a decision card; absent, a reaction on a card is ignored. */
+  postApproval?: ApprovalPoster;
   /** AO-7b — where the message→turn map is persisted; absent (tests) keeps it in memory. */
   turnMapFile?: string;
   /** AO-6 — REHEARSE: a mention in a channel is answered in the asker's DM first and
@@ -126,6 +156,13 @@ export function buildBot({
     limit: 100,
     log: (l) => console.log(l),
   });
+  // The decision cards the decide verb posted: the card's message → the decision it asks approval of. Persisted beside
+  // the turn maps for the same reason they are: an approver's ✅ tomorrow must still land.
+  const decisionCards = createTurnMap<DecisionCard>({
+    file: turnMapFile ? turnMapFile.replace(/\.json$/, "") + ".decisions.json" : "",
+    limit: 300,
+    log: (l) => console.log(l),
+  });
   const ACCEPT = new Set(["white_check_mark", "heavy_check_mark", "✅", "✔️"]);
   const REJECT = new Set(["x", "negative_squared_cross_mark", "❌", "❎"]);
   bot.onReaction(async (event) => {
@@ -134,8 +171,30 @@ export function buildBot({
     const raw = String(event.rawEmoji ?? "").replace(/^:|:$/g, "");
     const verdict = ACCEPT.has(raw) ? "accept" : REJECT.has(raw) ? "reject" : null;
     if (!verdict) return;
-    const turn = byMessage.get(event.messageId) ?? byThread.get(event.threadId);
     const who = event.user?.userName || event.user?.userId || "someone";
+
+    // A ✅ on a decision CARD is an approval of the decision, never a verdict on an answer; a ❌ is a dissent, kept.
+    const card = decisionCards.get(event.messageId);
+    if (card) {
+      if (!postApproval) return;
+      const here = bot.thread(event.threadId);
+      const ref = event.user?.userId ? `slack:${event.user.userId}` : "";
+      if (verdict === "accept" && card.approverRefs.length && !card.approverRefs.includes(ref)) {
+        await here.post(`Only the approvers named on this decision approve it — ${card.approverRefs.map(mention).join(", ")}.`);
+        return;
+      }
+      if (verdict === "accept" && !card.approverRefs.length && ref && ref === card.decidedByRef) {
+        await here.post("The person who decided cannot approve their own decision.");
+        return;
+      }
+      const result = await postApproval({ decisionId: card.decisionId, verdict: verdict === "accept" ? "approve" : "dissent",
+                                          author: event.user?.fullName || who, authorRef: ref });
+      await here.post(!result.ok ? `Not booked: ${result.detail}`
+        : verdict === "accept" ? `Approved by ${who} — booked on the decision.` : `${who}'s ❌ is kept on the decision as a dissent.`);
+      return;
+    }
+
+    const turn = byMessage.get(event.messageId) ?? byThread.get(event.threadId);
     if (turn && postVerdict) {
       // Law 8: the message carries no receipt and the reaction needs none — nothing is posted back.
       // AO-7b: the headline is left to the verdict door, which reads the answer's own from the
@@ -240,6 +299,40 @@ export function buildBot({
           ? `Noted — staged for review. ${result.detail}`
           : `Not filed: ${result.detail}`,
       );
+      return;
+    }
+
+    // The decide verb books the decision, citing this thread's answer, and posts the card its approvers ✅.
+    if (postDecision && DECIDE_VERB.test(question)) {
+      const ref = parseSlackThreadRef(thread.id);
+      if (!ref) {
+        await thread.post("I can't tell which thread this is, so I can't book the decision.");
+        return;
+      }
+      const { decided, approverIds } = parseDecision(message.text ?? "");
+      if (!decided) {
+        await thread.post("Write what was decided after `decide:`, and name its approvers with @ if it has any.");
+        return;
+      }
+      const turn = byThread.get(thread.id);
+      const authorRef = message.author?.userId ? `slack:${message.author.userId}` : "";
+      const approverRefs = approverIds.map(id => `slack:${id}`).filter(r => r !== authorRef);
+      const result = await postDecision({
+        channel: ref.channel, threadTs: ref.ts, decided, question: turn?.question ?? "",
+        investigationId: turn?.investigationId, author: message.author?.fullName ?? "", authorRef, approverRefs,
+      });
+      if (!result.ok || !result.decisionId) {
+        await thread.post(`Not booked: ${result.detail}`);
+        return;
+      }
+      const cites = result.cited
+        ? `It cites ${turn ? "the answer above" : `${result.cited} claim${result.cited === 1 ? "" : "s"}`}.`
+        : `It cites nothing${result.detail ? ` — ${result.detail}` : ""}.`;
+      const asks = approverRefs.length
+        ? `Approvers ${approverRefs.map(mention).join(" ")}: react ✅ on this message to approve, ❌ to dissent.`
+        : "React ✅ on this message to approve it, ❌ to dissent.";
+      const posted = await thread.post(`Booked as a decision: “${decided}”. Review ${result.reviewOn || "on its date"}. ${cites}\n${asks}`);
+      if (posted?.id) decisionCards.set(posted.id, { decisionId: result.decisionId, approverRefs, decidedByRef: authorRef });
       return;
     }
 
@@ -363,6 +456,13 @@ export const CORRECTION =
   /^\s*(?:correction\s*[:—–-]|(?:no[,.!]?\s+)?(?:(?:that|this|it)(?:['’]s|\s+is)\s+)?(?:wrong|incorrect|not\s+(?:right|correct))\b)/i;
 
 /** AO-6 — a rehearsed answer waiting on the asker's click. */
+interface DecisionCard {
+  decisionId: string;
+  /** The approvers named after the verb, as `slack:<id>`; empty — anyone but the decider approves. */
+  approverRefs: string[];
+  decidedByRef: string;
+}
+
 interface Rehearsal {
   /** The channel thread the mention came from — where ✅ posts the answer. */
   originThreadId: string;

@@ -368,11 +368,18 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   const reopenings = (Array.isArray(d.extra.reopened) ? d.extra.reopened : []) as
     { at: string; why?: string; settled_at?: string; settled_by?: string; settled_why?: string }[];
   const answered = reopenings.filter(r => r.settled_at);
+  // Approvals given where the approver works — a ✅ on the decision card in Slack — each dated and named.
+  const approvals = (Array.isArray(d.extra.approvals) ? d.extra.approvals : []) as
+    { by: string; where?: string; at: string; named?: boolean }[];
   const rail = (
     <>
       <div className="aug-rail-head"><span className="aug-label">This decision</span></div>
       <Fact label="Answerable">{whoLabel(d.owner || d.decided_by)}</Fact>
       {d.approvers.length > 0 && <Fact label="Approvers">{d.approvers.map(a => whoLabel(a, actor.name)).join(", ")}</Fact>}
+      {approvals.length > 0 && (
+        <Fact label="Approved">{approvals.map(a => `${whoLabel(a.by, actor.name)}${a.where ? ` in ${a.where}` : ""}, ${day(a.at)}`
+          + (d.approvers.length && !a.named ? " (not a named approver)" : "")).join(" · ")}</Fact>
+      )}
       <Fact label="Decided">{day(d.decided_at)} by {whoLabel(d.decided_by, actor.name)}</Fact>
       <Fact label="Booked">{SOURCE_WORDS[d.source.kind] ?? d.source.kind}</Fact>
       <Fact label="Review date">{d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"}</Fact>

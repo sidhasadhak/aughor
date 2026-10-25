@@ -20,7 +20,9 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMemoryState } from "@chat-adapter/state-memory";
 
-import { createArrivalPoster, createAskStream, createFactChecker, createVerdictPoster } from "./aughor.js";
+import {
+  createApprovalPoster, createArrivalPoster, createAskStream, createDecisionPoster, createFactChecker, createVerdictPoster,
+} from "./aughor.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
 import { createTableRenderer } from "./artifacts.js";
@@ -63,6 +65,17 @@ async function makeBot(record: BotRecord) {
       AUGHOR_API_URL: apiUrl,
       AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
       AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
+    }),
+    // The decide verb and its card: "@bot decide: …" books a decision citing the thread's answer; a ✅ on the card is
+    // the approver's approval (the decision-framework study §3.2).
+    postDecision: createDecisionPoster({
+      AUGHOR_API_URL: apiUrl,
+      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
+      AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
+    }),
+    postApproval: createApprovalPoster({
+      AUGHOR_API_URL: apiUrl,
+      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
     }),
     // TJ-4 — a ✅ / ❌ on an answer is a verdict on its turn, through the verdict door.
     postVerdict: createVerdictPoster({

@@ -1189,6 +1189,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/arrivals/slack/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Decision
+         * @description The decide verb (the decision-framework study §3.2): a decision said in a Slack thread is booked in the Record —
+         *     decided by the person who said it, citing the answer the bot gave in that thread (its run's claims), the people
+         *     named after the verb as its approvers, the thread as where it was taken. Through the same customs as a note: capped,
+         *     control-stripped, PII redacted; what was said is the decision's words, never an instruction.
+         */
+        post: operations["slack_decision_arrivals_slack_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/arrivals/slack/decision/{decision_id}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Decision Approval
+         * @description A ✅ on a decision card is the reacting person's approval; a ❌ is their dissent, kept on the decision with the
+         *     rest — never a verdict on an answer (TJ-4 reads the answer's ✅). 404 for a decision the Record does not hold.
+         */
+        post: operations["slack_decision_approval_arrivals_slack_decision__decision_id__approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ask": {
         parameters: {
             query?: never;
@@ -17942,6 +17986,7 @@ export interface components {
             /** Dissent */
             dissent?: components["schemas"]["DissentIn"][];
             expectation?: components["schemas"]["ExpectationIn"] | null;
+            figure?: components["schemas"]["FigureIn"] | null;
             /**
              * Finding Id
              * @default
@@ -17973,6 +18018,11 @@ export interface components {
              * @default
              */
             review_on: string;
+            /**
+             * Run Id
+             * @default
+             */
+            run_id: string;
             /**
              * Schema Name
              * @default
@@ -18389,6 +18439,15 @@ export interface components {
             feedback: string;
             /** Keep Subquestions */
             keep_subquestions?: number[] | null;
+        };
+        /** FigureIn */
+        FigureIn: {
+            /** End */
+            end: string;
+            /** Metric */
+            metric: string;
+            /** Start */
+            start: string;
         };
         /** FileLinkBody */
         FileLinkBody: {
@@ -20613,6 +20672,24 @@ export interface components {
              */
             name: string;
         };
+        /** SlackApproval */
+        SlackApproval: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Author Ref
+             * @default
+             */
+            author_ref: string;
+            /**
+             * Verdict
+             * @default approve
+             */
+            verdict: string;
+        };
         /** SlackArrival */
         SlackArrival: {
             /**
@@ -20689,6 +20766,42 @@ export interface components {
              * @default
              */
             signing_secret: string;
+        };
+        /** SlackDecision */
+        SlackDecision: {
+            /** Approver Refs */
+            approver_refs?: string[];
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Author Ref
+             * @default
+             */
+            author_ref: string;
+            /** Channel */
+            channel: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Investigation Id
+             * @default
+             */
+            investigation_id: string;
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+            /** Text */
+            text: string;
+            /** Thread Ts */
+            thread_ts: string;
         };
         /** SlotsBody */
         SlotsBody: {
@@ -25272,6 +25385,74 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SlackArrival"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_decision_arrivals_slack_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_decision_approval_arrivals_slack_decision__decision_id__approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackApproval"];
             };
         };
         responses: {
