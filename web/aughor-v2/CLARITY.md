@@ -65,6 +65,7 @@ the first row still leaves with the answer.
 | **Detail behind tabs or *Details*** (Overview · Properties · Links · Actions · Sources · History) | One panel of twelve sections that never ends |
 | **Tools in one menu** (*Tools ▾*) | A row of five tool buttons |
 | **Small uppercase section labels** (11px, letter-spaced, muted), the meta at their right end | Page title bars; a title that repeats the rail or tab |
+| **One skin across the shell and the page** — the rail, the top strip and the content share the skin the toggle set | A dark rail or strip on a light page, or the reverse: *"I cannot have half dark and half light theme"* (the user, 2026-10-25) |
 | **Graph connectors straight**, bending only at 90° or 45° (step edges, zero radius) | Curves (bezier edges) |
 | **A process as a funnel** — stage · bar · count — with each promise on one line and its overdue count as a button | A process described in prose |
 

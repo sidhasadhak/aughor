@@ -12381,6 +12381,16 @@ a screen nobody had looked at. A change to the rail is shown before anything is 
 
 Re-propose only on the user's word.
 
+### 4.11 · A dark rail on a light page — REFUSED on screen (2026-10-25)
+
+The look study (§6 item 53) measured Foundry's own shell: a dark navigation rail and strip around light content. It
+was built as a seventh knob of the look — `chrome: same | dark`, per person, off by default, outside the preset — and
+shown live on the scratch pair with the light skin. The user, on seeing it: *"Keep dark only and light only concept
+that change entirely for all panels (making it one theme).. I cannot have half dark and half light theme."* The
+commit was dropped before it was merged; nothing of it ships. What stands: the two skins, each one theme for every
+panel, switched by the one toggle; the Workbench preset (six knobs) and the entity's uses section are untouched by
+this. Rule in CLARITY §3: one skin across the shell and the page.
+
 ## 5 · Sequencing
 
 ```
@@ -14487,6 +14497,13 @@ the browser** · **measure the premise before building.**
       into CLARITY §3** as a "Count it" table. **Bordered state tags measured as no gap**: no chip carries a state word
       or a state field, and the Radix `surface` badge is already tint, border and text of one hue. Not proven live:
       the scratch connection has no ontology; the unit tests and the panel test hold it.*
+    - **(4), decided 2026-10-25 — REFUSED.** The chrome was built as a seventh knob (`same` · `dark`, per person,
+      outside the preset) and shown live on the scratch pair; the user, on the dark rail beside the light page: *"Keep
+      dark only and light only concept that change entirely for all panels (making it one theme).. I cannot have half
+      dark and half light theme."* The knob was dropped before it was merged (§4.11). The rule stands in CLARITY §3:
+      one skin across the shell and the page. In the same breath, on the six-step side-by-side of the Workbench knobs
+      (`design-mockups/palantir-inspired/aughor-foundry-knobs-2026-10-25.png`): *"Other than that, the transitions
+      shown here seem good to me"* — the preset's six knobs stand as built, per person; the default is unchanged.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

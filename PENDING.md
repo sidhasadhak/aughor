@@ -686,6 +686,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     edges and typeface, in the Look panel and the preference store; tests green.* *Second step 2026-10-25: what uses
     an entity behind `ontology.entity_usage` (dependents · dashboards · reads by month from the SQL audit) on the
     entity Overview; Workshop's numbers into CLARITY §3; bordered state tags measured as no gap (no chip carries a
-    state; the surface badge is already bordered and tinted).* Owed: the chrome screenshot's verdict (dark rail on
-    light content — shown, not built); Blueprint's 30px rows beyond scaling; the entity-uses door proven live on a
-    connection with an ontology.
+    state; the surface badge is already bordered and tinted).* *The chrome (dark rail on light content) was built as a
+    seventh knob, shown live, and **REFUSED by the user the same day** — one theme for every panel, never half dark
+    and half light (ROADMAP §4.11); the commit was dropped unmerged.* Owed: Blueprint's 30px rows beyond scaling; the
+    entity-uses door proven live on a connection with an ontology.

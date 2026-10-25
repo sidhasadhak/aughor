@@ -259,6 +259,11 @@ the same day — PL-1 to PL-3 as one change: the preset is named **Workbench** i
 ratchet retires a product's name in code and copy and "Slate" is already the grey's own name. Second step the same
 day: PL-5 (the numbers of §2.3 into CLARITY §3) and PL-6 (what uses an entity, behind `ontology.entity_usage`) built;
 PL-4 measured as no gap — no chip carries a state word or field, and the surface badge is already bordered and tinted.
+**Call 4 closed the same day: REFUSED.** PL-7 was built as a seventh knob (chrome: same · dark, per person, outside the
+preset) and shown live on the scratch pair; the user, on the dark rail beside the light page: *"I cannot have half dark
+and half light theme"* — one theme for every panel. The commit was dropped unmerged (ROADMAP §4.11). Foundry's own
+shell arrangement is the one thing of its look this platform will not take. The six steps of §5, the Workbench preset,
+were approved on the same image: *"Other than that, the transitions shown here seem good to me."*
 
 1. **Which Palantir?** The product look (Foundry/Workshop) or the brand (palantir.com)? — *Recommended: the product.*
 2. **Preset or default?** A Foundry preset in the Look panel, per person, or move the platform's default? —
