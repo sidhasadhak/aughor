@@ -782,6 +782,9 @@ export interface paths {
          *     chip becomes ``current`` again on its own — the revision is a digest of the
          *     configuration, not a counter, so returning to a measured state returns the measurement
          *     with it.
+         *
+         *     Arc TC-1 — ``expected_rev`` (the revision the caller read), with ``agents.revision_on_answers`` on: a restore
+         *     sent against an agent that has moved since is refused with 409, as a save is.
          */
         post: operations["restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post"];
         delete?: never;
@@ -21373,6 +21376,8 @@ export interface components {
             doc_ids?: string[] | null;
             /** Enabled */
             enabled?: boolean | null;
+            /** Expected Rev */
+            expected_rev?: string | null;
             /** Instructions */
             instructions?: string | null;
             /** Name */
@@ -24642,7 +24647,9 @@ export interface operations {
     };
     restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_rev?: string | null;
+            };
             header?: never;
             path: {
                 agent_id: string;

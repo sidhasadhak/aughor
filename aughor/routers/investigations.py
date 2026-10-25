@@ -375,11 +375,12 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # receipted (chat / deep-analysis / monitor), so stamping here attributes all three by
         # construction. Absent when nobody asked as an agent — an unbound answer says so by
         # omission rather than carrying an empty agent that reads like a real one.
+        # Arc TC-1 — with `agents.revision_on_answers` on, the stamp also names the revision of the
+        # agent's configuration this answer ran under (`rev`); off, it is `{id, name}` as before.
         _agent = None
         try:
-            from aughor.custom_agents.context import current_agent
-            _a = current_agent()
-            _agent = {"id": _a.id, "name": _a.name} if _a is not None else None
+            from aughor.custom_agents.context import answer_stamp, current_agent
+            _agent = answer_stamp(current_agent())
         except Exception:
             _agent = None
         _receipt_id = Ledger.default().artifact_write(

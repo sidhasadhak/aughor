@@ -67,6 +67,37 @@ def current_agent() -> Optional[UserAgent]:
     return _active.get()
 
 
+#: Arc TC-1 (ROADMAP §3.59) — the flag that stamps an agent's revision on what it answers and honours
+#: ``expected_rev`` at the doors that change its configuration.
+REVISION_FLAG = "agents.revision_on_answers"
+
+
+def revision_on_answers() -> bool:
+    """Whether ``agents.revision_on_answers`` is on. A flag that cannot be read is off."""
+    try:
+        from aughor.kernel.flags import flag_enabled
+        return bool(flag_enabled(REVISION_FLAG))
+    except Exception:                       # noqa: BLE001 — off is the as-before path
+        return False
+
+
+def answer_stamp(agent: Optional[UserAgent]) -> Optional[dict]:
+    """The agent as an answer names it: ``{"id", "name"}``, and with ``agents.revision_on_answers`` on, ``rev``.
+
+    ``rev`` is the ``config_rev`` of the record handed in — for the active agent, the configuration the answer RAN
+    under, activated when the ask began. Not re-read from the store: an agent edited while it was answering is a
+    different configuration, and stamping the stored one would credit the answer to an agent that did not give it.
+
+    One builder for the receipt and the stored turn, so the two cannot name the agent differently. None for no
+    agent: an unbound answer says so by omission rather than carrying an empty agent."""
+    if agent is None:
+        return None
+    stamp = {"id": agent.id, "name": agent.name}
+    if revision_on_answers():
+        stamp["rev"] = agent.config_rev
+    return stamp
+
+
 def agent_brief_for(agent: Optional[UserAgent]) -> str:
     """The brief for ONE agent, handed in as a value — the same text
     :func:`agent_brief_block` renders for the active one.

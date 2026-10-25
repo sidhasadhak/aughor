@@ -234,6 +234,10 @@ class UserAgentPatch(BaseModel):
     pack_ids: Optional[list[str]] = None
     tool_grants: Optional[list[str]] = None
     enabled: Optional[bool] = None
+    #: Arc TC-1 — the revision (`config_rev`) the caller read. With `agents.revision_on_answers` on, a save sent
+    #: against an agent that has moved since is refused with 409 naming both revisions; not sent, the save is taken
+    #: as before. Off, it is ignored.
+    expected_rev: Optional[str] = None
 
 
 class UserAgentFromTemplate(BaseModel):
@@ -250,6 +254,21 @@ class UserAgentFromTemplate(BaseModel):
     doc_ids: list[str] = []
     pack_ids: list[str] = []
     tool_grants: list[str] = []
+
+
+def _expected_rev(sent: Optional[str]) -> Optional[str]:
+    """Arc TC-1 — the revision a caller read, honoured only with `agents.revision_on_answers` on. Off, or sent
+    blank, it is None: the save is taken unconditionally, as it was before the field existed."""
+    from aughor.custom_agents.context import revision_on_answers
+    sent = (sent or "").strip()
+    return sent if sent and revision_on_answers() else None
+
+
+def _revision_conflict(exc) -> HTTPException:
+    """A `RevisionConflict` as the door says it: 409, naming the revision read and the one in force."""
+    return HTTPException(status_code=409, detail={
+        "status": "revision_conflict", "message": str(exc),
+        "expected_rev": exc.expected, "current_rev": exc.current})
 
 
 @router.get("/agents/custom")
@@ -414,12 +433,16 @@ def patch_user_agent(agent_id: str, body: UserAgentPatch):
         eff_conn = body.connection_id if body.connection_id is not None else stored.connection_id
         eff_schema = body.schema_scope if body.schema_scope is not None else stored.schema_scope
         _validate_agent_grants(body.tool_grants, eff_conn, eff_schema)
-    agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
-                         purpose=body.purpose,
-                         connection_id=body.connection_id, schema_scope=body.schema_scope,
-                         doc_ids=body.doc_ids, pack_ids=body.pack_ids,
-                         tool_grants=body.tool_grants,
-                         enabled=body.enabled)
+    from aughor.custom_agents.store import RevisionConflict
+    try:
+        agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
+                             purpose=body.purpose,
+                             connection_id=body.connection_id, schema_scope=body.schema_scope,
+                             doc_ids=body.doc_ids, pack_ids=body.pack_ids,
+                             tool_grants=body.tool_grants,
+                             enabled=body.enabled, expected_rev=_expected_rev(body.expected_rev))
+    except RevisionConflict as exc:
+        raise _revision_conflict(exc) from exc
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")
     return agent.model_dump()
@@ -445,7 +468,7 @@ def list_user_agent_revisions(agent_id: str, limit: int = 50):
 
 
 @router.post("/agents/custom/{agent_id}/revisions/{version}/restore")
-def restore_user_agent_revision(agent_id: str, version: int):
+def restore_user_agent_revision(agent_id: str, version: int, expected_rev: Optional[str] = None):
     """Put an earlier configuration back — as a NEW revision, never a rewind.
 
     History stays append-only: "I went back to how it was on Tuesday" is itself worth
@@ -454,15 +477,22 @@ def restore_user_agent_revision(agent_id: str, version: int):
     chip becomes ``current`` again on its own — the revision is a digest of the
     configuration, not a counter, so returning to a measured state returns the measurement
     with it.
+
+    Arc TC-1 — ``expected_rev`` (the revision the caller read), with ``agents.revision_on_answers`` on: a restore
+    sent against an agent that has moved since is refused with 409, as a save is.
     """
     from aughor.custom_agents import get_agent, update_agent
     from aughor.custom_agents.revisions import revision_config
+    from aughor.custom_agents.store import RevisionConflict
     if get_agent(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     config = revision_config(agent_id, version)
     if config is None:
         raise HTTPException(status_code=404, detail=f"No revision {version} for this agent")
-    agent = update_agent(agent_id, **config)
+    try:
+        agent = update_agent(agent_id, expected_rev=_expected_rev(expected_rev), **config)
+    except RevisionConflict as exc:
+        raise _revision_conflict(exc) from exc
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")
     return {"restored_from": version, "agent": agent.model_dump()}
