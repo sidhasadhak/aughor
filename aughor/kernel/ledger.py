@@ -1295,6 +1295,66 @@ class Ledger:
             })
         return out
 
+    # ── Arc TC, TC-5: the journal's run lines, read across runs (flag obs.log_search) ──
+
+    def run_lines(
+        self,
+        *,
+        since: str,
+        before_seq: Optional[int] = None,
+        text: str = "",
+        org_id: Optional[str] = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Journal lines written under a run (a non-empty ``trace_id``) at or after ``since``,
+        newest first, below ``before_seq`` when given — the rows ``/traces/{id}/logs`` reads one
+        run at a time, read across runs. ``text`` matches the line as it was kept, its kind and
+        its payload, case-folded, with LIKE's own wildcards escaped so a ``%`` or ``_`` in the
+        words is a character, never a pattern. Portable: no JSON operator, which Postgres lacks
+        here (``_backfill_payload_facts`` says why)."""
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
+             "FROM events WHERE trace_id <> '' AND at >= ?")
+        args: list[Any] = [since]
+        if before_seq is not None:
+            q += " AND seq < ?"; args.append(int(before_seq))
+        if org_id is not None:
+            q += " AND org_id = ?"; args.append(org_id)
+        if text:
+            needle = "%" + (text.lower().replace("\\", "\\\\").replace("%", "\\%")
+                            .replace("_", "\\_")) + "%"
+            q += (" AND (LOWER(kind) LIKE ? ESCAPE '\\'"
+                  " OR LOWER(COALESCE(payload, '')) LIKE ? ESCAPE '\\')")
+            args.extend([needle, needle])
+        q += " ORDER BY seq DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for seq, at, k, c, cv, j, p, tid, oid in rows:
+            try:
+                payload = json.loads(p) if p else None
+            except Exception:
+                payload = p
+            out.append({"seq": seq, "at": at, "kind": k, "conn_id": c, "canvas_id": cv,
+                        "job_id": j, "trace_id": tid, "org_id": oid, "payload": payload})
+        return out
+
+    def run_lines_extent(self, *, since: str, org_id: Optional[str] = None) -> dict:
+        """What a search over the run lines since ``since`` covers: how many runs, how many
+        lines, the oldest line kept, and the kinds of run those lines were written under (a
+        job's kind; ``""`` for a line written outside any job). Counted, never sampled."""
+        where, args = "e.trace_id <> '' AND e.at >= ?", [since]
+        if org_id is not None:
+            where += " AND e.org_id = ?"; args.append(org_id)
+        with self._lock:
+            runs, lines, oldest = self._conn.execute(
+                f"SELECT COUNT(DISTINCT e.trace_id), COUNT(*), MIN(e.at) FROM events e WHERE {where}",
+                args).fetchone()
+            kinds = self._conn.execute(
+                "SELECT DISTINCT COALESCE(j.kind, '') FROM events e LEFT JOIN jobs j ON j.id = e.job_id "
+                f"WHERE {where}", args).fetchall()
+        return {"runs": int(runs or 0), "lines": int(lines or 0), "oldest_at": oldest,
+                "run_kinds": sorted({str(k[0] or "") for k in kinds})}
+
     # ── task_history: spans as a queryable table (Rec 4, flag obs.task_table) ──
 
     def task_history_insert(self, row: dict) -> None:

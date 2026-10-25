@@ -501,6 +501,32 @@ def get_trace_logs(trace_id: str, limit: int = 200):
     }
 
 
+@router.get("/obs/logs")
+def search_run_logs(q: str = "", level: Optional[str] = None, run_kind: Optional[str] = None,
+                    cursor: Optional[str] = None, limit: int = 50):
+    """Arc TC, TC-5 (`obs.log_search`, off by default) — the lines `/traces/{id}/logs` reads
+    for one run, searched across every run of the last thirty days: words, a level (``error`` ·
+    ``warning`` · ``info``) and the kind of run, newest first, a page at a time from an opaque
+    cursor. No copy of the lines: the journal's own rows, read in place.
+
+    The answer says what it searched — the runs and lines in the window and the oldest line
+    kept there — because the journal sweeps some kinds within days, and a search that read two
+    days must not read as thirty. Off: the answer of a route that does not exist, byte for byte,
+    and a run's lines are read one trace at a time."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("obs.log_search"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    from aughor.obs import log_search
+    try:
+        return log_search.search(q=q, level=level or None, run_kind=run_kind or None,
+                                 cursor=cursor or None, limit=limit,
+                                 org_id=current_org_id() or None)
+    except log_search.BadCursor as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 # ── Prompt capture as a bounded, self-expiring act ───────────────────────────────
 # Storing model-call CONTENT is the most sensitive write this product makes, so it is
 # never a standing setting: an operator opens a window bounded by a call budget AND a

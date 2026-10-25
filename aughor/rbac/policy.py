@@ -91,6 +91,8 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/traces/{trace_id}"): P.ADMIN_MANAGE_ORG,
     ("GET", "/activity"): P.ADMIN_MANAGE_ORG,
     ("GET", "/activity/stream"): P.ADMIN_MANAGE_ORG,
+    # Arc TC, TC-5 — searching every run's lines at once sits with the other cross-run reads.
+    ("GET", "/obs/logs"): P.ADMIN_MANAGE_ORG,
     # Prompt capture writes model-call CONTENT for a bounded window — opening one is an
     # org-administration act, and reading its status says whether content is being stored.
     ("GET", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,
