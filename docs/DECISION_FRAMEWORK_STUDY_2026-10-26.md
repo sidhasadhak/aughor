@@ -322,7 +322,23 @@ are the user's are listed at the end. Branch `claude/decision-review-segment-cut
 | The evidence envelope's *conversation* and *meeting* kinds; the meeting door — the model proposes the decisions it finds in pasted notes, a person confirms or refuses each | `afcabccc` | invited, never crawled; a reference and a hash, the words only when shared; a candidate is never a fact |
 | Arc TC-1…TC-5 — an answer names its agent's revision; an edit names its run; automations and monitors keep versions and replay as a dry run; alerts close; operations read across runs | merged from five branches | each behind its own flag, off, byte-identical off |
 
-**Proven live on LuxExperience** — §9.1, filled in after the deploy.
+### 9.1 · Proven live on LuxExperience (2026-10-27, the API at `80472992`, every write marked "SCENARIO RUN 2026-10-26 (continued)")
+
+| Defect or door | What the live install said |
+|---|---|
+| 5 · a hold that moved | Mytheresa, paid social paused for September, "hold within 3% of the other shops": **missed** — GMV +27,841 (+10.2%) against its comparison group, above the ±3% its hold allowed, "neither better nor worse" |
+| 8 · the band's reference | YOOX, "hold within 3%": the band read against the comparison baseline; inside a noise of −21,090 to +17,930, wider than ±3%, so whether it held **cannot be told** — no longer a band read against August |
+| 6 · month-end snapshots | Bologna's weeks of cover, decided 1 March 2025: thirty days (1–30 March) held none of its rows, so the review read **the month** (1–31 March) and found the snapshot; it still cannot tell, because only 2 earlier months hold readings |
+| 2 · the mission report | *Grow repeat purchase in North America* measured: 0.1552 over 25 September–24 October against its history 0.1318–0.1894 — unmoved. The day before it said "the date column orders.order_date is not on customers" |
+| 3 · Corrections | 5 restatements, down from 85 — scored predictions are no longer numbers that changed |
+| 4 · the workspace switch | the Record's Decisions moved from Luxeperience's 17 to TheLook's 2 at the switch, no reload |
+| a Briefing figure | a decision on the week of 12–18 October cites a **reading**: "GMV (EUR) read 158,815", measured, Final, warranted by its own receipt |
+| a kind and its proposal | "a clienteling programme" (moves repeat purchase, must say what it expects) declared; under the mission it is proposed with: acting — "only 0 past decisions of this kind have a measured outcome"; not acting — "its own history predicts 0.1318 to 0.1894; the interval held 2 of 4 times". The first read quoted the mission's last *booked* report, written before the fix, and said the old error — fixed the same hour (`80472992`): a proposal measures the objective now |
+| the reading forwards and backwards | the YOOX marketing decision reads from the Home finding it was taken on, through the two claims it stood on, the dissent and approvers, its first review's old failure, to the reopening loop settled with the owner's answer |
+
+Not proven live: the Slack `decide:` verb and its card (they wait for a person's message in Slack — the bots run the new
+code under a new supervisor), the meeting door (one model call), the Analyst's receipt landing its claims on its inquiry
+(an Analyst run), and the TC flags (off; each is the user's switch).
 
 **Not built, and why.** The inbound email door and Google comments wait on the user's calls. A Slack reaction that
 attaches a message waits: a reply in a thread the platform filed is already a said claim, and the decision card carries
