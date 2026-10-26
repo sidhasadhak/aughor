@@ -269,12 +269,47 @@ def _unbound(binding: Optional[dict]) -> list[str]:
     return out
 
 
+def _mark_words(mark: Any) -> str:
+    if not isinstance(mark, dict):
+        return "a mark"
+    return f"retiring on {mark.get('on') or '?'}, to be replaced by '{mark.get('successor') or '?'}'"
+
+
+def _retiring(before: Optional[dict], after: Optional[dict]) -> list[tuple[str, str]]:
+    """Arc FA, FA-3 — a retiring mark that changed: always a MEANING change, whatever the kind, because every reader is
+    told to use something else from then on. A withdrawal says itself, unless the mark was all the declaration held
+    (a built element's mark taken off)."""
+    old = (before or {}).get("retiring")
+    if after is None:
+        if old is not None and not set(before or {}) - {"retiring"}:
+            return [("MEANING", f"it is no longer marked retiring ({_mark_words(old)}) — readers stop being told to "
+                                "use another")]
+        return []
+    new = after.get("retiring")
+    if new == old:
+        return []
+    if old is None:
+        return [("MEANING", f"it is marked {_mark_words(new)} — it still serves, and every reader is told to use the "
+                            "successor instead")]
+    if new is None:
+        return [("MEANING", f"it is no longer marked retiring ({_mark_words(old)}) — readers stop being told to use "
+                            "another")]
+    return [("MEANING", f"its retiring mark changed: {_mark_words(old)} → {_mark_words(new)}")]
+
+
 def classify(kind: str, before: Optional[dict], after: Optional[dict], *, dependents: list[dict] = (),
              binding: Optional[dict] = None, watched_promises: set[str] = frozenset()) -> tuple[str, list[dict]]:
     """``(class, reasons)`` for one change: ``before`` is the published declaration's fields (None when the draft adds
     it), ``after`` the draft's (None when the draft withdraws it). ``dependents`` are what rely on the published
     element (`ontology.dependents`); ``watched_promises`` the promise names an automation's trigger names."""
-    reasons: list[tuple[str, str]] = []
+    # Arc FA, FA-3 — the retiring mark is classed before any kind's own rules, which then read the rest of the fields
+    reasons: list[tuple[str, str]] = _retiring(before, after)
+    if reasons:
+        before = None if before is None else {k: v for k, v in before.items() if k != "retiring"}
+        after = None if after is None else {k: v for k, v in after.items() if k != "retiring"}
+        if not before and not after:
+            # the mark is the whole declaration (a built element, marked or unmarked): it is the whole change
+            return "MEANING", [{"class": c, "why": w} for c, w in reasons]
     if after is None or (kind == "link" and after.get("withdrawn") and not (before or {}).get("withdrawn")):
         if dependents:
             named = "; ".join(f"{d['consumer']} '{d['name']}' ({d['how']})" for d in dependents[:6])

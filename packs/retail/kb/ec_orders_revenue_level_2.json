@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_discount_rate",
+    "area": "margin_pricing",
+    "kind": "rate",
+    "direction": "down",
     "title": "Discount Rate",
     "intent_tags": [
       "discount rate",
@@ -126,6 +129,9 @@
   },
   {
     "id": "ec_revenue_per_visitor",
+    "area": "traffic_conversion",
+    "kind": "value",
+    "direction": "up",
     "title": "Revenue per Visitor",
     "intent_tags": [
       "revenue per visitor",
@@ -254,6 +260,9 @@
   },
   {
     "id": "ec_gross_profit_per_order",
+    "area": "margin_pricing",
+    "kind": "value",
+    "direction": "up",
     "title": "Gross Profit per Order",
     "intent_tags": [
       "gross profit per order",
@@ -381,6 +390,9 @@
   },
   {
     "id": "ec_cancellation_rate",
+    "area": "orders_sales",
+    "kind": "rate",
+    "direction": "down",
     "title": "Cancellation Rate",
     "intent_tags": [
       "cancellation rate",
@@ -506,6 +518,9 @@
   },
   {
     "id": "ec_coupon_redemption_rate",
+    "area": "marketing",
+    "kind": "rate",
+    "direction": "either",
     "title": "Coupon Redemption Rate",
     "intent_tags": [
       "coupon redemption rate",

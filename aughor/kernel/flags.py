@@ -163,6 +163,35 @@ FLAG_ENV = {
     # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
     # contract describes it. OFF: each door answers as before.
     "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
+    # Arc FA, FA-7 (ROADMAP §3.60; §6 item 52(b): the chat-compatible endpoint waits until one is asked for). ON: an agent
+    # has a grounding read at two doors — POST /doors/agents/{id}/grounding with its key, and the read-level MCP tool
+    # `ground_agent` over GET /agents/custom/{id}/grounding — returning the blocks the agent would read for a question,
+    # their content trimmed as the ask path trims, the absent ones with why, whether the embedder was called and which,
+    # and never calling a chat model; each read is journaled as `agent.grounding_read` without the content. OFF: both
+    # doors answer 404, the tool is not listed, and the Doors tab and every other door read as before.
+    "agents.grounding_read": "AUGHOR_AGENTS_GROUNDING_READ",
+    # Arc FA, FA-1 (ROADMAP §3.60). ON: the published declarations — segments, computed properties, processes, rules,
+    # impacts, actions and links — become `declaration` nodes of the connection graph, so the graph search, the read-back
+    # and the knowledge door find them, withheld wherever their entity's tables are; publishing a release rebuilds the
+    # graph. OFF: the graph is projected without them, byte-identical, and a publish leaves it as it was.
+    "graph.declarations": "AUGHOR_GRAPH_DECLARATIONS",
+    # Arc FA, FA-1. ON: POST /objects/find looks for an object by its title across the served entities, capped and
+    # saying how many entities it searched and why it skipped each other one; ⌘K shows what it found. OFF: the door
+    # answers 404 and ⌘K searches exactly what it did.
+    "objects.find": "AUGHOR_OBJECTS_FIND",
+    # Arc FA, FA-1. ON: when the embedder cannot embed a question and the vector store is up, the documents are ranked
+    # by their words (BM25) instead, each hit marked matched by words, and every caller says so. OFF: a failed embed
+    # makes the document search unavailable, as before.
+    "knowledge.hybrid_documents": "AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS",
+    # Arc FA, FA-2 (ROADMAP §3.60). ON: a dashboard's ticked objects and a set a piece reads can be asked about in the
+    # Data Canvas — the question carries them as its subject, read again through the object door under the asker's row
+    # policy, at most 50 by key and title with the total, what is withheld from them said. OFF: no piece offers it, a
+    # subject of objects or a set contributes nothing, and every turn is asked as before.
+    "canvas.ask_about_chosen": "AUGHOR_CANVAS_ASK_ABOUT_CHOSEN",
+    # Arc FA, FA-4 (ROADMAP §3.60). ON: the builder shows each set as its chain with a count at each step, and a set of
+    # fixed conditions can be kept as a segment — declared by the person as a condition rule, in the draft; a rule's
+    # condition may count the last days. OFF: the builder shows each set's one count, and a rule refuses `in_last`.
+    "ontology.set_segments": "AUGHOR_ONTOLOGY_SET_SEGMENTS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -191,6 +220,17 @@ FLAG_ENV = {
     # the entity, and how many audited statements named its tables in each of the last twelve months. OFF: the door
     # says it is off and the panel shows what it showed — metrics and actions.
     "ontology.entity_usage": "AUGHOR_ONTOLOGY_ENTITY_USAGE",
+    # Arc FA, FA-3 (ROADMAP §3.60). ON: a person may put an earlier version of a declaration back — its fields go
+    # through the normal save path into the DRAFT, measured again by the kind's own counts and classed like any change,
+    # so it reaches readers only when published; refused while releases are off and for an organisation's ontology.
+    # OFF: the put-back door refuses, and the history door answers exactly as before.
+    "ontology.put_back": "AUGHOR_ONTOLOGY_PUT_BACK",
+    # Arc FA, FA-3 (ROADMAP §3.60; the user, 2026-10-26: the status word is *retiring*). ON: any declaration may be
+    # marked retiring — a successor of its own kind, a date and a note — released as a MEANING change; the semantic
+    # block, the entity panel and the object page say "retiring on <date> — use <successor> instead" (after the date,
+    # "past its retiring date"; it still serves), and a withdrawal refused for what depends on it suggests retiring.
+    # OFF: the door refuses, and nothing reads or says the mark.
+    "ontology.retiring": "AUGHOR_ONTOLOGY_RETIRING",
     # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a dashboard opens to be read, and Edit
     # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
     # every piece set up there, never typed as a spec. OFF: a dashboard is arranged by its six sizes and Arrange, the
@@ -254,6 +294,12 @@ FLAG_ENV = {
     # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
     # replaces the definition, runs keep neither, and the version and replay doors answer 404.
     "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
+    # Arc FA, FA-5 (ROADMAP §3.60; the user's calls, 2026-10-26). ON: an automation may be triggered by the objects a
+    # rule or segment newly admits — each check lists the segment's keys under the row policy of the person who saved
+    # the automation, the first check records who is already in and says so without firing, and a later check fires once
+    # with the keys that entered (withheld, with their count said, above the 50 a step runs once per). OFF: the trigger
+    # is not offered, a save naming it is refused, and a stored one reads nothing and says it is off.
+    "automations.objects_admitted": "AUGHOR_AUTOMATIONS_OBJECTS_ADMITTED",
     # Arc TC, TC-5 (ROADMAP §3.59). ON: each automation and monitor on the hub map says how often its runs failed over a
     # window (seven days unless asked), counted at the run store: "no runs" where none ran, never 0%, and "not permitted"
     # where the reader may not see its runs, never left off. OFF: the map carries no failure rate.
@@ -282,6 +328,39 @@ FLAG_ENV = {
     # that actually shrinks the registry. One-off audits can reproduce it by asking the
     # question directly; the refuter itself (run_refutation) is unchanged.
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
+    # Arc FA, FA-6 (ROADMAP §3.60). ON: a binding records the manifest's version (never the caller's), who bound it and
+    # a snapshot of what the pack offered — its terms, alert priors, metrics and structure claims — and the upgrade doors
+    # diff that snapshot against the pack as it stands, proposing only new and changed items. OFF: a binding stores the
+    # version the caller sends and nothing else, and the upgrade doors answer 404.
+    "packs.installed_versions": "AUGHOR_PACKS_INSTALLED_VERSIONS",
+    # Arc FA, FA-6. ON: a pack may carry `dashboards/*.yaml` templates; the templates of the packs bound on a connection
+    # are listed, and one becomes a dashboard draft through the proposal path with no model call, a metric the
+    # connection lacks skipped and said. OFF: nothing is listed and the template doors answer 404.
+    "packs.dashboard_templates": "AUGHOR_PACKS_DASHBOARD_TEMPLATES",
+    # Arc MC, MC-0 (ROADMAP §3.62, §6 item 55(d)). ON: approving a metric — one at a time or a set adopted together —
+    # reads its last six months at the day its data ends and refuses one that reads one value in every month, one whose
+    # median is outside its recipe's sane range, and one whose recipe roles are bound to columns of the wrong type or to
+    # a column the formula tests for emptiness that is never empty. OFF: approval reads only the window and the twins.
+    "metrics.figure_gates": "AUGHOR_METRICS_FIGURE_GATES",
+    # Arc MC, MC-1/MC-2. ON: GET /metrics/coverage/{conn} answers the map — the industry's areas, the function areas no
+    # industry takes and the generic layer's — with every table and metric placed in its areas, each placement saying
+    # why, and the Metrics tab shows it. OFF: the door answers 404 and the tab shows nothing new.
+    "metrics.coverage_map": "AUGHOR_METRICS_COVERAGE_MAP",
+    # Arc MC, MC-3/MC-4. ON: a coverage run proposes, by code, the recipes bound to this connection's roles and the
+    # metrics the ontology's declared promises, stages and segments derive, each through the gates, into the catalogue
+    # grouped by area; a proposal that fails a gate is listed with why and is not adoptable. OFF: nothing is proposed.
+    "metrics.coverage_proposals": "AUGHOR_METRICS_COVERAGE_PROPOSALS",
+    # Arc MC, MC-5 (§6 item 55(c), the user's call: automatically when profiled). ON: when a connection is profiled, each
+    # area with data and knowledge-base patterns its metrics do not compute yet gets ONE model call, handed those patterns
+    # and the area's own tables, to write the ones its data supports; each proposal cites its pattern and goes through the
+    # gates. The coverage view says the calls made. OFF: no call is made.
+    "metrics.coverage_writer": "AUGHOR_METRICS_COVERAGE_WRITER",
+    # Arc MC, MC-6. ON: a measure the explorer's findings keep computing with no metric reading it is proposed in its
+    # area, by code. OFF: it is not.
+    "metrics.blind_spot_proposals": "AUGHOR_METRICS_BLIND_SPOT_PROPOSALS",
+    # Arc MC, MC-6 (§6 item 55(f)). ON: the Briefing measures up to a workspace's cap of headline metrics — 24 unless the
+    # workspace sets its own — read by area as the map lists them. OFF: it measures 12, the income statement first.
+    "briefing.metric_cap": "AUGHOR_BRIEFING_METRIC_CAP",
     # "plan.program" (AUGHOR_PLAN_PROGRAM) was DELETED 2026-08-01 (flag endgame, verdict
     # sheet Wave 1): a SECOND answer path (typed program executor) with a standing
     # adopt-or-kill question. One brain, one answer path — the benchmarking arc measured
@@ -798,6 +877,18 @@ FLAG_META = {
                        "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
                        "keeps neither.",
     },
+    "automations.objects_admitted": {
+        "label": "Act on each object a rule admits",
+        "summary": "An automation can start when objects enter a rule or a segment. It hands its steps the keys of "
+                   "the objects that entered.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads keys every minute"},
+                  {"kind": "private", "text": "Sees only what its owner sees"}],
+        "description": "The first check records the objects already in and says how many, without firing. Each "
+                       "later check fires once for the objects that entered since, and says how many left. More "
+                       "than 50 at once are counted and their keys withheld. The objects are listed under the row "
+                       "policy of the person who saved the automation. Off: the trigger is not offered.",
+    },
     "hub.failure_rate": {
         "label": "Failure rate on the hub map",
         "summary": "Each automation and monitor says how often its runs failed over the last week. One that did not "
@@ -955,6 +1046,90 @@ FLAG_META = {
                        "policy or a masked property is named. Outside programs read the same field, described in "
                        "their contract. Off: a cut read can look complete.",
     },
+    "agents.grounding_read": {
+        "label": "Let programs read what an agent would read",
+        "summary": "A program holding an agent's key can see what the agent would be given for a question. "
+                   "No model answers it.",
+        "facts": [{"kind": "free", "text": "No chat model calls"},
+                  {"kind": "model", "text": "May call the embedding model"},
+                  {"kind": "private", "text": "Each read is recorded"}],
+        "description": "The read returns each piece of context the agent would read, cut to what the caller may see. "
+                       "A piece that is missing says why. It says whether the embedding model was called, which can "
+                       "cost at a hosted provider. Off: the read is closed and the agent's other doors are unchanged.",
+    },
+    "graph.declarations": {
+        "label": "Search what the ontology declares",
+        "summary": "Published segments, processes, rules, impacts, actions and links can be found by search. "
+                   "Answers see them beside the tables they are about.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Withheld with their tables"}],
+        "description": "Each published declaration is added to the connection's graph with its name, its "
+                       "description and its entity. Only what a release published is read, never a draft. A "
+                       "declaration over a table you may not see is withheld with it, and counted. Publishing "
+                       "rebuilds the graph. Off: search finds tables, metrics, terms and findings only.",
+    },
+    "objects.find": {
+        "label": "Find an object by its name",
+        "summary": "The command bar finds an object by the name it goes by, whatever its entity. It says how many "
+                   "entities it searched.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries the warehouse as you type"},
+                  {"kind": "private", "text": "Reads only what you may see"}],
+        "description": "Each entity whose objects are named by a text property is searched for the words typed, a "
+                       "few objects each and up to twelve entities. An entity it did not search is listed with why: "
+                       "no name to match, a masked name, or the cap. Row policies apply. Off: the command bar finds "
+                       "pages, runs and tables only.",
+    },
+    "knowledge.hybrid_documents": {
+        "label": "Search documents by words when meaning is down",
+        "summary": "When the embedding model is unavailable, the documents are still searched by their words. "
+                   "Each result says it matched by words only.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "needs", "text": "Needs the vector store up"}],
+        "description": "A document search embeds the question to match by meaning. When that fails and the store "
+                       "holding the documents answers, each passage you may read is ranked by the words it shares "
+                       "with the question. Answers and the chat say the match was by words. Off: the search says "
+                       "it could not run.",
+    },
+    "canvas.ask_about_chosen": {
+        "label": "Ask about the objects you chose",
+        "summary": "A dashboard's ticked objects, or a set a piece shows, can be asked about in the Data Canvas. The "
+                   "question carries them as its subject.",
+        "facts": [{"kind": "free", "text": "No extra model calls"},
+                  {"kind": "private", "text": "Your row policy holds"}],
+        "description": "They are read again through the object door as you may see them: at most 50, by key and "
+                       "name, with how many there are. Objects withheld from you are counted and said, never listed. "
+                       "Nothing goes in the page's address. Off: no piece offers it, and questions are asked as before.",
+    },
+    "ontology.set_segments": {
+        "label": "Keep a dashboard set as a segment",
+        "summary": "A set of fixed conditions can be declared as a segment of the ontology, in the draft. The builder "
+                   "counts each step of a set.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Counts each step shown"}],
+        "description": "Keeping it declares a condition rule in your name, counted before it is written. Readers get "
+                       "it when the ontology is published. A set that reads a reader's value, a chosen object or a "
+                       "count cannot be kept, and says why. Off: the builder shows each set's one count.",
+    },
+    "ontology.put_back": {
+        "label": "Put an earlier ontology version back",
+        "summary": "Any earlier version of an entity, link, process, rule or action can go back into the draft. "
+                   "Readers get it only once it is published.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Counts it again on your warehouse"}],
+        "description": "The version is counted again before it lands, and the draft rates the change like any other. "
+                       "It needs releases on, so nothing is served before a person publishes. Off: earlier "
+                       "versions can be read but not put back.",
+    },
+    "ontology.retiring": {
+        "label": "Mark an ontology element as retiring",
+        "summary": "Mark an entity, segment, process or rule as retiring on a date, with what to use instead. "
+                   "It keeps working meanwhile.",
+        "facts": [{"kind": "free", "text": "No model calls"}],
+        "description": "The agent and the entity's page say what replaces it and when. It is published as a change of "
+                       "meaning, so claims made under it say so. After the date it still works, and says it is past "
+                       "its retiring date. Off: nothing is marked retiring.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1003,6 +1178,82 @@ FLAG_META = {
                   {"kind": "private", "text": "Merges are previewed cell by cell"}],
         "description": "A linked column follows the sheet it reads when that sheet changes. A newer file is "
                        "matched on a key and applied as one change you can undo. Off: each sheet stands alone.",
+    },
+    "packs.installed_versions": {
+        "label": "Record each pack's installed version",
+        "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
+                   "what changed before you upgrade.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Never re-offers what you declined"}],
+        "description": "Each binding keeps the pack's own version and a record of the terms, alerts, metrics and "
+                       "structure it offered. When the pack moves on, its page lists what was added, changed and "
+                       "removed, and marks what you declined. Upgrading proposes only what is new or changed. Off: a "
+                       "binding keeps whatever version the caller sends, and there is no upgrade.",
+    },
+    "metrics.figure_gates": {
+        "label": "Check a metric's figures before it is approved",
+        "summary": "Approval refuses a metric that reads one value every month or sits outside its recipe's range. "
+                   "It also refuses one whose roles are bound to the wrong columns.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads six months at approval"}],
+        "description": "The figures are read over the last six months of the metric's own data, so a source that "
+                       "stopped is still checked. A check that cannot read its figures says so and does not refuse. "
+                       "Off: approval checks only the dates and the twins.",
+    },
+    "metrics.coverage_map": {
+        "label": "Show which areas of the business have metrics",
+        "summary": "The Metrics tab shows the areas a business like this one is read by. Each shows its data, its "
+                   "metrics and what the knowledge base would measure.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads approved figures, at most hourly"}],
+        "description": "Each table and each metric is placed in an area, and each placement says why. An area the "
+                       "knowledge base has no pattern for is said as such. Off: the coverage view is not shown.",
+    },
+    "metrics.coverage_proposals": {
+        "label": "Propose metrics for areas that have none",
+        "summary": "Proposes the pack's recipes bound to this connection and the metrics the ontology's promises, "
+                   "stages and segments derive. Every proposal is checked before you see it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads each proposal's figures once"},
+                  {"kind": "private", "text": "Nothing is approved for you"}],
+        "description": "Proposals are listed by area beside the explorer's. One that fails a check says why and cannot "
+                       "be adopted until it is fixed. Off: only the explorer and the pack propose, as before.",
+    },
+    "metrics.coverage_writer": {
+        "label": "Write metrics from the knowledge base on profiling",
+        "summary": "When a connection is profiled, each area with data gets one model call. It writes the "
+                   "knowledge-base patterns the area's tables support and its metrics do not compute yet.",
+        "facts": [{"kind": "model", "text": "1 call per open area"},
+                  {"kind": "warehouse", "text": "Reads each proposal's figures once"},
+                  {"kind": "private", "text": "Nothing is approved for you"}],
+        "description": "Each proposal names the pattern it came from, or says none did. One that reads a table outside "
+                       "its area, or cites a pattern it does not compute, is refused with why. The Metrics tab says "
+                       "how many calls were made and when. Off: no call is made.",
+    },
+    "metrics.blind_spot_proposals": {
+        "label": "Propose the measures the explorer keeps computing",
+        "summary": "A measure the explorer's findings keep computing, with no metric reading it, is proposed in its "
+                   "area.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads each proposal's figures once"}],
+        "description": "Three findings computing the same column are enough. The proposal sums or averages it, says "
+                       "which, and goes through the same checks. Off: blind spots stay questions only.",
+    },
+    "briefing.metric_cap": {
+        "label": "Measure up to 24 Briefing metrics, by area",
+        "summary": "The Briefing measures up to 24 approved metrics, or the number a workspace sets. They read by area, "
+                   "the income statement first.",
+        "facts": [{"kind": "warehouse", "text": "Three queries per metric per Briefing"}],
+        "description": "A metric past the cap is still named, with the cap that cut it. Off: the Briefing measures 12.",
+    },
+    "packs.dashboard_templates": {
+        "label": "Start a dashboard from a pack's template",
+        "summary": "A pack bound to a connection can offer dashboard templates. You keep one as your own.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries the warehouse when drafted"}],
+        "description": "A template names the pack's metrics and how they are laid out. A metric this connection has "
+                       "not registered or approved is left out, and said. Nothing is kept until you keep it, and the "
+                       "dashboard says which pack and version it came from. Off: no template is listed.",
     },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
@@ -1483,6 +1734,73 @@ GRADUATION_QUEUE: dict = {
                      "says; and /health and /catalog/tree p95 within 20% while one runs. Falsifier: a p95 that rises "
                      "more than 20% during a backup moves it to a quiet hour; a restore that brings back a removal it "
                      "did not list stops it",
+    # Arc MC (ROADMAP §3.62), queued 2026-10-26. MC-0..MC-4 and MC-6 call no model; MC-5 calls one per uncovered area.
+    "metrics.figure_gates": "receipt: on LuxExperience, re-proposing return_rate as it was bound (order_item → returns) "
+                            "is refused at approval because it reads 1 in every month, outside its 0–30% range, and its "
+                            "return date is never empty, each said; a working metric is approved as before. Falsifier: "
+                            "a metric reading one value in every month approved stops it",
+    "metrics.coverage_map": "receipt: on LuxExperience, the matrix places every table that has a metric and every "
+                            "metric in an area, each with its reason, and names the areas with data and no metric. "
+                            "Falsifier: a table with a metric placed in no area, or an area said covered by a metric "
+                            "that reads one value in every month, stops it",
+    "metrics.coverage_proposals": "receipt: on LuxExperience the bound recipes are proposed with their gate verdicts, and "
+                                  "on theLook a declared promise's on-time rate counts what the ontology measured. "
+                                  "Falsifier: a proposal that fails a gate shown as adoptable, or a derived metric "
+                                  "whose count differs from the ontology's own, stops it",
+    "metrics.coverage_writer": "receipt: on LuxExperience, one call per uncovered area writes proposals that cite their "
+                               "patterns, pass or fail the gates with why, and the calls are said on the coverage view. "
+                               "Falsifier: a proposal naming a table outside its area, or citing a pattern it does not "
+                               "compute, shown as adoptable stops it",
+    "metrics.blind_spot_proposals": "receipt: on a connection whose findings keep computing one column with no metric, it "
+                                    "is proposed in its area with its gates. Falsifier: a measure computed by three "
+                                    "findings with no metric and no proposal stops it",
+    "briefing.metric_cap": "receipt: on LuxExperience, a Briefing with more than twelve approved metrics measures up to "
+                           "24 grouped by area, and names any past the cap. Falsifier: an approved metric under the cap "
+                           "left unmeasured as past it stops it",
+    # Arc FA, FA-5 (ROADMAP §3.60), queued 2026-10-26. No model call; a warehouse read of keys on each check.
+    "automations.objects_admitted": "receipt: on theLook, an automation on a published rule records the objects already "
+                                    "in on its first check and says so without firing, then fires once with the keys of "
+                                    "the objects that enter afterwards, listed under its owner's row policy. Falsifier: "
+                                    "an object already in when the watch began fires it, or a withheld list is run "
+                                    "over as empty — either stops it",
+    # Arc FA, FA-7 (ROADMAP §3.60), queued 2026-10-26. No chat model call; the embedder may be called.
+    "agents.grounding_read": "receipt: on the live install, a custom agent's grounding read through its key and through "
+                             "the MCP tool returns the blocks its quick answer reads for the same question, documents "
+                             "only its own, the absent blocks with why, the embedder said, and one journal entry each "
+                             "with no content. Falsifier: a read that shows a block from outside the agent's scope or "
+                             "the caller's trim, or a chat model called during one, stops it",
+    # Arc FA, FA-1 (ROADMAP §3.60), queued 2026-10-26. No model call in any of the three.
+    "graph.declarations": "receipt: on theLook, a published process and segment are found by the graph search and the "
+                          "knowledge door by their own words, read back beside their entity, and a publish rebuilds the "
+                          "graph. Falsifier: a declaration only in the draft, or over a withheld table, reaching a "
+                          "search stops it",
+    "objects.find": "receipt: on theLook, ⌘K finds objects of two entities by name, says how many entities it searched "
+                    "and why it skipped the rest, and a row policy narrows what a group member finds. Falsifier: a hit "
+                    "the reader's row policy withholds, or a skipped entity not said, stops it",
+    "knowledge.hybrid_documents": "receipt: with the embedder stopped and the vector store up, a document search answers "
+                                  "by words, every hit marked so, the door, the chat tool and the prompt saying it. "
+                                  "Falsifier: a words-only hit read as a match by meaning, or a document outside the "
+                                  "caller's scope ranked, stops it",
+    # Arc FA, FA-2 (ROADMAP §3.60), queued 2026-10-26. No model call of its own; the question asked is an ordinary turn.
+    "canvas.ask_about_chosen": "receipt: on theLook, twelve objects ticked on a dashboard and a set a table reads are each "
+                               "asked about in the Data Canvas; the turn names them by key, a reader under a row policy "
+                               "is told how many are withheld, and a set past fifty says how many it holds. Falsifier: "
+                               "a subject that lists an object its reader may not see stops it",
+    # Arc FA, FA-4 (ROADMAP §3.60), queued 2026-10-26. No model call.
+    "ontology.set_segments": "receipt: on theLook, a dashboard set of fixed conditions is kept as a segment, lands in the "
+                             "draft counted, reaches readers when published and reads the count the set read; a set "
+                             "reading a reader's value is refused with its sentence. Falsifier: a kept segment that "
+                             "counts other objects than the set it was kept from stops it",
+    # Arc FA, FA-3 (ROADMAP §3.60), queued 2026-10-26. No model call; a put back is counted on the warehouse.
+    "ontology.put_back": "receipt: on theLook, a promise moved from two days to three and published is put back to two "
+                         "from its history; the draft holds it classed MEANING, readers keep three until a person "
+                         "publishes, then read two. Falsifier: a version put back that a reader sees before it is "
+                         "published stops it",
+    # Arc FA, FA-3 (ROADMAP §3.60), queued 2026-10-26. No model call.
+    "ontology.retiring": "receipt: on theLook, an entity marked retiring with a successor is published as a MEANING "
+                         "change; the agent's semantic block and the entity's page say the successor and the date, and "
+                         "a refused withdrawal names retiring. Falsifier: a retiring element that stops serving before "
+                         "it is withdrawn, or a successor that does not exist, stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "
@@ -1501,6 +1819,15 @@ GRADUATION_QUEUE: dict = {
     "sheets.combine": "receipt: on the live install, a sheet is linked to another by a key and a third one's rows "
                       "totalled per key; every miss is counted before it is kept. Falsifier: a linked total differs from "
                       "the same total computed by SQL over the two sheets stops it",
+    # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
+    "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
+                                "what was added, changed and removed, marks a declined term with the version it was "
+                                "declined in, and its upgrade proposes only the new and changed items. Falsifier: an "
+                                "upgrade that offers again an unchanged item a person declined stops it",
+    "packs.dashboard_templates": "receipt: on a connection with an industry pack bound, its template becomes one draft "
+                                 "with a card per registered approved metric, the rest named as skipped, and the kept "
+                                 "dashboard's source names the pack and its version. Falsifier: a drafted card made "
+                                 "from a metric the connection does not hold stops it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "

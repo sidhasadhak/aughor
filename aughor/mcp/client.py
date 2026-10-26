@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextvars import ContextVar
 from typing import Any, AsyncIterator, Optional
 
@@ -245,9 +246,19 @@ class AughorClient:
 
     # ── AO-5a: custom agents as tools ───────────────────────────────────────────
     async def list_user_agents(self) -> list[dict]:
-        """The deployment's custom agents (the roster the registrar reads at start)."""
+        """The deployment's custom agents (the roster the registrar reads at start). Kept a moment, so the grounding
+        roster reads its flag off this same answer rather than asking the API again (FA-7)."""
         payload = await self._get("/agents/custom")
-        return list(payload or []) if isinstance(payload, list) else []
+        rows = list(payload or []) if isinstance(payload, list) else []
+        self._agents_seen = (time.monotonic(), rows)
+        return rows
+
+    async def recent_user_agents(self, max_age: float) -> list[dict]:
+        """The custom agents as last read, when that was under ``max_age`` seconds ago; otherwise read again."""
+        seen = getattr(self, "_agents_seen", None)
+        if seen and time.monotonic() - seen[0] < max_age:
+            return seen[1]
+        return await self.list_user_agents()
 
     async def ask_as_agent(self, agent_id: str, question: str, connection: str = "", *,
                            asker: str = "") -> dict:
@@ -300,6 +311,16 @@ class AughorClient:
         if acc["row_count"] is None and acc["rows"]:
             acc["row_count"] = len(acc["rows"])
         return acc
+
+    # ── Arc FA, FA-7: the grounding read ────────────────────────────────────────
+
+    async def ground_agent(self, agent_id: str, question: str, *, connection: Optional[str] = None,
+                           asker: str = "") -> dict:
+        """What a custom agent would read for a question, through the session route — so the agent gate holds and
+        audits the call like every other tool's. No model is asked."""
+        from urllib.parse import quote
+        return await self._get(f"/agents/custom/{quote(agent_id, safe='')}/grounding",
+                               params={"question": question, "connection_id": connection, "asker": asker or None})
 
     async def ask(
         self,

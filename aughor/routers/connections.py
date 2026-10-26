@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
-from aughor.db.connection import open_connection, open_connection_for
+from aughor.db.connection import open_connection, open_connection_for, open_connection_for_with_schema
 from aughor.db.registry import (
     get_dsn,
     add_connection,
@@ -227,16 +227,17 @@ async def test_connection(conn_id: str):
         return {"ok": False, "message": str(e)}
 
 
-def _warm_profiles(conn_id: str) -> dict:
+def _warm_profiles(conn_id: str, schema: Optional[str] = None) -> dict:
     """The profiling stage of the heavy intelligence build, alone — parse tables,
     infer FK hints the same way `_intelligence` does (so the cached profiles are
     byte-identical to what the heavy build would produce and it cache-hits later),
     then build-or-hit the profile cache, which persists the R5 entity-value
-    samples. Deterministic, no LLM."""
+    samples. Deterministic, no LLM. ``schema`` — one dataset of a connection that holds
+    several, profiled as its own entry (the profiles are keyed by the tables' fingerprint)."""
     from aughor.tools.profile_cache import get_or_build_profiles
     from aughor.tools.schema import parse_schema_tables
     from aughor.tools.table_names import bare
-    db = open_connection_for(conn_id)
+    db = open_connection_for_with_schema(conn_id, schema) if schema else open_connection_for(conn_id)
     try:
         base = db.get_schema()
         table_cols = parse_schema_tables(base)
@@ -256,7 +257,7 @@ def _warm_profiles(conn_id: str) -> dict:
 
 
 @router.post("/connections/{conn_id}/prewarm", status_code=202)
-async def prewarm_connection(conn_id: str):
+async def prewarm_connection(conn_id: str, schema: Optional[str] = None):
     """R5 deferred (closed) — the composer-open warm: preload the value index
     and cache, i.e. build the profiles (and the persisted
     entity-value samples entity resolution + the filter guard bind from) BEFORE
@@ -280,12 +281,12 @@ async def prewarm_connection(conn_id: str):
 
     async def _job():
         return await _asyncio.get_running_loop().run_in_executor(
-            None, lambda: _warm_profiles(conn_id))
+            None, lambda: _warm_profiles(conn_id, schema))
 
     job_id = await kernel().submit(
         "profile", _job, conn_id=conn_id,
-        idempotency_key=f"prewarm:{conn_id}",
-        payload={"prewarm": True},
+        idempotency_key=f"prewarm:{conn_id}" + (f":{schema}" if schema else ""),
+        payload={"prewarm": True, **({"schema": schema} if schema else {})},
     )
     return {"submitted": True, "job_id": job_id}
 

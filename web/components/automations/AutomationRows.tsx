@@ -20,7 +20,7 @@ import React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  AUTOMATION_REQUIRED_KEYS, getAutomationVocabulary, getIntegrationConnections,
+  AUTOMATION_REQUIRED_KEYS, getAutomationPalette, getAutomationVocabulary, getIntegrationConnections,
   getIntegrationOperations, listMcpServers,
   type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
   type AutomationVocabulary, type GuardClause, type IntegrationConnection,
@@ -44,7 +44,39 @@ export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: strin
   { value: "entity_appears", label: "New entity",     desc: "A new key appeared in a table" },
   { value: "promise_breached", label: "Promise breached", desc: "A declared promise is measured broken" },
   { value: "finding_created",  label: "New finding",      desc: "The explorer recorded a new finding" },
+  { value: "objects_admitted", label: "Objects admitted", desc: "Objects a rule or segment newly admits — their keys, the count said" },
 ];
+
+/** Arc FA, FA-5 — trigger kinds offered only while their flag is on. The served palette is the
+ *  one answer (`/automations/palette` lists a flagged kind only then), so the picker asks it
+ *  rather than keeping a second copy of a flag. */
+export const FLAGGED_CONDITION_KINDS: ReadonlySet<string> = new Set(["objects_admitted"]);
+
+let servedTriggerKinds: Promise<Set<string>> | null = null;
+
+/** The trigger kinds this deployment offers, or null until the palette answers. Cached for the
+ *  page like the vocabulary; a failed read is not cached, so the next row asks again. */
+export function useServedTriggerKinds(): Set<string> | null {
+  const [kinds, setKinds] = React.useState<Set<string> | null>(null);
+  React.useEffect(() => {
+    let live = true;
+    if (!servedTriggerKinds) {
+      servedTriggerKinds = getAutomationPalette()
+        .then(rows => new Set(rows.filter(r => r.group === "trigger").map(r => r.kind)))
+        .catch(() => { servedTriggerKinds = null; return new Set<string>(); });
+    }
+    void servedTriggerKinds.then(k => { if (live) setKinds(k); });
+    return () => { live = false; };
+  }, []);
+  return kinds;
+}
+
+/** The picker's kinds: a flagged kind only when the deployment offers it, or when this row
+ *  already is one — a stored trigger must stay readable after its flag went off. */
+export function offeredConditionKinds(served: Set<string> | null, current: string) {
+  return CONDITION_KINDS.filter(k => !FLAGGED_CONDITION_KINDS.has(k.value)
+    || k.value === current || (served?.has(k.value) ?? false));
+}
 
 export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] = [
   { value: "notify",         label: "Notify",         desc: "Send through a Notifications trigger" },
@@ -602,6 +634,7 @@ export function ConditionRow({ c, onChange, onRemove, timezone }: {
   timezone?: string;
 }) {
   const set = (patch: Record<string, unknown>) => onChange({ ...c, config: { ...c.config, ...patch } });
+  const served = useServedTriggerKinds();
   return (
     // A column, not a squeeze: the schedule editor needs the drawer's full width, and
     // the old side-by-side layout is what clipped a time down to a bare "0 9".
@@ -611,7 +644,7 @@ export function ConditionRow({ c, onChange, onRemove, timezone }: {
         <SelectField value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
           aria-label="Trigger kind"
           style={{ ...inputStyle, flex: 1 }}>
-          {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+          {offeredConditionKinds(served, c.kind).map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
         </SelectField>
         {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
       </div>
@@ -625,6 +658,20 @@ export function ConditionRow({ c, onChange, onRemove, timezone }: {
         )}
         {(c.kind === "source_change" || c.kind === "entity_appears") && (
           <Input style={inputStyle} value={String(c.config.table ?? "")} onChange={e => set({ table: e.target.value })} placeholder="table (schema.table)" />
+        )}
+        {/* Arc FA, FA-5 — the entity, and the segment on it whose newly admitted objects fire
+            the chain. The save door checks both resolve, in the compiler's own words. */}
+        {c.kind === "objects_admitted" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Input style={inputStyle} value={String(c.config.entity ?? "")} aria-label="Entity"
+              onChange={e => set({ entity: e.target.value })} placeholder="entity — e.g. order" />
+            <Input style={inputStyle} value={String(c.config.segment ?? "")} aria-label="Segment"
+              onChange={e => set({ segment: e.target.value })}
+              placeholder="segment — a rule's id, a segment, or overdue_<promise>" />
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              The first check records the objects already in; later checks fire for the ones that enter.
+            </span>
+          </div>
         )}
         {/* DS-17 — the one trigger with nothing to fill in. An empty cell would read as a
             field that failed to render, so it says where the configuration actually is:

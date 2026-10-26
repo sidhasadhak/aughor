@@ -1,6 +1,9 @@
 [
   {
     "id": "wa_dau_mau",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "up",
     "title": "DAU / MAU stickiness ratio",
     "intent_tags": ["dau", "mau", "stickiness", "daily active users", "monthly active users", "engagement"],
     "sql_features": ["cte", "aggregation"],
@@ -20,6 +23,9 @@
   },
   {
     "id": "wa_bounce_rate",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "down",
     "title": "Bounce rate",
     "intent_tags": ["bounce rate", "single page sessions", "bounces"],
     "sql_features": ["cte", "aggregation", "window"],
@@ -38,6 +44,9 @@
   },
   {
     "id": "wa_session_duration",
+    "area": "engagement",
+    "kind": "duration",
+    "direction": "up",
     "title": "Average session duration",
     "intent_tags": ["session duration", "time on site", "avg session", "engagement time"],
     "sql_features": ["window", "aggregation"],
@@ -113,6 +122,9 @@
   },
   {
     "id": "wa_conversion_rate",
+    "area": "conversion",
+    "kind": "rate",
+    "direction": "up",
     "title": "Goal conversion rate by channel / source",
     "intent_tags": ["conversion rate", "channel conversion", "utm source", "goal completion"],
     "sql_features": ["aggregation", "join"],
@@ -167,6 +179,9 @@
   },
   {
     "id": "wa_page_views_per_session",
+    "area": "engagement",
+    "kind": "volume",
+    "direction": "up",
     "title": "Pages per session",
     "intent_tags": ["pages per session", "depth", "page views per visit"],
     "sql_features": ["aggregation"],

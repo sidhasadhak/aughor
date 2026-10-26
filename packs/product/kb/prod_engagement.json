@@ -1,6 +1,9 @@
 [
   {
     "id": "prod_dau_mau",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "up",
     "title": "DAU/MAU Ratio (Stickiness)",
     "intent_tags": [
       "dau mau",
@@ -137,6 +140,9 @@
   },
   {
     "id": "prod_session_length",
+    "area": "engagement",
+    "kind": "duration",
+    "direction": "up",
     "title": "Average Session Length",
     "intent_tags": [
       "session duration",
@@ -275,6 +281,9 @@
   },
   {
     "id": "prod_feature_usage_rate",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "up",
     "title": "Feature Usage Rate",
     "intent_tags": [
       "feature adoption",

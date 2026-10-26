@@ -1,0 +1,31 @@
+# Arc MC (ROADMAP §3.62) — the areas a subscription software business is read by, its income statement first.
+areas:
+  - id: recurring_revenue
+    name: Recurring revenue
+    question: Is recurring revenue growing?
+    words: [subscription, plan, mrr, arr, renewal, contract, invoice, billing, revenue]
+    absorbs: [revenue]
+  - id: customers
+    name: Customers and retention
+    question: Do customers stay and grow?
+    words: [customer, customers, account, accounts, logo, churn, retention, cohort, seat]
+  - id: acquisition
+    name: Acquisition
+    question: What does a new customer cost?
+    words: [acquisition, lead, leads, trial, signup, campaign, marketing]
+    absorbs: [marketing]
+  - id: engagement
+    name: Usage
+    question: Do they use what they pay for?
+    words: [usage, event, session, feature, activity, login]
+    absorbs: [conversion]
+  - id: payments
+    name: Payments
+    question: Did the money land?
+    words: [payment, payments, charge, dunning, refund]
+    absorbs: [refunds]
+  - id: service
+    name: Service
+    question: Did we look after them?
+    words: [ticket, support, csat, nps]
+    absorbs: [experience]

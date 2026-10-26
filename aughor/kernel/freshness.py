@@ -255,6 +255,11 @@ FINGERPRINTS: dict[str, FingerprintSpec] = {
             "the file, and of a store's non-empty -wal (a WAL store's file does not move while its writes sit in "
             "the WAL). Not a hash: hashing every byte each hour would cost what the copy costs.",
         ),
+        FingerprintSpec(
+            "coverage_binding", "aughor.semantic.coverage_proposals", "binding_fingerprint", "staleness",
+            "Arc MC — the binding a recipe's gate verdict was read under. A verdict whose binding fingerprint "
+            "differs from the binding as it stands is not applied to the catalogue's row: the roles moved.",
+        ),
         # ── content: identity for dedup / idempotency, NOT staleness ──
         FingerprintSpec(
             "sql_args", "aughor.agent.wandering", "args_fingerprint", "content",

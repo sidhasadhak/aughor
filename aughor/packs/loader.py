@@ -13,8 +13,9 @@ import yaml
 from pydantic import ValidationError
 
 from aughor.packs.models import (
-    Pack, PackDataset, PackFunction, PackManifest, PackMetric, PackMissionTemplate, PackMonitorPrior, PackOntology,
-    PackQuestions, PackPlaybook, PackScenarioTemplate, PackSource, PackSurface, PackEval, RoleSpec,
+    Pack, PackArea, PackDashboardTemplate, PackDataset, PackFunction, PackManifest, PackMetric, PackMissionTemplate,
+    PackMonitorPrior, PackOntology, PackQuestions, PackPlaybook, PackScenarioTemplate, PackSource, PackSurface,
+    PackEval, RoleSpec,
 )
 
 
@@ -144,12 +145,24 @@ def _load_pack(root: Path) -> Pack:
     monitors = [PackMonitorPrior(**_read_yaml(f)) for f in sorted((root / "monitors").glob("*.yaml"))] if (root / "monitors").is_dir() else []
     scenarios = [PackScenarioTemplate(**_read_yaml(f)) for f in sorted((root / "scenarios").glob("*.yaml"))] if (root / "scenarios").is_dir() else []
     missions = [PackMissionTemplate(**_read_yaml(f)) for f in sorted((root / "missions").glob("*.yaml"))] if (root / "missions").is_dir() else []
+    # Arc FA, FA-6 — the dashboard templates, each file one template.
+    dashboards = [PackDashboardTemplate(**_read_yaml(f)) for f in sorted((root / "dashboards").glob("*.yaml"))] if (root / "dashboards").is_dir() else []
+
+    # Arc MC — the areas the pack's map reads its business by, as the business reads them.
+    areas: list[PackArea] = []
+    a_file = root / "areas.yaml"
+    if a_file.is_file():
+        for item in (_read_yaml(a_file).get("areas") or []):
+            if not isinstance(item, dict):
+                raise PacksError(f"areas.yaml: every area must be a mapping, got {type(item).__name__}")
+            areas.append(PackArea(**item))
 
     return Pack(
         manifest=manifest, expertise=expertise, metrics=metrics, entities=entities,
         questions=questions, playbooks=playbooks, surface=surface, evals=evals,
         ontology=ontology, function=function, sources=sources, datasets=datasets,
-        monitors=monitors, scenarios=scenarios, missions=missions, path=str(root),
+        monitors=monitors, scenarios=scenarios, missions=missions, dashboards=dashboards, areas=areas,
+        path=str(root),
     )
 
 

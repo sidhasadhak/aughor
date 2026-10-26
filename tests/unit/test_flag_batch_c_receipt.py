@@ -94,6 +94,30 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # …and `dashboard.app_versions` (ED-4): an App's readers read the version last published, a later keep a draft.
     # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
     # …and `objects.completeness` (ED-6): every object read says how complete it is.
+    # Arc FA, FA-5 (ROADMAP §3.60), 2026-10-26: `automations.objects_admitted` — a trigger for the objects a rule or
+    # segment newly admits. No model call; its entry names the receipt (records first, fires later, under the
+    # owner's row policy) and the falsifier.
+    # Arc FA, FA-6 (ROADMAP §3.60), 2026-10-26: `packs.installed_versions` (a binding records the manifest's version
+    # and what the pack offered, and an upgrade proposes only the new and changed) and `packs.dashboard_templates` (a
+    # pack's dashboard template becomes a draft a person keeps). Neither calls a model; each entry names its receipt
+    # and the falsifier.
+    # Arc FA, FA-7 (ROADMAP §3.60), 2026-10-26: `agents.grounding_read` — what a custom agent would read, at its key door
+    # and as a read-level MCP tool. No chat model; the embedder may be called and is said. Its entry names the receipt
+    # and the falsifier.
+    # Arc FA, FA-1 (ROADMAP §3.60), 2026-10-26: `graph.declarations` (published declarations are graph nodes),
+    # `objects.find` (⌘K finds an object by name across entities) and `knowledge.hybrid_documents` (documents ranked by
+    # their words while the embedder is down). None calls a model; each entry names its receipt and the falsifier.
+    # Arc FA, FA-2 (ROADMAP §3.60), 2026-10-26: `canvas.ask_about_chosen` — ticked objects or a set a piece reads, asked
+    # about in the Data Canvas; and FA-4, `ontology.set_segments` — a dashboard set kept as a segment. Neither calls a
+    # model; each entry names its receipt and the falsifier.
+    # Arc FA, FA-3 (ROADMAP §3.60), 2026-10-26: `ontology.put_back` (an earlier version back into the draft) and
+    # `ontology.retiring` (a declaration marked retiring with a successor and a day). Neither calls a model; each entry
+    # names its receipt and the falsifier.
+    # Arc MC (ROADMAP §3.62), 2026-10-26: `metrics.figure_gates` (a metric's figures checked at approval),
+    # `metrics.coverage_map` (the areas, placement and the matrix), `metrics.coverage_proposals` (recipes and the
+    # ontology's derivations proposed by code), `metrics.coverage_writer` (one model call per uncovered area when
+    # profiled — the only one that spends), `metrics.blind_spot_proposals` and `briefing.metric_cap`. Each entry names
+    # the receipt and the falsifier.
     # Arc SH (ROADMAP §3.64), 2026-10-27: `sheets.core`, `sheets.grid` and `sheets.combine` — the sheets, editing them and
     # combining them; no model call; each graduates on its wave's falsifier read on the live install.
     # Arc SV, SV-2 (ROADMAP §3.63), 2026-10-27: `state.backups` — the API's hourly backups of its own state. No model
@@ -102,7 +126,13 @@ def test_the_queue_is_named_and_migrations_are_empty():
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
                                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
-                                     "ontology.impacts_only", "objects.completeness", "state.backups",
-                                     "sheets.core", "sheets.grid", "sheets.combine"}
+                                     "ontology.impacts_only", "objects.completeness",
+                                     "automations.objects_admitted", "packs.installed_versions",
+                                     "packs.dashboard_templates", "agents.grounding_read", "graph.declarations",
+                                     "objects.find", "knowledge.hybrid_documents", "canvas.ask_about_chosen",
+                                     "ontology.set_segments", "ontology.put_back", "ontology.retiring",
+                                     "metrics.figure_gates", "metrics.coverage_map", "metrics.coverage_proposals",
+                                     "metrics.coverage_writer", "metrics.blind_spot_proposals", "briefing.metric_cap",
+                                     "state.backups", "sheets.core", "sheets.grid", "sheets.combine"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

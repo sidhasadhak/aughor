@@ -188,6 +188,15 @@ def warrant_for(provenance, *, edge_kind: str = "", node_data: Optional[dict] = 
             return WarrantVerdict("declared", "verified upstream — no overlap recorded here")
         return WarrantVerdict("inferred", "name match — not probed")
 
+    # 3b. A published declaration (FA-1): a person's statement, or a pack's — its `defines` edge is the declaration
+    #     naming its own entity, not a name match, so it is read before the edge-kind rule below.
+    if source == "ontology.declaration":
+        release = note_field(note, "release") or ""
+        published = f"published in {release}" if release and release != "unreleased" else "published when saved"
+        if (note_field(note, "origin") or "").lower() == "pack":
+            return WarrantVerdict("declared", f"declared by a pack, {published}")
+        return WarrantVerdict("human", f"declared by a person, {published}")
+
     # 4. Edge kinds whose construction rule is the evidence.
     if edge_kind and edge_kind in _BY_EDGE_KIND:
         return WarrantVerdict(_BY_EDGE_KIND[edge_kind], "term name equals the metric name")

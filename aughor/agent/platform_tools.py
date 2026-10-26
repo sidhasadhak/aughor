@@ -465,9 +465,17 @@ def search_documents(connection_id: str, args: dict) -> dict:
         hits.append(entry)
         if len(hits) >= _MAX_DOC_HITS:
             break
-    return {"count": len(hits), "hits": hits,
-            "note": ("Passages, not facts about the warehouse. Quote or paraphrase them as "
-                     "documentation; a NUMBER still has to come from a query.")}
+    out = {"count": len(hits), "hits": hits,
+           "note": ("Passages, not facts about the warehouse. Quote or paraphrase them as "
+                    "documentation; a NUMBER still has to come from a query.")}
+    # FA-1 (`knowledge.hybrid_documents`) — passages the words matched while the embedder was down say so
+    from aughor.knowledge.indexer import matched_by_words
+    words = matched_by_words(raw)
+    if words:
+        out["matched_by"] = "words"
+        out["note"] = (f"These passages were {words}: each shares words with the question, which is not the same "
+                       "as answering it. " + out["note"])
+    return out
 
 
 def list_packs(connection_id: str, args: dict) -> dict:

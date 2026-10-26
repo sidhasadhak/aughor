@@ -113,6 +113,17 @@ describe("quick-path parity (the reducer's ask-mode fields)", () => {
     expect(t.publicReceiptId).toBe("led-9");
     expect(t.receiptId).toBe("inv-1"); // done carried has_receipt
     expect(t.route?.depth).toBe("quick");
+    expect(t.route).not.toHaveProperty("subject");       // a turn with no subject says none
+  });
+
+  it("projects the subject a turn was about, as the server read it (Arc FA-2)", async () => {
+    const said = "About 10 of the 12 orders chosen · 2 of the 12 are withheld from you";
+    const t = projectTurn("what do these share?", await messageFrom([
+      { event: "route", data: { depth: "quick", why: "asked quickly", subject: { kind: "objects", said, shown: 10, withheld: 2, carried: true } } },
+      { event: "headline", data: { headline: "They share a carrier" } },
+      { event: "done", data: {} },
+    ]));
+    expect(t.route?.subject).toEqual({ said, carried: true, withheld: 2 });
   });
 
   it("renders a resumed run whole — orphan assistant gets a synthesized user side (FL-1b)", async () => {

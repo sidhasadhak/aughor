@@ -6,6 +6,7 @@ import { doorFor, isPlainSend } from "@/lib/chatDoors";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
+import { focusOf, setAskSubject, subjectWords, useAskSubject } from "@/lib/askSubject";
 import { useStickToBottom } from "@/lib/useStickToBottom";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
@@ -91,9 +92,13 @@ interface InputBoxProps {
   agents?: UserAgent[];
   agentId?: string;
   setAgentId?: (id: string) => void;
+  /** Arc FA-2 — what the next question is about, in a line ("Asking about 12 orders · from Late dispatch"), and the
+   *  way to take it off. Absent: the composer is as it was. */
+  subject?: string;
+  onDropSubject?: () => void;
 }
 
-function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, setMode, onSend, onStop, onClear, attachedFile, onAttach, agents, agentId, setAgentId }: InputBoxProps) {
+function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, setMode, onSend, onStop, onClear, attachedFile, onAttach, agents, agentId, setAgentId, subject, onDropSubject }: InputBoxProps) {
   const [focused, setFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -117,6 +122,24 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         outlineOffset: 2,
       }}
     >
+      {/* Arc FA-2 — the subject the question carries, chosen on a dashboard */}
+      {subject && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px 0" }}>
+          <div data-testid="chat-subject" className="aug-fs-xs" style={{
+            display: "flex", alignItems: "center", gap: 5, minWidth: 0,
+            padding: "2px 8px", borderRadius: "var(--r2)",
+            background: "var(--blue1)", border: "1px solid var(--blue2)",
+            color: "var(--blue5)", maxWidth: "100%",
+          }}>
+            <Icon name="table" size={11} className="shrink-0" />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subject}</span>
+            <Button variant="ghost" size="icon-xs" onClick={() => onDropSubject?.()} title="Ask without it" aria-label="Ask without it"
+              data-testid="chat-subject-drop"
+              className="aug-fs-sm h-auto w-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+              style={{ marginLeft: 2, opacity: .6, lineHeight: 1, color: "inherit" }}>×</Button>
+          </div>
+        </div>
+      )}
       {/* Attached file chip */}
       {attachedFile && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px 0" }}>
@@ -349,6 +372,12 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
         {deep ? "Agent" : overview ? "Overview" : "Quick answer"}
       </StatusChip>
       <span style={{ fontSize: 12, color: "var(--t3)" }}>{r.why}</span>
+      {/* Arc FA-2 — what the turn was about, as the server read it for this reader: withheld said, never implied */}
+      {r.subject && (
+        <span data-testid="turn-subject" className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+          · {r.subject.said}{r.subject.carried ? "" : " · this answer did not read them"}
+        </span>
+      )}
       {r.downgradedFrom && (
         <span style={{ fontSize: 11, fontStyle: "italic", color: "var(--t3)" }}>· deep analysis needs an upgrade</span>
       )}
@@ -802,14 +831,23 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   // PENDING item 15 — read once; off (the default) leaves every turn's body as it always was.
   const [buttonsReachAgent, setButtonsReachAgent] = useState(false);
+  // Arc FA-2 — what a dashboard handed over as the question's subject, while `canvas.ask_about_chosen` is on
+  const [askAboutOn, setAskAboutOn] = useState(false);
   useEffect(() => {
     let alive = true;
     // a thrown read (an older server, a test double) means off — never a broken panel
     Promise.resolve().then(() => getSystemFlags())
-      .then(f => { if (alive) setButtonsReachAgent(!!f?.["chat.buttons_reach_agent"]?.value); })
+      .then(f => {
+        if (!alive) return;
+        setButtonsReachAgent(!!f?.["chat.buttons_reach_agent"]?.value);
+        setAskAboutOn(!!f?.["canvas.ask_about_chosen"]?.value);
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  const handed = useAskSubject();
+  // a subject chosen on another connection is not this conversation's to send
+  const subject = askAboutOn && handed && handed.connectionId === connectionId ? handed : null;
 
   const sendQuestion = useCallback((question: string, m: RouteMode = "investigate", opts: AskOpts = {}) => {
     // An interrupt — the user sent this while a turn was still streaming. The SDK
@@ -824,7 +862,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     const initialMode: "ask" | "investigate" = m === "investigate" || opts.requestMode ? "investigate" : "ask";
     // PENDING item 15 — with `chat.buttons_reach_agent` on, Quick and Agent go through `/ask`
     // (the conversation agent and its ontology tools); off, the body is exactly as before.
-    const door = doorFor(m, opts.depth ?? "auto", buttonsReachAgent, isPlainSend(opts));
+    // Arc FA-2 — a plain question with a subject goes through `/ask`, the one door that reads one: Quick at quick
+    // depth, Agent at deep, as the buttons reach it; a send carrying more than a question keeps its own door.
+    const about = subject && isPlainSend(opts) ? subject : null;
+    const door = about
+      ? { mode: "auto" as const, depth: opts.depth ?? (m === "ask" ? "quick" as const : m === "auto" ? "auto" as const : "deep" as const) }
+      : doorFor(m, opts.depth ?? "auto", buttonsReachAgent, isPlainSend(opts));
     void sendMessage(
       { text: question, metadata: { mode: initialMode } },
       { body: {
@@ -843,9 +886,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
         skip_cache: opts.skipCache ?? false,
         request_mode: opts.requestMode ?? null,
         purpose: opts.purpose ?? "",
+        ...(about ? { focus: focusOf(about) } : {}),
       } },
     );
-  }, [busy, status, sdkStop, cancelActiveRun, clearError, sendMessage, agentId, buttonsReachAgent]);
+  }, [busy, status, sdkStop, cancelActiveRun, clearError, sendMessage, agentId, buttonsReachAgent, subject]);
 
   const stop = useCallback(() => { cancelActiveRun(); sdkStop(); }, [cancelActiveRun, sdkStop]);
 
@@ -1001,6 +1045,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     agents,
     agentId,
     setAgentId,
+    ...(subject ? { subject: subjectWords(subject), onDropSubject: () => setAskSubject(null) } : {}),
   };
 
   return (

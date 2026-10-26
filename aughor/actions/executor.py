@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import ast
 import operator
-import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -34,6 +33,7 @@ from aughor.actions.overlay import EditConflict
 from urllib.parse import quote
 
 from aughor.ontology.models import KineticAction, SideEffect
+from aughor.ontology.object_refs import same_type, split_ref
 
 # ── result + errors ──────────────────────────────────────────────────────────────
 
@@ -208,26 +208,18 @@ def coerce_params(action: KineticAction, raw: dict) -> dict:
     return out
 
 
-def _type_word(name: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
-
-
 def object_ref(value, param) -> str:
     """ON-4 — the canonical ``"<type>:<key>"`` for a value passed to an object parameter:
     ``"Thing:123"``, ``{"object_type": "Thing", "pk": "123"}``, or a bare key the parameter's own type
-    names. A reference to another object type is invalid, however plausible its key."""
+    names. A reference to another object type is invalid, however plausible its key. Read by the one parser a
+    reference has (`ontology.object_refs`)."""
     want = param.object_type
-    if isinstance(value, dict):
-        typ, key = str(value.get("object_type") or want), value.get("pk", value.get("key"))
-    else:
-        text = str(value).strip()
-        typ, sep, rest = text.partition(":")
-        typ, key = (typ.strip(), rest.strip()) if sep else (want, text)
-    if key is None or str(key).strip() == "":
+    typ, key = split_ref(value, want)
+    if not key:
         raise ParamError(f"parameter '{param.name}' needs an object key: '{want}:<key>'")
-    if _type_word(typ) != _type_word(want):
+    if not same_type(typ, want):
         raise ParamError(f"parameter '{param.name}' takes an object of type {want}, not {typ}")
-    return f"{want}:{str(key).strip()}"
+    return f"{want}:{key}"
 
 
 #: ``(object_type, key) -> {object_type, type_id, pk, key, table, title, properties}`` — reads ONE
@@ -260,7 +252,7 @@ def resolve_objects(action: KineticAction, coerced: dict, resolver: Optional[Obj
         except (LookupError, ValueError) as e:
             raise ParamError(str(getattr(e, "reason", "") or e)) from e
     about = [p.name for p in taken
-             if action.object_type and _type_word(p.object_type) == _type_word(action.object_type)]
+             if action.object_type and same_type(p.object_type, action.object_type)]
     subject = about[0] if about else (taken[0].name if len(taken) == 1 else "")
     if subject and "object" not in out:
         out["object"] = out[subject]

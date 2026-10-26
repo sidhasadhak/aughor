@@ -199,6 +199,9 @@ export interface OrgSettings {
   /** The exploration principles §7 — the organisation's monthly budget, in model tokens, for what the
    *  Explorer spends on its own initiative; 0 = none. */
   exploration_monthly_tokens?: number;
+  /** Arc MC — how many approved headline metrics a Briefing measures; 0 = the platform's default (24 while the
+   *  Briefing reads by area, 12 while it does not). */
+  briefing_metric_cap?: number;
 }
 
 /** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
@@ -1121,9 +1124,9 @@ export async function getMetrics(connectionId?: string): Promise<Metric[]> {
 export interface CatalogueMetric {
   name: string;
   label: string;
-  /** "defined" | "industry" | "explorer" — where this metric came from. */
+  /** "defined" | "industry" | "explorer" | "coverage" — where this metric came from. */
   source: string;
-  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected". */
+  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected" | "gate_failed". */
   state: string;
   sql: string;
   unit: string;
@@ -1147,6 +1150,99 @@ export interface CatalogueMetric {
   /** The dataset it belongs to; "*" — every dataset of the connection. A row is (source, schema,
    *  name): two datasets may each have their own metric of one name. */
   schema: string;
+  /** Arc MC — the area of the map it reads on, the pattern it computes, how a coverage proposal was made, and its
+   *  gates' verdicts. Absent unless a coverage run read it. */
+  area?: string;
+  pattern?: string;
+  origin?: string;
+  gates?: Record<string, CoverageGate> | null;
+  time_column?: string;
+  time_kind?: string;
+}
+
+// ── Arc MC — the areas a connection's metrics cover ────────────────────────────────────────────────────────────────
+
+/** One gate's verdict: passed, failed with why, or not read (null) with why. */
+export interface CoverageGate { ok: boolean | null; why: string }
+export interface CoverageTable { name: string; rows: number | null; dated: boolean; why: string }
+export interface CoverageAreaMetric { name: string; label: string; status: string; why: string; moves: CoverageGate | null }
+export interface CoveragePattern {
+  id: string; title: string; pack_id: string; area: string; kind: string; direction: string; definition: string;
+  proposable: boolean;
+}
+export interface CoverageArea {
+  id: string; name: string; question: string; pack_id: string; generic: boolean; order: number;
+  patterns: CoveragePattern[]; recipes: string[];
+  /** covered — an approved metric that moves; unchecked — approved, its figures not read yet; uncovered — data and no
+   *  working metric; no_data — nothing placed here holds rows. */
+  state: "covered" | "unchecked" | "uncovered" | "no_data";
+  has_data: boolean; rows: number;
+  tables: CoverageTable[]; metrics: CoverageAreaMetric[];
+  proposals: number; adoptable: number; failed: number; declined: number;
+  /** The patterns no metric or proposal here computes yet, and whether the writer would call on this area. */
+  open_patterns?: string[]; writable?: boolean;
+  said: string[];
+}
+export interface CoverageProposal {
+  name: string; label: string; area: string;
+  /** recipe · ontology · pattern · area · blind_spot */
+  source: string;
+  pattern: string; pattern_title?: string; state: "proposed" | "gate_failed"; reason: string;
+  gates: Record<string, CoverageGate>; sql: string; time_column: string; definition: string;
+  derived_from?: string; findings?: number; written_by?: string; declined?: boolean;
+}
+export interface CoverageSpendArea {
+  area: string; name: string; tables: string[]; patterns: number; proposals: number;
+  skipped: { pattern: string; why: string }[]; error: string;
+}
+export interface CoverageRun {
+  run_at: string; why: string; said: string[];
+  spend: { calls: number; model: string; at: string; done_at?: string; why?: string; areas: CoverageSpendArea[] } | null;
+}
+export interface MetricCoverage {
+  connection_id: string; schema: string | null; industry_pack: string;
+  areas: CoverageArea[]; unplaced_tables: string[]; said: string[];
+  counts: { areas: number; with_data: number; covered: number; uncovered: number; unchecked: number; patterns: number;
+            open_patterns?: number; writable?: number };
+  proposals: CoverageProposal[]; run: CoverageRun | null; flags: Record<string, boolean>;
+}
+
+/** The coverage view, or null while `metrics.coverage_map` is off (the door answers 404). ``figures`` reads the
+ *  approved metrics' figures not read within the hour. */
+export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage | null> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema", schema);
+  if (figures) q.set("figures", "true");
+  const qs = q.toString();
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}${qs ? `?${qs}` : ""}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The coverage could not be read"));
+  }
+  return res.json();
+}
+
+/** Propose by code for the areas the data covers, on a thread — no model call. */
+export async function runMetricCoverage(connectionId: string, schema?: string): Promise<{ started: boolean }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/run${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The proposals could not be made"));
+  }
+  return res.json();
+}
+
+/** Write the knowledge base's patterns for this schema — one model call per uncovered area, on a thread. */
+export async function writeMetricCoverage(connectionId: string, schema?: string): Promise<{ started: boolean }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/write${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The writer could not be started"));
+  }
+  return res.json();
 }
 
 /** A proposal a person removed — never proposed here again until it is restored. */
@@ -5475,6 +5571,9 @@ export type ConditionKind =
   // HB-3 — the hub's two triggers: a declared promise measured broken, a new finding
   // recorded. Both publish a payload the chain binds as `trigger.<key>`.
   | "promise_breached" | "finding_created"
+  // Arc FA, FA-5 — the objects a rule or segment newly admits; offered only while
+  // `automations.objects_admitted` is on (the served palette says so).
+  | "objects_admitted"
   // DS-17. Named for what it is from the chain's side: something outside calls it. The
   // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
   // idea entirely (a URL Aughor posts TO); the two never meet because every lookup in
@@ -5515,6 +5614,8 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   // HB-3 — the hub's two triggers. `promise_breached` names the declared process it
   // watches; `finding_created` is complete unfiltered (domain/min_confidence narrow it).
   promise_breached: ["process"], finding_created: [],
+  // Arc FA, FA-5 — the entity, and the segment on it whose newly admitted objects fire it.
+  objects_admitted: ["entity", "segment"],
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
   slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
@@ -6257,6 +6358,8 @@ export interface AgentDoorsInfo {
   webhook: { state: string; url: string };
   a2a: { state: string; card: string; url: string };
   teams: { state: string; bots: TeamsBotSummary[] };
+  /** Arc FA, FA-7 — present only while the grounding read is on: what the agent would read, no model asked. */
+  grounding?: { state: string; url: string; tool: string; how: string };
 }
 
 export interface TeamsBotSummary {
@@ -7725,6 +7828,8 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
+  /** Arc MC — the area of the map it reads on, while the Briefing reads by area (`briefing.metric_cap`). */
+  area?: { id: string; name: string } | null;
   /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
    *  the range; `ownFigures` reads it as not measured, as the server now says it. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
@@ -9420,6 +9525,140 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
   });
   return res.ok;
+}
+
+// ── Arc FA, FA-6 — the installed version and the upgrade (flag `packs.installed_versions`) ──────
+
+/** One thing a pack offers on a connection, as an upgrade's diff lists it (`aughor/packs/upgrade.py`). */
+export interface PackOfferedItem {
+  key: string;
+  kind: "term" | "alert" | "metric" | "structure";
+  label: string;
+  /** What it says now; `was` is what it said at the installed version, for a changed item. */
+  said: string;
+  was: string;
+  /** A person declined it: a term's tombstone, a rejected alert, a withdrawn structure proposal. */
+  declined: boolean;
+  /** The version it was declined in, or null when no record says. */
+  declined_in: number | null;
+  /** Whether the upgrade proposes it, and when not, why. */
+  will_offer: boolean;
+  why: string;
+}
+
+export interface PackUpgradeDiff {
+  pack: string;
+  connection_id: string;
+  schema: string;
+  installed: number;
+  available: number;
+  /** False for a binding made before installed versions were recorded: what it offered then is not known. */
+  recorded: boolean;
+  bound_by: string;
+  bound_at: string;
+  upgrade_available: boolean;
+  added: PackOfferedItem[];
+  changed: PackOfferedItem[];
+  removed: PackOfferedItem[];
+  /** Unchanged items a person declined: they stay declined. */
+  kept_declined: PackOfferedItem[];
+  will_offer: number;
+  /** A store that could not be read, with why — never read as "nothing declined". */
+  not_read: Record<string, string>;
+  note?: string;
+}
+
+export interface PackInstall {
+  connection_id: string;
+  schema: string;
+  installed: number;
+  recorded: boolean;
+  bound_by: string;
+  bound_at: string;
+  behind: boolean;
+}
+
+export interface PackUpgraded {
+  from: number;
+  to: number;
+  terms: { proposed?: number; note?: string };
+  alerts: { staged?: unknown[]; superseded?: string[]; note?: string };
+  kept_declined: number;
+  metrics: { added: number; changed: number; note: string };
+  structure: { added: number; changed: number; note: string };
+}
+
+/** Where a pack is bound and the version installed there — null while installed versions are off (the route 404s). */
+export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] } | null> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/installs`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Where the pack is installed could not be read"));
+  return res.json();
+}
+
+export async function getPackUpgrade(packId: string, connectionId: string, schema?: string): Promise<PackUpgradeDiff> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/upgrade?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "What the upgrade brings could not be read"));
+  return res.json();
+}
+
+export async function upgradePack(packId: string, connectionId: string, schema?: string): Promise<PackUpgraded> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/upgrade`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema: schema || null }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The upgrade did not go through"));
+  return res.json();
+}
+
+// ── Arc FA, FA-6 — a pack's dashboard templates (flag `packs.dashboard_templates`) ──────────────
+
+export interface PackTemplateCard { key: string; metric: string; title: string; ready: boolean; why: string }
+
+export interface PackTemplate {
+  pack: string;
+  pack_name: string;
+  version: number;
+  id: string;
+  title: string;
+  description: string;
+  sections: string[];
+  cards: PackTemplateCard[];
+  /** How many of its cards this connection can make. */
+  ready: number;
+  /** What a dashboard kept from it is kept with: `pack:<id>@<version> template`. */
+  source: string;
+}
+
+/** The templates of the packs bound on this connection — null while templates are off (the route 404s). */
+export async function listPackTemplates(
+  connectionId: string, schema?: string,
+): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> } | null> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/templates?${q}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The pack templates could not be read"));
+  return res.json();
+}
+
+export interface PackTemplateDrafted extends DashboardDrafted {
+  dashboard_id: string;
+  /** Cards left out, each with why — a metric this connection has not registered or approved. */
+  skipped: { key: string; metric: string; title: string; why: string }[];
+  source: string;
+  dropped_sections?: string[];
+}
+
+export async function draftFromPackTemplate(
+  packId: string, templateId: string, connectionId: string, schema?: string,
+): Promise<PackTemplateDrafted> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/templates/${encodeURIComponent(templateId)}/draft`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema: schema || null }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The template was not drafted"));
+  return res.json();
 }
 
 // ── User-defined agents (flag `agents.user_defined`) ──────────────────────────

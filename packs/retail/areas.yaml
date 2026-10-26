@@ -1,0 +1,68 @@
+# Arc MC (ROADMAP §3.62) — the areas a retail and e-commerce business is read by: the map its metrics cover.
+#
+# In the order the business reads: its income statement first (what was sold, what came back, what was kept, what it
+# cost to deliver and to grow), then the operating areas that drive it. Each area says the question it answers.
+#
+# `words` place a table or a metric in the area by its name: a table is placed where its name says (the longest
+# phrase that matches wins, so `customer_service` is Service, not Customers), and each placement says which word
+# placed it. `absorbs` names the areas of the function packs (finance, marketing, product, customer) and the base
+# pack whose knowledge-base patterns read on this area, so a refund pattern of finance's lands in Returns.
+#
+# An area the knowledge base carries no pattern for yet is still declared, and the coverage view says so — a pack
+# can add the pattern; nothing invents it.
+areas:
+  - id: orders_sales
+    name: Orders & sales
+    question: How much did we sell?
+    words: [order, sale, sales, gmv, revenue, basket]
+    absorbs: [revenue]
+  - id: returns
+    name: Returns
+    question: What came back, and what did it cost?
+    words: [return, returns, returned, refund, rma, exchange]
+    absorbs: [refunds]
+  - id: margin_pricing
+    name: Margin & pricing
+    question: What did we keep?
+    words: [margin, price, pricing, markdown, discount, cogs, profit]
+    absorbs: [profitability, promotions]
+  - id: fulfilment
+    name: Fulfilment
+    question: Did it arrive as promised?
+    words: [shipment, shipping, delivery, dispatch, fulfilment, fulfillment, carrier, logistic, logistics, parcel, tracking]
+  - id: marketing
+    name: Marketing
+    question: What did growth cost?
+    words: [marketing, campaign, attribution, advert, advertising, ads, affiliate, coupon, voucher, promo, roas, acquisition]
+    absorbs: [acquisition]
+  - id: traffic_conversion
+    name: Traffic & conversion
+    question: Are visitors becoming buyers?
+    words: [web, session, visit, pageview, page view, web event, cart, funnel, checkout, conversion, bounce]
+    absorbs: [conversion, engagement]
+  - id: customers
+    name: Customers
+    question: Who buys, and do they come back?
+    words: [customer, customers, member, loyalty, cohort, repeat, retention, churn, lifetime]
+  - id: payments
+    name: Payments & risk
+    question: Did the money land safely?
+    words: [payment, payments, chargeback, fraud, psp, instalment, installment]
+  - id: crm_consent
+    name: CRM & consent
+    question: Can we reach them?
+    words: [email, newsletter, consent, sms, crm, unsubscribe, opt in]
+    absorbs: [crm]
+  - id: service
+    name: Service
+    question: Did we look after them?
+    words: [customer service, ticket, support, csat, nps, complaint]
+    absorbs: [experience]
+  - id: clienteling_events
+    name: Clienteling & events
+    question: Does the personal touch pay?
+    words: [clienteling, stylist, appointment, event, attendance, concierge]
+  - id: inventory
+    name: Inventory & merchandising
+    question: Is the stock right?
+    words: [inventory, stock, sku, warehouse, product, variant, brand, assortment, catalogue, catalog, sell through]

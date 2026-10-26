@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_gmv",
+    "area": "orders_sales",
+    "kind": "value",
+    "direction": "up",
     "title": "Gross Merchandise Value (GMV)",
     "intent_tags": [
       "gmv",
@@ -145,6 +148,9 @@
   },
   {
     "id": "ec_net_revenue",
+    "area": "orders_sales",
+    "kind": "value",
+    "direction": "up",
     "title": "Net Revenue",
     "intent_tags": [
       "net revenue",
@@ -283,6 +289,9 @@
   },
   {
     "id": "ec_aov",
+    "area": "orders_sales",
+    "kind": "value",
+    "direction": "up",
     "title": "Average Order Value (AOV)",
     "intent_tags": [
       "aov",
@@ -420,6 +429,9 @@
   },
   {
     "id": "ec_refund_rate",
+    "area": "returns",
+    "kind": "rate",
+    "direction": "down",
     "title": "Refund Rate",
     "intent_tags": [
       "refund rate",
@@ -559,6 +571,9 @@
   },
   {
     "id": "ec_return_rate",
+    "area": "returns",
+    "kind": "rate",
+    "direction": "down",
     "title": "Order Return Rate",
     "intent_tags": [
       "return rate",

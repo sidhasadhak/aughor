@@ -753,6 +753,10 @@ function conditionLine(c: { kind: string; config: Record<string, unknown> }): st
   if (c.kind === "metric") return `monitor ${c.config.monitor_id ?? ""} fires`;
   if (c.kind === "source_change") return `${c.config.table ?? "a table"} changes`;
   if (c.kind === "entity_appears") return `new key in ${c.config.table ?? "a table"}`;
+  // Arc FA, FA-5 — the segment names the population; the entity says what kind of thing enters.
+  if (c.kind === "objects_admitted") {
+    return `${c.config.entity ?? "an entity"} objects entering ${c.config.segment ?? "a segment"}`;
+  }
   if (c.kind === "webhook") return "when its URL is called";
   return c.kind;
 }

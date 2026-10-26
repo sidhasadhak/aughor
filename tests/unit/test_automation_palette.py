@@ -101,9 +101,14 @@ def test_the_declared_action_is_ready_without_asking_a_flag(monkeypatch, no_obje
     building a graph a palette render must not pay for. The flag route is worse than
     useless — that flag was hardwired and deleted, so `flag_enabled` answers False for an
     unregistered name and every deployment would be told its declared actions are off.
-    This test fails the moment someone reaches for it."""
+    This test fails the moment someone reaches for it.
+
+    Arc FA, FA-5: the palette now asks one kind of flag — whether a FLAGGED entry is offered
+    at all (`palette.FLAGGED`). Those answer off here; any other flag still trips the wire."""
+    from aughor.automations.palette import FLAGGED
+    gating = {flag for flag, _ in FLAGGED}
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda n: (_ for _ in ()).throw(
+                        lambda n: False if n in gating else (_ for _ in ()).throw(
                             AssertionError(f"the palette asked about the flag {n!r}")))
     assert _by_kind(entries())[OPEN_KIND]["availability"] == READY
 

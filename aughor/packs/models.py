@@ -110,6 +110,18 @@ class PackMetric(_Base):
     unit: str = ""
     #: IP-3 — the sourced band the value is plausible in.
     sane_range: Optional[SaneRange] = None
+    #: Arc MC — the area of the pack's map (`areas.yaml`) the recipe covers; "" when the pack declares none.
+    area: str = ""
+
+
+class PackArea(_Base):
+    """Arc MC — one area a business is read by (`areas.yaml`): the question it answers, the words that place a table or
+    a metric in it by name, and the areas of the function and base packs whose knowledge-base patterns read on it."""
+    id: str
+    name: str = ""
+    question: str = ""
+    words: list[str] = Field(default_factory=list)
+    absorbs: list[str] = Field(default_factory=list)
 
 
 class RoleAttribute(_Base):
@@ -225,6 +237,30 @@ class PackSurface(_Base):
     """`surface.yaml` — the expert's dedicated view, composed of chart primitives."""
     title: str = ""
     panels: list[dict] = Field(default_factory=list)
+
+
+class TemplateCard(_Base):
+    """One card of a dashboard template: a name the layout places it by, and the pack metric it shows."""
+    key: str
+    metric: str
+    title: str = ""
+
+
+class TemplateSection(_Base):
+    """One section of a dashboard template's layout: its heading and the cards it places, by key, in order."""
+    title: str
+    cards: list[str] = Field(default_factory=list)
+
+
+class PackDashboardTemplate(_Base):
+    """`dashboards/*.yaml` (Arc FA, FA-6) — a dashboard the industry usually keeps, as a template a PERSON keeps a
+    dashboard from (`aughor/packs/templates.py`): a title, a short description, cards naming the pack's metrics, and
+    sections laying them out. A template never becomes a dashboard on its own — it becomes a draft, kept or not."""
+    id: str
+    title: str
+    description: str = ""
+    cards: list[TemplateCard] = Field(default_factory=list)
+    sections: list[TemplateSection] = Field(default_factory=list)
 
 
 class ExpectedObject(_Base):
@@ -459,6 +495,10 @@ class Pack(_Base):
     monitors: list[PackMonitorPrior] = Field(default_factory=list)      # monitors/*.yaml
     scenarios: list[PackScenarioTemplate] = Field(default_factory=list)  # scenarios/*.yaml
     missions: list[PackMissionTemplate] = Field(default_factory=list)   # missions/*.yaml
+    #: Arc FA, FA-6 — the dashboard templates a pack ships (`dashboards/*.yaml`).
+    dashboards: list[PackDashboardTemplate] = Field(default_factory=list)
+    #: Arc MC — the areas the pack's map reads its business by (`areas.yaml`), as the business reads them.
+    areas: list[PackArea] = Field(default_factory=list)
     path: str = ""                                   # source folder
 
     @property

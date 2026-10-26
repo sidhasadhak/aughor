@@ -32,12 +32,25 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   })),
   getOntologyProposals: vi.fn(async () => []),
   getConnectionSettings: vi.fn(async () => ({ ontology_refresh_hours: null })),
+  getSystemFlags: vi.fn(async () => ({})),
 }));
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getRelease: vi.fn(async () => ({
     enabled: true, connection_id: "c1", schema_name: "thelook", releases: [], draft: [],
     published: { number: 6, id: "c1/thelook@6", at: "2026-10-10T02:15:26+00:00", by: "ana", note: "", elements: 21 },
+  })),
+  getEntitiesByReads: vi.fn(async () => ({
+    path: "by_reads", connection_id: "c1", schema_name: "thelook", days: 30, source: "the platform's log of statements run",
+    entities: [
+      { entity: "Review", object_type: "review", display_name: "Review", tables: ["reviews"], part_of: "", days: 30,
+        reads: 0, last_read: null, readers: 0, unattributed: 0 },
+      { entity: "Order", object_type: "order", display_name: "Order", tables: ["orders"], part_of: "", days: 30,
+        reads: 41, last_read: "2026-10-23T09:00:00Z", readers: 3, unattributed: 12,
+        shared_said: "a statement naming orders counts for Order line too." },
+      { entity: "Note", object_type: "note", display_name: "Note", tables: [], part_of: "", reads: null,
+        said: "No table is bound to it, so nothing is counted." },
+    ],
   })),
 }));
 
@@ -78,5 +91,23 @@ describe("OntologyPanel — the bar", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Org" }));
     expect(await screen.findByTestId("org-stub")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByTestId("ontology-facts")).toBeNull());
+  });
+
+  it("lists the entities by their reads, the least read first, only while what uses an entity is shown", async () => {
+    const api = await import("@/lib/api");
+    vi.mocked(api.getSystemFlags).mockResolvedValue({ "ontology.entity_usage": { value: true } } as never);
+    render(<OntologyPanel connectionId="c1" schema="thelook" />);
+    const tools = await screen.findByTestId("ontology-tools");
+    await waitFor(() => expect(api.getSystemFlags).toHaveBeenCalled());
+    fireEvent.keyDown(tools, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Reads by entity" }));
+    const rows = await screen.findAllByTestId("ontology-reads-row");
+    expect(rows.map((r) => r.querySelector("[data-testid=ontology-reads-count]")?.textContent))
+      .toEqual(["0 reads", "41 reads", "not counted"]);
+    expect(rows[0]).toHaveTextContent("not read in 30 days");
+    expect(rows[1]).toHaveTextContent("last read Fri 23 Oct · 3 readers · 12 with no reader recorded");
+    expect(rows[1]).toHaveTextContent("Shared table: a statement naming orders counts for Order line too.");
+    expect(rows[2]).toHaveTextContent("No table is bound to it, so nothing is counted.");
+    vi.mocked(api.getSystemFlags).mockResolvedValue({});
   });
 });

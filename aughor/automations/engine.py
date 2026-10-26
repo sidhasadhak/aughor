@@ -332,6 +332,10 @@ def default_probe(cond: Condition, automation: Automation):
     if cond.kind == "finding_created":
         from aughor.automations.probes import evaluate_finding_condition
         return evaluate_finding_condition(cond, automation)
+    # Arc FA, FA-5 — the objects a rule or segment newly admits; its payload is their keys.
+    if cond.kind == "objects_admitted":
+        from aughor.automations.admitted import evaluate_admitted_condition
+        return evaluate_admitted_condition(cond, automation)
 
     raise ProbeUnavailable(f"condition kind '{cond.kind}' has no probe wired")
 
@@ -2802,6 +2806,12 @@ def _walk_automation(
         if not dry_run:
             commit_fired_baselines(automation)
             commit_hub_baselines(automation)
+            # FA-5 — the keys this tick's check handed the chain join what it has seen. Not on a
+            # resume: the tick that parked committed them, and a later check's arrivals that never
+            # fired must not be committed by someone else's run.
+            if not resume:
+                from aughor.automations.admitted import commit_admitted
+                commit_admitted(automation)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "baseline commit is best-effort; the fired run is already recorded",

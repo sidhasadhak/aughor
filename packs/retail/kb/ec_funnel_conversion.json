@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_conversion_rate",
+    "area": "traffic_conversion",
+    "kind": "rate",
+    "direction": "up",
     "title": "Conversion Rate",
     "intent_tags": [
       "conversion rate",
@@ -148,6 +151,9 @@
   },
   {
     "id": "ec_cart_abandonment",
+    "area": "traffic_conversion",
+    "kind": "rate",
+    "direction": "down",
     "title": "Cart Abandonment Rate",
     "intent_tags": [
       "cart abandonment",
@@ -289,6 +295,9 @@
   },
   {
     "id": "ec_checkout_funnel",
+    "area": "traffic_conversion",
+    "kind": "rate",
+    "direction": "down",
     "title": "Checkout Funnel Drop-off Rate",
     "intent_tags": [
       "checkout funnel",

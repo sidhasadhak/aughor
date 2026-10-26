@@ -73,13 +73,19 @@ logger = logging.getLogger(__name__)
 SOURCE_DEFINED = "defined"
 SOURCE_INDUSTRY = "industry"
 SOURCE_EXPLORER = "explorer"
-_PRECEDENCE = (SOURCE_DEFINED, SOURCE_INDUSTRY, SOURCE_EXPLORER)
+#: Arc MC — proposed for an area of the map the data covers (`coverage_proposals`): derived from the ontology, written
+#: from the knowledge base's patterns, or a measure the explorer keeps computing. Listed while a coverage flag is on.
+SOURCE_COVERAGE = "coverage"
+_PRECEDENCE = (SOURCE_DEFINED, SOURCE_INDUSTRY, SOURCE_EXPLORER, SOURCE_COVERAGE)
 
 STATE_DEFINED = "defined"
 STATE_NEEDS_BINDING = "needs_binding"
 STATE_NEEDS_FORMULA = "needs_formula"
 STATE_FORMULA_REJECTED = "formula_rejected"
 STATE_PROPOSED = "proposed"
+#: Arc MC — a proposal the gates refused (it does not run, never moves, sits outside its sane range, reads a table
+#: outside its area …), listed with the gate and why and never adoptable until it is fixed (MC-3's falsifier).
+STATE_GATE_FAILED = "gate_failed"
 
 
 def normalize_name(text: str) -> str:
@@ -138,6 +144,15 @@ class CatalogueEntry:
     #: The dataset (schema) it belongs to; ``"*"`` — every dataset of the connection. Two datasets
     #: may each have their own `revenue`, so a row is (source, dataset, name), never the name alone.
     schema: str = "*"
+    #: Arc MC — the area of the map it reads on, the pattern it computes, how a coverage proposal was made (recipe ·
+    #: ontology · pattern · area · blind_spot), its gates' verdicts and the date it was proposed with. Empty unless a
+    #: coverage run read it.
+    area: str = ""
+    pattern: str = ""
+    origin: str = ""
+    gates: Optional[dict] = None
+    time_column: str = ""
+    time_kind: str = ""
 
     def as_dict(self) -> dict:
         from dataclasses import asdict
@@ -167,7 +182,7 @@ def _defined_entries(connection_id: str, schema_name: Optional[str] = None) -> l
 
 # ── Source 2: the industry's active knowledge packages ────────────────────────
 
-def _industry_packages(connection_id: str, schema_name: Optional[str]) -> list:
+def industry_packages(connection_id: str, schema_name: Optional[str]) -> list:
     """The ACTIVE knowledge packages this connection reads: its own industry's, plus the
     function and base packages every industry shares. `industry_scope` answers None when
     nothing is known about the industry — then no industry-layer package is claimed,
@@ -217,7 +232,7 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
     from aughor.packs.loader import load_pack
 
     out: list[CatalogueEntry] = []
-    for pkg in _industry_packages(connection_id, schema_name):
+    for pkg in industry_packages(connection_id, schema_name):
         try:
             pack = load_pack(pkg.directory)
         except Exception as exc:
@@ -237,7 +252,7 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
             tables = [] if missing else [t for t in dict.fromkeys(
                 str((binding.get(r) or {}).get("table") or "") for r in required) if t]
             sr = getattr(pm, "sane_range", None)
-            out.append(CatalogueEntry(
+            entry = CatalogueEntry(
                 name=pm.name, label=pm.title or pm.name, source=SOURCE_INDUSTRY,
                 state=STATE_NEEDS_BINDING if missing else STATE_PROPOSED,
                 sql=(pm.formula or "").strip(),
@@ -248,7 +263,68 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
                 pack_id=pkg.pack_id, required_roles=required, missing_roles=missing,
                 sane_range=(sr.model_dump() if hasattr(sr, "model_dump") else sr),
                 editable=False, schema=schema_name or "*", tables=tables,
-            ))
+            )
+            if not missing:
+                _with_recipe_verdict(entry, connection_id, schema_name, binding)
+            out.append(entry)
+    return out
+
+
+def _with_recipe_verdict(entry: CatalogueEntry, connection_id: str, schema_name: Optional[str], binding: dict) -> None:
+    """Arc MC, MC-3 — the last coverage run's gates on a bound recipe, while the binding it read still stands: its area,
+    its verdicts, and — when a gate refused it — the state that keeps it from being adopted. Nothing while
+    `metrics.coverage_proposals` is off."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("metrics.coverage_proposals"):
+        return
+    try:
+        from aughor.semantic.coverage_proposals import recipe_verdict
+        verdict = recipe_verdict(connection_id, schema_name, entry.name, binding)
+    except Exception as exc:  # noqa: BLE001 — a verdict unread leaves the row as the package lists it
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a recipe's gate verdict could not be read", counter="metric_catalogue.recipe_verdict")
+        return
+    if not verdict:
+        return
+    entry.area, entry.gates, entry.origin = str(verdict.get("area") or ""), verdict.get("gates"), "recipe"
+    entry.time_column, entry.time_kind = str(verdict.get("time_column") or ""), str(verdict.get("time_kind") or "")
+    if verdict.get("state") == STATE_GATE_FAILED:
+        entry.state, entry.reason = STATE_GATE_FAILED, str(verdict.get("reason") or "")
+
+
+# ── Source 4: proposed for an area of the map (Arc MC) ───────────────────────────────────────────────────────────
+
+def _coverage_entries(connection_id: str, schema_name: Optional[str]) -> list[CatalogueEntry]:
+    """The last coverage run's proposals that are not a package's recipe (those are the industry rows): derived from
+    the ontology, written from the knowledge base, or a measure the explorer keeps computing. [] while no coverage flag
+    is on, so the catalogue lists exactly what it did."""
+    from aughor.semantic import coverage_proposals as CP
+    if not CP.any_on():
+        return []
+    try:
+        rows = CP.stored(connection_id, schema_name)
+    except Exception as exc:  # noqa: BLE001 — proposals unread are not listed, and the coverage view says it
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "coverage proposals could not be read for the catalogue", counter="metric_catalogue.coverage")
+        return []
+    out: list[CatalogueEntry] = []
+    for p in rows:
+        if p.get("source") == CP.SOURCE_RECIPE:
+            continue
+        came = (f"the knowledge base's {p.get('pattern_title') or p.get('pattern')}" if p.get("pattern")
+                else str(p.get("derived_from") or "") or ("a measure the explorer keeps computing"
+                                                         if p.get("source") == CP.SOURCE_BLIND_SPOT else
+                                                         "no pattern — written for an area the knowledge base lacks"))
+        out.append(CatalogueEntry(
+            name=normalize_name(p.get("name") or ""), label=str(p.get("label") or p.get("name") or ""),
+            source=SOURCE_COVERAGE, state=(STATE_GATE_FAILED if p.get("state") == CP.STATE_GATE_FAILED
+                                           else STATE_PROPOSED),
+            sql=str(p.get("sql") or ""), unit=str(p.get("unit") or ""), definition=str(p.get("definition") or ""),
+            tables=list(p.get("tables") or []), reason=str(p.get("reason") or ""), why_it_matters=came,
+            pack_id=str(p.get("pack_id") or ""), editable=False, schema=schema_name or "*",
+            area=str(p.get("area") or ""), pattern=str(p.get("pattern") or ""), origin=str(p.get("source") or ""),
+            gates=p.get("gates"), time_column=str(p.get("time_column") or ""), time_kind=str(p.get("time_kind") or ""),
+        ))
     return out
 
 
@@ -357,9 +433,11 @@ def catalogue_for(connection_id: str, schema_name: Optional[str] = None) -> list
     defined = _defined_entries(connection_id, schema_name)
     industry: list[CatalogueEntry] = []
     explorer: list[CatalogueEntry] = []
+    coverage: list[CatalogueEntry] = []
     for ds in _datasets_of(connection_id, schema_name):
         industry += _industry_entries(connection_id, ds)
         explorer += _explorer_entries(connection_id, ds)
+        coverage += _coverage_entries(connection_id, ds)
     if every:
         industry = _one_unbound_row_per_recipe(industry)
     try:
@@ -388,7 +466,7 @@ def catalogue_for(connection_id: str, schema_name: Optional[str] = None) -> list
             continue
         taken.add(_slot(e))
         out.append(e)
-    for batch in (industry, explorer):
+    for batch in (industry, explorer, coverage):
         for e in batch:
             if _shadowed(e) or is_dismissed(removed, connection_id, e.schema, e.name):
                 continue
@@ -452,7 +530,7 @@ def _quote_for(connection_id: str, identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def _resolve_roles(sql: str, pack_id: str, connection_id: str,
+def resolve_roles(sql: str, pack_id: str, connection_id: str,
                    schema_name: Optional[str]) -> tuple[str, list[str]]:
     """An industry formula with every role token replaced by the column this connection
     bound to it. Returns (sql, unresolved) — `unresolved` names what had no binding.
@@ -544,7 +622,7 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
     # row that most needs editing as the only one that cannot be.
     sql, to_write = entry.sql, ""
     if entry.source == SOURCE_INDUSTRY:
-        sql, unresolved = _resolve_roles(sql, entry.pack_id, connection_id,
+        sql, unresolved = resolve_roles(sql, entry.pack_id, connection_id,
                                          None if dataset == ALL_DATASETS else dataset)
         if entry.state == STATE_NEEDS_BINDING or unresolved:
             needs = sorted(set(unresolved)) or [f"{r}.*" for r in entry.missing_roles]
@@ -554,7 +632,9 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
             sql = ""
 
     from aughor.semantic.metric_statement import as_statement
-    caveats = "\n\n".join(t for t in (entry.definition, to_write) if t) or None
+    came = (f"Proposed for this connection's {entry.area} area: {entry.why_it_matters}."
+            if entry.source == SOURCE_COVERAGE and entry.why_it_matters else "")
+    caveats = "\n\n".join(t for t in (entry.definition, came, to_write) if t) or None
     metric = MetricDefinition(
         name=normalize_name(entry.name),
         connection=connection_id,
@@ -568,10 +648,13 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
         unit=entry.unit or None,
         caveats=caveats,
         wrong_usage_examples=list(entry.anti_patterns),
-        lineage=([f"{entry.source}: {entry.pack_id}"] if entry.pack_id
-                 else [entry.source]),
+        lineage=([f"coverage: {entry.area} · {entry.pattern or entry.origin}"] if entry.source == SOURCE_COVERAGE
+                 else [f"{entry.source}: {entry.pack_id}"] if entry.pack_id else [entry.source]),
         status="draft",
         proposed_by=actor or None,
+        # Arc MC — the date the proposal's gates read its figures by, so the draft is measured as it was checked
+        **({"time_column": entry.time_column, "time_kind": "flow"}
+           if entry.time_column and (entry.time_kind or "flow") == "flow" else {}),
     )
     from aughor.semantic.metric_time import with_dates
     metric = with_dates(connection_id, metric)

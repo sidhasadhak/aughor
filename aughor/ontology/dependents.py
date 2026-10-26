@@ -5,7 +5,9 @@ without asking who used it).
 A first index, read from what already names ontology things — nothing new is stored:
 
 * **automations** — a `promise_breached` trigger names a process; a step that runs a declared action names it by
-  `action_id`; a `source_change` or `entity_appears` trigger names a table an entity is read from;
+  `action_id`; a `source_change` or `entity_appears` trigger names a table an entity is read from; an
+  `objects_admitted` trigger (Arc FA, FA-5) names an entity and the segment it lists — a rule's, a declared
+  segment, or one a process derives;
 * **processes** — the entity they run on, and every entity and link their stages and promises read, resolved by the
   object compiler's own law (`semantic.object_query.property_at`), so a path counts exactly as the measurement walks it;
 * **rules, declared actions, declared links, parts and metrics** — the entity each is defined over or about, and an
@@ -142,6 +144,28 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
                 if aid and aid in action_ids:
                     rows.append(_row("automation", a.id, a.name, f"a step runs the declared action '{aid}'{why_suffix}"))
 
+    def admitted_on(segments: Optional[set[tuple[str, str]]], entity_ids: frozenset = frozenset(),
+                    why_suffix: str = "") -> None:
+        """Arc FA, FA-5 — an `objects_admitted` trigger lists the objects a segment of an entity admits: it depends on
+        the entity (``segments`` None, matched by ``entity_ids``) or on one of ``segments``, (entity id, segment) pairs
+        lower-cased — the entity "*" when the declaration does not say which."""
+        for a in autos:
+            for c in a.conditions:
+                if c.kind != "objects_admitted":
+                    continue
+                ent_name, seg = str(c.config.get("entity") or ""), str(c.config.get("segment") or "")
+                found = entity_named(graph, ent_name)
+                eid = found.id if found is not None else ent_name
+                hit = (eid in entity_ids) if segments is None else bool(
+                    {(eid.lower(), seg.lower()), ("*", seg.lower())} & segments)
+                if hit:
+                    rows.append(_row("automation", a.id, a.name,
+                                     f"its trigger acts on the {eid} objects '{seg}' admits{why_suffix}"))
+
+    def entity_id_of(name: str) -> str:
+        found = entity_named(graph, name)
+        return (found.id if found is not None else name or "*").lower()
+
     if kind == "entity":
         ent = graph.entities.get(target_id) or entity_named(graph, target_id)
         if ent is None:
@@ -175,6 +199,18 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
         for m in _keyed_metrics(conn, names):                    # Arc OC-3: a governed metric keyed to it
             rows.append(_row("metric", m.name, m.label, "the approved metric measures its objects"))
         automations_on(on_it, about, _tables_of(ent), f", which reads {ent.id}", frozenset(names))
+        admitted_on(None, frozenset({ent.id}))
+    elif kind == "rule":
+        rule = graph.rules.get(target_id) or next(
+            (r for rid, r in graph.rules.items() if rid.lower() == target_id.lower()), None)
+        admitted_on({(entity_id_of(rule.entity) if rule is not None else "*", target_id.lower())})
+    elif kind == "object_set":
+        ent_name, _, seg_id = target_id.partition("::")
+        ent = entity_named(graph, ent_name)
+        eid = (ent.id if ent is not None else ent_name).lower()
+        seg = (ent.segments or {}).get(seg_id) if ent is not None else None
+        names = {seg_id.lower()} | ({seg.display_name.lower()} if seg is not None and seg.display_name else set())
+        admitted_on({(eid, n) for n in names})
     elif kind == "link":
         on_it = {pid for pid, (_, links) in procs.items() if target_id in links}
         for pid in sorted(on_it):
@@ -189,6 +225,12 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
                 rows.append(_row("impact", iid, imp.display_name,
                                  f"the impact's {' and '.join(ends)} promise{'s are' if len(ends) > 1 else ' is'} in it"))
         automations_on({target_id}, set(), set())
+        process = graph.processes.get(target_id)
+        if process is not None:
+            from aughor.ontology.derived import overdue_derivations, process_derivations
+            derived = process_derivations(process).segments + overdue_derivations(process)
+            admitted_on({(entity_id_of(d.entity), d.name.lower()) for d in derived},
+                        why_suffix=", a segment the process derives")
     elif kind == "action":
         for aid, act in sorted(actions.items()):
             if act.undo is not None and act.undo.action_id == target_id and aid != target_id:
@@ -207,8 +249,11 @@ def refusal(kind: str, target_id: str, rows: list[dict]) -> str:
     """The sentence a refused withdrawal answers with: what would break, and what to do first."""
     named = "; ".join(f"{r['consumer']} '{r['name']}' ({r['how']})" for r in rows[:8])
     more = f"; and {len(rows) - 8} more" if len(rows) > 8 else ""
+    from aughor.ontology.retiring import withdrawal_hint
     return (f"{kind} '{target_id}' is not withdrawn — {len(rows)} thing{'s' if len(rows) != 1 else ''} depend"
-            f"{'' if len(rows) != 1 else 's'} on it: {named}{more}. Change or withdraw those first.")
+            f"{'' if len(rows) != 1 else 's'} on it: {named}{more}. Change or withdraw those first."
+            # Arc FA, FA-3 — while `ontology.retiring` is on, the way to take it out of use without breaking them
+            + withdrawal_hint(kind))
 
 
 def guard_withdrawal(graph: Optional[OntologyGraph], conn: str, kind: str, target_id: str) -> Any:

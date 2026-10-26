@@ -1,6 +1,9 @@
 [
   {
     "id": "customer_churn_analysis",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "down",
     "title": "Customer Churn Analysis",
     "business_definition": "Churn rate is the percentage of customers who stop being customers in a given period. For subscriptions: (customers lost / customers at start of period). High churn erodes revenue even when acquisition is strong.",
     "intent_tags": ["churn", "customer churn", "churn rate", "customer retention", "customers leaving", "attrition"],

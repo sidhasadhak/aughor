@@ -1,0 +1,11 @@
+# Arc MC (ROADMAP §3.62) — the areas product's knowledge-base patterns are read on. An industry pack takes one into its
+# own area by naming it in `absorbs`; an area no industry takes is read under its own name.
+areas:
+  - id: engagement
+    name: Engagement
+    question: Do people keep using it?
+    words: [session, pageview, page view, feature, usage, activity, visit]
+  - id: conversion
+    name: Conversion
+    question: Do visitors reach the goal?
+    words: [funnel, conversion, onboarding, activation, landing, goal]

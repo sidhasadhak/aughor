@@ -12117,7 +12117,7 @@ dashboard piece says a cut read beside its caveats (`answerSays`).
 **The laws it keeps.** Provenance on everything that changes · supersede, don't delete · no fourth lineage walker
 (`govern/lineage.py`, `ontology/dependents.py` and `automations/graph.py` already exist) · no sixth audit sink.
 
-### 3.60 · Arc FA — the ontology people can find and act on (DRAFTED 2026-10-24 as arc 3 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; third of the three · nothing built)
+### 3.60 · Arc FA — the ontology people can find and act on (DRAFTED 2026-10-24 as arc 3 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; third of the three · 🔨 FA-1…FA-7 BUILT 2026-10-26 on `claude/arc-fa`, every flag off by default, proven live on theLook where it could be — PENDING item 58 holds each receipt)
 
 **The premise, measured.** Nothing searches the declarations by meaning (the context graph's node kinds hold none); an object
 cannot be found without knowing its entity; a selection cannot leave the piece it was made in; an ontology element cannot be
@@ -12175,6 +12175,53 @@ switching the dashboard beside it, and suggestion chips.
 **The laws it would keep.** Adapt the pattern, never the hosted service (as with CopilotKit's learning, PENDING 56) ·
 grounded in the server's copy of the screen · the left rail stays, so the panel is on the right · a mockup on live data
 first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything that writes.
+
+---
+
+### 3.62 · Arc MC — metrics that cover the business (DRAFTED 2026-10-26 · `docs/METRICS_COVERAGE_STUDY_2026-10-26.md` · ✅ ADOPTED the same day — §6 item 55, the six calls taken · BUILT the same day, MC-0…MC-6, six flags off by default — the study's §9; PENDING item 62)
+
+**The ask** (the user, 2026-10-26, on LuxExperience): *"only 12 proposed metrics.. for an e-commerce organisation that
+is probably not even 50% of the matrix.. what are we missing?"*, then *"Missing in terms of approach or logic.."*, then
+*"Proceed with framework first"*.
+
+**The premise, measured.** LuxExperience has 33 tables; its 12 metrics read 12 of them, and 3 of the 12 do not work
+(two read 1 in every period — the retail pack's only recipes bound to the wrong tables, one with a date bound to an id —
+and ROAS has no dated rows). theLook has 15 metrics over 6 of 7 tables: the count follows the prompt, not the data. The
+explorer asks one model call for *"the 6-8 metrics … that matter MOST"* (`business_profile/infer.py:322`); nothing
+checks the proposals against a map of what the business measures; the proposer reads schema text, not the profiler or
+the ontology's promises; **the knowledge base's ~100 curated metric patterns, each with a template (`packs/*/kb/*.json`), are read only to answer a question, never to propose** (the user spotted it: *"I think we already this list of metrics per industry as knowledge base"*); the packs supply recipes only for names the model chose; proposals are made once; the gates
+check the SQL, not the figure (a recipe's `sane_range` of 0–30% stood beside a metric reading 100%). The Briefing then
+measures at most 12 (`briefing/ranges.py:65`).
+
+**The framework.** A map of areas a business is read by — the knowledge base's metric patterns, grouped by area, plus a
+generic layer in the platform; retail's income-statement order orders the areas · every table placed in its areas, with the evidence ·
+a coverage matrix (has data · has a metric) · proposals per uncovered area, cheapest first (recipes bound to roles, then
+metrics derived from the ontology's promises and stages, then one scoped model call per area) · gates before a person
+sees one (runs · a window bounds it · it moves · within its sane range · roles bound to the right types · not a twin) ·
+adoption and approval by people only, through the doors that exist · the Briefing's cap a setting, read by the map.
+
+| Wave | Builds | Spends |
+|---|---|---|
+| MC-0 | LuxExperience's two metrics that read 1; three gates at approval (moves, sane range, binding types) | no |
+| MC-1 | The knowledge base as the map: area, kind, direction on its metric patterns; the generic layer | no |
+| MC-2 | Placement and the coverage matrix, read-only, on the Metrics tab | no |
+| MC-3 | Recipe proposals per uncovered area, through the gates, grouped by area | no |
+| MC-4 | Ontology-derived proposals: promise → on-time rate, stage → conversion, segment → share | no |
+| MC-5 | The knowledge base's patterns written for this schema, one scoped model call per uncovered area, each citing its pattern | yes |
+| MC-6 | Blind spots → proposals; the Briefing's cap a setting, read by the map's order | no |
+
+**The laws it keeps.** A model proposes and never approves · industry nouns live in packs, never in core code · every
+proposal says its gates' verdicts and why one failed · nothing is measured as a period's figure that a window cannot bound.
+
+**Built 2026-10-26** (the user: *"Go ahead and build entire arc mc"*) — flags `metrics.figure_gates` (MC-0),
+`metrics.coverage_map` (MC-1/2), `metrics.coverage_proposals` (MC-3/4), `metrics.coverage_writer` (MC-5, the only one
+that spends), `metrics.blind_spot_proposals` and `briefing.metric_cap` (MC-6). The map is `packs/*/areas.yaml` plus
+area · kind · direction on all 130 metric patterns (`semantic/metric_map.py`); placement and the matrix
+`semantic/metric_coverage.py` (`GET /metrics/coverage/{conn}`, the Metrics tab's Coverage card); proposals
+`semantic/coverage_proposals.py` and `semantic/coverage_writer.py`, kept beside the business profile and listed as the
+catalogue's fourth source; the gates `semantic/metric_gates.py`. One change from the study, found building: the writer
+calls on every area with data and patterns its metrics do not compute yet, not only on areas with no metric — a covered
+area thin on metrics (LuxExperience's Traffic & conversion: one metric, 22 patterns) is what the user asked about.
 
 ---
 
@@ -14671,6 +14718,19 @@ the browser** · **measure the premise before building.**
       - **(d)** ED-5, re-scoped on its measured premise — *"Impacts are the one store"*: no causal edge was ever
         confirmed on the live install, and the model's proposals name no promise, so nothing is folded. The declared
         impacts are the one store, the model is not asked for causes, and the alert summary words the impacts.
+      - **(e)** Arc FA, decided 2026-10-26 when the user asked for *"FA-1 till FA-7 in one go"* (each took the
+        recommended choice, after a survey re-measured every premise):
+        - FA-2 and FA-4, marked *mockup first* — *"Build straight, show after"*: the shapes are chosen in the build
+          and shown on live data as screenshots.
+        - FA-3's status word — *"Retiring"*: *retiring on <date> — use <successor> instead*. *Retired* already means
+          archived (dashboards, the graph's `RetiredNode`) and *withdraw* is removal, so the glossary keeps all three apart.
+        - FA-5's first check — *"Record them, fire for later arrivals"*: the objects already inside a rule when an
+          automation is switched on are recorded and said, never fired for (theLook would admit 25,051 at once).
+        - FA-5's row policy — *"The person who saved it"*: an automation lists objects under its owner's row policy,
+          so it can never see further than the person who built it.
+        - Re-measured, decided in the build: `ontology.usage` is folded into `ontology.entity_usage` (#627 built most
+          of it — one concept, one flag); FA-4 keeps a dashboard set as a condition **rule**, because an ontology
+          segment is raw SQL; FA-6's first dashboard template ships with retail.
     - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 
@@ -14776,6 +14836,23 @@ the browser** · **measure the premise before building.**
     inbound only** (reverses §3.18's "no email in either direction" for arrivals; the platform still never sends one);
     the user creates the Google OAuth client, guided; a run's summary, spans, logs and trajectory are admin-only like
     the trace; the coverage test (real decisions rebuilt by hand) is skipped for now.
+
+55. ✅ **DECIDED 2026-10-26 — Arc MC, metrics that cover the business, adopted** (§3.62;
+    `docs/METRICS_COVERAGE_STUDY_2026-10-26.md`; PENDING item 62).
+    - The path: *"only 12 proposed metrics.. not even 50% of the matrix"* → *"Missing in terms of approach or logic.."*
+      → *"Proceed with framework first"* → the user's catch, *"I think we already this list of metrics per industry as
+      knowledge base"* (the knowledge base's ~100 metric patterns, never read to propose) → the six calls.
+    - Decided by the user 2026-10-26, from options:
+      - **(a)** LuxExperience's two metrics that read 1 — *"Deprecate them now"*: `return_rate` and
+        `cart_to_order_conversion_rate` deprecated the same day (audited, actor the user's session).
+      - **(b)** The map — *"Knowledge base + generic layer"*: the packs' metric patterns with area, kind and direction
+        added, and a generic layer for a connection no pack fits.
+      - **(c)** MC-5's model spend — *"Automatically when profiled"* (**not** the recommended per-area click): when a
+        connection is profiled or rebuilt, every uncovered area is proposed for, one scoped call each; the spend is said
+        on the coverage view.
+      - **(d)** The new gates (moves · sane range · binding types) — *"Refuse at approval"*, as the window check does.
+      - **(e)** Proposals shown — *"All that pass, by area"*, adopted per area.
+      - **(f)** The Briefing's cap — *"Raise the default"*: 24 (the figure offered), read by area in the map's order.
 
 56. ✅ **DECIDED 2026-10-27 — Arc SH adopted, with Arc SV's SV-1 and SV-2 first** (§3.63, §3.64;
     `docs/SPREADSHEETS_ARC_2026-10-27.md`, `design-mockups/spreadsheets.html`, `docs/GRIST_STUDY_2026-10-26.md`).

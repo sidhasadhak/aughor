@@ -1,6 +1,9 @@
 [
   {
     "id": "prod_feature_adoption_rate",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "up",
     "title": "Feature Adoption Rate",
     "intent_tags": [
       "feature adoption rate",
@@ -128,6 +131,9 @@
   },
   {
     "id": "prod_breadth_of_use",
+    "area": "engagement",
+    "kind": "volume",
+    "direction": "up",
     "title": "Breadth of Use",
     "intent_tags": [
       "breadth of use",
@@ -255,6 +261,9 @@
   },
   {
     "id": "prod_stickiness_ratio",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "up",
     "title": "Stickiness Ratio",
     "intent_tags": [
       "stickiness ratio",
@@ -380,6 +389,9 @@
   },
   {
     "id": "prod_session_depth",
+    "area": "engagement",
+    "kind": "volume",
+    "direction": "up",
     "title": "Session Depth",
     "intent_tags": [
       "session depth",
@@ -506,6 +518,9 @@
   },
   {
     "id": "prod_notification_opt_out_rate",
+    "area": "engagement",
+    "kind": "rate",
+    "direction": "down",
     "title": "Notification Opt-out Rate",
     "intent_tags": [
       "notification opt-out rate",

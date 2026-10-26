@@ -1,6 +1,9 @@
 [
   {
     "id": "camp_roas",
+    "area": "marketing",
+    "kind": "rate",
+    "direction": "up",
     "title": "Return on ad spend (ROAS)",
     "intent_tags": ["roas", "return on ad spend", "ad revenue", "campaign roi", "advertising return"],
     "sql_features": ["aggregation", "join"],
@@ -16,6 +19,9 @@
   },
   {
     "id": "camp_cpa",
+    "area": "marketing",
+    "kind": "value",
+    "direction": "down",
     "title": "Cost per acquisition (CPA)",
     "intent_tags": ["cpa", "cost per acquisition", "cost per conversion", "acquisition cost", "cost per order"],
     "sql_features": ["aggregation"],
@@ -31,6 +37,9 @@
   },
   {
     "id": "camp_ctr",
+    "area": "marketing",
+    "kind": "rate",
+    "direction": "up",
     "title": "Click-through rate (CTR) with impression floor",
     "intent_tags": ["ctr", "click through rate", "clicks", "impressions", "ad clicks"],
     "sql_features": ["aggregation"],
@@ -75,6 +84,9 @@
   },
   {
     "id": "camp_email_metrics",
+    "area": "crm",
+    "kind": "rate",
+    "direction": "up",
     "title": "Email campaign open, click, unsubscribe rates",
     "intent_tags": ["email open rate", "email click rate", "unsubscribe rate", "email campaign", "email performance"],
     "sql_features": ["aggregation"],
@@ -103,6 +115,9 @@
   },
   {
     "id": "camp_frequency_reach",
+    "area": "marketing",
+    "kind": "volume",
+    "direction": "up",
     "title": "Reach and frequency analysis",
     "intent_tags": ["reach", "frequency", "ad frequency", "unique reach", "impressions per user"],
     "sql_features": ["aggregation"],

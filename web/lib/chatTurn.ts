@@ -245,6 +245,9 @@ export interface ChatTurn {
     downgradedFrom: string | null;
     /** The question's shape — describe · check · diagnose · survey — on every turn's route. */
     shape?: string;
+    /** Arc FA-2 — what the turn was about, as the server read it for the asker ("About 10 of the 12 orders chosen · 2
+     *  of the 12 are withheld from you"), and whether the body answering read it. Absent on a turn with no subject. */
+    subject?: { said: string; carried: boolean; withheld: number };
   } | null;
 
   agent: {
@@ -405,6 +408,11 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
       forced: (d.forced as string) ?? null,
       downgradedFrom: (d.downgraded_from as string) ?? null,
       shape: (d.question_shape as string) ?? "",
+      ...(d.subject && typeof d.subject === "object" ? { subject: {
+        said: String((d.subject as { said?: unknown }).said ?? ""),
+        carried: (d.subject as { carried?: unknown }).carried !== false,
+        withheld: Number((d.subject as { withheld?: unknown }).withheld ?? 0),
+      } } : {}),
     };
     // The router decided the depth — set the turn's effective mode so the
     // existing renderers (quick vs investigate) work unchanged.

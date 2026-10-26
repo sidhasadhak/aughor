@@ -164,6 +164,35 @@ def test_a_statement_is_cut_to_a_named_part_and_the_rest_of_its_group(con):
     assert {r["window"]: r["value"] for r in whole}["current"] == 180.0 == 100.0 + 80.0   # the parts add up to the whole
 
 
+def test_a_statement_that_reads_its_date_table_only_inside_a_filter_is_refused_by_name():
+    """LuxExperience's marketing ROAS (2026-10-26): campaigns WHERE EXISTS a `dim_date` row of the same fiscal year,
+    dated on `dim_date.date`. A day's window kept every campaign of that day's fiscal year — the year's figure dressed
+    as the day's. A date table read only inside a filter, matched on another column, cannot bound the statement."""
+    roas = {"name": "roas", "tables": [], "filters": [], "time_kind": "flow", "time_column": "dim_date.date",
+            "sql": "SELECT SUM(mc.attributed_gmv_eur) / NULLIF(SUM(mc.spend_eur), 0) FROM marketing_campaigns mc "
+                   "WHERE EXISTS (SELECT 1 FROM dim_date d WHERE d.fiscal_year = mc.fiscal_year)"}
+    sql, why = mt.measure_sql(roas, WINDOWS)
+    assert sql is None and "dim_date is read only inside a filter, matched on fiscal_year" in why
+    assert "give those rows a date" in why
+    assert ms.window_problem(roas["sql"], roas["time_column"]) == why
+    # an IN over the date table, matched on nothing, is the same shape
+    by_in = "SELECT SUM(amount) FROM payments WHERE fiscal_year IN (SELECT fiscal_year FROM dim_date)"
+    assert "not matched on its date" in ms.window_problem(by_in, "dim_date.date")
+    # matched on its own date, a day's window keeps a day: bounded
+    on_date = ("SELECT COUNT(*) FROM orders o WHERE EXISTS (SELECT 1 FROM dim_date d WHERE d.date = o.order_date "
+               "AND d.is_holiday)")
+    assert ms.window_problem(on_date, "dim_date.date") == ""
+    # read as rows — joined, or in a CTE — it bounds them as before
+    joined = ("SELECT SUM(mc.spend_eur) FROM marketing_spend mc JOIN dim_date d ON d.date = mc.spend_date")
+    assert ms.window_problem(joined, "dim_date.date") == ""
+    cte = "WITH d AS (SELECT * FROM dim_date) SELECT COUNT(*) FROM d"
+    assert ms.window_problem(cte, "dim_date.date") == ""
+    # the outer-join rule speaks through the same door
+    assert "optional side of a LEFT JOIN" in ms.window_problem(
+        "SELECT SUM(oi.p) FROM order_items oi LEFT JOIN orders o ON oi.order_id = o.order_id", "orders.order_date")
+    assert ms.window_problem("SELECT 1", "") == "" and ms.window_problem("", "orders.order_date") == ""
+
+
 def test_a_statement_whose_date_table_is_optional_in_a_join_is_refused_by_name():
     """LuxExperience's gross margin (2026-10-26): `order_items LEFT JOIN orders`, dated on orders. The window
     filtered orders, the unmatched items stayed in the sum, and every window read the same all-time 40.73% — a

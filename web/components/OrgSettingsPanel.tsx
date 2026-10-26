@@ -312,6 +312,23 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           </div>
         </Card>
 
+        {/* Arc MC, MC-6 — how many approved headline metrics a Briefing measures (the user's call, 2026-10-26: 24 by
+            default). A workspace may set its own. */}
+        <Card label="Briefing">
+          <div style={FIELDS}>
+            <Field label="Headline metrics per Briefing" htmlFor="org-briefing-cap">
+              <Input id="org-briefing-cap" inputMode="numeric" placeholder="default"
+                value={s.briefing_metric_cap ? String(s.briefing_metric_cap) : ""}
+                onChange={(e) => {
+                  setSaved(false);
+                  const n = Number(e.target.value.replace(/[, ]/g, ""));
+                  setS((prev) => ({ ...prev, briefing_metric_cap: Number.isFinite(n) && n > 0 ? Math.min(60, Math.round(n)) : 0 }));
+                }} />
+            </Field>
+          </div>
+          <Note>Empty = the default: 24 while the Briefing reads by area, 12 otherwise. Each one is three warehouse queries per Briefing.</Note>
+        </Card>
+
         {/* The exploration principles §7 — the organisation's monthly budget for what the Explorer spends on its
             own initiative. A connection may set its own in the Catalog; the tighter holds. */}
         {app && (

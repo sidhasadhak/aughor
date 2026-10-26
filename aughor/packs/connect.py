@@ -102,13 +102,19 @@ def _status_of(key: tuple, declined: set, existing: dict) -> str:
     return "not_proposed"
 
 
-def propose_terms(pack: Pack, connection_id: str, *, schema_name: str = "", graph=None) -> dict[str, Any]:
+def propose_terms(pack: Pack, connection_id: str, *, schema_name: str = "", graph=None,
+                  only: Optional[set[tuple[str, str, str]]] = None) -> dict[str, Any]:
     """Write the pack's terms into the connection's vocabulary at source ``pack`` — a term a person
     already confirmed, already holds from a stronger source, or declined is left as it is. Returns
     what was proposed, what already stood, what is confirmed and what was declined, each term with
-    its status."""
+    its status.
+
+    ``only`` (an upgrade, `aughor/packs/upgrade.py`) keeps the pass to those ``(subject_kind, subject_id,
+    synonym)`` keys — the terms new since the installed version; None is every term, as a bind proposes them."""
     from aughor.ontology import vocabulary as V
     terms, declined, existing = _term_states(pack, connection_id, graph=graph)
+    if only is not None:
+        terms = [r for r in terms if (r["subject_kind"], r["subject_id"], r["synonym"]) in only]
     out: dict[str, Any] = {"pack": pack.id, "connection_id": connection_id, "schema_name": schema_name or "",
                            "declared": len(terms), "proposed": 0, "already": 0, "confirmed": 0, "declined": 0, "terms": []}
     for row in terms:
@@ -208,10 +214,16 @@ def _reason(label: str, pack_id: str, m, side: str, bound: float, bt) -> str:
 
 
 def alert_proposals_for(pack: Pack, connection_id: str, *, run_sql: Optional[RunSql] = None,
-                        today: Optional[date] = None) -> dict[str, Any]:
+                        today: Optional[date] = None,
+                        only: Optional[dict[tuple[str, str], str]] = None) -> dict[str, Any]:
     """Stage one `monitor_bundle` proposal per bounded side of every MEASURED prior whose metric this
     connection has registered, each with the prior's provenance and its backtest here; say why every
-    other prior stages nothing. Returns ``{staged, already_staged, skipped}``."""
+    other prior stages nothing. Returns ``{staged, already_staged, skipped}``.
+
+    ``only`` (an upgrade, `aughor/packs/upgrade.py`) maps ``(prior id, side)`` to a suffix for the proposal's call
+    id: just those sides are staged, and a side whose band changed since the installed version — or one a person
+    declined that has changed since — is staged under ``@v<version>``, so the inbox's idempotence (one row per run
+    and call) does not hand back the earlier row. None is every prior, as a bind stages them."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.monitors.backtest import Backtest, backtest_monitor
     from aughor.monitors.models import Monitor
@@ -224,6 +236,8 @@ def alert_proposals_for(pack: Pack, connection_id: str, *, run_sql: Optional[Run
     skipped: dict[str, str] = {}
     for m in pack.monitors:
         mid = m.id or m.metric
+        if only is not None and not any(k[0] == mid for k in only):
+            continue
         if not (m.metric or "").strip():
             skipped[mid] = "names no metric"
             continue
@@ -236,7 +250,7 @@ def alert_proposals_for(pack: Pack, connection_id: str, *, run_sql: Optional[Run
             continue
         label = titles.get(m.metric) or m.metric.replace("_", " ")
         for side, bound in (("below", m.low), ("above", m.high)):
-            if bound is None:
+            if bound is None or (only is not None and (mid, side) not in only):
                 continue
             name = f"{label} {side} its prior range"
             monitor = {"conn_id": connection_id, "name": name, "metric_name": m.metric, "alert_on": "threshold_cross",
@@ -248,16 +262,20 @@ def alert_proposals_for(pack: Pack, connection_id: str, *, run_sql: Optional[Run
             chain, holes, open_choices = watch_chain(connection_id, name, label)
             prior = {"pack": pack.id, "id": mid, "metric": m.metric, "low": m.low, "high": m.high, "unit": m.unit,
                      "measured_on": list(m.measured_on), "sources": list(m.sources), "note": m.note, "description": m.description}
+            detail = {"to_fill": holes, "open_choices": open_choices, "watches": m.metric, "side": side,
+                      "bound": float(bound), "check_cadence": "daily", "source": f"pack:{pack.id}",
+                      "prior": prior, "backtest": _backtest_dict(bt)}
+            if only is not None:
+                detail["pack_version"] = pack.manifest.version
             proposal = StagedProposal(
                 kind="monitor_bundle", org_id=current_org_id() or "", connection_id=connection_id,
                 action_id=f"monitor:{name}+automation:{name}",
                 params={"monitor": monitor, "automation": chain},
-                detail={"to_fill": holes, "open_choices": open_choices, "watches": m.metric, "side": side,
-                        "bound": float(bound), "check_cadence": "daily", "source": f"pack:{pack.id}",
-                        "prior": prior, "backtest": _backtest_dict(bt)},
+                detail=detail,
                 reasoning=_reason(label, pack.id, m, side, float(bound), bt),
                 proposer=ALERTS_PROPOSER, source=f"pack:{pack.id}",
-                run_id=alerts_run_id(pack.id, connection_id), call_id=f"prior:{mid}:{side}")
+                run_id=alerts_run_id(pack.id, connection_id),
+                call_id=f"prior:{mid}:{side}{(only or {}).get((mid, side), '')}")
             stored = stage_proposal(proposal)
             row = {"proposal_id": stored.id, "metric": m.metric, "side": side, "bound": float(bound),
                    "backtest": bt.sentence if bt.ok else f"no backtest: {bt.reason}", "measured_on": list(m.measured_on)}

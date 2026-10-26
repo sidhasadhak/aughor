@@ -96,11 +96,23 @@ def unreachable_date(m: Any) -> str:
 
 def measurable(m: Any) -> tuple[bool, str]:
     """Whether the metric can be measured for a range, and why not when it cannot: its dates
-    unset (`declared`), or set on a table its statement does not read (`unreachable_date`)."""
+    unset (`declared`), set on a table its statement does not read (`unreachable_date`), or on a
+    table a window cannot bound the statement's rows by (`unbounded_date`)."""
     if not declared(m):
         return False, "its dates are not set"
-    why = unreachable_date(m)
+    why = unreachable_date(m) or unbounded_date(m)
     return (not why), why
+
+
+def unbounded_date(m: Any) -> str:
+    """Why a window on the metric's date cannot bound its statement's rows — its date table on the optional side of an
+    outer join, or read only inside a filter (`metric_statement.window_problem`) — or ``""``. Said where the metric is
+    listed and refused at approval, so a Briefing, a review or a mission never meets it first: LuxExperience's gross
+    margin read its all-time figure in every period for weeks, and a decision's review was booked on it (2026-10-26)."""
+    from aughor.semantic.metric_statement import window_problem
+    from aughor.trust.lineage_edges import dialect_for_connection
+    return window_problem(_get(m, "sql") or "", _get(m, "time_column"),
+                          dialect_for_connection(_get(m, "connection")) or "duckdb")
 
 
 def merge_time_edit(existing: Any, sent: dict) -> dict:

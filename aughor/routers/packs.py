@@ -121,6 +121,58 @@ def get_pack_listing():
     return {"packs": listing(), "rule": "a pack whose claims keep failing on real installs is demoted by the same record that promoted it"}
 
 
+# ── Arc FA, FA-6 — a pack's dashboard templates (`packs.dashboard_templates`) ───────────────────
+
+def _templates_on() -> None:
+    from aughor.packs import templates
+    if not templates.on():
+        raise HTTPException(status_code=404, detail="dashboard templates need the 'packs.dashboard_templates' flag")
+
+
+@router.get("/packs/templates")
+def get_pack_templates(connection_id: str, schema: Optional[str] = None):
+    """The dashboard templates of the active packs bound on this connection, each card saying whether this connection
+    can make it — and every bound pack whose templates wait, with why. No model call, nothing written. Declared before
+    `/packs/{pack_id}`, which would otherwise take the word for a pack id."""
+    _templates_on()
+    from aughor.packs.templates import listing
+    return listing(connection_id, schema or "")
+
+
+class TemplateDraftIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/templates/{template_id}/draft")
+def post_template_draft(pack_id: str, template_id: str, body: TemplateDraftIn, request: Request):
+    """Turn a pack's dashboard template into ONE dashboard draft for the asker on this connection, with no model call:
+    a card whose metric the connection has not registered and approved is skipped and said, and the rest is staged
+    through the dashboards' one proposal path. Kept, the dashboard's source is `pack:<id>@<version> template`."""
+    _templates_on()
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("dashboard.composed"):
+        raise HTTPException(status_code=404, detail="dashboards need the 'dashboard.composed' flag")
+    from aughor.dashboards.home import person_of
+    from aughor.packs.bindings import packs_bound_on
+    from aughor.packs.templates import draft, find
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    template = find(pack, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail=f"the pack {pack_id!r} carries no dashboard template {template_id!r}")
+    if pack_id not in packs_bound_on(body.connection_id, body.schema_name or ""):
+        raise HTTPException(status_code=409, detail=f"the pack {pack_id!r} is not bound on this connection — bind it first")
+    if pack.manifest.status != "active":
+        raise HTTPException(status_code=409, detail=(f"the pack {pack_id!r} is {pack.manifest.status or 'a draft'}: its "
+                                                     "templates are offered once a person activates it"))
+    # As the model's draft door answers: staged with the proposal, or not, with the reasons as sentences.
+    return draft(pack, template, connection_id=body.connection_id, owner=person_of(request), schema=body.schema_name)
+
+
 @router.get("/packs/{pack_id}/record")
 def get_pack_record(pack_id: str):
     from aughor.packs.record import measured_record
@@ -269,14 +321,29 @@ class BindIn(BaseModel):
 
 
 @router.post("/packs/{pack_id}/bind")
-def post_bind(pack_id: str, body: BindIn):
+def post_bind(pack_id: str, body: BindIn, request: Request):
     """Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
     bound columns are checked to actually exist and `verified` reflects that (column-existence
-    half of verification; recipe dry-run is the live step)."""
+    half of verification; recipe dry-run is the live step).
+
+    Arc FA, FA-6 (`packs.installed_versions`): on, the binding records the MANIFEST's version — never the
+    `version` a caller sends — who bound it, and a snapshot of what the pack offered, which an upgrade is
+    diffed against. Off, the binding is stored exactly as it always was."""
     # G1: declared LOW — auto-allowed and AUDITED. A binding decides which columns a
     # pack's recipes read, so who pinned it and when belongs in the governance trail.
     from aughor import govern
     govern.guard("pack.bind", pack_id)
+    from aughor.packs import upgrade as _upgrade
+    installed = None
+    version = body.version
+    if _upgrade.on():
+        try:
+            pack = load_pack(_dir_for(pack_id))
+        except PacksError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        version = int(pack.manifest.version or 0)
+        installed = _upgrade.install_record(pack, by=_who(get_principal(request)),
+                                            graph=_graph_for(body.connection_id, body.schema_name))
     from aughor.packs import verify_binding_columns
     from aughor.packs.dryrun import dry_run_binding
     verified = body.verified
@@ -294,7 +361,10 @@ def post_bind(pack_id: str, body: BindIn):
         from aughor.kernel.errors import tolerate
         tolerate(e, "bind dry-run skipped; connection unreachable", counter="packs.bind_dryrun")
     rec = save_binding(pack_id, body.connection_id, body.bindings,
-                       version=body.version, verified=verified, schema=body.schema_name or "")
+                       version=version, verified=verified, schema=body.schema_name or "", installed=installed)
+    if installed is not None:
+        rec["bound_by"] = installed["bound_by"]
+        rec["offered"] = {"version": installed["offered"]["version"], "items": len(installed["offered"]["items"])}
     rec["missing"] = missing
     rec["dry_run_errors"] = dry_errors
     # C7 — the day a pack is bound, its terms are proposed for confirmation and its alerts, each with
@@ -314,6 +384,86 @@ def post_bind(pack_id: str, body: BindIn):
 def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
     """The pinned binding for (org, pack, connection, schema), or null."""
     return load_binding(pack_id, connection_id, schema or "")
+
+
+# ── Arc FA, FA-6 — the installed version and the upgrade (`packs.installed_versions`) ────────────
+
+def _installed_on() -> None:
+    from aughor.packs import upgrade
+    if not upgrade.on():
+        raise HTTPException(status_code=404, detail="installed versions need the 'packs.installed_versions' flag")
+
+
+def _loaded(pack_id: str):
+    try:
+        return load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/packs/{pack_id}/installs")
+def get_pack_installs(pack_id: str):
+    """Every connection and schema this pack is bound on: the version installed there, whether what it offered then
+    was recorded, who bound it, and the version the pack is at now."""
+    _installed_on()
+    from aughor.packs.bindings import installs_of
+    pack = _loaded(pack_id)
+    available = int(pack.manifest.version or 0)
+    rows = []
+    for i in installs_of(pack_id):
+        snap = i["offered"] or {}
+        recorded = "version" in snap and snap.get("items") is not None
+        installed = int(snap["version"]) if recorded else int(i["version"] or 0)
+        rows.append({"connection_id": i["connection_id"], "schema": i["schema"], "installed": installed,
+                     "recorded": recorded, "bound_by": i["bound_by"], "bound_at": i["updated_at"],
+                     "behind": available > installed or not recorded})
+    return {"pack": pack_id, "available": available, "installs": rows}
+
+
+@router.get("/packs/{pack_id}/upgrade")
+def get_pack_upgrade(pack_id: str, connection_id: str, schema: Optional[str] = None):
+    """What upgrading this connection's binding would bring: the version installed and the one available, the items
+    added, changed and removed since, each one a person declined marked with the version it was declined in, and the
+    unchanged items they declined, which stay declined. Read-only, no model call."""
+    _installed_on()
+    from aughor.packs.bindings import load_install
+    from aughor.packs.upgrade import diff
+    pack = _loaded(pack_id)
+    install = load_install(pack_id, connection_id, schema or "")
+    if install is None:
+        raise HTTPException(status_code=404, detail=f"the pack {pack_id!r} is not bound on this connection")
+    return diff(pack, install, connection_id=connection_id, schema=schema or "",
+                graph=_graph_for(connection_id, schema))
+
+
+class UpgradeIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/upgrade")
+def post_pack_upgrade(pack_id: str, body: UpgradeIn, request: Request):
+    """Upgrade this connection's binding to the pack's version: the role map is kept, only the new and changed terms
+    and alerts are proposed — never an unchanged one a person declined — and what the pack now offers is recorded.
+    Refused (409) when there is nothing to upgrade to."""
+    _installed_on()
+    from aughor import govern
+    govern.guard("pack.bind", pack_id)           # an upgrade re-binds, so it is the bind's own act on the trail
+    from aughor.packs.bindings import load_install
+    from aughor.packs.upgrade import apply, diff
+    pack = _loaded(pack_id)
+    schema = body.schema_name or ""
+    install = load_install(pack_id, body.connection_id, schema)
+    binding = load_binding(pack_id, body.connection_id, schema)
+    if install is None or binding is None:
+        raise HTTPException(status_code=404, detail=f"the pack {pack_id!r} is not bound on this connection")
+    graph = _graph_for(body.connection_id, body.schema_name)
+    if not diff(pack, install, connection_id=body.connection_id, schema=schema, graph=graph)["upgrade_available"]:
+        raise HTTPException(status_code=409, detail=(f"this connection already has v{pack.manifest.version} of "
+                                                     f"{pack_id!r}, and nothing in it has changed since"))
+    return apply(pack, install, binding, by=_who(get_principal(request)), connection_id=body.connection_id,
+                 schema=schema, graph=graph)
 
 
 # ── what a pack proposes on connect (the close-out, C7) ──────────────────────────────────────

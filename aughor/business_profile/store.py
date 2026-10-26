@@ -65,7 +65,29 @@ def save(connection_id: str, profile: BusinessProfile, *,
         # something only the audit can know.
         "rejections": rejections or {},
     }
+    # Arc MC — the coverage run's proposals live beside the profile they were made for, and a rebuilt profile keeps
+    # them until the next run replaces them: a person mid-way through adopting an area does not lose the list.
+    previous = _read(_key(connection_id, schema_name)) or {}
+    if previous.get("coverage"):
+        payload["coverage"] = previous["coverage"]
     _family().put(_key(connection_id, schema_name), json.loads(json.dumps(payload, default=str)))
+
+
+def load_coverage(connection_id: str, schema_name: Optional[str] = None) -> dict:
+    """Arc MC — the last coverage run's payload for a (connection, schema): its proposals, their gate verdicts and the
+    model calls it made. ``{}`` when none ran."""
+    return dict((_read(_key(connection_id, schema_name)) or {}).get("coverage") or {})
+
+
+def save_coverage(connection_id: str, schema_name: Optional[str], coverage: dict) -> bool:
+    """Arc MC — keep a coverage run beside the profile it was made for. False, writing nothing, when the dataset has no
+    profile: a payload with no profile would read as one to every other reader of this store."""
+    key = _key(connection_id, schema_name)
+    raw = _read(key)
+    if not raw or "profile" not in raw:
+        return False
+    _family().put(key, json.loads(json.dumps({**raw, "coverage": coverage}, default=str)))
+    return True
 
 
 def _read(key: str) -> Optional[dict]:

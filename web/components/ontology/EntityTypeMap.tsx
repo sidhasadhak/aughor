@@ -310,7 +310,8 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged, onSummar
           onChangeProcess={domain ? undefined : (process) => setDesigning({ kind: "process", editing: process })} />
       ) : (
         <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
-          version={version} onOpen={openType} onOpenProcess={setOpenProcess} onChanged={() => setVersion((v) => v + 1)}
+          version={version} onOpen={openType} onOpenProcess={setOpenProcess}
+          onChanged={() => { setVersion((v) => v + 1); onReleaseChanged?.(); }}
           onDesignProcess={domain ? undefined : (entity) => setDesigning({ kind: "process", entity })}
           onDesignAction={domain ? undefined : (entity) => setDesigning({ kind: "action", entity })}
           sources={domain ? sources : undefined} />

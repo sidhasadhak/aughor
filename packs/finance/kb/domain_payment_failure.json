@@ -1,6 +1,9 @@
 [
   {
     "id": "payment_failure",
+    "area": "payments",
+    "kind": "rate",
+    "direction": "down",
     "title": "Payment Failure & Involuntary Churn",
     "business_definition": "Payment failure rate = failed charges / total charge attempts. Failed payments cause involuntary churn — customers who want to stay but can't pay. Recovery via dunning (retry logic + notifications) is critical.",
     "intent_tags": ["payment failure", "failed payments", "dunning", "involuntary churn", "payment decline", "card decline"],

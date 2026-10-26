@@ -646,6 +646,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/grounding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Grounding Read
+         * @description Arc FA, FA-7 — the grounding read for a session caller: what the MCP tool ``ground_agent`` reads, so the agent
+         *     gate holds it to the organisation's policy (a read) and audits it. The same read as the agent's HTTP door — every
+         *     block with its content, the absent ones with why, the embedder said, no model asked — journaled as
+         *     ``agent.grounding_read``. Flag ``agents.grounding_read``; off, a 404.
+         */
+        get: operations["agent_grounding_read_agents_custom__agent_id__grounding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}/guardrails": {
         parameters: {
             query?: never;
@@ -5234,7 +5257,10 @@ export interface paths {
         /**
          * Search Documents Endpoint
          * @description Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
-         *     body, another connection's schema docs are left out, as they are for a question.
+         *     body, another connection's schema docs are left out, as they are for a question. FA-1 (flag
+         *     ``knowledge.hybrid_documents``): when the embedder is down and the store is up, the hits are the
+         *     passages matched by their words, each carrying ``matched_by: "words"`` and the sentence ``said``;
+         *     503 only when the store cannot be read either.
          */
         post: operations["search_documents_endpoint_documents_search_post"];
         delete?: never;
@@ -5440,6 +5466,29 @@ export interface paths {
          *     receipt — or the ask door's own SSE with ``?stream=1`` for a caller that renders it.
          */
         post: operations["door_ask_doors_agents__agent_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/agents/{agent_id}/grounding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Grounding
+         * @description What this agent would read for the question — every grounding block with its content, the absent ones with
+         *     why, whether the embedder was called and which — and no model is asked (flag ``agents.grounding_read``; off, the
+         *     door is a 404 whatever the key or the body). Journaled as ``agent.grounding_read`` without the question or the
+         *     content.
+         */
+        post: operations["door_grounding_doors_agents__agent_id__grounding_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10277,6 +10326,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/coverage/{conn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Metric Coverage
+         * @description Arc MC, MC-2 — the map this connection's metrics are read against and how far they cover it: per area, in the
+         *     map's order, the data placed in it, its metrics, the knowledge base's patterns, the proposals waiting — every
+         *     placement with its reason. ``figures`` reads the approved metrics' figures that were not read within the hour, so no
+         *     area is said covered by one that never moves; without it, an unread metric is said as not checked.
+         */
+        get: operations["get_metric_coverage_metrics_coverage__conn_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/coverage/{conn_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Metric Coverage
+         * @description Arc MC, MC-3/4/6 — propose by code for the areas the data covers, every proposal through the gates, kept beside
+         *     the profile, on a thread: the gates read each proposal's figures, which took four minutes on LuxExperience's 54
+         *     (2026-10-26). No model call — the writer's last proposals are kept and checked again; it writes only when the
+         *     connection is profiled, or on its own door.
+         */
+        post: operations["run_metric_coverage_metrics_coverage__conn_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/coverage/{conn_id}/write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write Metric Coverage
+         * @description Arc MC, MC-5 — the knowledge base's patterns written for this schema now, one model call per open area, on
+         *     a thread; the coverage view says the calls when they are made. The same run starts by itself when the connection is
+         *     profiled (the user's call, 2026-10-26).
+         */
+        post: operations["write_metric_coverage_metrics_coverage__conn_id__write_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/enforcement-rate": {
         parameters: {
             query?: never;
@@ -10913,6 +11030,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/object-types/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Types By Reads
+         * @description ROADMAP §3.60 (Arc FA, FA-3) — every entity of the scope ranked by how often audited statements named its tables
+         *     in the last ``window`` days, the least read first — the list a person cleaning up reads: each with its reads, the
+         *     day it was last read, how many people read it where the session log says who ran the statement, and the tables it
+         *     shares with another entity (a statement naming a shared table counts for both, said beside it). Behind
+         *     `ontology.entity_usage`: off, the door says so. No model call; the platform's own log, never the warehouse.
+         */
+        get: operations["get_object_types_by_reads_object_types_uses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/object-types/{object_type}": {
         parameters: {
             query?: never;
@@ -10975,6 +11116,30 @@ export interface paths {
         get: operations["get_object_catalog_objects_catalog_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/find": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Object Find
+         * @description Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+         *     entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
+         *     the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
+         *     ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
+         *     with more matches than shown. 404 while the flag is off. No model call.
+         */
+        post: operations["post_object_find_objects_find_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12509,6 +12674,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/history/put-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put Back Declaration Version
+         * @description Arc FA, FA-3 — put an earlier version of one declaration back (ROADMAP §3.60). Its fields go through the normal
+         *     save path into the DRAFT, counted again by the kind's own measurement first and classed like any change, so readers
+         *     get it only when a person publishes. A withdrawn version puts back the fields it had; one that says what readers
+         *     read already takes the waiting change away. Refused with a sentence while `ontology.put_back` or releases are off
+         *     and for an organisation's ontology (409), for a version the history does not hold (404), and for one that no
+         *     longer counts on this ontology (400) — nothing is written then. No model call.
+         */
+        post: operations["put_back_declaration_version_ontology_history_put_back_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/impacts": {
         parameters: {
             query?: never;
@@ -13187,6 +13377,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/retiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Declaration Retiring
+         * @description Arc FA, FA-3 — mark one declaration of any kind *retiring* (ROADMAP §3.60): it still serves, and every reader is
+         *     told "retiring on <date> — use <successor> instead". The successor must be another element of the same kind on this
+         *     ontology (400 otherwise, with the sentence; 404 for an element there is none of). Written through the normal save
+         *     path — with releases on it waits in the draft as a MEANING change. 409 while `ontology.retiring` is off.
+         */
+        put: operations["mark_declaration_retiring_ontology_retiring_put"];
+        post?: never;
+        /**
+         * Unmark Declaration Retiring
+         * @description Arc FA, FA-3 — take a retiring mark off: the element is no longer said to be going. A MEANING change like the mark
+         *     itself; the element's other declarations are untouched. 404 when it carries no mark; 409 while the setting is off.
+         */
+        delete: operations["unmark_declaration_retiring_ontology_retiring_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/routing-proposals": {
         parameters: {
             query?: never;
@@ -13835,6 +14053,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Templates
+         * @description The dashboard templates of the active packs bound on this connection, each card saying whether this connection
+         *     can make it — and every bound pack whose templates wait, with why. No model call, nothing written. Declared before
+         *     `/packs/{pack_id}`, which would otherwise take the word for a pack id.
+         */
+        get: operations["get_pack_templates_packs_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/upload": {
         parameters: {
             query?: never;
@@ -13890,6 +14130,10 @@ export interface paths {
          * @description Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
          *     bound columns are checked to actually exist and `verified` reflects that (column-existence
          *     half of verification; recipe dry-run is the live step).
+         *
+         *     Arc FA, FA-6 (`packs.installed_versions`): on, the binding records the MANIFEST's version — never the
+         *     `version` a caller sends — who bound it, and a snapshot of what the pack offered, which an upgrade is
+         *     diffed against. Off, the binding is stored exactly as it always was.
          */
         post: operations["post_bind_packs__pack_id__bind_post"];
         delete?: never;
@@ -14006,6 +14250,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/installs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Installs
+         * @description Every connection and schema this pack is bound on: the version installed there, whether what it offered then
+         *     was recorded, who bound it, and the version the pack is at now.
+         */
+        get: operations["get_pack_installs_packs__pack_id__installs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/propose": {
         parameters: {
             query?: never;
@@ -14098,6 +14363,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/templates/{template_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Template Draft
+         * @description Turn a pack's dashboard template into ONE dashboard draft for the asker on this connection, with no model call:
+         *     a card whose metric the connection has not registered and approved is skipped and said, and the rest is staged
+         *     through the dashboards' one proposal path. Kept, the dashboard's source is `pack:<id>@<version> template`.
+         */
+        post: operations["post_template_draft_packs__pack_id__templates__template_id__draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/terms": {
         parameters: {
             query?: never;
@@ -14134,6 +14421,34 @@ export interface paths {
          *     `decline`, refuses them: the row goes and a tombstone keeps the next bind from bringing it back.
          */
         post: operations["post_confirm_terms_packs__pack_id__terms_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/packs/{pack_id}/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Upgrade
+         * @description What upgrading this connection's binding would bring: the version installed and the one available, the items
+         *     added, changed and removed since, each one a person declined marked with the version it was declined in, and the
+         *     unchanged items they declined, which stay declined. Read-only, no model call.
+         */
+        get: operations["get_pack_upgrade_packs__pack_id__upgrade_get"];
+        put?: never;
+        /**
+         * Post Pack Upgrade
+         * @description Upgrade this connection's binding to the pack's version: the role map is kept, only the new and changed terms
+         *     and alerts are proposed — never an unchanged one a person declined — and what the pack now offers is recorded.
+         *     Refused (409) when there is nothing to upgrade to.
+         */
+        post: operations["post_pack_upgrade_packs__pack_id__upgrade_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16130,585 +16445,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/sheets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Sheets
-         * @description The organisation's sheets, newest change first, and the Workspace files a sheet can be made from.
-         */
-        get: operations["list_sheets_sheets_get"];
-        put?: never;
-        /**
-         * Create
-         * @description Make a sheet — or, from an Excel workbook, one sheet per tab, each named.
-         */
-        post: operations["create_sheets_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/files": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stage File
-         * @description A file a person brought, read as written: per tab (an Excel workbook has several), its rows, and per column the
-         *     kinds every value fits. Nothing is made until the person creates the sheet.
-         */
-        post: operations["stage_file_sheets_files_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/files/uploaded": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stage Uploaded
-         * @description A file already uploaded to the Workspace, read as written — copied, so the Workspace's own file stays as it was.
-         */
-        post: operations["stage_uploaded_sheets_files_uploaded_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/proposals/new": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Propose New
-         * @description A file dropped into the chat, as one proposal for a sheet. This route calls a model when the install's model can
-         *     call tools; otherwise the proposal holds the file's own reading — its name and kinds — and nothing more.
-         */
-        post: operations["propose_new_sheets_proposals_new_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/proposals/{proposal_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read Proposal */
-        get: operations["read_proposal_sheets_proposals__proposal_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/proposals/{proposal_id}/apply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Apply Proposal
-         * @description Apply a proposal, all of it or the changes picked, as one change recorded as proposed by the assistant and
-         *     applied by the person signed in.
-         */
-        post: operations["apply_proposal_sheets_proposals__proposal_id__apply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read */
-        get: operations["read_sheets__sheet_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Remove
-         * @description Remove a sheet: its tombstone first, then its table, its values and their history, and its files.
-         */
-        delete: operations["remove_sheets__sheet_id__delete"];
-        options?: never;
-        head?: never;
-        /** Rename */
-        patch: operations["rename_sheets__sheet_id__patch"];
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/cells": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Set Cells */
-        patch: operations["set_cells_sheets__sheet_id__cells_patch"];
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/cells/{row}/{column_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Cell
-         * @description A cell's story: where its value came from, and every change to it since.
-         */
-        get: operations["cell_sheets__sheet_id__cells__row___column_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/changes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Changes
-         * @description Every change to the sheet, newest first — and what undo and redo would take back for the person asking.
-         */
-        get: operations["changes_sheets__sheet_id__changes_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check
-         * @description The oracle: the sheet's table as it stands against a fresh rebuild from its source and its changes.
-         */
-        get: operations["check_sheets__sheet_id__check_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/columns": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add Column */
-        post: operations["add_column_sheets__sheet_id__columns_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/columns/{column_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Remove Column */
-        delete: operations["remove_column_sheets__sheet_id__columns__column_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Column */
-        patch: operations["update_column_sheets__sheet_id__columns__column_id__patch"];
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/csv": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Csv */
-        get: operations["csv_sheets__sheet_id__csv_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/grounding": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Grounding
-         * @description What the chat beside the sheet is handed: the table, its columns, and the view on screen as the grid's own filter
-         *     and count. The panel shows it, so a person can see what an answer was grounded in.
-         */
-        get: operations["grounding_sheets__sheet_id__grounding_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/links": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Link Keep */
-        post: operations["link_keep_sheets__sheet_id__links_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/links/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Link Preview
-         * @description What a link would find — every match and every miss counted — before anything is kept.
-         */
-        post: operations["link_preview_sheets__sheet_id__links_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/merge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Merge Apply */
-        post: operations["merge_apply_sheets__sheet_id__merge_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/merge/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Merge Preview
-         * @description A newer file against the sheet: every row it adds and every cell it changes, before it is applied.
-         */
-        post: operations["merge_preview_sheets__sheet_id__merge_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/propose": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Propose
-         * @description A change asked for in words, proposed by the model as ONE proposal — every change in it checked and counted.
-         *     This route calls a model. Nothing changes until the person applies it.
-         */
-        post: operations["propose_sheets__sheet_id__propose_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/records/{row}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Record
-         * @description A row as a record: every field and where it came from, its linked rows, its history, its comments.
-         */
-        get: operations["record_sheets__sheet_id__records__row__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/records/{row}/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Comment
-         * @description A comment on a row — a said claim in the Record, in the name of the person signed in.
-         */
-        post: operations["comment_sheets__sheet_id__records__row__comments_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/redo": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Redo */
-        post: operations["redo_sheets__sheet_id__redo_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/rows": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Rows
-         * @description One page of a view of a sheet — its rows, how many the view holds, its totals over those rows, its groups when
-         *     grouped — and, for the cells on the page people have set, who set them, when, and at which version.
-         */
-        get: operations["rows_sheets__sheet_id__rows_get"];
-        put?: never;
-        /** Add Row */
-        post: operations["add_row_sheets__sheet_id__rows_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/rows/remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Remove Rows */
-        post: operations["remove_rows_sheets__sheet_id__rows_remove_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/totals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Total Keep */
-        post: operations["total_keep_sheets__sheet_id__totals_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/totals/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Total Preview */
-        post: operations["total_preview_sheets__sheet_id__totals_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/undo": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Undo
-         * @description Take back the person's latest change, whole. ``removing`` is said only to undo the change that made the sheet —
-         *     which removes it.
-         */
-        post: operations["undo_sheets__sheet_id__undo_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/views": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Save View
-         * @description Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet.
-         */
-        put: operations["save_view_sheets__sheet_id__views_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sheets/{sheet_id}/views/{view_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Remove View */
-        delete: operations["remove_view_sheets__sheet_id__views__view_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/slack-bots": {
         parameters: {
             query?: never;
@@ -17862,24 +17598,76 @@ export interface components {
              */
             redirect_uri: string;
         };
-        /** ApplyRequest */
-        ApplyRequest: {
-            /** Picks */
-            picks?: number[] | null;
-        };
         /**
          * AskFocus
-         * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id. Arc SH, SH-4 — or the sheet
-         *     a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with ``sheets.chat`` on).
+         * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
+         *
+         *     Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+         *     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
+         *     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
+         *     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
+         *     (`agent.ask_subject`); off, they contribute nothing.
          */
         AskFocus: {
-            /** Id */
+            /** Chosen */
+            chosen?: {
+                [key: string]: string;
+            };
+            /**
+             * Dashboard
+             * @default
+             */
+            dashboard: string;
+            /**
+             * Entity
+             * @default
+             */
+            entity: string;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Id
+             * @default
+             */
             id: string;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "departure" | "automation" | "metric" | "sheet";
+            kind: "departure" | "automation" | "metric" | "objects" | "set";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Narrowed
+             * @default false
+             */
+            narrowed: boolean;
+            /** Objects */
+            objects?: string[];
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
+            /**
+             * Segment
+             * @default
+             */
+            segment: string;
+            /**
+             * Set
+             * @default
+             */
+            set: string;
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
         };
         /** AssignRoleRequest */
         AssignRoleRequest: {
@@ -18094,11 +17882,6 @@ export interface components {
         };
         /** Body_put_object_metastore_volumes__volume_id__objects_post */
         Body_put_object_metastore_volumes__volume_id__objects_post: {
-            /** File */
-            file: string;
-        };
-        /** Body_stage_file_sheets_files_post */
-        Body_stage_file_sheets_files_post: {
             /** File */
             file: string;
         };
@@ -18343,13 +18126,6 @@ export interface components {
              * @default
              */
             why: string;
-        };
-        /** CellsRequest */
-        CellsRequest: {
-            /** Cells */
-            cells: {
-                [key: string]: unknown;
-            }[];
         };
         /** ChangeOut */
         ChangeOut: {
@@ -18628,37 +18404,6 @@ export interface components {
             /** Description */
             description: string;
         };
-        /** ColumnRequest */
-        ColumnRequest: {
-            /**
-             * Description
-             * @default
-             */
-            description: string;
-            /**
-             * Kind
-             * @default text
-             */
-            kind: string;
-            /** Name */
-            name: string;
-        };
-        /** ColumnUpdate */
-        ColumnUpdate: {
-            /** Description */
-            description?: string | null;
-            /** Hidden */
-            hidden?: boolean | null;
-            /** Kind */
-            kind?: string | null;
-            /** Name */
-            name?: string | null;
-        };
-        /** CommentRequest */
-        CommentRequest: {
-            /** Text */
-            text: string;
-        };
         /**
          * Condition
          * @description One precondition on an automation firing. Combinable via ``Automation.condition_logic``.
@@ -18668,6 +18413,10 @@ export interface components {
          *     already-tested alert conditions become available to any effect, not just to an alert.
          *     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
          *     fires when a new key shows up in a table.
+         *
+         *     ``objects_admitted`` (Arc FA, FA-5) fires for the objects a rule or segment newly admits:
+         *     each check lists the segment's keys, the first records who is already in without firing,
+         *     and a later one hands the chain the keys that entered (`automations.admitted`).
          *
          *     ``webhook`` (DS-17) fires when something outside this deployment calls the chain's own
          *     URL. It is the only kind whose cause is not something the engine can observe on a tick,
@@ -18689,7 +18438,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created";
+            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created" | "objects_admitted";
         };
         /** ConfirmCandidateRequest */
         ConfirmCandidateRequest: {
@@ -18930,49 +18679,6 @@ export interface components {
             threshold_direction: string;
             /** Warning Threshold */
             warning_threshold?: number | null;
-        };
-        /** CreateRequest */
-        CreateRequest: {
-            /** Columns */
-            columns?: {
-                [key: string]: unknown;
-            }[];
-            /**
-             * Connection Id
-             * @default
-             */
-            connection_id: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-            /**
-             * Schema Name
-             * @default
-             */
-            schema_name: string;
-            /**
-             * Source
-             * @default file
-             */
-            source: string;
-            /**
-             * Sql
-             * @default
-             */
-            sql: string;
-            /** Tabs */
-            tabs?: components["schemas"]["TabPlan"][];
-            /**
-             * Token
-             * @default
-             */
-            token: string;
-            /** Upload */
-            upload?: {
-                [key: string]: string;
-            };
         };
         /** CreateVolumeRequest */
         CreateVolumeRequest: {
@@ -19243,6 +18949,26 @@ export interface components {
              * @default
              */
             session_id: string;
+        };
+        /** DoorGround */
+        DoorGround: {
+            /**
+             * Asker
+             * @default
+             */
+            asker: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Question */
+            question: string;
+            /**
+             * Schema
+             * @default
+             */
+            schema: string;
         };
         /** DraftRequest */
         DraftRequest: {
@@ -20182,17 +19908,6 @@ export interface components {
              */
             table: string;
         };
-        /** LinkRequest */
-        LinkRequest: {
-            /** Bring */
-            bring?: string[];
-            /** Column */
-            column: string;
-            /** Other */
-            other: string;
-            /** Other Column */
-            other_column: string;
-        };
         /** MarkWrongRequest */
         MarkWrongRequest: {
             /**
@@ -20261,23 +19976,6 @@ export interface components {
         MemberRequest: {
             /** Principal */
             principal: string;
-        };
-        /** MergeRequest */
-        MergeRequest: {
-            /**
-             * Basis
-             * @default
-             */
-            basis: string;
-            /** Key */
-            key: string;
-            /**
-             * Tab
-             * @default
-             */
-            tab: string;
-            /** Token */
-            token: string;
         };
         /** MethodIn */
         MethodIn: {
@@ -20747,6 +20445,12 @@ export interface components {
          */
         OrgSettings: {
             /**
+             * Briefing Metric Cap
+             * @description How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the platform's default — 24 while `briefing.metric_cap` is on, 12 while it is off. Each metric costs three warehouse queries per Briefing.
+             * @default 0
+             */
+            briefing_metric_cap: number;
+            /**
              * Chart Palette
              * @description Named chart palette (e.g. 'tableau', 'colorblind'); empty = theme default
              * @default
@@ -21171,20 +20875,6 @@ export interface components {
                 [key: string]: string[];
             } | null;
         };
-        /** ProposeNewRequest */
-        ProposeNewRequest: {
-            /** Token */
-            token: string;
-            /** Upload */
-            upload?: {
-                [key: string]: string;
-            };
-            /**
-             * Words
-             * @default
-             */
-            words: string;
-        };
         /** ProposeOnConnectIn */
         ProposeOnConnectIn: {
             /** Connection Id */
@@ -21379,11 +21069,6 @@ export interface components {
              */
             actor: string;
         };
-        /** RemoveRowsRequest */
-        RemoveRowsRequest: {
-            /** Rows */
-            rows: number[];
-        };
         /**
          * RenameChatSessionRequest
          * @description A thread's user-chosen name. Empty clears it back to the opening question.
@@ -21395,11 +21080,6 @@ export interface components {
              * @default
              */
             title: string;
-        };
-        /** RenameRequest */
-        RenameRequest: {
-            /** Name */
-            name: string;
         };
         /** RescopeRequest */
         RescopeRequest: {
@@ -21509,13 +21189,6 @@ export interface components {
             state: string;
             /** Version */
             version: number;
-        };
-        /** RowRequest */
-        RowRequest: {
-            /** Values */
-            values?: {
-                [key: string]: unknown;
-            };
         };
         /**
          * RunAgentInput
@@ -22252,24 +21925,6 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** TabPlan */
-        TabPlan: {
-            /** Descriptions */
-            descriptions?: {
-                [key: string]: string;
-            };
-            /** Kinds */
-            kinds?: {
-                [key: string]: string;
-            };
-            /** Name */
-            name: string;
-            /**
-             * Tab
-             * @default
-             */
-            tab: string;
-        };
         /** TableAnnotationIn */
         TableAnnotationIn: {
             /** Description */
@@ -22309,6 +21964,13 @@ export interface components {
              * @default
              */
             tenant_id: string;
+        };
+        /** TemplateDraftIn */
+        TemplateDraftIn: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
         };
         /** TermsVerdictIn */
         TermsVerdictIn: {
@@ -22399,30 +22061,6 @@ export interface components {
             toolCallId: string;
         } & {
             [key: string]: unknown;
-        };
-        /** TotalRequest */
-        TotalRequest: {
-            /** By Column */
-            by_column: string;
-            /**
-             * How
-             * @default sum
-             */
-            how: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-            /**
-             * Of
-             * @default
-             */
-            of: string;
-            /** Other */
-            other: string;
-            /** Other Key */
-            other_key: string;
         };
         /** TransitionRequest */
         TransitionRequest: {
@@ -22600,12 +22238,12 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /** UploadedFile */
-        UploadedFile: {
-            /** File */
-            file: string;
-            /** Schema Name */
-            schema_name: string;
+        /** UpgradeIn */
+        UpgradeIn: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
         };
         /** UserAgentCreate */
         UserAgentCreate: {
@@ -22821,13 +22459,6 @@ export interface components {
             type: "video";
         } & {
             [key: string]: unknown;
-        };
-        /** ViewRequest */
-        ViewRequest: {
-            /** View */
-            view: {
-                [key: string]: unknown;
-            };
         };
         /** VizConfigRequest */
         VizConfigRequest: {
@@ -23647,6 +23278,19 @@ export interface components {
              */
             val: string;
         };
+        /**
+         * _FindRequest
+         * @description Arc FA, FA-1 — the words an object goes by, and how many of each entity's matches to show.
+         */
+        _FindRequest: {
+            /**
+             * Limit Per Entity
+             * @default 5
+             */
+            limit_per_entity: number;
+            /** Q */
+            q: string;
+        };
         /** _FlagPatch */
         _FlagPatch: {
             /** State */
@@ -23803,6 +23447,18 @@ export interface components {
             property: string;
             /** Values */
             values: string[];
+        };
+        /**
+         * _PutBack
+         * @description Arc FA, FA-3 — the version of one declaration to put back into the draft, as `GET /ontology/history` numbers it.
+         */
+        _PutBack: {
+            /** Kind */
+            kind: string;
+            /** Target Id */
+            target_id: string;
+            /** Version */
+            version: number;
         };
         /** _QueryBuildRequest */
         _QueryBuildRequest: {
@@ -23986,6 +23642,26 @@ export interface components {
         _RestoreVersionRequest: {
             /** Version */
             version: number;
+        };
+        /**
+         * _Retiring
+         * @description Arc FA, FA-3 — one declaration marked retiring: the element of the same kind to use instead, the day it is meant
+         *     to go (YYYY-MM-DD), and the person's own words.
+         */
+        _Retiring: {
+            /** Kind */
+            kind: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** On */
+            on: string;
+            /** Successor */
+            successor: string;
+            /** Target Id */
+            target_id: string;
         };
         /**
          * _RoutingProposal
@@ -24576,11 +24252,6 @@ export interface components {
             kind: string;
             /** Ref */
             ref: string;
-        };
-        /** ProposeRequest */
-        aughor__routers__sheets__ProposeRequest: {
-            /** Words */
-            words: string;
         };
     };
     responses: never;
@@ -25772,6 +25443,42 @@ export interface operations {
                 "application/json": components["schemas"]["GoldenCertify"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_grounding_read_agents_custom__agent_id__grounding_get: {
+        parameters: {
+            query: {
+                question: string;
+                connection_id?: string;
+                schema?: string;
+                asker?: string;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -30940,7 +30647,9 @@ export interface operations {
     };
     prewarm_connection_connections__conn_id__prewarm_post: {
         parameters: {
-            query?: never;
+            query?: {
+                schema?: string | null;
+            };
             header?: never;
             path: {
                 conn_id: string;
@@ -33673,6 +33382,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DoorAsk"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_grounding_doors_agents__agent_id__grounding_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorGround"];
             };
         };
         responses: {
@@ -41944,6 +41688,108 @@ export interface operations {
             };
         };
     };
+    get_metric_coverage_metrics_coverage__conn_id__get: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                figures?: boolean;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_metric_coverage_metrics_coverage__conn_id__run_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_metric_coverage_metrics_coverage__conn_id__write_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     metric_enforcement_rate_metrics_enforcement_rate_get: {
         parameters: {
             query?: {
@@ -43019,6 +42865,40 @@ export interface operations {
             };
         };
     };
+    get_object_types_by_reads_object_types_uses_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description days back, today included */
+                window?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_object_type_object_types__object_type__get: {
         parameters: {
             query?: {
@@ -43059,6 +42939,8 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                /** @description the recent window's days back, today included */
+                window?: number;
             };
             header?: never;
             path: {
@@ -43100,6 +42982,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_object_find_objects_find_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_FindRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -45771,6 +45691,42 @@ export interface operations {
             };
         };
     };
+    put_back_declaration_version_ontology_history_put_back_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PutBack"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     declare_ontology_impact_ontology_impacts_post: {
         parameters: {
             query?: {
@@ -46884,6 +46840,76 @@ export interface operations {
     publish_ontology_release_ontology_release_publish_post: {
         parameters: {
             query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_declaration_retiring_ontology_retiring_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_Retiring"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_declaration_retiring_ontology_retiring_delete: {
+        parameters: {
+            query: {
+                kind: string;
+                target_id: string;
                 connection_id?: string | null;
                 schema_name?: string | null;
             };
@@ -48036,6 +48062,38 @@ export interface operations {
             };
         };
     };
+    get_pack_templates_packs_templates_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_pack_upload_packs_upload_post: {
         parameters: {
             query?: never;
@@ -48307,6 +48365,37 @@ export interface operations {
             };
         };
     };
+    get_pack_installs_packs__pack_id__installs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_propose_on_connect_packs__pack_id__propose_post: {
         parameters: {
             query?: never;
@@ -48443,6 +48532,42 @@ export interface operations {
             };
         };
     };
+    post_template_draft_packs__pack_id__templates__template_id__draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateDraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_pack_terms_packs__pack_id__terms_get: {
         parameters: {
             query: {
@@ -48489,6 +48614,75 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TermsVerdictIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pack_upgrade_packs__pack_id__upgrade_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_pack_upgrade_packs__pack_id__upgrade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeIn"];
             };
         };
         responses: {
@@ -52261,1244 +52455,6 @@ export interface operations {
             header?: never;
             path: {
                 connection_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_sheets_sheets_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    create_sheets_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stage_file_sheets_files_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_stage_file_sheets_files_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stage_uploaded_sheets_files_uploaded_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UploadedFile"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    propose_new_sheets_proposals_new_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProposeNewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_proposal_sheets_proposals__proposal_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                proposal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    apply_proposal_sheets_proposals__proposal_id__apply_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                proposal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ApplyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_sheets__sheet_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_sheets__sheet_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rename_sheets__sheet_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RenameRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_cells_sheets__sheet_id__cells_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CellsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cell_sheets__sheet_id__cells__row___column_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-                row: number;
-                column_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    changes_sheets__sheet_id__changes_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_sheets__sheet_id__check_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_column_sheets__sheet_id__columns_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ColumnRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_column_sheets__sheet_id__columns__column_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-                column_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_column_sheets__sheet_id__columns__column_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-                column_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ColumnUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    csv_sheets__sheet_id__csv_get: {
-        parameters: {
-            query?: {
-                view?: string;
-                filter?: string;
-                sort?: string;
-                search?: string;
-            };
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    grounding_sheets__sheet_id__grounding_get: {
-        parameters: {
-            query?: {
-                view?: string;
-            };
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    link_keep_sheets__sheet_id__links_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LinkRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    link_preview_sheets__sheet_id__links_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LinkRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    merge_apply_sheets__sheet_id__merge_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MergeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    merge_preview_sheets__sheet_id__merge_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MergeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    propose_sheets__sheet_id__propose_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["aughor__routers__sheets__ProposeRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    record_sheets__sheet_id__records__row__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-                row: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    comment_sheets__sheet_id__records__row__comments_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-                row: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommentRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    redo_sheets__sheet_id__redo_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rows_sheets__sheet_id__rows_get: {
-        parameters: {
-            query?: {
-                view?: string;
-                filter?: string;
-                sort?: string;
-                search?: string;
-                group?: string;
-                offset?: number;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_row_sheets__sheet_id__rows_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RowRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_rows_sheets__sheet_id__rows_remove_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RemoveRowsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    total_keep_sheets__sheet_id__totals_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TotalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    total_preview_sheets__sheet_id__totals_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TotalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    undo_sheets__sheet_id__undo_post: {
-        parameters: {
-            query?: {
-                removing?: boolean;
-            };
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    save_view_sheets__sheet_id__views_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ViewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_view_sheets__sheet_id__views__view_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sheet_id: string;
-                view_id: string;
             };
             cookie?: never;
         };

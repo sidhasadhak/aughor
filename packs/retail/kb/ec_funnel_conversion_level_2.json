@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_pdp_to_cart_rate",
+    "area": "traffic_conversion",
+    "kind": "rate",
+    "direction": "up",
     "title": "Product Detail Page to Cart Rate",
     "intent_tags": [
       "PDP to cart rate",
@@ -127,6 +130,9 @@
   },
   {
     "id": "ec_checkout_step_drop_off_rate",
+    "area": "traffic_conversion",
+    "kind": "rate",
+    "direction": "down",
     "title": "Checkout Step Drop-off Rate",
     "intent_tags": [
       "checkout drop-off rate",
@@ -255,6 +261,9 @@
   },
   {
     "id": "ec_payment_failure_rate",
+    "area": "payments",
+    "kind": "rate",
+    "direction": "down",
     "title": "Payment Failure Rate",
     "intent_tags": [
       "payment failure rate",
@@ -381,6 +390,9 @@
   },
   {
     "id": "ec_search_to_purchase_rate",
+    "area": "traffic_conversion",
+    "kind": "rate",
+    "direction": "up",
     "title": "Search-to-Purchase Rate",
     "intent_tags": [
       "search to purchase rate",
@@ -508,6 +520,9 @@
   },
   {
     "id": "ec_cross_sell_attach_rate",
+    "area": "orders_sales",
+    "kind": "rate",
+    "direction": "up",
     "title": "Cross-sell Attach Rate",
     "intent_tags": [
       "cross-sell attach rate",

@@ -24,11 +24,41 @@ already holds and refuse.
 """
 from __future__ import annotations
 
+import contextvars
 import os
+from contextlib import contextmanager
+from typing import Iterator, Optional
 
 #: Backends this lane can drive. All are reached over the OpenAI-compatible `/embeddings`
 #: shape; a backend that does not serve one fails at the call, visibly, rather than here.
 EMBED_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "gemini", "openrouter", "together")
+
+#: The backends that run on a machine the deployment runs; every other one is a hosted provider, which may charge.
+LOCAL_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio")
+
+#: Arc FA, FA-7 — a read that must SAY whether it called the embedder (a hosted one may charge at its provider)
+#: installs a tally with :func:`tally_calls`; :func:`embed` counts each request it sends and each call that failed.
+#: None by default: nothing is counted, and an embedding is made exactly as it was.
+_TALLY: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("aughor_embed_tally", default=None)
+
+
+@contextmanager
+def tally_calls() -> Iterator[dict]:
+    """Count the embedder's requests inside the block: ``{"requests", "texts", "failed"}``. The count rides a
+    contextvar, so a worker that copies the context counts into the same tally."""
+    tally = {"requests": 0, "texts": 0, "failed": 0}
+    token = _TALLY.set(tally)
+    try:
+        yield tally
+    finally:
+        _TALLY.reset(token)
+
+
+def current_tally() -> Optional[dict]:
+    """The tally a surrounding :func:`tally_calls` installed, or None — so a reader can tell which of its steps the
+    embedder failed in (a retriever that swallows the failure returns an empty result that is not a true empty)."""
+    return _TALLY.get()
+
 
 #: The local default, unchanged: it is what the existing corpus was embedded with.
 _OLLAMA_DEFAULT_MODEL = "nomic-embed-text"
@@ -74,6 +104,20 @@ def embed_model(backend: str | None = None) -> str:
         f"`GET /llm/models?backend={backend}` lists what your account can actually see.")
 
 
+def describe_backend() -> dict:
+    """Which embedder this deployment would call — ``{"backend", "model", "hosted"}`` — or, with ``unconfigured``, why
+    it could not. Makes no call and never raises: a reader that reports the embedder must not fail on its config."""
+    try:
+        backend = embed_backend()
+    except EmbeddingConfigError as exc:
+        return {"backend": "", "model": "", "hosted": None, "unconfigured": str(exc)}
+    hosted = backend not in LOCAL_BACKENDS
+    try:
+        return {"backend": backend, "model": embed_model(backend), "hosted": hosted}
+    except EmbeddingConfigError as exc:
+        return {"backend": backend, "model": "", "hosted": hosted, "unconfigured": str(exc)}
+
+
 # Kept as module attributes because callers and tests read them for display. They are the
 # CURRENT values, resolved at import; `embed_backend()`/`embed_model()` are the live truth.
 EMBED_MODEL = os.getenv("AUGHOR_EMBED_MODEL", _OLLAMA_DEFAULT_MODEL)
@@ -101,6 +145,17 @@ def endpoint() -> tuple[str, str]:
 def embed(texts: list[str]) -> list[list[float]]:
     """One embedding per text, batched. Raises rather than degrading: a caller that gets a
     short list back would upsert a document missing chunks and never know."""
+    tally = _TALLY.get()
+    if tally is None:
+        return _embed(texts, None)
+    try:
+        return _embed(texts, tally)
+    except Exception:
+        tally["failed"] += 1
+        raise
+
+
+def _embed(texts: list[str], tally: Optional[dict]) -> list[list[float]]:
     from openai import OpenAI
 
     base_url, key = endpoint()
@@ -110,6 +165,9 @@ def embed(texts: list[str]) -> list[list[float]]:
     results: list[list[float]] = []
     for i in range(0, len(texts), _BATCH_SIZE):
         batch = texts[i: i + _BATCH_SIZE]
+        if tally is not None:
+            tally["requests"] += 1
+            tally["texts"] += len(batch)
         resp = client.embeddings.create(model=model, input=batch)
         results.extend(item.embedding for item in resp.data)
     if len(results) != len(texts):

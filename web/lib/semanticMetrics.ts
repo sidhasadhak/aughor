@@ -41,6 +41,7 @@ export type Standing =
   | "suggested"     // computable here, not a definition yet (the explorer's, or an industry package's)
   | "needs_sql"     // a suggestion that came with no SQL
   | "sql_rejected"  // a suggestion whose SQL the build-time audit refused
+  | "check_failed"  // a proposal a gate refused — its figures never move, sit outside its range, … (Arc MC)
   | "not_bound";    // an industry metric naming data this connection has not bound
 
 export type Group = "approved" | "review" | "draft" | "suggested" | "not_bound" | "retired";
@@ -58,7 +59,7 @@ export const GROUPS: readonly { id: Group; label: string; folded?: boolean }[] =
 const GROUP_OF: Record<Standing, Group> = {
   measured: "approved", no_date: "approved", date_unread: "approved", no_sql: "approved", unchecked: "approved",
   proposed: "review", draft: "draft", retired: "retired",
-  suggested: "suggested", needs_sql: "suggested", sql_rejected: "suggested",
+  suggested: "suggested", needs_sql: "suggested", sql_rejected: "suggested", check_failed: "suggested",
   not_bound: "not_bound",
 };
 export const groupOf = (s: Standing): Group => GROUP_OF[s];
@@ -76,6 +77,7 @@ export function standingOf(row: CatalogueMetric, stored: Metric | null | undefin
     if (row.state === "needs_binding") return "not_bound";
     if (row.state === "needs_formula") return "needs_sql";
     if (row.state === "formula_rejected") return "sql_rejected";
+    if (row.state === "gate_failed") return "check_failed";
     return "suggested";
   }
   const status = stored?.status || row.status || "draft";
@@ -273,12 +275,20 @@ export function datesProblem(m: Metric): string {
 export function sourceWords(r: CatalogueMetric): string {
   if (r.source === "industry") return `${r.pack_id || "industry"} package`;
   if (r.source === "explorer") return "explorer";
+  if (r.source === "coverage") return ORIGIN_WORDS[r.origin ?? ""] ?? "coverage";
   return "defined";
 }
+
+/** How a coverage proposal was made, in a few words (Arc MC). */
+export const ORIGIN_WORDS: Record<string, string> = {
+  recipe: "package recipe", ontology: "ontology", pattern: "knowledge base", area: "written for its area",
+  blind_spot: "explorer keeps computing it",
+};
 
 const SOURCE_TITLE: Record<string, string> = {
   industry: "A recipe from the knowledge package for the industry set in Settings — computable here, not yet a definition.",
   explorer: "Proposed by the explorer from this connection's own tables and columns — not yet a definition.",
+  coverage: "Proposed for an area of the business this connection's data covers, and checked before it was listed — not yet a definition.",
 };
 
 export type ChipTone = "plain" | "up" | "amber" | "violet";
@@ -317,6 +327,9 @@ export function standingChip(p: Placed): { tone: ChipTone; text: string; title: 
       // to fix what it names — often the connection rather than the SQL.
       return { tone: "violet", text: "SQL rejected",
         title: r.reason || "SQL was proposed and the audit could not trust it, so it was dropped." };
+    case "check_failed":
+      return { tone: "amber", text: "failed a check",
+        title: r.reason || "A check refused it when it was proposed. Fix it in its editor before adopting it." };
     case "not_bound":
       return { tone: "amber", text: r.missing_roles.length ? `not bound · ${r.missing_roles.join(", ")}` : "not bound",
         title: `It names data this connection has not bound to the ${r.pack_id || "industry"} package, so it cannot be computed here yet.` };

@@ -142,6 +142,74 @@ class TestClearanceOnTheExternalSurface:
         _patch_graph(monkeypatch, _graph([_node("table:salaries", label="salaries")]))
         assert "salaries" not in describe_entity("c1", "salaries")["notice"]
 
+    def _over_salaries(self, monkeypatch):
+        """A graph where three kinds of node rest on the restricted table: a metric whose formula reads it, a
+        finding whose SQL reads it, and a brief citing that finding — beside an ordinary table."""
+        from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+
+        self._block_salaries(monkeypatch)
+        cg = ContextGraph(org_id="o", connection_id="c1", schema_name="hr")
+
+        def add(nid, kind, label, data):
+            cg.add_node(GraphNode(id=nid, kind=kind, label=label, provenance=Provenance(source="glossary"),
+                                  data=data))
+        add("table:orders", "table", "orders", {"source_tables": ["orders"]})
+        add("table:salaries", "table", "salaries", {"source_tables": ["salaries"]})
+        add("metric:payroll", "metric", "payroll", {"tables": ["salaries"], "formula_sql": "SUM(amount)"})
+        add("finding:f1", "finding", "Pay rose 9% for the top band", {"tables": ["salaries"]})
+        add("brief:c1", "brief", "Pay review", {})
+        for frm, kind, to in (("metric:payroll", "derived_from", "table:salaries"),
+                              ("finding:f1", "grounded_in", "table:salaries"),
+                              ("brief:c1", "derived_from", "finding:f1")):
+            cg.add_edge(GraphEdge(id=f"{frm}-{kind}-{to}", kind=kind, from_id=frm, to_id=to,
+                                  provenance=Provenance(source="glossary")))
+        _patch_graph(monkeypatch, cg)
+        return cg
+
+    def test_search_withholds_every_node_that_rests_on_a_restricted_table_and_counts_them(self, monkeypatch):
+        """The defect this door had: it trimmed table nodes only, so a metric, a finding and a brief over the
+        restricted table reached an outside agent with their text. Each is withheld, and the count is said."""
+        cg = self._over_salaries(monkeypatch)
+        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+                            lambda g, q, top_k=10: [(n, 1.0) for n in cg.nodes.values()])
+        out = search_graph("c1", "pay")
+        assert [n["id"] for n in out["nodes"]] == ["table:orders"]
+        assert out["count"] == 1 and "[4 items withheld by data governance" in out["notice"]
+        assert "salar" not in out["notice"].lower() and "pay" not in out["notice"].lower()
+
+    def test_the_trim_reads_the_graphs_own_schema_when_the_caller_names_none(self, monkeypatch):
+        """No caller of the door passes a schema, and a securable names the table under its schema — so the trim
+        looked up a securable with an empty schema and never matched a tag."""
+        cg = self._over_salaries(monkeypatch)
+        asked: list[str] = []
+        from aughor.govern import tags as T
+        blocked = T.check
+        monkeypatch.setattr(T, "check", lambda s, held, bypass=False: (asked.append(s), blocked(s, held))[1])
+        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+                            lambda g, q, top_k=10: [(cg.nodes["table:salaries"], 1.0)])
+        assert search_graph("c1", "salaries")["nodes"] == []
+        assert asked == ["table:c1.hr.salaries"]
+
+    def test_describe_leaves_out_a_related_node_over_a_restricted_table_and_says_so(self, monkeypatch):
+        """The edge sweep on this door: an edge names its far end, so a related finding over a restricted table
+        handed its id to the agent beside the table it was asked about."""
+        cg = self._over_salaries(monkeypatch)
+        cg.add_edge(cg.edges["finding:f1-grounded_in-table:salaries"].model_copy(
+            update={"id": "finding:f1-grounded_in-table:orders", "to_id": "table:orders"}))
+        out = describe_entity("c1", "orders")
+        assert out["available"] is True and out["related"] == []
+        assert "withheld by data governance" in out["notice"]
+
+    def test_nothing_tagged_trims_nothing(self, monkeypatch):
+        cg = self._over_salaries(monkeypatch)
+        from aughor.govern import tags as T
+        from aughor.govern.tags import ClearanceDecision
+        monkeypatch.setattr(T, "check", lambda s, held, bypass=False: ClearanceDecision(securable=s, allowed=True))
+        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+                            lambda g, q, top_k=10: [(n, 1.0) for n in cg.nodes.values()])
+        out = search_graph("c1", "pay")
+        assert len(out["nodes"]) == 5 and out["notice"] == ""
+
 
 # ── table health ────────────────────────────────────────────────────────────────────
 
