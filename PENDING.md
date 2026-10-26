@@ -709,5 +709,9 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     a decision card its approvers ✅ (`fbbdb495`); decision kinds declared by people and the platform's proposal of a
     declared kind under a mission (`9f4da21b`); beyond §8, the decision's reading from where it arose to what was learned
     with the modifying decision (`493ec8bd`), and the evidence envelope's conversation and meeting kinds with the meeting
-    door (`afcabccc`). **Waiting on the user:** the inbound email door, the Google OAuth client, the person-facing word
-    for the vessel, which real decisions to rebuild by hand, and each TC flag's switch.
+    door (`afcabccc`). **The calls, 2026-10-27 (ROADMAP §6.54(f)), carried out:** people's word is *the inquiry*
+    (`a35cc4c0`); TC-2's read is an object's *changes*; a run's content pages are admin-only; the four low-risk TC flags
+    are ON live; the email door, inbound only, is BUILT and ON (`7f11ae04`) — it receives nothing until the install sets
+    `AUGHOR_INBOUND_EMAIL_DOMAIN` and `AUGHOR_INBOUND_EMAIL_SECRET` and a mail provider posts to a PUBLIC address
+    (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
+    user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Branch kept local; the coverage test skipped.

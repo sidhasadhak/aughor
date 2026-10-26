@@ -346,6 +346,13 @@ the thread as its evidence. The agent's own proposal — a model writing options
 mission is composed by code, which keeps "a model proposes only" by having no model in it. The meeting door was not run
 live: it spends one model call, and none was authorised.
 
+**Carried out the same day:** the renames; the trace's sub-pages admin-only; four TC flags on live (their first
+receipts: the hub map measured 10 automations and monitors over 7 days and said *no runs* of 2; the log search read
+12,902 runs and 28,372 lines back to 26 September; an object's changes read 4 edits and an action, each "which run made
+it was not recorded" — all made before the flag); the email door built and on, refusing every mail until the install
+sets its inbound domain and secret; Google comments on a named file built and on, refusing until the Drive-comments
+card is connected (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`).
+
 **The user's calls, answered 2026-10-27** (ROADMAP §6 item 54(f)): local branch; *the inquiry* as people's word; *missed*
 stays; TC-2's read is an object's *changes*; four TC flags on; email inbound only; the Google client, guided; the trace's
 sub-pages admin-only; the coverage test skipped. **As first listed:** The inbound email door (it reverses §3.18); the Google OAuth client; the person-facing
