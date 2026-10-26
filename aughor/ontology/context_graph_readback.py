@@ -109,9 +109,9 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
     # G5: trim by clearance HERE, at retrieval — a blocked fact must never reach the
     # prompt. Once it is in the context window the model may repeat it, and a redaction
     # applied to the output is a redaction applied after the leak.
-    nodes, edges, governance_notice = _trim_by_clearance(
+    nodes, edges, governance_notice = trim_graph_by_clearance(
         nodes, edges, connection_id=connection_id,
-        schema_name=getattr(cg, "schema_name", "") or "")
+        schema_name=getattr(cg, "schema_name", "") or "", graph=cg)
     by_id = {n.id: n for n in nodes}
     cited: list[str] = []
 
@@ -200,15 +200,72 @@ def build_graph_prior_section(question: str, connection_id: str, **kw) -> str:
     return build_graph_prior(question, connection_id, **kw).section
 
 
-def _trim_by_clearance(nodes, edges, *, connection_id: str, schema_name: str):
-    """Wave G5 — drop nodes the caller lacks clearance for, plus every edge touching them.
+#: The edges along which one node rests on another: a metric's formula reads a table, a finding's SQL reads one, a
+#: brief cites a finding, a settled reading resolves a term. Walked outward when deciding which tables a node is about.
+#: A table beside a table (`joins_on`) and a glossary term whose name equals a metric's (`defines`) are not walked: a
+#: join is decided by each of its ends, and a name match is a coincidence about two different tables.
+_RESTS_ON = frozenset({"derived_from", "grounded_in", "resolves"})
+_WALK_DEPTH = 3
 
-    Returns ``(nodes, edges, notice)``. The notice is empty when nothing was withheld, and
-    is a one-line, out-of-band sentence otherwise — never a silent thinning.
 
-    Only `table` nodes carry a securable today; a finding or glossary term is withheld
-    transitively when the table it hangs off is, via the edge sweep. An untagged
-    securable is always allowed, so a deployment that tags nothing sees no trimming.
+def _field(obj, name: str):
+    """A field of a graph node or edge, whether it is the model or the plain dict a door hands out."""
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+class _TablesBehind:
+    """Which physical tables each node of one graph is about — the index one trim reads, built once per call."""
+
+    def __init__(self, graph=None):
+        nodes = _field(graph, "nodes") if graph is not None else None
+        self.nodes: dict = dict(nodes) if isinstance(nodes, dict) else {
+            _field(n, "id"): n for n in (nodes or [])}
+        edges = _field(graph, "edges") if graph is not None else None
+        self.out: dict[str, list[str]] = {}
+        for e in (edges.values() if isinstance(edges, dict) else (edges or [])):
+            if _field(e, "kind") in _RESTS_ON:
+                self.out.setdefault(_field(e, "from_id"), []).append(_field(e, "to_id"))
+
+    def own(self, node) -> list[str]:
+        """The tables a node names itself. A table node's are its BACKING tables, not its label: the label is the
+        entity's display name ("Return") and the securable names the physical table ("returns") — resolving from the
+        label matched nothing, and the trim never fired on a real graph."""
+        kind, data = _field(node, "kind"), _field(node, "data") or {}
+        if kind in ("table", "declaration"):
+            return list(data.get("source_tables") or [])
+        if kind in ("metric", "finding"):
+            return list(data.get("tables") or [])
+        if kind == "glossary_term":
+            return [data["table"]] if data.get("table") else []
+        if kind == "domain":
+            return [t for m in (data.get("members") or []) if m in self.nodes
+                    for t in ((_field(self.nodes[m], "data") or {}).get("source_tables") or [])]
+        return []
+
+    def of(self, node) -> list[str]:
+        """The tables a node is about: its own, and those of every node it rests on, a few edges out."""
+        tables = self.own(node)
+        seen, frontier = {_field(node, "id")}, [_field(node, "id")]
+        for _ in range(_WALK_DEPTH):
+            frontier = [t for f in frontier for t in self.out.get(f, []) if t not in seen and t in self.nodes]
+            seen.update(frontier)
+            for nid in frontier:
+                tables += self.own(self.nodes[nid])
+        return list(dict.fromkeys(str(t) for t in tables if t))
+
+
+def trim_graph_by_clearance(nodes, edges=(), *, connection_id: str, schema_name: str, graph=None):
+    """Wave G5 — drop the nodes the caller lacks clearance for, plus every edge touching them.
+
+    Returns ``(nodes, edges, notice)``. The notice is empty when nothing was withheld, and is a one-line, out-of-band
+    sentence otherwise — never a silent thinning.
+
+    A node is withheld when ANY table it is about is: a table node on its backing tables (an entity can have several,
+    and showing one whose backing table is restricted shows the restricted thing), a metric, finding, term or
+    declaration on the tables it names, and with ``graph`` every node on what it rests on — a brief on the findings it
+    cites. Sweeping the edges alone left such a node standing with its text intact. Nodes are the graph's models or
+    the plain dicts a door hands out. An untagged securable is always allowed, so a deployment that tags nothing sees
+    no trimming.
     """
     from aughor.govern.retrieval_trim import (
         caller_clearances,
@@ -216,27 +273,22 @@ def _trim_by_clearance(nodes, edges, *, connection_id: str, schema_name: str):
         securable_for_table,
         sweep_edges,
     )
+    from aughor.govern.tags import check as tag_check
+
+    behind = _TablesBehind(graph)
+    decided: dict = {}
+
+    def _check(securable, held):
+        if securable not in decided:            # one table under many nodes is looked up once a call
+            decided[securable] = tag_check(securable, held)
+        return decided[securable]
 
     def _securables(node):
-        """A table node's PHYSICAL tables — not its label.
+        return [securable_for_table(connection_id, schema_name, t) for t in behind.of(node)] or None
 
-        Found by probing: the node's `label` is the ontology entity's display name
-        ("Return"), while the securable names the physical table ("returns"), so
-        resolving from the label silently matched nothing and the trim never fired on a
-        real graph. The backing tables live in `data["source_tables"]`, and an entity can
-        have several — withholding on ANY of them is the correct reading, since showing
-        an entity whose backing table is restricted shows the restricted thing.
-        """
-        if getattr(node, "kind", "") != "table":
-            return None
-        sources = (getattr(node, "data", None) or {}).get("source_tables") or []
-        if not sources:
-            return None
-        return [securable_for_table(connection_id, schema_name, t) for t in sources]
-
-    result = partition(list(nodes), _securables, caller_clearances())
+    result = partition(list(nodes), _securables, caller_clearances(), check=_check)
     if not result.trimmed:
         return nodes, edges, ""
 
-    kept_ids = {n.id for n in result.kept}
+    kept_ids = {_field(n, "id") for n in result.kept}
     return result.kept, sweep_edges(list(edges), kept_ids), result.notice()

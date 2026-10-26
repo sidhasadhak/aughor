@@ -24,30 +24,23 @@ from __future__ import annotations
 from typing import Any, Optional
 
 
-def _trim_nodes(nodes: list, connection_id: str, schema_name: str) -> tuple[list, str]:
+def _trim_nodes(nodes: list, connection_id: str, schema_name: str, *, graph=None) -> tuple[list, str]:
     """Apply G5's clearance trim to graph nodes. Returns ``(kept, notice)``.
 
-    Governance off (the default) returns everything untouched, so this is byte-identical
-    when the flag is off — the same contract every other G5 call site has.
+    The read-back's own trim (`trim_graph_by_clearance`): a table node is withheld on its backing tables, and a metric,
+    finding, term or declaration on the tables it names — with ``graph``, on what it rests on too. Until it was shared,
+    this door trimmed table nodes only, so a finding over a withheld table reached an outside agent with its text.
+    Nothing tagged returns everything untouched, the contract every other G5 call site has.
     """
 
     if not nodes:
         return nodes, ""
 
-    from aughor.govern.retrieval_trim import (
-        caller_clearances,
-        partition,
-        securable_for_table,
-    )
+    from aughor.ontology.context_graph_readback import trim_graph_by_clearance
 
-    def _securables(node):
-        if (node.get("kind") if isinstance(node, dict) else None) != "table":
-            return None
-        sources = (node.get("data") or {}).get("source_tables") or []
-        return [securable_for_table(connection_id, schema_name, t) for t in sources] or None
-
-    result = partition(nodes, _securables, caller_clearances())
-    return result.kept, result.notice()
+    kept, _edges, notice = trim_graph_by_clearance(nodes, (), connection_id=connection_id, schema_name=schema_name,
+                                                   graph=graph)
+    return kept, notice
 
 
 def _load_graph(connection_id: str, org_id: str = ""):
@@ -82,7 +75,10 @@ def search_graph(connection_id: str, query: str, *, limit: int = 10,
 
     hits = _search(graph, query, top_k=max(1, min(int(limit), 50)))
     nodes = [_node_dict(n) for n, _ in hits]
-    kept, notice = _trim_nodes(nodes, connection_id, schema_name)
+    # The graph's own schema when the caller names none — a securable names the table under its schema, and no
+    # caller of this door passes one, so the trim looked up `table:<conn>..<t>` and never matched a tag.
+    kept, notice = _trim_nodes(nodes, connection_id, schema_name or getattr(graph, "schema_name", "") or "",
+                               graph=graph)
     return {"available": True, "count": len(kept), "nodes": kept, "notice": notice}
 
 
@@ -178,7 +174,8 @@ def _describe_table_node(connection_id: str, entity: str, *, schema_name: str = 
     if match is None:
         return {"available": False, "reason": f"no entity {entity!r} in the graph"}
 
-    kept, notice = _trim_nodes([_node_dict(match)], connection_id, schema_name)
+    schema_name = schema_name or getattr(graph, "schema_name", "") or ""
+    kept, notice = _trim_nodes([_node_dict(match)], connection_id, schema_name, graph=graph)
     if not kept:
         # Withheld, and said so. An agent receiving "not found" would report that the table
         # does not exist — confidently, and wrongly.
@@ -186,15 +183,23 @@ def _describe_table_node(connection_id: str, entity: str, *, schema_name: str = 
                 "notice": notice}
 
     edges = list(graph.edges.values() if isinstance(graph.edges, dict) else graph.edges)
-    kept_ids = {match.id}
+    touching = [e for e in edges if e.from_id == match.id or e.to_id == match.id]
+    others = {(e.to_id if e.from_id == match.id else e.from_id) for e in touching}
+    # The edge sweep: an edge names its far end, so one whose far end is withheld — a joined table, a finding over a
+    # restricted table — would hand the protected name to the agent. Withheld, and counted in the notice.
+    by_id = {n.id: n for n in nodes}
+    far = [_node_dict(by_id[o]) for o in sorted(others) if o in by_id]
+    cleared, far_notice = _trim_nodes(far, connection_id, schema_name, graph=graph)
+    visible = {n["id"] for n in cleared} | (others - set(by_id))
     related = []
-    for e in edges:
-        if e.from_id == match.id or e.to_id == match.id:
-            other = e.to_id if e.from_id == match.id else e.from_id
-            related.append({"edge": e.kind, "node_id": other,
-                            "measured": getattr(e.provenance, "measured", None),
-                            "note": getattr(e.provenance, "note", "")})
-            kept_ids.add(other)
+    for e in touching:
+        other = e.to_id if e.from_id == match.id else e.from_id
+        if other not in visible:
+            continue
+        related.append({"edge": e.kind, "node_id": other,
+                        "measured": getattr(e.provenance, "measured", None),
+                        "note": getattr(e.provenance, "note", "")})
+    notice = " ".join(x for x in (notice, far_notice) if x)
     out = {"available": True, "kind": "table", "entity": kept[0], "related": related[:_MAX_RELATED],
            "notice": notice}
     if len(related) > _MAX_RELATED:

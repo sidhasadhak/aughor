@@ -181,7 +181,7 @@ def test_readback_trim_withholds_and_sweeps(monkeypatch):
 
     nodes = [_node("table:orders"), _node("table:salaries")]
     edges = [_edge("table:orders", "table:salaries")]
-    out_nodes, out_edges, notice = RB._trim_by_clearance(
+    out_nodes, out_edges, notice = RB.trim_graph_by_clearance(
         nodes, edges, connection_id="c", schema_name="s")
 
     assert [n.id for n in out_nodes] == ["table:orders"]
@@ -197,7 +197,7 @@ def test_a_fully_trimmed_slice_still_returns_the_notice(monkeypatch):
 
     monkeypatch.setattr(T, "check",
                         lambda securable, held, bypass=False: _blocked(securable))
-    out_nodes, _, notice = RB._trim_by_clearance(
+    out_nodes, _, notice = RB.trim_graph_by_clearance(
         [_node("table:salaries")], [], connection_id="c", schema_name="s")
     assert out_nodes == [] and notice
 
@@ -240,7 +240,7 @@ def test_readback_resolves_securables_from_source_tables_not_the_label():
 
     from aughor.ontology import context_graph_readback as RB
 
-    src = inspect.getsource(RB._trim_by_clearance)
+    src = inspect.getsource(RB._TablesBehind.own)
     assert "source_tables" in src
     assert "node.label" not in src
 
@@ -259,7 +259,7 @@ def test_readback_trims_a_node_by_its_source_table(monkeypatch):
                            data={"source_tables": ["returns"]})
     keep = SimpleNamespace(id="table:Order", kind="table", label="Order",
                            data={"source_tables": ["orders"]})
-    out_nodes, _, notice = RB._trim_by_clearance(
+    out_nodes, _, notice = RB.trim_graph_by_clearance(
         [node, keep], [], connection_id="workspace", schema_name="default")
     assert [n.id for n in out_nodes] == ["table:Order"]
     assert notice
@@ -272,6 +272,6 @@ def test_a_table_node_with_no_source_tables_is_kept(monkeypatch):
     monkeypatch.setattr(T, "check",
                         lambda securable, held, bypass=False: _blocked(securable))
     node = SimpleNamespace(id="table:Ghost", kind="table", label="Ghost", data={})
-    out_nodes, _, notice = RB._trim_by_clearance(
+    out_nodes, _, notice = RB.trim_graph_by_clearance(
         [node], [], connection_id="c", schema_name="s")
     assert out_nodes == [node] and notice == ""

@@ -140,3 +140,22 @@ def test_build_corrections_section_empty_when_nothing_is_stored(monkeypatch, tmp
     from aughor.feedback.priors import build_corrections_section
     assert build_corrections_section("which orders never reach a terminal state",
                                      "conn-with-nothing-stored", org_id="o") == ""
+
+
+def test_a_finding_over_a_withheld_table_never_reaches_the_prompt(monkeypatch, tmp_path):
+    """The read-back swept the finding's edge and kept the finding: its text reached the prompt beside a notice that
+    said the table was withheld. A node over a withheld table is withheld with it, and counted."""
+    from aughor.govern import tags as T
+    from aughor.govern.tags import ClearanceDecision, Requirement
+
+    req = Requirement(key="tier", value="restricted", clearance="clearance.restricted")
+    monkeypatch.setattr(T, "check", lambda s, held, bypass=False: (
+        ClearanceDecision(securable=s, allowed=False, requirements=[req], missing=[req]) if s.endswith(".orders")
+        else ClearanceDecision(securable=s, allowed=True)))
+    _save(_graph(), monkeypatch, tmp_path)
+    from aughor.ontology.context_graph_readback import build_graph_prior
+
+    p = build_graph_prior("which orders never reach a terminal state", "c", org_id="o")
+    assert "32% of orders never reach a terminal state" not in p.section
+    assert "finding:f1" not in p.cited_node_ids
+    assert "[2 items withheld by data governance" in p.section
