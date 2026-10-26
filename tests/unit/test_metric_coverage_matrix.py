@@ -137,3 +137,25 @@ def test_an_approved_metric_whose_figures_are_unread_is_said_not_checked_and_cov
     moves["marketing_roas"] = {"ok": None, "why": "its figures have not been read yet"}
     out = C.coverage("lux", "luxexperience", mmap=mmap)
     assert next(a for a in out["areas"] if a["id"] == "marketing")["state"] == "unchecked"
+
+
+def test_a_dataset_of_a_connection_that_holds_several_reads_only_its_own_tables(monkeypatch):
+    """Found live 2026-10-26: the workspace's airlines, zomato_data, bakehouse and amazon datasets were all placed on
+    Olist's tables — the profiler keys an entry's tables by bare name, and the merged entry was every dataset's."""
+    from aughor.db import registry
+    from aughor.tools import profile_cache
+    entry = {"tables": {"flights": {"table": "flights", "row_count": 900}, "olist_orders": {"table": "olist_orders",
+                                                                                            "row_count": 99}},
+             "columns": {"flights.dep_delay": {"table": "flights", "column": "dep_delay", "dtype": "integer"},
+                         "olist_orders.price": {"table": "olist_orders", "column": "price", "dtype": "double"}}}
+    monkeypatch.setattr(registry, "get_meta", lambda cid: {"schema_name": None})
+    monkeypatch.setattr(profile_cache, "profile_entry_for", lambda cid, tables: entry)
+    monkeypatch.setattr(profile_cache, "merged_profile_entry", lambda cid: entry)
+    monkeypatch.setattr(C, "dataset_tables", lambda cid, schema: {"airlines": ["flights"]}.get(schema, []))
+    scoped = C.dataset_entry("workspace", "airlines")
+    assert list(scoped["tables"]) == ["flights"] and list(scoped["columns"]) == ["flights.dep_delay"]
+    assert [t.name for t in C.tables_of("workspace", "airlines")] == ["flights"]
+    assert C.dataset_entry("workspace", "never_profiled") == {}
+    # a connection that declares its one dataset reads as before
+    monkeypatch.setattr(registry, "get_meta", lambda cid: {"schema_name": "luxexperience"})
+    assert C.dataset_entry("lux", "luxexperience") is entry

@@ -153,11 +153,11 @@ def write(connection_id: str, schema_name: Optional[str], mmap, *, db, taken: li
     from aughor.semantic.metric_map import generic_patterns, match_pattern
     from aughor.semantic.metric_statement import statement_tables
     from aughor.semantic.metric_coverage import tables_of
-    from aughor.tools.profile_cache import merged_profile_entry
+    from aughor.semantic.metric_coverage import dataset_entry
 
     matrix = coverage(connection_id, schema_name, figures=True, mmap=mmap)
     facts = {t.name: t for t in tables_of(connection_id, schema_name)}
-    entry = merged_profile_entry(connection_id) or {}
+    entry = dataset_entry(connection_id, schema_name) or {}
     dialect = getattr(db, "dialect", "") or "duckdb"
     taken_names = {CP.metric_name(p.get("name") or "") for p in taken}
     llm = get_provider("coder")

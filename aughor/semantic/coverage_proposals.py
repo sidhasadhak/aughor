@@ -193,10 +193,10 @@ def recipe_proposals(connection_id: str, schema_name: Optional[str], mmap) -> li
     from aughor.semantic.metric_gates import binding_problems
     from aughor.semantic.metric_statement import as_statement
     from aughor.semantic.metric_time import with_dates
-    from aughor.tools.profile_cache import merged_profile_entry
+    from aughor.semantic.metric_coverage import dataset_entry
 
     ds = schema_name or ""
-    columns = (merged_profile_entry(connection_id) or {}).get("columns") or {}
+    columns = (dataset_entry(connection_id, schema_name) or {}).get("columns") or {}
     dirs = {p.pack_id: p.directory for p in packages()}
     out: list[dict] = []
     for area in mmap.areas:
@@ -399,11 +399,11 @@ def blind_spot_proposals(connection_id: str, schema_name: Optional[str], mmap, m
     from aughor.semantic.metric_coverage import place_table, tables_of
     from aughor.semantic.metric_map import OTHER
     from aughor.semantic.metric_statement import statement_tables
-    from aughor.tools.profile_cache import merged_profile_entry
+    from aughor.semantic.metric_coverage import dataset_entry
     from aughor.trust.lineage_edges import dialect_for_connection
 
     dialect = dialect_for_connection(connection_id) or "duckdb"
-    entry = merged_profile_entry(connection_id) or {}
+    entry = dataset_entry(connection_id, schema_name) or {}
     measures: dict[tuple[str, str], dict] = {}
     for key, cp in (entry.get("columns") or {}).items():
         if isinstance(cp, dict) and str(cp.get("semantic_type") or "").lower() == "measure" and not cp.get("is_fk"):
@@ -504,8 +504,8 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
             return list(res.columns or []), list(res.rows or []), res.error
 
         dialect = getattr(db, "dialect", "") or "duckdb"
-        from aughor.tools.profile_cache import merged_profile_entry
-        columns = (merged_profile_entry(connection_id) or {}).get("columns") or {}
+        from aughor.semantic.metric_coverage import dataset_entry
+        columns = (dataset_entry(connection_id, schema_name) or {}).get("columns") or {}
         for p in kept:
             try:
                 gate(p, connection_id=connection_id, schema_name=schema_name, run_sql=run_sql, dialect=dialect,

@@ -60,20 +60,67 @@ def _bare(name: str) -> str:
     return str(name or "").split(".")[-1].strip('`"[]').lower()
 
 
-def tables_of(connection_id: str, schema_name: Optional[str] = None) -> list[TableFacts]:
-    """The connection's tables as the profiler last read them — rows, main date, columns. [] when it was never
-    profiled; the caller says so."""
-    from aughor.tools.profile_cache import merged_profile_entry
+def dataset_entry(connection_id: str, schema_name: Optional[str] = None) -> dict:
+    """The profiler's tables and columns for the dataset in view — what every Arc MC read starts from.
 
-    entry = merged_profile_entry(connection_id) or {}
+    A connection that declares one dataset (LuxExperience's `luxexperience`, theLook's `thelook`) reads the profiler's
+    merged entry, as before. A connection holding several (the workspace: airlines, zomato_data, olist …) reads only
+    the named dataset's own tables: the profiler keys an entry's tables by their bare names, so the merged entry of a
+    multi-dataset connection is every dataset's at once, and before this every dataset was placed on Olist's tables
+    (found live 2026-10-26). A dataset the profiler never read is ``{}``, and the caller says so."""
+    from aughor.tools.profile_cache import merged_profile_entry, profile_entry_for
+
+    want = (schema_name or "").strip()
+    declared = ""
+    try:
+        from aughor.db.registry import get_meta
+        declared = str((get_meta(connection_id) or {}).get("schema_name") or "")
+    except Exception as exc:  # noqa: BLE001 — an unknown connection reads its merged entry
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's declared dataset could not be read", counter="metric_coverage.declared")
+    if not want or want == "*" or want.lower() == declared.lower():
+        return merged_profile_entry(connection_id) or {}
+    names = dataset_tables(connection_id, want)
+    if not names:
+        return {}
+    entry = profile_entry_for(connection_id, names) or {}
+    keep = {n.lower() for n in names}
+
+    def ours(key: str, prof: dict, column: bool) -> bool:
+        owner = str(prof.get("table") or (str(key).split(".", 1)[0] if column else key))
+        return _bare(owner) in keep
+
+    return {"tables": {k: v for k, v in (entry.get("tables") or {}).items() if isinstance(v, dict) and ours(k, v, False)},
+            "columns": {k: v for k, v in (entry.get("columns") or {}).items() if isinstance(v, dict) and ours(k, v, True)}}
+
+
+def dataset_tables(connection_id: str, schema_name: str) -> list[str]:
+    """The bare names of one dataset's tables, read from its schema (cached for a few minutes) — [] when it cannot be
+    read."""
+    try:
+        from aughor.db.connection import open_connection_for_with_schema
+        from aughor.routers._shared import get_schema_cached
+        from aughor.tools.schema import parse_schema_tables
+        db = open_connection_for_with_schema(connection_id, schema_name)
+        try:
+            return sorted({_bare(t) for t in parse_schema_tables(get_schema_cached(connection_id, db))})
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001 — an unreadable dataset places nothing, and says so
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, f"the tables of dataset {schema_name} could not be read", counter="metric_coverage.dataset")
+        return []
+
+
+def tables_of(connection_id: str, schema_name: Optional[str] = None) -> list[TableFacts]:
+    """The dataset's tables as the profiler last read them — rows, main date, columns. [] when it was never
+    profiled; the caller says so."""
+    entry = dataset_entry(connection_id, schema_name)
     out: dict[str, TableFacts] = {}
-    want = (schema_name or "").lower()
     for key, tp in (entry.get("tables") or {}).items():
         if not isinstance(tp, dict):
             continue
         name = str(tp.get("table") or key)
-        if want and want != "*" and "." in name and name.split(".")[0].lower() != want:
-            continue
         bare = _bare(name)
         out[bare] = TableFacts(name=bare, rows=tp.get("row_count"),
                                date_column=str(tp.get("primary_timestamp") or ""),
@@ -195,7 +242,7 @@ def coverage(connection_id: str, schema_name: Optional[str] = None, *, figures: 
     domains = _domains(connection_id, schema_name)
     said: list[str] = list(mmap.problems)
     if not tables:
-        said.append("the profiler has not read this connection's tables yet — profile it to place them")
+        said.append("the profiler has not read this dataset's tables yet — profile it to place them")
     areas = mmap.readable
     by_table: dict[str, list[Placement]] = {t.name: place_table(t, areas, domains.get(t.name, "")) for t in tables}
 

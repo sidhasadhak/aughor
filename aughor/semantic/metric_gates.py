@@ -214,10 +214,10 @@ def binding(m: Any, connection_id: str, schema_name: Optional[str]) -> dict:
     try:
         from aughor.packs.bindings import load_binding
         from aughor.semantic.metrics import ALL_DATASETS
-        from aughor.tools.profile_cache import merged_profile_entry
+        from aughor.semantic.metric_coverage import dataset_entry
         ds = "" if schema_name in (None, "", ALL_DATASETS) else schema_name
         bound = ((load_binding(pack_id, connection_id, ds) or {}).get("bindings") or {})
-        columns = (merged_profile_entry(connection_id) or {}).get("columns") or {}
+        columns = (dataset_entry(connection_id, ds or None) or {}).get("columns") or {}
     except Exception as exc:  # noqa: BLE001 — not read is said
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a recipe's binding could not be read for its gate", counter="metric_gates.binding")

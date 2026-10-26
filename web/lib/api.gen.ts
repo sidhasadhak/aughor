@@ -30647,7 +30647,9 @@ export interface operations {
     };
     prewarm_connection_connections__conn_id__prewarm_post: {
         parameters: {
-            query?: never;
+            query?: {
+                schema?: string | null;
+            };
             header?: never;
             path: {
                 conn_id: string;
