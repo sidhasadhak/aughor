@@ -157,6 +157,19 @@ FLAG_ENV = {
     # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
     # contract describes it. OFF: each door answers as before.
     "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
+    # Arc FA, FA-1 (ROADMAP §3.60). ON: the published declarations — segments, computed properties, processes, rules,
+    # impacts, actions and links — become `declaration` nodes of the connection graph, so the graph search, the read-back
+    # and the knowledge door find them, withheld wherever their entity's tables are; publishing a release rebuilds the
+    # graph. OFF: the graph is projected without them, byte-identical, and a publish leaves it as it was.
+    "graph.declarations": "AUGHOR_GRAPH_DECLARATIONS",
+    # Arc FA, FA-1. ON: POST /objects/find looks for an object by its title across the served entities, capped and
+    # saying how many entities it searched and why it skipped each other one; ⌘K shows what it found. OFF: the door
+    # answers 404 and ⌘K searches exactly what it did.
+    "objects.find": "AUGHOR_OBJECTS_FIND",
+    # Arc FA, FA-1. ON: when the embedder cannot embed a question and the vector store is up, the documents are ranked
+    # by their words (BM25) instead, each hit marked matched by words, and every caller says so. OFF: a failed embed
+    # makes the document search unavailable, as before.
+    "knowledge.hybrid_documents": "AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -932,6 +945,40 @@ FLAG_META = {
                        "policy or a masked property is named. Outside programs read the same field, described in "
                        "their contract. Off: a cut read can look complete.",
     },
+    "graph.declarations": {
+        "label": "Search what the ontology declares",
+        "summary": "Published segments, processes, rules, impacts, actions and links can be found by search. "
+                   "Answers see them beside the tables they are about.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Withheld with their tables"}],
+        "description": "Each published declaration is added to the connection's graph with its name, its "
+                       "description and its entity. Only what a release published is read, never a draft. A "
+                       "declaration over a table you may not see is withheld with it, and counted. Publishing "
+                       "rebuilds the graph. Off: search finds tables, metrics, terms and findings only.",
+    },
+    "objects.find": {
+        "label": "Find an object by its name",
+        "summary": "The command bar finds an order, a customer or a product by the name it goes by. It says how "
+                   "many entities it searched.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries the warehouse as you type"},
+                  {"kind": "private", "text": "Reads only what you may see"}],
+        "description": "Each entity whose objects are named by a text property is searched for the words typed, a "
+                       "few objects each and up to twelve entities. An entity it did not search is listed with why: "
+                       "no name to match, a masked name, or the cap. Row policies apply. Off: the command bar finds "
+                       "pages, runs and tables only.",
+    },
+    "knowledge.hybrid_documents": {
+        "label": "Search documents by words when meaning is down",
+        "summary": "When the embedding model is unavailable, the documents are still searched by their words. "
+                   "Each result says it matched by words only.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "needs", "text": "Needs the vector store up"}],
+        "description": "A document search embeds the question to match by meaning. When that fails and the store "
+                       "holding the documents answers, each passage you may read is ranked by the words it shares "
+                       "with the question. Answers and the chat say the match was by words. Off: the search says "
+                       "it could not run.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1410,6 +1457,18 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc FA, FA-1 (ROADMAP §3.60), queued 2026-10-26. No model call in any of the three.
+    "graph.declarations": "receipt: on theLook, a published process and segment are found by the graph search and the "
+                          "knowledge door by their own words, read back beside their entity, and a publish rebuilds the "
+                          "graph. Falsifier: a declaration only in the draft, or over a withheld table, reaching a "
+                          "search stops it",
+    "objects.find": "receipt: on theLook, ⌘K finds a customer and a product by name, says how many entities it searched "
+                    "and why it skipped the rest, and a row policy narrows what a group member finds. Falsifier: a hit "
+                    "the reader's row policy withholds, or a skipped entity not said, stops it",
+    "knowledge.hybrid_documents": "receipt: with the embedder stopped and the vector store up, a document search answers "
+                                  "by words, every hit marked so, the door, the chat tool and the prompt saying it. "
+                                  "Falsifier: a words-only hit read as a match by meaning, or a document outside the "
+                                  "caller's scope ranked, stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "

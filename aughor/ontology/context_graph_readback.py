@@ -29,6 +29,7 @@ _last_cited: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
 _MAX_FINDINGS = 5
 _MAX_JOINS = 6
 _MAX_TERMS = 5
+_MAX_DECLARATIONS = 5
 _TEXT_CAP = 240        # per-line text truncation
 _SECTION_CAP = 2600    # whole-block char budget (token-proportional; C3 refines)
 
@@ -118,6 +119,7 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
     tables = [n for n in nodes if n.kind == "table"]
     findings = [n for n in nodes if n.kind == "finding"]
     terms = [n for n in nodes if n.kind == "glossary_term"]
+    declarations = [n for n in nodes if n.kind == "declaration"]     # FA-1; none while graph.declarations is off
     joins = [e for e in edges if e.kind == "joins_on"]
     resolves = [e for e in edges if e.kind == "resolves"]
 
@@ -170,6 +172,17 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
                 continue
             lines.append(f'  • "{t.label}" = {_clip(t.summary)}  [{t.id}]')
             cited.append(t.id)
+
+    if declarations:
+        lines.append("\nDeclared on these entities (published — read them by these names):")
+        for d in declarations[:_MAX_DECLARATIONS]:
+            what = str(d.data.get("decl_kind") or "").replace("_", " ")
+            about = ", ".join(d.data.get("entities") or [])
+            said = _clip(d.summary or d.data.get("detail") or "", _TEXT_CAP // 2)
+            lines.append(f'  • {what} "{d.label}" on {about}' + (f" — {said}" if said else "") + f"  [{d.id}]")
+            cited.append(d.id)
+        if len(declarations) > _MAX_DECLARATIONS:
+            lines.append(f"  … and {len(declarations) - _MAX_DECLARATIONS} more declared here")
 
     # A block with only the header (no tables/joins/findings/terms matched the seeds)
     # is not worth injecting — UNLESS governance withheld everything, in which case the

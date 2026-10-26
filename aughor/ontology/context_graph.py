@@ -20,8 +20,12 @@ until phase 1 of the 2027 study emptied it) are deliberately NOT allowed as edge
 provenance — they are UA's hardcoded weights wearing a badge.
 
 Wave-C node/edge type system (T3.1):
-  nodes: table · metric · glossary_term · domain · finding · brief
+  nodes: table · metric · glossary_term · domain · finding · brief · declaration
   edges: joins_on · defines · derived_from · grounded_in · resolves
+
+``declaration`` (Arc FA, FA-1, behind ``graph.declarations``) is a published segment, computed property, process, rule,
+impact, action or link — a person's or a pack's statement, read from the release consumers read, never a draft — with
+a ``defines`` edge to the table node of each entity it is about.
 """
 from __future__ import annotations
 
@@ -34,7 +38,7 @@ from pydantic import BaseModel, Field
 
 from aughor.kernel.errors import tolerate
 
-NodeKind = Literal["table", "metric", "glossary_term", "domain", "finding", "brief"]
+NodeKind = Literal["table", "metric", "glossary_term", "domain", "finding", "brief", "declaration"]
 EdgeKind = Literal["joins_on", "defines", "derived_from", "grounded_in", "resolves"]
 
 # The provenance sources allowed on a node/edge. Every entry names a DETERMINISTIC
@@ -58,6 +62,7 @@ ProvenanceSource = Literal[
     "ambiguity_ledger",    # a crystallized resolution (probe|user|verdict)
     "briefing",            # a synthesized executive narrative
     "record",              # a claim in the Record (the 2027 study §G) — the graph projects the ledger
+    "ontology.declaration",  # a published declaration — a person's or a pack's, never a model's (FA-1)
 ]
 
 
@@ -236,6 +241,10 @@ def _brief_node_id(scope_key: str) -> str:
     return f"brief:{scope_key}"
 
 
+def _declaration_node_id(decl_kind: str, target_id: str) -> str:
+    return f"declaration:{decl_kind}:{target_id}"
+
+
 def _edge_id(from_id: str, kind: str, to_id: str) -> str:
     return f"{from_id}--{kind}-->{to_id}"
 
@@ -253,6 +262,7 @@ FACT_FIELDS: dict[str, tuple[str, ...]] = {
     "glossary_term": ("table", "column", "values", "caveats", "subject", "resolution_source", "evidence"),
     "finding": ("sql", "tables"),
     "brief": ("theme", "scope"),
+    "declaration": ("decl_kind", "entities", "detail"),
 }
 HISTORY_CAP = 10
 RETIRED_CAP = 200
@@ -358,12 +368,15 @@ def project_graph(
     resolutions: Optional[list] = None,
     findings: Optional[list] = None,
     briefs: Optional[list] = None,
+    declarations: Optional[list] = None,
 ) -> ContextGraph:
     """Project an :class:`OntologyGraph` (+ narrative sources) into a typed
     :class:`ContextGraph`. Pure and deterministic; never raises on a missing/partial
     source (each source is folded in best-effort so one empty store can't block the
     build). ``findings`` is a list of normalized finding dicts (see
-    :func:`aughor.ontology.context_graph_findings.load_findings`).
+    :func:`aughor.ontology.context_graph_findings.load_findings`); ``declarations`` the
+    published declarations (`context_graph_build.declaration_rows`), None while
+    ``graph.declarations`` is off.
     """
     cg = ContextGraph(
         org_id=org_id,
@@ -388,6 +401,7 @@ def project_graph(
     # Briefs last: their `derived_from` edges point at finding nodes, which must
     # already exist or the citation is dropped as dangling.
     _project_briefs(cg, briefs or [])
+    _project_declarations(cg, declarations or [])
     stamp_observed(cg, ontology)   # CB-1: after every projector, so no fact leaves undated
     return cg
 
@@ -828,4 +842,54 @@ def _project_briefs(cg: ContextGraph, briefs: list) -> list[str]:
         except Exception as exc:
             tolerate(exc, "context-graph brief projection is per-brief best-effort",
                      counter="context_graph.brief_projection")
+    return emitted
+
+
+def _project_declarations(cg: ContextGraph, declarations: list) -> list[str]:
+    """Arc FA, FA-1 — `declaration` nodes from the published declarations, each with a `defines` edge to the table
+    node of every entity it is about. ``declarations`` are normalized rows (`context_graph_build.declaration_rows`):
+    ``{decl_kind, target_id, name, description, entities, detail, origin, by, at, release}``.
+
+    Provenance is the declaration itself — who made it (a person or a pack; a model's proposal no person confirmed is
+    never a row) and the release it was read from — dated by the declaration's own save. The tables it is about ride
+    ``data.source_tables``, its entities' backing tables, so a trim withholds it wherever they are withheld without
+    walking an edge. A row naming no entity this graph holds is dropped rather than left floating. Returns the node ids
+    emitted."""
+    emitted: list[str] = []
+    for d in declarations or []:
+        try:
+            kind, target = str(d.get("decl_kind") or ""), str(d.get("target_id") or "")
+            entities = [str(e) for e in (d.get("entities") or []) if _table_node_id(str(e)) in cg.nodes]
+            if not kind or not target or not entities:
+                continue
+            tables: list[str] = []
+            for e in entities:
+                tables += cg.nodes[_table_node_id(e)].data.get("source_tables") or []
+            note = f"origin={d.get('origin') or 'human'} release={d.get('release') or 'unreleased'}"
+            node = GraphNode(
+                id=_declaration_node_id(kind, target),
+                kind="declaration",
+                label=str(d.get("name") or target),
+                summary=str(d.get("description") or ""),
+                provenance=Provenance(source="ontology.declaration", note=note,
+                                      observed_at=str(d.get("at") or ""),
+                                      observed_basis="source" if d.get("at") else "",
+                                      author=str(d.get("by") or "")),
+                data={"decl_kind": kind, "target_id": target, "entity": entities[0], "entities": entities,
+                      "source_tables": list(dict.fromkeys(tables)), "detail": str(d.get("detail") or "")},
+            )
+            cg.add_node(node)
+            emitted.append(node.id)
+            for e in entities:
+                cg.add_edge(GraphEdge(
+                    id=_edge_id(node.id, "defines", _table_node_id(e)),
+                    kind="defines",
+                    from_id=node.id,
+                    to_id=_table_node_id(e),
+                    provenance=Provenance(source="ontology.declaration", note=note),
+                    label=f"{kind.replace('_', ' ')} of",
+                ))
+        except Exception as exc:
+            tolerate(exc, "context-graph declaration projection is per-declaration best-effort",
+                     counter="context_graph.declaration_projection")
     return emitted
