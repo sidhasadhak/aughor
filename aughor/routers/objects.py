@@ -376,6 +376,47 @@ def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
         db.close()
 
 
+class _FindRequest(BaseModel):
+    """Arc FA, FA-1 — the words an object goes by, and how many of each entity's matches to show."""
+    q: str
+    limit_per_entity: int = 5
+
+
+@router.post("/objects/find", dependencies=[Depends(preview_from_request)])
+def post_object_find(body: _FindRequest, connection_id: str = BUILTIN_ID,
+                     schema_name: Optional[str] = Query(default=None)):
+    """Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+    entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
+    the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
+    ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
+    with more matches than shown. 404 while the flag is off. No model call."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("objects.find"):
+        raise HTTPException(status_code=404, detail="Finding an object by its name is off on this install.")
+    from aughor.semantic.completeness import Clock, policy_words
+    from aughor.semantic.object_find import find_objects
+    from aughor.semantic.object_query import ObjectQueryRefused
+    from aughor.sql.executor import execute_guarded
+
+    clock = Clock()
+    graph = _served_graph(connection_id, schema_name)
+    db = _open_scoped(connection_id, schema_name, graph)
+    try:
+        try:
+            found = find_objects(graph, lambda sql: execute_guarded(db, sql, query_id="objects.find"), body.q,
+                                 dialect=getattr(db, "dialect", "") or "duckdb", overlay=_accepted_edits(connection_id),
+                                 per_entity=body.limit_per_entity)
+        except ObjectQueryRefused as exc:
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
+    finally:
+        db.close()
+    said = policy_words(graph, found["withheld"])
+    out = {"path": "found", "connection_id": connection_id, "schema_name": graph.schema_name, **found,
+           "withheld_said": said}
+    return _complete(out, clock, shown=len(found["hits"]), withheld=found["withheld"], masked=found["masked"], said=said)
+
+
 def _titles_facts(graph: Any, found: dict, body: Any) -> dict:
     """The names read for a set of keys: the first ``MAX_TITLES`` of them when more were asked, and a row policy's
     narrowing — a key it withholds is absent from the map, so it is said."""

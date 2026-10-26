@@ -958,8 +958,8 @@ FLAG_META = {
     },
     "objects.find": {
         "label": "Find an object by its name",
-        "summary": "The command bar finds an order, a customer or a product by the name it goes by. It says how "
-                   "many entities it searched.",
+        "summary": "The command bar finds an object by the name it goes by, whatever its entity. It says how many "
+                   "entities it searched.",
         "facts": [{"kind": "free", "text": "No model calls"},
                   {"kind": "warehouse", "text": "Queries the warehouse as you type"},
                   {"kind": "private", "text": "Reads only what you may see"}],
@@ -1462,7 +1462,7 @@ GRADUATION_QUEUE: dict = {
                           "knowledge door by their own words, read back beside their entity, and a publish rebuilds the "
                           "graph. Falsifier: a declaration only in the draft, or over a withheld table, reaching a "
                           "search stops it",
-    "objects.find": "receipt: on theLook, ⌘K finds a customer and a product by name, says how many entities it searched "
+    "objects.find": "receipt: on theLook, ⌘K finds objects of two entities by name, says how many entities it searched "
                     "and why it skipped the rest, and a row policy narrows what a group member finds. Falsifier: a hit "
                     "the reader's row policy withholds, or a skipped entity not said, stops it",
     "knowledge.hybrid_documents": "receipt: with the embedder stopped and the vector store up, a document search answers "
