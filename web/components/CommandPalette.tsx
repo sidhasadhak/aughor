@@ -319,7 +319,8 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     }, 250);
     return () => { clearTimeout(t); ctl.abort(); };
   }, [query, open, findOn, mode, selectedConn]);
-  const foundNow = findOn && found && found.q === findWords(query) && found.connection_id === selectedConn ? found : null;
+  const foundNow = findOn && found && found.q === findWords(query) && (!selectedConn || found.connection_id === selectedConn)
+    ? found : null;
   const openObjectRef = useRef(onOpenObject);
   useEffect(() => { openObjectRef.current = onOpenObject; });
   const objectRows = useMemo<FuseResult<PaletteItem>[]>(() => {
@@ -695,7 +696,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
             grouped.map(({ type, items }) => (
               <div key={type}>
                 {/* Section header */}
-                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t3)", borderTop: "1px solid var(--b0)", display: "flex", gap: 8 }}>
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t3)", borderTop: "1px solid var(--b0)", ...(type === "object" ? { display: "flex", gap: 8 } : {}) }}>
                   {SECTION_LABELS[type]}
                   {type === "object" && foundNow && (
                     <span data-testid="objects-said" title={findDetail(foundNow)}
