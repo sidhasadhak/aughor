@@ -722,7 +722,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     `docs/METRICS_COVERAGE_STUDY_2026-10-26.md`, ROADMAP §3.62. Measured: LuxExperience 33 tables, 12 metrics over 12
     of them, 9 working (two read 1 in every period — the retail pack's recipes bound to the wrong tables, one a date
     bound to an id; ROAS has no dated rows); theLook 15 metrics over 6 of 7 tables. The explorer asks one model call for
-    "the 6-8 metrics that matter MOST"; no map of the business checks coverage; the gates check the SQL, not the figure.
+    "the 6-8 metrics that matter MOST"; the knowledge base's ~100 metric patterns with templates (`packs/*/kb/`) are read only
+    to answer questions, never to propose (the user spotted it); the gates check the SQL, not the figure.
     Framework: a map of areas (generic + per-pack layer) → placement → coverage matrix → proposals per uncovered area
     (recipes, ontology-derived, a scoped model call) → gates (moves · sane range · binding types) → people adopt.
     Waves MC-0…MC-6. **Six calls are the user's (study §7).**

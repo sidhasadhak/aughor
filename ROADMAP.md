@@ -12189,12 +12189,12 @@ is probably not even 50% of the matrix.. what are we missing?"*, then *"Missing 
 and ROAS has no dated rows). theLook has 15 metrics over 6 of 7 tables: the count follows the prompt, not the data. The
 explorer asks one model call for *"the 6-8 metrics … that matter MOST"* (`business_profile/infer.py:322`); nothing
 checks the proposals against a map of what the business measures; the proposer reads schema text, not the profiler or
-the ontology's promises; the packs supply recipes only for names the model chose; proposals are made once; the gates
+the ontology's promises; **the knowledge base's ~100 curated metric patterns, each with a template (`packs/*/kb/*.json`), are read only to answer a question, never to propose** (the user spotted it: *"I think we already this list of metrics per industry as knowledge base"*); the packs supply recipes only for names the model chose; proposals are made once; the gates
 check the SQL, not the figure (a recipe's `sane_range` of 0–30% stood beside a metric reading 100%). The Briefing then
 measures at most 12 (`briefing/ranges.py:65`).
 
-**The framework.** A map of areas a business is read by (a generic layer in the platform, an industry layer per pack —
-retail's income-statement order and reading order are its spine) · every table placed in its areas, with the evidence ·
+**The framework.** A map of areas a business is read by — the knowledge base's metric patterns, grouped by area, plus a
+generic layer in the platform; retail's income-statement order orders the areas · every table placed in its areas, with the evidence ·
 a coverage matrix (has data · has a metric) · proposals per uncovered area, cheapest first (recipes bound to roles, then
 metrics derived from the ontology's promises and stages, then one scoped model call per area) · gates before a person
 sees one (runs · a window bounds it · it moves · within its sane range · roles bound to the right types · not a twin) ·
@@ -12203,11 +12203,11 @@ adoption and approval by people only, through the doors that exist · the Briefi
 | Wave | Builds | Spends |
 |---|---|---|
 | MC-0 | LuxExperience's two metrics that read 1; three gates at approval (moves, sane range, binding types) | no |
-| MC-1 | The map's shape on a recipe (area, kind, direction); the generic layer; retail's industry layer | no |
+| MC-1 | The knowledge base as the map: area, kind, direction on its metric patterns; the generic layer | no |
 | MC-2 | Placement and the coverage matrix, read-only, on the Metrics tab | no |
 | MC-3 | Recipe proposals per uncovered area, through the gates, grouped by area | no |
 | MC-4 | Ontology-derived proposals: promise → on-time rate, stage → conversion, segment → share | no |
-| MC-5 | The scoped model proposer per uncovered area | yes |
+| MC-5 | The knowledge base's patterns written for this schema, one scoped model call per uncovered area, each citing its pattern | yes |
 | MC-6 | Blind spots → proposals; the Briefing's cap a setting, read by the map's order | no |
 
 **The laws it keeps.** A model proposes and never approves · industry nouns live in packs, never in core code · every

@@ -45,10 +45,19 @@ return-rate recipe declares a **sane range of 0–30%**; the metric reads 100%, 
 3. **It reads names, not the data.** It sees the schema text (capped at 60,000 characters, largest tables first,
    `infer.py:224-276`) and the ontology's domain labels — not the profiler's column statistics, not the ontology's
    processes and promises.
-4. **The packs barely propose.** Retail ships two typed recipes (`packs/retail/metrics/`); its 8 prose metrics and its
-   23-metric reading order (`packs/retail/industry.json`) are used to supply recipes for names the model already chose
-   and to sort and cap the Briefing — never to propose. The richer packs (`core-ecommerce`, `fashion-ecommerce`,
-   `customer-analytics`) are drafts and are not read.
+4. **The knowledge base of metrics is never asked.** The active packs ship about **100 curated metric patterns, each
+   with a template statement** (`packs/*/kb/*.json`): retail 34 metric, ratio, funnel and cohort patterns across four
+   areas (orders & revenue, funnel & conversion, customer lifecycle, inventory & merchandising), marketing 15, finance
+   12, product 11, logistics 6, customer 5. Each carries its business definition, what it does and does not measure,
+   the causes of a false high and a false low, diagnostic questions, related metrics and anti-patterns. They are read
+   only when a question is answered — the two or three most similar help write its SQL (`semantic/kb_retriever.py`,
+   `agent/grounding.py:173`, `agent/nodes.py:300`) — and never by the metric proposer, which reads
+   `metric_kb.resolve_recipes` only to supply recipes for names the model already chose (`business_profile/infer.py:339`).
+   *The user saw it first: "I think we already this list of metrics per industry as knowledge base or something else.."
+   — the first draft of this study had counted retail's two typed recipes and its reading order, and missed it.*
+   Retail's two typed recipes (`packs/retail/metrics/`), its 8 prose metrics and its 23-metric reading order
+   (`packs/retail/industry.json`) likewise sort and cap the Briefing and never propose; the draft packs
+   (`core-ecommerce`, `fashion-ecommerce`, `customer-analytics`) are not read.
 5. **It happens once.** Proposals are made when the profile is built. The explorer later computes delivery days, CSAT,
    refund cycles in its findings and never offers one as a metric (`explorer/coverage_manifest.py` finds the "profiled
    measures the profile never named" — and feeds them to questions, not to metrics).
@@ -72,9 +81,11 @@ The map has two layers:
 - **A generic layer**, true of any business: *volume* (how many), *value* (how much money), *rate* (a share of a
   population), *duration* (how long between two dates), *quality* (a score or a defect share), each over the entities the
   data holds. It proposes something sensible for a connection no pack fits.
-- **An industry layer**, shipped with the pack: the areas an industry reads and the recipes in each. Retail already holds
-  the spine of it — the income-statement order (`gross_sales → deductions → net_sales → cogs → gross_profit → fulfilment →
-  marketing → contribution → opex → profit`) and `volume · rate · operations`, with 23 named metrics.
+- **An industry layer**, shipped with the pack — and **already written**: the knowledge base's metric patterns, grouped
+  by area in their files (retail's four, and the function packs' customer, marketing, finance, product, logistics),
+  each with a template, a definition and its traps. Retail's income-statement order (`gross_sales → deductions →
+  net_sales → cogs → gross_profit → fulfilment → marketing → contribution → opex → profit`, then `volume · rate ·
+  operations`) gives the areas their reading order.
 
 For e-commerce the areas are these (the industry layer extends retail's statement with the operating areas it lacks):
 
@@ -118,10 +129,13 @@ ended* in a daily Briefing — correct, and said since 10-23.
 ## 4. The framework — six parts
 
 ### 4.1 The map
-Areas and recipes as pack knowledge, in the shape retail's typed recipes already have (`definition`, `formula` over
-roles, `grain`, `binds`, `anti_patterns`, `sane_range`), plus each recipe's **area**, its **direction** (up is good or
-bad) and its **kind** (volume, value, rate, duration, quality). The generic layer ships with the platform; each pack adds
-its industry layer. Retail's reading order and statement become the industry layer's order, not a second list.
+The knowledge base's metric patterns are the map: each file an area, each pattern a metric with its template,
+definition and traps. What they lack is small — an explicit **area** where a file mixes two, a **direction** (up is
+good or bad) and a **kind** (volume, value, rate, duration, quality) — and is added to the patterns, not kept beside
+them. Retail's typed recipes (roles, `sane_range`) stay the strongest form and are proposed first. The generic layer
+ships with the platform for a connection no pack fits; retail's statement orders the areas. Areas the knowledge base
+does not cover yet are said as such (on LuxExperience: clienteling and events, consent, service beyond ticket volume,
+returns logistics) — a pack can add them; nothing invents them.
 
 ### 4.2 Placement
 Every table is placed in the areas it serves, from evidence the platform already holds — the ontology's entities and
@@ -136,9 +150,15 @@ Three sources, cheapest first:
    Binding is checked (§4.4); a role it cannot bind is said, never guessed.
 2. **Derived from the ontology — code, no model.** Each promise a person declared gives its on-time rate; each process
    stage gives a stage conversion; each declared segment gives its share of the whole. Nothing on LuxExperience yet.
-3. **A scoped model call per area — spends.** Where no recipe binds, one call per uncovered area, given only that area's
-   tables with their profiler statistics, asking for the metrics a person running that area reads. The count follows the
-   area, not a prompt. Its SQL goes through the same audit and recipe regeneration the explorer's does today.
+3. **The knowledge base's patterns, written for this schema — one scoped model call per area, spends.** A pattern's
+   template is written against canonical names (`orders o`, `status = 'cancelled'`); this connection's tables and
+   columns differ. One call per uncovered area is given that area's patterns (template, definition, anti-patterns) and
+   only that area's tables with their profiler statistics, and asked which patterns the data supports and to write each
+   for these tables — every proposal cites the pattern it came from, or says it came from none. The count follows the
+   patterns the data supports, not a prompt. Its SQL goes through the same audit and recipe regeneration the explorer's
+   does today, then the gates.
+4. **Where no pattern covers an area**, the same call without patterns, asking for the metrics a person running that
+   area reads — said as such, so a pack can later supply the pattern.
 
 And a fourth, continuous: **a measure the explorer keeps computing without a metric** (the coverage manifest's blind
 spots, or one recurring across findings) becomes a proposal in its area.
@@ -169,6 +189,7 @@ adopted metrics (FA-6's templates are the door).
 
 | Need | Already here |
 |---|---|
+| The map: ~100 metric patterns with templates, definitions and traps, grouped by area | `packs/*/kb/*.json`, read by `packs/knowledge.kb_files`, `semantic/kb_retriever.py` |
 | Recipes with roles, sane ranges, anti-patterns | `packs/*/metrics/*.yaml`, `metric_kb.resolve_recipes` |
 | An industry's order | `packs/retail/industry.json` (`statement`, `reading_order`), `briefing/reading_order.py` |
 | Blind spots | `explorer/coverage_manifest.py` |
@@ -177,19 +198,19 @@ adopted metrics (FA-6's templates are the door).
 | SQL audit, window check, twins | `audit_value_sql`, `metric_statement.unbounded`, `metric_twins` |
 | Promises and processes | the ontology's processes (`derived.py`'s `overdue_<noun>`), OC-4 |
 
-New: the area field and kind on a recipe, the generic layer, placement, the coverage matrix, the per-area proposer, and
-three gates (moves, sane range, binding types).
+New: area, kind and direction on the patterns that lack them, the generic layer, placement, the coverage matrix, the
+per-area proposer that writes the patterns for a schema, and three gates (moves, sane range, binding types).
 
 ## 6. Arc MC — proposed waves (each behind its flag, off by default)
 
 | Wave | Builds | Spends | Falsifier |
 |---|---|---|---|
 | **MC-0** | The defects: LuxExperience's two metrics that read 1 (the user's call, §7); the three new gates at approval — moves, sane range, binding types | no | a metric reading one value in every period is approved |
-| **MC-1** | The map's shape (area, kind, direction on a recipe) and the generic layer; retail's industry layer from its statement and reading order | no | an area named in a pack's map that no recipe can serve, unsaid |
-| **MC-2** | Placement and the coverage matrix — read-only, shown on the Metrics tab | no | a table with a metric placed in no area, or an area said covered by a metric that reads 1 |
-| **MC-3** | Recipe proposals per uncovered area, through the gates, into the catalogue grouped by area | no | a proposal that fails a gate shown as adoptable |
+| **MC-1** | The knowledge base as the map: area, kind and direction on its metric patterns; the generic layer; areas ordered by retail's statement | no | a metric pattern in no area, or an area the knowledge base lacks unsaid |
+| **MC-2** | Placement and the coverage matrix — read-only, shown on the Metrics tab: per area, the patterns, the data, the metrics | no | a table with a metric placed in no area, or an area said covered by a metric that reads 1 |
+| **MC-3** | Typed recipe proposals per uncovered area (code), through the gates, into the catalogue grouped by area | no | a proposal that fails a gate shown as adoptable |
 | **MC-4** | Ontology-derived proposals (promise → on-time rate, stage → conversion, segment → share) | no | a derived metric whose count differs from the ontology's own |
-| **MC-5** | The scoped model proposer per uncovered area | **yes** | a proposal naming a table outside its area |
+| **MC-5** | The knowledge base's patterns written for this schema, one scoped model call per uncovered area, each proposal citing its pattern | **yes** | a proposal naming a table outside its area, or citing a pattern it does not compute |
 | **MC-6** | Blind spots → proposals; the Briefing's cap a setting, read by the map's order | no | a recurring measure left unproposed past N findings |
 
 A receipt for each on LuxExperience, live: the matrix before and after, every proposal with its gate verdicts, and the
@@ -200,8 +221,8 @@ count of adoptable proposals per area.
 1. **The two LuxExperience metrics that read 1** — deprecate them now (*recommended*: the map proposes correct ones in
    MC-3), or rebind them by hand now (return rate over `order_items` with `returns`; cart-to-order over `web_sessions`'
    `added_to_cart` and `converted`)?
-2. **Where the map lives** — a generic layer in the platform plus an industry layer per pack (*recommended*), or the
-   industry layer only?
+2. **The map** — the knowledge base's metric patterns, with area, kind and direction added to them, plus a generic layer
+   in the platform for a connection no pack fits (*recommended*); or the knowledge base alone?
 3. **The model proposer (MC-5) spends** — one call per uncovered area. On a person's click per area (*recommended*), or
    automatically when a connection is profiled?
 4. **How many proposals a person sees** — every proposal that passes the gates, grouped by area (*recommended*), or the
@@ -213,7 +234,10 @@ count of adoptable proposals per area.
 
 Checked live: LuxExperience's tables, row counts and columns; its 12 definitions and their SQL; the retail pack's
 binding on it; its ontology's processes and segments (none); theLook's metric-to-table spread. Checked in code: every
-proposal path and cap named in §1 (a survey, then the prompt and the cap read directly). Not checked: whether the 60,000
+proposal path and cap named in §1 (a survey, then the prompt and the cap read directly); the knowledge base's metric
+patterns counted per pack and per type, one read in full, and where they are read (answers only). Missed in the first
+draft and found at the user's prompt: the knowledge base itself — the survey had been asked about proposal paths, and
+the knowledge base is not one; that is the finding. Not checked: whether the 60,000
 character schema cap cuts LuxExperience's schema (its 33 tables are small enough that it probably does not — the
 prompt's count is the binding limit either way); what a scoped model proposer actually proposes (MC-5 is a build, and it
 spends).
