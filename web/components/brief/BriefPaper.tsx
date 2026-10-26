@@ -125,8 +125,12 @@ export interface PaperNumber {
   key: string; label: string; value: string; change?: { text: string; sign: number }; unknown?: string;
   /** Said under the label when the figure holds only part of the edition's range. */
   note?: string;
-  /** Why there is no figure, in full: the chip's title. */
+  /** Why there is no figure, in full: the chip's title, and said under the box. */
   why?: string;
+  /** No figure because the metric's data ended before the range — not because its definition cannot be measured. */
+  ended?: boolean;
+  /** The metric's name in the Semantic Layer, where a definition that cannot be measured is fixed. */
+  metric?: string;
 }
 
 /** An edition's measured metrics as the numbers box prints them: every figure is the edition's own
@@ -145,17 +149,22 @@ export function rangeNumbers(stored: BriefingRangeBlock): PaperNumber[] {
     }),
     ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
                                     unknown: u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured",
-                                    why: sentence(u.reason) })),
+                                    why: sentence(u.reason), ended: !!u.data_ends, metric: u.metric })),
   ];
 }
 
 /** The numbers box: one row per figure, its change against the comparison beside it; a figure the
- *  platform could not measure says so in the de-emphasis hatch, never as a zero. */
-export function PaperNumbers({ title, rows, note, after }: {
+ *  platform could not measure says so in the de-emphasis hatch, never as a zero — and under the box,
+ *  why, and what to do about it (the user, 2026-10-26: the reasons sat in a tooltip nobody found). */
+export function PaperNumbers({ title, rows, note, after, connectionId }: {
   title: string; rows: PaperNumber[]; note?: string;
   /** Under the box: the Decide door on the edition's figures, when a decision can be booked here. */
   after?: ReactNode;
+  /** The connection whose definitions a "not measured" figure sends the reader to fix. */
+  connectionId?: string;
 }) {
+  const unmeasured = rows.filter(r => r.unknown && !r.ended);
+  const ended = rows.filter(r => r.unknown && r.ended);
   return (
     <div data-testid="paper-numbers">
       <h3 style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{title}</h3>
@@ -178,6 +187,31 @@ export function PaperNumbers({ title, rows, note, after }: {
           </div>
         ))}
       {note && <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 10 }}>{note}</div>}
+      {(unmeasured.length > 0 || ended.length > 0) && (
+        <div data-testid="paper-blanks" className="aug-fs-xs" style={{ display: "grid", gap: 6, marginTop: 10, color: "var(--t2)" }}>
+          {unmeasured.map(r => (
+            <div key={r.key} data-testid="paper-blank-why">
+              <b style={{ fontWeight: 600 }}>{r.label}</b> — {r.why}
+              {r.metric && connectionId && (
+                <Button size="xs" variant="ghost" data-testid="paper-blank-open" style={{ marginLeft: 4 }}
+                  onClick={() => requestTab("semantic", { conn: connectionId, metric: r.metric! })}>Fix its definition</Button>
+              )}
+            </div>
+          ))}
+          {ended.length > 0 && (
+            <div data-testid="paper-blank-ended">
+              {`${ended.map(r => r.label).join(", ")} stopped before this edition. `}
+              If {ended.length === 1 ? "its source" : "their sources"} should still be loading, the feed needs fixing; if not, read {ended.length === 1 ? "it" : "them"} in a Custom range.
+            </div>
+          )}
+          {unmeasured.some(r => !r.metric) && connectionId && (
+            <span>
+              <Button size="xs" variant="secondary" data-testid="paper-blank-fix"
+                onClick={() => requestTab("semantic", { conn: connectionId })}>Fix in the Semantic Layer</Button>
+            </span>
+          )}
+        </div>
+      )}
       {after}
     </div>
   );

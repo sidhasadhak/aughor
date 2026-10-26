@@ -3492,6 +3492,7 @@ export function BriefingPanel({
     return (
       <>
         {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote}
+          connectionId={rangeBlock ? connectionId : undefined}
           after={rangeBlock && !canvasId ? (
             // a decision taken on an edition's figure cites that figure, measured for the edition's days (study §3.2)
             <DecideDoor connectionId={connectionId} question={`${rangeBlock.label}: ${rangeBlock.covers || `${rangeBlock.start} to ${rangeBlock.last_day}`}`}

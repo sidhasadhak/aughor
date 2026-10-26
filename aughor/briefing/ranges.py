@@ -766,11 +766,11 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     for m in approved:
         name = m.label or m.name
         if not mt.declared(m):
-            unmeasured.append({"name": name, "reason": said.get(m.name) or "its dates are not set"})
+            unmeasured.append({"name": name, "metric": m.name, "reason": said.get(m.name) or "its dates are not set"})
             continue
         rows, why = mt.run_measure(m, windows, run_sql, dialect=dialect)
         if why:
-            unmeasured.append({"name": name, "reason": why})
+            unmeasured.append({"name": name, "metric": m.name, "reason": why})
             continue
         got = {r["window"]: r for r in rows}
         cur = got.get("current")
