@@ -5234,7 +5234,10 @@ export interface paths {
         /**
          * Search Documents Endpoint
          * @description Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
-         *     body, another connection's schema docs are left out, as they are for a question.
+         *     body, another connection's schema docs are left out, as they are for a question. FA-1 (flag
+         *     ``knowledge.hybrid_documents``): when the embedder is down and the store is up, the hits are the
+         *     passages matched by their words, each carrying ``matched_by: "words"`` and the sentence ``said``;
+         *     503 only when the store cannot be read either.
          */
         post: operations["search_documents_endpoint_documents_search_post"];
         delete?: never;
@@ -10975,6 +10978,30 @@ export interface paths {
         get: operations["get_object_catalog_objects_catalog_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/find": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Object Find
+         * @description Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+         *     entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
+         *     the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
+         *     ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
+         *     with more matches than shown. 404 while the flag is off. No model call.
+         */
+        post: operations["post_object_find_objects_find_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -22860,6 +22887,19 @@ export interface components {
              * @default
              */
             val: string;
+        };
+        /**
+         * _FindRequest
+         * @description Arc FA, FA-1 — the words an object goes by, and how many of each entity's matches to show.
+         */
+        _FindRequest: {
+            /**
+             * Limit Per Entity
+             * @default 5
+             */
+            limit_per_entity: number;
+            /** Q */
+            q: string;
         };
         /** _FlagPatch */
         _FlagPatch: {
@@ -42309,6 +42349,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_object_find_objects_find_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_FindRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
