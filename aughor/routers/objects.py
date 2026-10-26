@@ -479,17 +479,19 @@ def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
 
 
 def _retiring_of(graph: Any, entity_id: str, connection_id: str) -> dict:
-    """Arc FA, FA-3 — ``{"retiring": …}`` when a person marked the entity retiring: its successor, its day, and the
-    sentence readers are told. ``{}`` while `ontology.retiring` is off or the entity carries no mark, so the answer is
-    exactly what it was."""
+    """Arc FA, FA-3 — ``{"retiring": …}`` while `ontology.retiring` is on: the entity's mark — its successor, its day,
+    and the sentence readers are told — or None when it carries none, which tells the panel it may mark it. ``{}``
+    while the setting is off, so the answer is exactly what it was."""
     from aughor.ontology import retiring
+    if not retiring.enabled():
+        return {}
     try:
         mark = retiring.mark_for(graph, "entity", entity_id, conn=connection_id)
     except Exception as exc:  # noqa: BLE001 — the page still reads; the gap is journaled, never shown as no mark
         from aughor.kernel.errors import tolerate
         tolerate(exc, "an entity's retiring mark could not be read for its page", counter="ontology.retiring")
         return {"retiring_said": "Whether it is retiring could not be read."}
-    return {"retiring": mark} if mark is not None else {}
+    return {"retiring": mark}
 
 
 @router.get("/object-types/{object_type}/uses")

@@ -7,7 +7,7 @@
  * A refusal and a 404 are answers here, not errors: the page renders what they say.
  */
 import { getApiBase } from "@/lib/config";
-import { scopeDomain } from "@/lib/objectTypes";
+import { scopeDomain, type RetiringMark } from "@/lib/objectTypes";
 
 export interface ObjectProperty {
   name: string;
@@ -196,6 +196,8 @@ export interface ObjectPage {
   timeseries?: ObjectTimeseries[];
   /** Arc OC-6 — held by the platform: no warehouse row, every property set by a declared action. */
   platform?: boolean;
+  /** Arc FA, FA-3 — present only while marking retiring is on: its entity's mark, or null when it carries none. */
+  retiring?: RetiringMark | null;
   related: ObjectRelated;
 }
 

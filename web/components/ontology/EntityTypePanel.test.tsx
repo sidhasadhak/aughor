@@ -40,6 +40,13 @@ const shown: { detail?: ObjectTypeDetail; uses?: ObjectTypeUses } = {};
 // The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
 const words = vi.hoisted(() => ({ vocabulary: [] as unknown[] }));
 const keyVocabularyEntry = vi.fn(async (..._args: unknown[]) => undefined);
+/** Arc FA, FA-3 — the declaration's history the History tab reads (no `put_back` unless a test serves one: off). */
+const history = vi.hoisted(() => ({ served: { element: "e", kept: true, versions: [] as unknown[] } as Record<string, unknown> }));
+const putBackVersion = vi.fn(async (..._args: unknown[]) => ({
+  landed: "draft", said: "Version 2 of entity 'products' waits in the draft, classed MEANING — readers get it when a "
+    + "person publishes the draft.", change: null, warnings: [] }));
+const markRetiring = vi.fn(async (..._args: unknown[]) => ({ retiring: null, landed: "draft" }));
+const unmarkRetiring = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getOntologyKeys: async () => ({ connection_id: "c1", schema_name: "s", entities: [], metrics: [], vocabulary: words.vocabulary }),
@@ -68,6 +75,10 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   measureOntology: (...a: unknown[]) => measureOntology(...a),
   setEntityKey: (...a: unknown[]) => setEntityKey(...a),
   getProcesses: (...a: unknown[]) => getProcesses(...a),
+  getDeclarationHistory: async () => history.served,
+  putBackVersion: (...a: unknown[]) => putBackVersion(...a),
+  markRetiring: (...a: unknown[]) => markRetiring(...a),
+  unmarkRetiring: (...a: unknown[]) => unmarkRetiring(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -912,5 +923,129 @@ describe("EntityTypePanel — the Overview: what needs a person, the flow, the s
     expect(getProcesses).not.toHaveBeenCalled();
     expect(screen.getByTestId("entity-overview"))
       .toHaveTextContent("Nothing waits on a person here, and no process, set, metric or action reads Product yet.");
+  });
+});
+
+describe("Arc FA, FA-3 — put back and retiring", () => {
+  const versions = [
+    { version: 3, state: "declared", in_force_from: "2026-10-24T10:00:00Z", recorded_at: "2026-10-24T10:00:00Z",
+      by: "person:ana", note: "", declaration_note: "", fields: {}, source: "human",
+      changes: ["changed display_name: 'Item' → 'Product'"] },
+    { version: 2, state: "declared", in_force_from: "2026-10-20T10:00:00Z", recorded_at: "2026-10-20T10:00:00Z",
+      by: "person:ben", note: "", declaration_note: "", fields: {}, source: "human", changes: [] },
+    { version: 1, state: "drafted", in_force_from: "2026-10-19T10:00:00Z", recorded_at: "2026-10-19T10:00:00Z",
+      by: "", note: "", declaration_note: "", fields: {}, source: "explorer", changes: [] },
+  ];
+  afterEach(() => {
+    history.served = { element: "e", kept: true, versions: [] };
+    shown.detail = undefined;
+  });
+
+  it("lists the versions and puts an earlier one back into the draft, behind Edit, while putting back is on", async () => {
+    putBackVersion.mockClear();
+    history.served = { element: "e", kept: true, versions, put_back: { enabled: true, said: "" } };
+    const onChanged = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={onChanged} />);
+    await openTab("History");
+    const listed = await screen.findAllByTestId("entity-version");
+    expect(listed).toHaveLength(3);
+    expect(listed[0]).toHaveTextContent("v3declaredSat 24 Oct at 10:00 UTC · person:ana · human");
+    expect(listed[0]).toHaveTextContent("changed display_name: 'Item' → 'Product'");
+    expect(screen.queryByTestId("entity-version-put-back")).toBeNull();      // a door that writes waits for Edit
+    await editIn("History");
+    const buttons = await screen.findAllByTestId("entity-version-put-back");
+    expect(buttons).toHaveLength(2);                                          // never on the newest
+    fireEvent.click(within(screen.getAllByTestId("entity-version")[1]).getByTestId("entity-version-put-back"));
+    await waitFor(() => expect(putBackVersion).toHaveBeenCalledWith("c1", "entity", "products", 2, "s"));
+    expect(await screen.findByText(/waits in the draft, classed MEANING/)).toBeInTheDocument();
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it("says why a version cannot go back here, instead of a button", async () => {
+    history.served = { element: "e", kept: true, versions,
+                       put_back: { enabled: false, said: "putting an earlier version back needs releases on" } };
+    panel();
+    await editIn("History");
+    expect(await screen.findByTestId("entity-version-why-not"))
+      .toHaveTextContent("An earlier version cannot be put back here: putting an earlier version back needs releases on.");
+    expect(screen.queryByTestId("entity-version-put-back")).toBeNull();
+  });
+
+  it("says a type is retiring, opens its successor, and takes the mark off behind Edit", async () => {
+    unmarkRetiring.mockClear();
+    const onOpen = vi.fn();
+    shown.detail = { ...detail, retiring: { successor: "Brand", successor_name: "Brand", on: "2026-12-01", past: false,
+                                            note: "merged into brands", said: "retiring on 2026-12-01 — use Brand instead" } };
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={onOpen} onChanged={() => {}} />);
+    const line = await screen.findByTestId("entity-retiring");
+    expect(screen.getByTestId("entity-retiring-said")).toHaveTextContent("retiring on Tue 1 Dec 2026 — use Brand instead");
+    expect(line).toHaveTextContent("merged into brands");
+    fireEvent.click(within(line).getByRole("button", { name: "Brand" }));
+    expect(onOpen).toHaveBeenCalledWith("brand");
+    expect(within(line).queryByRole("button", { name: "Take the mark off" })).toBeNull();
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    fireEvent.click(within(screen.getByTestId("entity-retiring")).getByRole("button", { name: "Take the mark off" }));
+    await waitFor(() => expect(unmarkRetiring).toHaveBeenCalledWith("c1", "entity", "products", "s"));
+  });
+
+  it("past the day it still reads, and says it is past its retiring date", async () => {
+    shown.detail = { ...detail, retiring: { successor: "Brand", successor_name: "Brand", on: "2026-10-01", past: true,
+                                            said: "past its retiring date, 2026-10-01 — use Brand instead" } };
+    panel();
+    expect(await screen.findByTestId("entity-retiring-said"))
+      .toHaveTextContent("past its retiring date, Thu 1 Oct 2026 — use Brand instead");
+  });
+
+  it("reads the last thirty days beside the twelve months: reads, readers, the last read and a shared table", async () => {
+    shown.uses = {
+      path: "uses", connection_id: "c1", schema_name: "s", entity: "Product", dependents: [], dashboards: [],
+      reads: { tables: ["products"], source: "the platform's log of statements run",
+               months: [{ month: "2026-09", reads: 0 }, { month: "2026-10", reads: 41 }],
+               window: { days: 30, reads: 41, last_read: "2026-10-23T09:00:00Z", readers: 3, unattributed: 12,
+                         readers_said: "Who ran 12 of 41 is not recorded — the session log names a person only for the runs it kept." },
+               shared: [{ table: "products", with: ["Catalogue item"] }],
+               shared_said: "a statement naming products counts for Catalogue item too." },
+    };
+    try {
+      panel();
+      const recent = await screen.findByTestId("entity-reads-recent");
+      expect(recent).toHaveTextContent("Reads · 30 dayslast read Fri 23 Oct41 reads · 3 readers");
+      expect(recent).toHaveTextContent("Who ran 12 of 41 is not recorded");
+      expect(screen.getByTestId("entity-reads-shared"))
+        .toHaveTextContent("Shared table: a statement naming products counts for Catalogue item too.");
+      shown.uses = { ...shown.uses, reads: { ...shown.uses.reads, window: undefined, shared: undefined, shared_said: undefined } };
+      cleanup();
+      panel();                                                                // a door without the window: as before
+      await screen.findByTestId("entity-uses");
+      expect(screen.queryByTestId("entity-reads-recent")).toBeNull();
+      expect(screen.queryByTestId("entity-reads-shared")).toBeNull();
+    } finally {
+      delete shown.uses;
+    }
+  });
+
+  it("marks a type retiring with another type and a day, behind Edit — and shows nothing while marking is off", async () => {
+    markRetiring.mockClear();
+    shown.detail = { ...detail, retiring: null };
+    panel();
+    await screen.findByTestId("entity-retiring");
+    expect(screen.queryByTestId("entity-retiring-open")).toBeNull();
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    fireEvent.click(await screen.findByTestId("entity-retiring-open"));
+    const form = await screen.findByTestId("entity-retiring-form");
+    await choose(within(form).getByLabelText("Use instead"), "Brand");
+    change(within(form).getByLabelText("Retiring on"), { target: { value: "2026-12-01" } });
+    change(within(form).getByLabelText("Note"), { target: { value: "merged into brands" } });
+    fireEvent.click(screen.getByTestId("entity-retiring-save"));
+    await waitFor(() => expect(markRetiring).toHaveBeenCalledWith("c1",
+      { kind: "entity", target_id: "products", successor: "Brand", on: "2026-12-01", note: "merged into brands" }, "s"));
+    cleanup();
+    shown.detail = undefined;                                                 // off: the detail carries no `retiring`
+    panel();
+    await screen.findByTestId("entity-overview");
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    expect(screen.queryByTestId("entity-retiring")).toBeNull();
   });
 });

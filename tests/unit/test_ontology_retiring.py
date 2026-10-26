@@ -160,7 +160,7 @@ def test_through_the_door_a_mark_waits_in_the_draft_as_a_meaning_change_and_page
     assert out["landed"] == "draft" and out["change"]["class"] == "MEANING"
     assert out["retiring"]["said"] == "retiring on 2999-12-01 — use Customer instead"
     readers = client.get("/object-types/review", params=PARAMS).json()
-    assert "retiring" not in readers                                           # readers: not until published
+    assert readers["retiring"] is None                                         # readers: not until published
     editors = client.get("/object-types/review", params={**PARAMS, "ontology_view": "draft"}).json()
     assert editors["retiring"]["successor_name"] == "Customer" and editors["retiring"]["past"] is False
     assert client.post("/ontology/release/publish", params=PARAMS).status_code == 200
