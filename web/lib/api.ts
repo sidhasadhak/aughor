@@ -5475,6 +5475,9 @@ export type ConditionKind =
   // HB-3 — the hub's two triggers: a declared promise measured broken, a new finding
   // recorded. Both publish a payload the chain binds as `trigger.<key>`.
   | "promise_breached" | "finding_created"
+  // Arc FA, FA-5 — the objects a rule or segment newly admits; offered only while
+  // `automations.objects_admitted` is on (the served palette says so).
+  | "objects_admitted"
   // DS-17. Named for what it is from the chain's side: something outside calls it. The
   // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
   // idea entirely (a URL Aughor posts TO); the two never meet because every lookup in
@@ -5515,6 +5518,8 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   // HB-3 — the hub's two triggers. `promise_breached` names the declared process it
   // watches; `finding_created` is complete unfiltered (domain/min_confidence narrow it).
   promise_breached: ["process"], finding_created: [],
+  // Arc FA, FA-5 — the entity, and the segment on it whose newly admitted objects fire it.
+  objects_admitted: ["entity", "segment"],
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
   slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
