@@ -297,6 +297,9 @@ def get_record_decision(decision_id: str) -> dict:
     # what replaced the claim it stood on, when its ground moved and nobody has answered yet
     moved = C.get(d.reopened_by) if d.reopened_by else None
     view["reopened_by_claim"] = moved.model_dump() if moved is not None else None
+    # the decision's address for mail, inbound only — or why it has none (the user's call, 2026-10-27)
+    from aughor.record import email_door as E
+    view["email"] = {"address": E.address_for(d.id), "note": E.address_note()}
     return view
 
 

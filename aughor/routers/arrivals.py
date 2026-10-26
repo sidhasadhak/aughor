@@ -9,9 +9,9 @@ STAGED as an object note under `agent_notes`' blast-radius law — an arrival ne
 applies, never executes, never stages an act. The falsifier is a red-team corpus:
 injected instructions land as data, never as acts (`test_hb5_arrival_redteam.py`).
 
-The email direction stays closed (§6 item 24 f — keyed on the Google OAuth client only
-the user can create); Jira/Confluence state arrives through the allowlisted MCP
-consumer, no connector code here.
+Email arrives through its own door, inbound only (`routers/email_door.py`, `POST /doors/email`, behind
+`arrivals.email` — the user's call of 2026-10-27 reopened email for arrivals; nothing is ever sent);
+Jira/Confluence state arrives through the allowlisted MCP consumer, no connector code here.
 """
 from __future__ import annotations
 

@@ -106,6 +106,8 @@ def view_of(ref: str) -> Optional[dict]:
             stages["arising"].append(_step("door", f"decided on {words}", str(d.extra.get("note") or ""),
                                            {key: d.extra.get(key)}))
     for e in d.extra.get("evidence") or []:
+        if e.get("added_later"):
+            continue            # what arrived after the decision is read with what it stood on, said as later
         where = {"conversation": "said in a conversation", "meeting": "taken in a meeting"}.get(str(e.get("kind")), "evidence")
         stages["arising"].append(_step(str(e.get("kind") or "evidence"), where,
                                        str(e.get("detail") or e.get("ref") or ""),
@@ -128,6 +130,12 @@ def view_of(ref: str) -> Optional[dict]:
         c = _claims.get(cid)
         stages["gathering"].append(_claim_step(c) if c is not None else
                                    _step("claim", "a claim that cannot be read", f"{cid} is not in the Record", ref=cid))
+    for e in d.extra.get("evidence") or []:
+        if e.get("added_later"):
+            stages["gathering"].append(_step("later", f"added later · {e.get('detail') or 'evidence'}",
+                                             str(e.get("excerpt") or "its words were not shared"),
+                                             {"ref": e.get("ref"), "claim": e.get("claim"),
+                                              "content_hash": e.get("content_hash")}, at=str(e.get("at") or "")))
     if not d.relied_on:
         stages["gathering"].append(_step("none", "it cites nothing",
                                          str(d.extra.get("relied_on_note") or "no claim was cited when it was booked")))

@@ -217,6 +217,11 @@ FLAG_ENV = {
     # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
     # misses one way). OFF: decisions are booked, reviewed and scored as before.
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # The decision-framework study §3.2 (the user's call, 2026-10-27: email reopened for ARRIVALS only). ON: each
+    # decision has an address on the install's inbound domain; a mail a provider posts to `POST /doors/email` with the
+    # inbound secret becomes an approval (a named approver, verified), a dissent, or evidence. OFF: the door answers 404
+    # and a decision shows no address. The platform never sends a mail either way.
+    "arrivals.email": "AUGHOR_ARRIVALS_EMAIL",
     # Arc TC, TC-2 (ROADMAP §3.59). ON: every edit's history row, every action-audit row and every action's ledger entry
     # names the run it was made through (a question asked, an automation, a monitor, an agent's job) and its trace, and
     # an object's changes door reads them oldest first with each run's metered cost. OFF: they record who
@@ -700,6 +705,17 @@ FLAG_META = {
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
+    "arrivals.email": {
+        "label": "Decisions by email, inbound only",
+        "summary": "Each decision has an address. A mail to it is kept as evidence, a named approver's approval, or "
+                   "a dissent.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Never sends a mail"},
+                  {"kind": "route", "text": "Needs an inbound domain and secret"}],
+        "description": "A mail provider posts each mail sent to a decision's address. An approval counts only from an "
+                       "approver the decision names, with the sender verified; anything else is kept as evidence and "
+                       "says why. Nothing reads a mailbox. Off: decisions have no address.",
+    },
     "record.decision_loop": {
         "label": "Decisions reviewed honestly",
         "summary": "A decision keeps its evidence, options and expectation, and is reviewed on its date against what "
@@ -1137,6 +1153,10 @@ EXPERIMENT: dict = {
     "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
+    # The decision-framework study §3.2, 2026-10-27. It lets mail from outside book an approval, so it is watched.
+    "arrivals.email": "do approvals arrive where people give them — of the decisions with a named approver over six "
+                      "weeks, is one in five or more approved by email? Falsifier: an approval is booked from a "
+                      "sender the provider did not verify, or from someone the decision does not name — stop",
     "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",

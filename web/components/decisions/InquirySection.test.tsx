@@ -14,7 +14,7 @@ vi.mock("@/lib/record", async original => ({ ...(await original<typeof import("@
 const nav = vi.hoisted(() => ({ requestTab: vi.fn() }));
 vi.mock("@/lib/navigate", async original => ({ ...(await original<typeof import("@/lib/navigate")>()), ...nav }));
 
-const { InquirySection } = await import("@/components/decisions/DecisionsPanel");
+const { InquirySection, approverRefs } = await import("@/components/decisions/DecisionsPanel");
 
 const step = (line: string, why = "", receipt: Record<string, unknown> = {}) => ({ kind: "x", line, why, receipt, at: "", ref: "" });
 const VIEW: InquiryView = {
@@ -52,5 +52,11 @@ describe("the inquiry, as people read it", () => {
     expect(screen.queryByTestId("inquiry-receipt")).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: "Receipt" })[0]);
     expect(screen.getByTestId("inquiry-receipt")).toHaveTextContent("warrants: run rcpt-1");
+  });
+});
+
+describe("approvers as the Record names them", () => {
+  it("names an address as email and a name as a person, keeping a ref already typed", () => {
+    expect(approverRefs("Ana@Corp.com, ben ,  person:cy, ")).toEqual(["email:ana@corp.com", "person:ben", "person:cy"]);
   });
 });

@@ -282,6 +282,8 @@ export interface DecisionDetail extends Decision {
   outcome_record: Outcome | null;
   /** What replaced the claim it stood on, while the decision is reopened and unanswered. */
   reopened_by_claim: Claim | null;
+  /** Its address for mail, inbound only — "" with a note saying why when it has none. */
+  email?: { address: string; note: string };
 }
 
 export interface ExpectationIn {
@@ -315,6 +317,8 @@ export interface DeclareDecisionBody {
   figure?: { metric: string; start: string; end: string };
   /** The declared kind of decision it is: its rules hold at the door. */
   kind?: string;
+  /** Who approves it: `email:<address>` (who can approve by mail) or `person:<name>`. */
+  approvers?: string[];
 }
 
 export interface OutcomeBody {

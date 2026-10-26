@@ -421,6 +421,12 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
 const num = (v: string): number | null => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
 /** "We decided this elsewhere" — the question, what was chosen, and the expectation booked with it. */
+/** Approvers as the Record names them: an address is `email:<address>`, a name is `person:<name>`. */
+export function approverRefs(text: string): string[] {
+  return text.split(",").map(x => x.trim()).filter(Boolean)
+    .map(x => (x.includes(":") ? x : x.includes("@") ? `email:${x.toLowerCase()}` : `person:${x}`));
+}
+
 function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQuestion = "" }: {
   connectionId: string; onBooked: (d: DecisionDetail) => void; onCancel: () => void;
   /** The decision this one changes — a modifying decision; its inquiry reads backwards to it (study §3.1). */
@@ -437,6 +443,7 @@ function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQu
   const [reviewOn, setReviewOn] = useState("");
   const [decidedOn, setDecidedOn] = useState("");
   const [kind, setKind] = useState("");
+  const [approvers, setApprovers] = useState("");
   const kinds = useLoad(() => listDecisionKinds("active"), []);
   const declared = kinds.data?.kinds ?? [];
   const actor = useActor();
@@ -452,6 +459,7 @@ function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQu
         question: question.trim(), chosen: chosen.trim(), options, connection_id: connectionId, review_on: reviewOn,
         decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined, ...(kind ? { kind } : {}),
         ...(revises ? { revises } : {}),
+        ...(approverRefs(approvers).length ? { approvers: approverRefs(approvers) } : {}),
         expectation: metric.trim()
           ? { metric: metric.trim(), low: lo, high: hi, mid: lo !== null && hi !== null ? (lo + hi) / 2 : null, unit: unit.trim(), settles_on: reviewOn }
           : null,
@@ -490,6 +498,12 @@ function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQu
             </div>
           </>
         )}
+        <label className="aug-fs-sm" htmlFor="dec-a">Who approves it</label>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Input id="dec-a" value={approvers} onChange={e => setApprovers(e.target.value)} placeholder="ana@company.com, ben"
+            style={{ flex: "1 1 220px" }} />
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>an approver named by email can approve by replying to the decision</span>
+        </div>
         <label className="aug-fs-sm" htmlFor="dec-m">Expected to move</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Input id="dec-m" value={metric} onChange={e => setMetric(e.target.value)} placeholder="new customers" style={{ flex: "2 1 160px" }} />
@@ -603,6 +617,12 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
       <Fact label="Review date">{d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"}</Fact>
       {d.objective && <Fact label="Toward">{d.objective}</Fact>}
       <Fact label="Connection">{d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection"}</Fact>
+      <Fact label="By email">
+        {d.email?.address
+          ? <span title="A mail here is kept as evidence; a named approver's 'approve', with the sender verified, is their approval">
+              {d.email.address}</span>
+          : <span style={{ color: "var(--t3)" }}>{d.email?.note || "no address"}</span>}
+      </Fact>
     </>
   );
   return (
