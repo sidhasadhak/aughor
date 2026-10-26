@@ -712,6 +712,85 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
     return added
 
 
+#: Arc FA, FA-7 — the grounding read's tool, listed only while the API has `agents.grounding_read` on.
+GROUNDING_TOOL = "ground_agent"
+
+
+async def _grounding_roster(api: "AughorClient") -> list[dict]:
+    """One row while the grounding read is on, none while it is off — so the live refresh adds and removes the tool."""
+    return [{"name": GROUNDING_TOOL}] if await api.grounding_read_open() else []
+
+
+def _grounding_runner(api: "AughorClient"):
+    """A factory, like the other runners: the tool calls the session route through `api`, so the agent gate audits
+    it as `ground_agent`."""
+    import os
+    import socket
+
+    async def ground_agent(
+        agent: Annotated[str, Field(description="The custom agent: its id, its name, or its ask_ tool name.")],
+        question: Annotated[str, Field(description="The question, in plain words.")],
+        connection: Annotated[Optional[str], Field(
+            description="A connection id from list_connections; only needed when the agent is bound to none.")] = None,
+    ) -> dict:
+        agent_id = await _agent_id_for(api, agent)
+        who = os.environ.get("AUGHOR_MCP_PRINCIPAL") or socket.gethostname()
+        return await api.ground_agent(agent_id, question, connection=connection, asker=who)
+
+    return ground_agent
+
+
+async def _agent_id_for(api: "AughorClient", wanted: str) -> str:
+    """The id of the agent a caller named by its id, its name or its `ask_` tool name; the words as given when none
+    matches, so the API's own 404 says so."""
+    from aughor.custom_agents.reach import mcp_tool_name
+    wanted = (wanted or "").strip()
+    rows = await api.list_user_agents()
+    for match in (lambda r: str(r.get("id") or "") == wanted,
+                  lambda r: str(r.get("name") or "").casefold() == wanted.casefold(),
+                  lambda r: mcp_tool_name(_Row(r)) == wanted):
+        found = [r for r in rows if match(r)]
+        if found:
+            return str(found[0].get("id") or wanted)
+    return wanted
+
+
+_GROUNDING_DESCRIPTION = (
+    "What a custom agent would READ for a question, without asking any model: each grounding block its answer is "
+    "built from — its brief, the schema slice, governed metrics, the glossary, trusted queries, corrections, its own "
+    "documents — with the content, cut to what you may see, and every absent block with why. Use it to ground your "
+    "own model on what Aughor knows, or to see what an agent would be handed before trusting its answer. It says "
+    "whether the embedder was called and which (a hosted one may charge), and that no chat model was; it may read "
+    "the warehouse once for a measure's grain. Each read is recorded, never its content.")
+
+
+async def register_grounding_tool(client: "AughorClient | None" = None) -> list[str]:
+    """Arc FA, FA-7 — `ground_agent`, a READ, while the API has `agents.grounding_read` on; nothing while it is off,
+    so the list is as it was. Same posture as the registrars above: never raises, returns what it added, and skips a
+    name another tool holds."""
+    api = client or _client
+    try:
+        rows = await _grounding_roster(api)
+    except Exception as exc:                       # the API is down, or the route is old
+        _log.warning("could not read whether the grounding read is on: %s", exc)
+        return []
+    if not rows:
+        return []
+    taken = set(getattr(mcp._tool_manager, "_tools", {}) or {})
+    if _DYNAMIC.get(GROUNDING_TOOL) == "grounding" and GROUNDING_TOOL in taken:
+        return []
+    if GROUNDING_TOOL in taken:
+        _log.warning("tool %r collides with an existing tool — the grounding read is not offered", GROUNDING_TOOL)
+        return []
+    from aughor.mcp.policy import DYNAMIC_AREAS, DYNAMIC_LEVELS, tool_annotations
+    mcp.add_tool(_grounding_runner(api), name=GROUNDING_TOOL, description=_GROUNDING_DESCRIPTION,
+                 annotations=tool_annotations("read"))
+    DYNAMIC_LEVELS[GROUNDING_TOOL] = "read"           # DE-2b: it reads; no model, nothing changes
+    DYNAMIC_AREAS[GROUNDING_TOOL] = "catalog:read"    # ED-2: the session route's own area
+    _DYNAMIC[GROUNDING_TOOL] = "grounding"
+    return [GROUNDING_TOOL]
+
+
 def ontology_scopes() -> list[tuple[str, str]]:
     """The scopes whose declared actions this server offers as propose tools: `AUGHOR_MCP_ONTOLOGY`, a comma-separated
     list of `<connection>` or `<connection>/<schema>`. Empty: no propose tools (the actions are per connection, and a
@@ -803,7 +882,7 @@ def _propose_runner(api: "AughorClient", row: dict):
 # tool; what appeared is registered, what went is removed, and the server says so with
 # `notifications/tools/list_changed` (`PolicedFastMCP.call_tool`) — the capability it declares.
 
-#: name → the roster it came from ("automations" | "spotlight" | "agents").
+#: name → the roster it came from ("automations" | "spotlight" | "agents" | "ontology" | "grounding").
 _DYNAMIC: dict[str, str] = {}
 #: The rosters this server keeps live — set ONLY by `enable_live_tools`, which the entry point
 #: calls (`--no-…` skips one). A registrar never sets it: a test that registers against a stub
@@ -812,8 +891,8 @@ _LIVE_SOURCES: set[str] = set()
 
 
 def enable_live_tools(*sources: str) -> None:
-    """Keep these rosters live for a connected client: "automations", "spotlight", "agents"."""
-    _LIVE_SOURCES.update(s for s in sources if s in ("automations", "spotlight", "agents", "ontology"))
+    """Keep these rosters live for a connected client: "automations", "spotlight", "agents", "ontology", "grounding"."""
+    _LIVE_SOURCES.update(s for s in sources if s in ("automations", "spotlight", "agents", "ontology", "grounding"))
 _LIVE_TTL = 30.0
 _live_checked: list[float] = []
 
@@ -823,7 +902,7 @@ def _roster_names(source: str, rows: list) -> set[str]:
     if source == "automations":
         return {str(r.get("tool_name") or "") or automation_tool_name(str(r.get("name") or ""))
                 for r in rows if str(r.get("id") or "")}
-    if source == "spotlight":
+    if source in ("spotlight", "grounding"):
         return {str(r.get("name")) for r in rows if r.get("name")}
     if source == "ontology":
         seen: set[str] = set()
@@ -857,7 +936,8 @@ async def refresh_live_tools(client: "AughorClient | None" = None, *, force: boo
     readers = {"automations": (api.list_automation_tools, register_automation_tools),
                "spotlight": (api.list_spotlight_tools, register_spotlight_tools),
                "agents": (api.list_user_agents, register_agent_tools),
-               "ontology": (lambda: _ontology_roster(api), register_ontology_tools)}
+               "ontology": (lambda: _ontology_roster(api), register_ontology_tools),
+               "grounding": (lambda: _grounding_roster(api), register_grounding_tool)}
     changed = False
     for source in sorted(_LIVE_SOURCES):
         read, register = readers[source]

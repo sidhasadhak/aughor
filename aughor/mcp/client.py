@@ -301,6 +301,22 @@ class AughorClient:
             acc["row_count"] = len(acc["rows"])
         return acc
 
+    # ── Arc FA, FA-7: the grounding read ────────────────────────────────────────
+    async def grounding_read_open(self) -> bool:
+        """Whether the API has `agents.grounding_read` on — read through the API, never from a store this process
+        does not own. A flag the listing does not carry reads as off."""
+        flags = await self._get("/system/flags")
+        row = flags.get("agents.grounding_read") if isinstance(flags, dict) else None
+        return bool((row or {}).get("value"))
+
+    async def ground_agent(self, agent_id: str, question: str, *, connection: Optional[str] = None,
+                           asker: str = "") -> dict:
+        """What a custom agent would read for a question, through the session route — so the agent gate holds and
+        audits the call like every other tool's. No model is asked."""
+        from urllib.parse import quote
+        return await self._get(f"/agents/custom/{quote(agent_id, safe='')}/grounding",
+                               params={"question": question, "connection_id": connection, "asker": asker or None})
+
     async def ask(
         self,
         question: str,
