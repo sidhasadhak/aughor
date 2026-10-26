@@ -25,6 +25,7 @@ const api = vi.hoisted(() => ({
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
   getSuggestedShapes: vi.fn(), getDashboardFromObject: vi.fn(), getGroups: vi.fn(),
   keepDashboardQuery: vi.fn(), previewDashboardQuery: vi.fn(), getCatalogTree: vi.fn(),
+  listPackTemplates: vi.fn(), draftFromPackTemplate: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
@@ -798,6 +799,52 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
       description: expect.stringContaining("Ontology ▸ Actions") })));
     await new Promise(r => setTimeout(r, 50));
     expect(api.keepDashboard).not.toHaveBeenCalled();
+  });
+});
+
+describe("a new dashboard from a pack template (Arc FA, FA-6)", () => {
+  const TEMPLATE = {
+    pack: "retail", pack_name: "Retail and e-commerce", version: 1, id: "checkout-and-returns", title: "Checkout and returns",
+    description: "How many carts become an order.", sections: ["Checkout", "Returns"], ready: 1, source: "pack:retail@1 template",
+    cards: [
+      { key: "cart-conversion", metric: "cart_to_order_conversion_rate", title: "Cart-to-order conversion rate", ready: false,
+        why: "not registered on this connection" },
+      { key: "return-rate", metric: "return_rate", title: "Return rate", ready: true, why: "" },
+    ],
+  };
+
+  it("is not offered while the flag is off, and nothing is read for it", async () => {
+    show();
+    fireEvent.click(await screen.findByTestId("dashboard-new-open"));
+    expect(screen.getByTestId("dashboard-new-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("dashboard-new-pack")).toBeNull();
+    expect(api.listPackTemplates).not.toHaveBeenCalled();
+  });
+
+  it("lists the bound packs' templates, says what is left out, and drafts one with no model", async () => {
+    api.getSystemFlags.mockResolvedValue({ "packs.dashboard_templates": { value: true } });
+    api.listPackTemplates.mockResolvedValue({ templates: [TEMPLATE], waiting: { banking: "the pack is draft: its templates are offered once a person activates it" } });
+    api.draftFromPackTemplate.mockResolvedValue({
+      staged: true, proposal_id: "p2", rounds: 0, stop_reason: "", sentences: [], dashboard_id: "checkout-and-returns-a1b2c3",
+      summary: "Drafted \"Checkout and returns\" from the Retail and e-commerce pack's template (v1): 1 card. Left out: Cart-to-order conversion rate — not registered on this connection.",
+      skipped: [{ key: "cart-conversion", metric: "cart_to_order_conversion_rate", title: "Cart-to-order conversion rate", why: "not registered on this connection" }],
+      source: "pack:retail@1 template",
+    });
+    api.getProposalById.mockResolvedValue({ id: "p2", status: "pending", reasoning: "", params: { spec: SPEC, cards: [] }, detail: { outline: [] } });
+    show();
+    fireEvent.click(await screen.findByTestId("dashboard-new-open"));
+    fireEvent.click(await screen.findByTestId("dashboard-new-pack"));
+    const t = await screen.findByTestId("dashboard-pack-template");
+    expect(api.listPackTemplates).toHaveBeenCalledWith("thelook", "thelook");
+    expect(t).toHaveTextContent("Checkout and returns");
+    expect(t).toHaveTextContent("Retail and e-commerce pack · v1");
+    expect(t).toHaveTextContent("1 card this connection can make · left out: Cart-to-order conversion rate (not registered on this connection)");
+    expect(screen.getByTestId("dashboard-new-pack-templates")).toHaveTextContent("banking: the pack is draft");
+    fireEvent.click(within(t).getByTestId("dashboard-pack-template-draft"));
+    await waitFor(() => expect(api.draftFromPackTemplate).toHaveBeenCalledWith("retail", "checkout-and-returns", "thelook", "thelook"));
+    const draft = await screen.findByTestId("dashboard-draft");
+    expect(draft).toHaveTextContent("Left out: Cart-to-order conversion rate — not registered on this connection.");
+    expect(api.draftDashboard).not.toHaveBeenCalled();
   });
 });
 
