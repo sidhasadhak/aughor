@@ -1,0 +1,17 @@
+# Arc FA, FA-6 (2026-10-26) — the first dashboard template a pack ships. A person keeps a dashboard from it on a
+# connection this pack is bound to; a card whose metric that connection has not registered and approved is left out,
+# and said. Cards name this pack's metrics by name, never a query.
+id: checkout-and-returns
+title: Checkout and returns
+description: >
+  How many carts become an order, and how many sold lines come back — the two ends of a sale this package measures.
+cards:
+  - key: cart-conversion
+    metric: cart_to_order_conversion_rate
+  - key: return-rate
+    metric: return_rate
+sections:
+  - title: Checkout
+    cards: [cart-conversion]
+  - title: Returns
+    cards: [return-rate]

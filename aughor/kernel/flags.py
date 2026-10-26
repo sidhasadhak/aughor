@@ -277,6 +277,15 @@ FLAG_ENV = {
     # that actually shrinks the registry. One-off audits can reproduce it by asking the
     # question directly; the refuter itself (run_refutation) is unchanged.
     "federation.planner": "AUGHOR_FEDERATION_PLANNER",
+    # Arc FA, FA-6 (ROADMAP §3.60). ON: a binding records the manifest's version (never the caller's), who bound it and
+    # a snapshot of what the pack offered — its terms, alert priors, metrics and structure claims — and the upgrade doors
+    # diff that snapshot against the pack as it stands, proposing only new and changed items. OFF: a binding stores the
+    # version the caller sends and nothing else, and the upgrade doors answer 404.
+    "packs.installed_versions": "AUGHOR_PACKS_INSTALLED_VERSIONS",
+    # Arc FA, FA-6. ON: a pack may carry `dashboards/*.yaml` templates; the templates of the packs bound on a connection
+    # are listed, and one becomes a dashboard draft through the proposal path with no model call, a metric the
+    # connection lacks skipped and said. OFF: nothing is listed and the template doors answer 404.
+    "packs.dashboard_templates": "AUGHOR_PACKS_DASHBOARD_TEMPLATES",
     # "plan.program" (AUGHOR_PLAN_PROGRAM) was DELETED 2026-08-01 (flag endgame, verdict
     # sheet Wave 1): a SECOND answer path (typed program executor) with a standing
     # adopt-or-kill question. One brain, one answer path — the benchmarking arc measured
@@ -961,6 +970,26 @@ FLAG_META = {
                        "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
                        "as before.",
     },
+    "packs.installed_versions": {
+        "label": "Record each pack's installed version",
+        "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
+                   "what changed before you upgrade.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Never re-offers what you declined"}],
+        "description": "Each binding keeps the pack's own version and a record of the terms, alerts, metrics and "
+                       "structure it offered. When the pack moves on, its page lists what was added, changed and "
+                       "removed, and marks what you declined. Upgrading proposes only what is new or changed. Off: a "
+                       "binding keeps whatever version the caller sends, and there is no upgrade.",
+    },
+    "packs.dashboard_templates": {
+        "label": "Start a dashboard from a pack's template",
+        "summary": "A pack bound to a connection can offer dashboard templates. You keep one as your own.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries the warehouse when drafted"}],
+        "description": "A template names the pack's metrics and how they are laid out. A metric this connection has "
+                       "not registered or approved is left out, and said. Nothing is kept until you keep it, and the "
+                       "dashboard says which pack and version it came from. Off: no template is listed.",
+    },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
         "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
@@ -1442,6 +1471,15 @@ GRADUATION_QUEUE: dict = {
     "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
                              "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "
                              "alert summary names a cause the impacts store does not hold stops it",
+    # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
+    "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
+                                "what was added, changed and removed, marks a declined term with the version it was "
+                                "declined in, and its upgrade proposes only the new and changed items. Falsifier: an "
+                                "upgrade that offers again an unchanged item a person declined stops it",
+    "packs.dashboard_templates": "receipt: on a connection with an industry pack bound, its template becomes one draft "
+                                 "with a card per registered approved metric, the rest named as skipped, and the kept "
+                                 "dashboard's source names the pack and its version. Falsifier: a drafted card made "
+                                 "from a metric the connection does not hold stops it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "

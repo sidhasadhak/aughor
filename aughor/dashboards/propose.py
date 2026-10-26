@@ -625,12 +625,17 @@ def _retire_pending(home: Home, by: str) -> tuple[str, ...]:
 
 
 def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards: Any = None,
-          reasoning: str = "", said: Optional[str] = None, schema: Optional[str] = None) -> Drafted:
+          reasoning: str = "", said: Optional[str] = None, schema: Optional[str] = None,
+          template: Optional[dict] = None) -> Drafted:
     """Stage ONE proposal for this person's dashboard, or refuse with every reason found.
 
     ``said`` is what the person asked for, when the caller knows it: a limit is then set only
     where they named it (:func:`_draft_cards`). ``schema`` is the one the Briefing is read on;
-    a card is run on it, as a pin from the Briefing is."""
+    a card is run on it, as a pin from the Briefing is.
+
+    ``template`` (Arc FA, FA-6) is ``{"pack", "version", "id"}`` when the draft is a pack's dashboard template
+    (`aughor/packs/templates.py`): the proposal carries it, its source is the pack, and a dashboard kept from it is
+    kept with the source :func:`template_source` names. Without it the proposal is staged as it always was."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.org.context import current_org_id
 
@@ -725,6 +730,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         "cards": made,
         "spec": final,
         "patches": patches if mode == MODE_EDIT else [],
+        **({"template": dict(template)} if template else {}),
     }
     moves = _versions.changes(live["spec"] if live else None, final)
     # A new dashboard is all of it new; saying "added" of every line would say nothing.
@@ -741,13 +747,22 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         "changes": moves,
         "taken_off": (taken_off(live["spec"], moves["removed"], titles) if mode == MODE_EDIT
                       else _replaced(live["spec"], set(verdict.cards), moves["removed"], titles)) if live else [],
+        **({"template": dict(template), "source": template_source(template)} if template else {}),
     }
     p = stage_proposal(StagedProposal(
         kind=KIND, org_id=current_org_id() or "", connection_id=home.connection_id,
         schema_name=schema or "", action_id=f"cockpit:{title}",
         params=params, detail=detail, reasoning=reasoning,
-        proposer="cockpit", source="agent"))
+        proposer="cockpit", source=f"pack:{template['pack']}" if template else "agent"))
     return Drafted(proposal=p, replaced=_retire_pending(home, p.id))
+
+
+def template_source(template: Any) -> str:
+    """Where a dashboard kept from a pack's template came from: ``pack:<id>@<version> template`` — or ``""`` when the
+    proposal names no template (Arc FA, FA-6)."""
+    if not isinstance(template, dict) or not str(template.get("pack") or "").strip():
+        return ""
+    return f"pack:{template['pack']}@{template.get('version') or 0} template"
 
 
 def propose_publish(home: Home, to: Any) -> Drafted:
@@ -978,7 +993,8 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
                 metric=source.record if source.kind == FROM_METRIC else None)
             made.append(placed.id)
         kept = _versions.keep(
-            home, spec, approved_by=approved_by, source=f"proposal {proposal_id}",
+            home, spec, approved_by=approved_by,
+            source=template_source(params.get("template")) or f"proposal {proposal_id}",
             note=note, also_known=ids, written_by_model=True)
     except Exception as exc:
         undo()

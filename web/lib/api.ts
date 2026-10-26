@@ -9427,6 +9427,140 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
   return res.ok;
 }
 
+// ── Arc FA, FA-6 — the installed version and the upgrade (flag `packs.installed_versions`) ──────
+
+/** One thing a pack offers on a connection, as an upgrade's diff lists it (`aughor/packs/upgrade.py`). */
+export interface PackOfferedItem {
+  key: string;
+  kind: "term" | "alert" | "metric" | "structure";
+  label: string;
+  /** What it says now; `was` is what it said at the installed version, for a changed item. */
+  said: string;
+  was: string;
+  /** A person declined it: a term's tombstone, a rejected alert, a withdrawn structure proposal. */
+  declined: boolean;
+  /** The version it was declined in, or null when no record says. */
+  declined_in: number | null;
+  /** Whether the upgrade proposes it, and when not, why. */
+  will_offer: boolean;
+  why: string;
+}
+
+export interface PackUpgradeDiff {
+  pack: string;
+  connection_id: string;
+  schema: string;
+  installed: number;
+  available: number;
+  /** False for a binding made before installed versions were recorded: what it offered then is not known. */
+  recorded: boolean;
+  bound_by: string;
+  bound_at: string;
+  upgrade_available: boolean;
+  added: PackOfferedItem[];
+  changed: PackOfferedItem[];
+  removed: PackOfferedItem[];
+  /** Unchanged items a person declined: they stay declined. */
+  kept_declined: PackOfferedItem[];
+  will_offer: number;
+  /** A store that could not be read, with why — never read as "nothing declined". */
+  not_read: Record<string, string>;
+  note?: string;
+}
+
+export interface PackInstall {
+  connection_id: string;
+  schema: string;
+  installed: number;
+  recorded: boolean;
+  bound_by: string;
+  bound_at: string;
+  behind: boolean;
+}
+
+export interface PackUpgraded {
+  from: number;
+  to: number;
+  terms: { proposed?: number; note?: string };
+  alerts: { staged?: unknown[]; superseded?: string[]; note?: string };
+  kept_declined: number;
+  metrics: { added: number; changed: number; note: string };
+  structure: { added: number; changed: number; note: string };
+}
+
+/** Where a pack is bound and the version installed there — null while installed versions are off (the route 404s). */
+export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] } | null> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/installs`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Where the pack is installed could not be read"));
+  return res.json();
+}
+
+export async function getPackUpgrade(packId: string, connectionId: string, schema?: string): Promise<PackUpgradeDiff> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/upgrade?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "What the upgrade brings could not be read"));
+  return res.json();
+}
+
+export async function upgradePack(packId: string, connectionId: string, schema?: string): Promise<PackUpgraded> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/upgrade`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema: schema || null }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The upgrade did not go through"));
+  return res.json();
+}
+
+// ── Arc FA, FA-6 — a pack's dashboard templates (flag `packs.dashboard_templates`) ──────────────
+
+export interface PackTemplateCard { key: string; metric: string; title: string; ready: boolean; why: string }
+
+export interface PackTemplate {
+  pack: string;
+  pack_name: string;
+  version: number;
+  id: string;
+  title: string;
+  description: string;
+  sections: string[];
+  cards: PackTemplateCard[];
+  /** How many of its cards this connection can make. */
+  ready: number;
+  /** What a dashboard kept from it is kept with: `pack:<id>@<version> template`. */
+  source: string;
+}
+
+/** The templates of the packs bound on this connection — null while templates are off (the route 404s). */
+export async function listPackTemplates(
+  connectionId: string, schema?: string,
+): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> } | null> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/templates?${q}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The pack templates could not be read"));
+  return res.json();
+}
+
+export interface PackTemplateDrafted extends DashboardDrafted {
+  dashboard_id: string;
+  /** Cards left out, each with why — a metric this connection has not registered or approved. */
+  skipped: { key: string; metric: string; title: string; why: string }[];
+  source: string;
+  dropped_sections?: string[];
+}
+
+export async function draftFromPackTemplate(
+  packId: string, templateId: string, connectionId: string, schema?: string,
+): Promise<PackTemplateDrafted> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/templates/${encodeURIComponent(templateId)}/draft`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema: schema || null }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The template was not drafted"));
+  return res.json();
+}
+
 // ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
 // CRUD over /agents/custom — the domain personas ("Gems on governed data").
 // GETs fail soft (routes 404 when the flag is off → empty roster, no error UI).

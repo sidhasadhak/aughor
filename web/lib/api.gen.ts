@@ -13835,6 +13835,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Templates
+         * @description The dashboard templates of the active packs bound on this connection, each card saying whether this connection
+         *     can make it — and every bound pack whose templates wait, with why. No model call, nothing written. Declared before
+         *     `/packs/{pack_id}`, which would otherwise take the word for a pack id.
+         */
+        get: operations["get_pack_templates_packs_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/upload": {
         parameters: {
             query?: never;
@@ -13890,6 +13912,10 @@ export interface paths {
          * @description Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
          *     bound columns are checked to actually exist and `verified` reflects that (column-existence
          *     half of verification; recipe dry-run is the live step).
+         *
+         *     Arc FA, FA-6 (`packs.installed_versions`): on, the binding records the MANIFEST's version — never the
+         *     `version` a caller sends — who bound it, and a snapshot of what the pack offered, which an upgrade is
+         *     diffed against. Off, the binding is stored exactly as it always was.
          */
         post: operations["post_bind_packs__pack_id__bind_post"];
         delete?: never;
@@ -14006,6 +14032,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/installs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Installs
+         * @description Every connection and schema this pack is bound on: the version installed there, whether what it offered then
+         *     was recorded, who bound it, and the version the pack is at now.
+         */
+        get: operations["get_pack_installs_packs__pack_id__installs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/propose": {
         parameters: {
             query?: never;
@@ -14098,6 +14145,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/templates/{template_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Template Draft
+         * @description Turn a pack's dashboard template into ONE dashboard draft for the asker on this connection, with no model call:
+         *     a card whose metric the connection has not registered and approved is skipped and said, and the rest is staged
+         *     through the dashboards' one proposal path. Kept, the dashboard's source is `pack:<id>@<version> template`.
+         */
+        post: operations["post_template_draft_packs__pack_id__templates__template_id__draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/terms": {
         parameters: {
             query?: never;
@@ -14134,6 +14203,34 @@ export interface paths {
          *     `decline`, refuses them: the row goes and a tombstone keeps the next bind from bringing it back.
          */
         post: operations["post_confirm_terms_packs__pack_id__terms_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/packs/{pack_id}/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Upgrade
+         * @description What upgrading this connection's binding would bring: the version installed and the one available, the items
+         *     added, changed and removed since, each one a person declined marked with the version it was declined in, and the
+         *     unchanged items they declined, which stay declined. Read-only, no model call.
+         */
+        get: operations["get_pack_upgrade_packs__pack_id__upgrade_get"];
+        put?: never;
+        /**
+         * Post Pack Upgrade
+         * @description Upgrade this connection's binding to the pack's version: the role map is kept, only the new and changed terms
+         *     and alerts are proposed — never an unchanged one a person declined — and what the pack now offers is recorded.
+         *     Refused (409) when there is nothing to upgrade to.
+         */
+        post: operations["post_pack_upgrade_packs__pack_id__upgrade_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21566,6 +21663,13 @@ export interface components {
              */
             tenant_id: string;
         };
+        /** TemplateDraftIn */
+        TemplateDraftIn: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
+        };
         /** TermsVerdictIn */
         TermsVerdictIn: {
             /** Connection Id */
@@ -21831,6 +21935,13 @@ export interface components {
             settings_override?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** UpgradeIn */
+        UpgradeIn: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
         };
         /** UserAgentCreate */
         UserAgentCreate: {
@@ -47249,6 +47360,38 @@ export interface operations {
             };
         };
     };
+    get_pack_templates_packs_templates_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_pack_upload_packs_upload_post: {
         parameters: {
             query?: never;
@@ -47520,6 +47663,37 @@ export interface operations {
             };
         };
     };
+    get_pack_installs_packs__pack_id__installs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_propose_on_connect_packs__pack_id__propose_post: {
         parameters: {
             query?: never;
@@ -47656,6 +47830,42 @@ export interface operations {
             };
         };
     };
+    post_template_draft_packs__pack_id__templates__template_id__draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateDraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_pack_terms_packs__pack_id__terms_get: {
         parameters: {
             query: {
@@ -47702,6 +47912,75 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TermsVerdictIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pack_upgrade_packs__pack_id__upgrade_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_pack_upgrade_packs__pack_id__upgrade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeIn"];
             };
         };
         responses: {
