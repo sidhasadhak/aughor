@@ -76,7 +76,7 @@ class Condition(BaseModel):
 
 class View(BaseModel):
     """A saved grid: its filter, sort and hidden columns. Shared — everyone who reads the sheet sees it (SH-3 brings
-    personal views, boards and calendars)."""
+    views only their maker sees, boards and calendars)."""
     id: str
     name: str
     filter: list[Condition] = Field(default_factory=list)

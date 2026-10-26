@@ -117,7 +117,7 @@ def _claim_backup_path(folder: Path, stem: str) -> Path:
             with open(path, "x"):
                 return path
         except FileExistsError:
-            continue
+            logger.debug("migrations: %s is taken — trying the next name", path)
     raise MigrationBackupFailed(f"no free backup name for {stem} in {folder}")
 
 
