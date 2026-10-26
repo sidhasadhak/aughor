@@ -76,6 +76,17 @@ it("says what it searched when nothing is named so", async () => {
   expect(none.getAttribute("title")).toContain("only the Customer objects user:ana may see");
 });
 
+it("names an entity with more matches by the name a reader knows it by", async () => {
+  Element.prototype.scrollIntoView = vi.fn();
+  serve(true, { ...ANSWER, q: "levi", hits: [{ type: "inventory_item", type_id: "InventoryItem", key: "15195",
+    title: "Larry Levine Women's Down Jacket", entity_label: "Inventory Item" }], more: ["inventory_item"] });
+  const user = userEvent.setup();
+  render(<CommandPalette open onClose={vi.fn()} selectedConn="c1" onNavigate={vi.fn()} onGoToChat={vi.fn()} />);
+  await user.type(screen.getByPlaceholderText(/search/i), "levi");
+  await waitFor(() => expect(screen.getByTestId("objects-said").textContent).toBe(
+    "searched 2 of 5 entities · more in Inventory Item"));
+});
+
 it("with the flag off, nothing is fetched and no Objects group is shown", async () => {
   Element.prototype.scrollIntoView = vi.fn();
   const calls = serve(false);

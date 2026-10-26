@@ -46,7 +46,9 @@ def _why_not(entity: OntologyEntity) -> str:
         return "its objects are held by the platform, not read from the connection"
     shown = display_of(entity)
     if shown["is_key"]:
-        return f"named by its key ({shown['property']}) — there is no name to match"
+        key = shown["property"]
+        return (f"named by its key ({key}) — there is no name to match" if key
+                else "it declares no key and no name — there is nothing to match")
     title = shown["property"]
     why = masked(entity, title)
     if why:

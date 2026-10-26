@@ -152,7 +152,9 @@ function findWords(q: string): string {
 /** FA-1 — what the Objects group says it read: "searched 9 of 14 entities", and what it could not show. */
 function findSaid(found: ObjectFindAnswer): string {
   const parts = [found.said];
-  if (found.more.length) parts.push(`more in ${found.more.join(", ")}`);
+  // each entity by the name a reader knows it by, as its hits are labelled — never its identifier
+  const label = (type: string) => found.hits.find(h => h.type === type)?.entity_label || type;
+  if (found.more.length) parts.push(`more in ${found.more.map(label).join(", ")}`);
   if (found.withheld.length || found.masked.length) parts.push("some withheld from you");
   return parts.join(" · ");
 }
