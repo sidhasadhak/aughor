@@ -140,7 +140,7 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     where each category's own history credits +19.83%, and the company total says cannot tell. Owed: §5.2 read
     on 2026-12-05 (five decisions on live data reaching a verdict); D-4 and D-5 not built.*
 
-58. [ ] **Palantir's features, the Aughor way — Arcs ED, TC and FA** (ROADMAP §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6
+58. [x] **Palantir's features, the Aughor way — Arcs ED, TC and FA** (ROADMAP §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6
     item 52; `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md`) — the user, 2026-10-24: *"The whole point of this Study is
     to understand how we can incorporate the features of Palantir into our platform"*. Aughor already has most of Foundry's
     shape; what is left is three properties of what it built. In plain words: **ED** fixes what does not hold today (a row
