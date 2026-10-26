@@ -12117,7 +12117,7 @@ dashboard piece says a cut read beside its caveats (`answerSays`).
 **The laws it keeps.** Provenance on everything that changes · supersede, don't delete · no fourth lineage walker
 (`govern/lineage.py`, `ontology/dependents.py` and `automations/graph.py` already exist) · no sixth audit sink.
 
-### 3.60 · Arc FA — the ontology people can find and act on (DRAFTED 2026-10-24 as arc 3 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; third of the three · nothing built)
+### 3.60 · Arc FA — the ontology people can find and act on (DRAFTED 2026-10-24 as arc 3 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; third of the three · 🔨 FA-1…FA-7 BUILT 2026-10-26 on `claude/arc-fa`, every flag off by default, proven live on theLook where it could be — PENDING item 58 holds each receipt)
 
 **The premise, measured.** Nothing searches the declarations by meaning (the context graph's node kinds hold none); an object
 cannot be found without knowing its entity; a selection cannot leave the piece it was made in; an ontology element cannot be
