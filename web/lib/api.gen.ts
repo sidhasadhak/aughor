@@ -15081,6 +15081,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/decisions/{decision_id}/google-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Google File Onto Decision
+         * @description Read the comments of ONE Google file a person names onto a decision, as later evidence, through that person's
+         *     own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 404 while
+         *     ``arrivals.google_comments`` is off.
+         */
+        post: operations["read_google_file_onto_decision_record_decisions__decision_id__google_file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/decisions/{decision_id}/outcome": {
         parameters: {
             query?: never;
@@ -19053,6 +19075,11 @@ export interface components {
             question: string;
             /** Reference Sql */
             reference_sql: string;
+        };
+        /** GoogleFileRequest */
+        GoogleFileRequest: {
+            /** Link */
+            link: string;
         };
         /** GraduateBody */
         GraduateBody: {
@@ -49204,6 +49231,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_google_file_onto_decision_record_decisions__decision_id__google_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleFileRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

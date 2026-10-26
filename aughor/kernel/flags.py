@@ -222,6 +222,9 @@ FLAG_ENV = {
     # inbound secret becomes an approval (a named approver, verified), a dissent, or evidence. OFF: the door answers 404
     # and a decision shows no address. The platform never sends a mail either way.
     "arrivals.email": "AUGHOR_ARRIVALS_EMAIL",
+    # The decision-framework study §3.2 (the user's call, 2026-10-27). ON: a person names one Google file on a decision
+    # and its comments are read onto it as later evidence through their own Google grant. OFF: the door answers 404.
+    "arrivals.google_comments": "AUGHOR_ARRIVALS_GOOGLE_COMMENTS",
     # Arc TC, TC-2 (ROADMAP §3.59). ON: every edit's history row, every action-audit row and every action's ledger entry
     # names the run it was made through (a question asked, an automation, a monitor, an agent's job) and its trace, and
     # an object's changes door reads them oldest first with each run's metered cost. OFF: they record who
@@ -705,6 +708,17 @@ FLAG_META = {
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
+    "arrivals.google_comments": {
+        "label": "Comments on a Google file, read onto a decision",
+        "summary": "A person names one Sheet, Slides deck or Doc on a decision, and its comments are kept there as "
+                   "evidence.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Reads only the file named"},
+                  {"kind": "route", "text": "Needs the Google Drive comments card"}],
+        "description": "Each comment is kept in its author's name, with the cell, slide or text it points at. "
+                       "Reading the file again adds only what is new. No other file is listed or read. Off: the "
+                       "door is closed.",
+    },
     "arrivals.email": {
         "label": "Decisions by email, inbound only",
         "summary": "Each decision has an address. A mail to it is kept as evidence, a named approver's approval, or "
@@ -1153,6 +1167,9 @@ EXPERIMENT: dict = {
     "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
+    "arrivals.google_comments": "do people bring a file's discussion to the decision — of the decisions argued in a "
+                                "Google file over six weeks, is one in five or more read here? Falsifier: a file no "
+                                "person named is read, or a comment is booked as an approval — stop",
     # The decision-framework study §3.2, 2026-10-27. It lets mail from outside book an approval, so it is watched.
     "arrivals.email": "do approvals arrive where people give them — of the decisions with a named approver over six "
                       "weeks, is one in five or more approved by email? Falsifier: an approval is booked from a "

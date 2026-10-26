@@ -300,6 +300,8 @@ def get_record_decision(decision_id: str) -> dict:
     # the decision's address for mail, inbound only — or why it has none (the user's call, 2026-10-27)
     from aughor.record import email_door as E
     view["email"] = {"address": E.address_for(d.id), "note": E.address_note()}
+    from aughor.record import google_comments as G
+    view["google"] = {"on": G.door_on(), "files": list(d.extra.get("google_files") or [])}
     return view
 
 
@@ -455,6 +457,29 @@ def refuse_meeting_candidate(candidate_id: str, req: RefuseCandidateRequest, pri
         return MT.refuse(candidate_id, by=_who(principal), why=req.why).model_dump()
     except MT.MeetingRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+class GoogleFileRequest(BaseModel):
+    link: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/record/decisions/{decision_id}/google-file")
+def read_google_file_onto_decision(decision_id: str, req: GoogleFileRequest, principal=Depends(get_principal)) -> dict:
+    """Read the comments of ONE Google file a person names onto a decision, as later evidence, through that person's
+    own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 404 while
+    ``arrivals.google_comments`` is off."""
+    from aughor.org.context import current_user_id
+    from aughor.record import google_comments as G
+    if not G.door_on():
+        raise HTTPException(status_code=404, detail="Not Found")
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    try:
+        out = G.read_onto(decision_id, req.link, user_id=current_user_id() or "")
+    except G.CommentsRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    return {**out, "by": _who(principal)}
 
 
 class AmendDecisionRequest(BaseModel):

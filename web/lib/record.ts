@@ -284,6 +284,8 @@ export interface DecisionDetail extends Decision {
   reopened_by_claim: Claim | null;
   /** Its address for mail, inbound only — "" with a note saying why when it has none. */
   email?: { address: string; note: string };
+  /** Whether a Google file's comments may be read onto it, and the files read so far. */
+  google?: { on: boolean; files: string[] };
 }
 
 export interface ExpectationIn {
@@ -610,6 +612,11 @@ export const confirmMeetingCandidate = (id: string, body: { chosen?: string; que
   send<{ candidate: MeetingCandidate; decision: DecisionDetail }>(`/record/meetings/candidates/${encodeURIComponent(id)}/confirm`, body);
 export const refuseMeetingCandidate = (id: string, why: string) =>
   send<MeetingCandidate>(`/record/meetings/candidates/${encodeURIComponent(id)}/refuse`, { why });
+
+/** Read the comments of ONE named Google file onto a decision, as later evidence. */
+export const readGoogleFileOntoDecision = (decisionId: string, link: string) =>
+  send<{ decision: string; file: string; read: number; new: number; already_held: number; more: string }>(
+    `/record/decisions/${encodeURIComponent(decisionId)}/google-file`, { link });
 
 export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(

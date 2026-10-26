@@ -122,6 +122,12 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in [
                     scopes=_GOOGLE_AUTH + "drive.metadata.readonly"),
             Product(id="calendar", name="Google Calendar", blurb="Read the events on your calendar.",
                     scopes=_GOOGLE_AUTH + "calendar.readonly"),
+            # The decision-framework study §3.2 (the user's call, 2026-10-27): comments on one file a person names on
+            # a decision. Drive offers no narrower scope that reads comments without a file picker; the door reads
+            # only the file a person names, never lists or searches.
+            Product(id="comments", name="Google Drive comments",
+                    blurb="Read the comments on a Sheet, Slides deck or Doc a person names on a decision — never other files.",
+                    scopes=_GOOGLE_AUTH + "drive.readonly"),
         ],
     ),
     Provider(

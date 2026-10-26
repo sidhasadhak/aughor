@@ -238,6 +238,28 @@ OPERATIONS: tuple[Operation, ...] = (
                            fields={"title": "title"}),
     ),
     Operation(
+        id="drive.comments.list",
+        provider="google",
+        label="Drive · a file's comments",
+        description="The comments on one file — who wrote each, when, what it said and what it points at. Read only "
+                    "for a file a person names on a decision.",
+        url="https://www.googleapis.com/drive/v3/files/{file_id}/comments",
+        scopes=(_GOOGLE_AUTH + "drive.readonly",),
+        params=(
+            OperationParam(name="file_id", label="File", required=True, in_path=True, bindable=False),
+            OperationParam(name="pageSize", label="Limit", type="number", default=100, bindable=False),
+            OperationParam(name="includeDeleted", label="Include deleted", type="boolean", default=False,
+                           bindable=False),
+            OperationParam(name="fields", label="Fields", bindable=False,
+                           default="comments(id,author(displayName,emailAddress),content,createdTime,modifiedTime,"
+                                   "resolved,quotedFileContent(value),anchor),nextPageToken"),
+        ),
+        result=ResultShape(items_path="comments",
+                           item_fields=("id", "author", "content", "createdTime", "modifiedTime", "resolved",
+                                        "quotedFileContent", "anchor"),
+                           fields={"next_page_token": "nextPageToken"}),
+    ),
+    Operation(
         id="drive.files.list",
         provider="google",
         label="Drive · find files",

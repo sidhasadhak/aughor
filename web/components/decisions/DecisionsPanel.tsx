@@ -23,7 +23,8 @@ import { requestTab } from "@/lib/navigate";
 import {
   amendDecision, bookOutcome, bookScenario, confirmMeetingCandidate, declareDecision, declareDecisionKind, decisionStands,
   getCalibration, getDecision, getPastCases, getInquiryView, listDecisionKinds, listDecisions, listMeetingCandidates, listScenarios,
-  plainWho, proposeMeetingCandidates, refuseMeetingCandidate, verdictWords, whoLabel, type MeetingCandidate,
+  plainWho, proposeMeetingCandidates, readGoogleFileOntoDecision, refuseMeetingCandidate, verdictWords, whoLabel,
+  type MeetingCandidate,
   type CalibrationRow, type Claim, type Decision, type DecisionDetail, type DecisionKind, type OutcomeVerdict, type Scenario,
   type InquiryLink, type InquiryStep,
   type ScenarioBody,
@@ -623,6 +624,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
               {d.email.address}</span>
           : <span style={{ color: "var(--t3)" }}>{d.email?.note || "no address"}</span>}
       </Fact>
+      {d.google?.on && <GoogleFileFact decisionId={d.id} files={d.google.files} onRead={next => onMoved(next)} />}
     </>
   );
   return (
@@ -791,6 +793,34 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
       </Section>
       <InquirySection id={d.id} version={d.version} />
     </Page>
+  );
+}
+
+/** Name one Google file on a decision and its comments are read onto it as later evidence (study §3.2). */
+function GoogleFileFact({ decisionId, files, onRead }: { decisionId: string; files: string[]; onRead: (id: string) => void }) {
+  const [link, setLink] = useState("");
+  const [said, setSaid] = useState("");
+  const [busy, setBusy] = useState(false);
+  const read = async () => {
+    setBusy(true); setSaid("");
+    try {
+      const out = await readGoogleFileOntoDecision(decisionId, link.trim());
+      setSaid(`${countNoun(out.read, "comment")} read · ${formatCount(out.new)} new${out.more ? ` · ${out.more}` : ""}`);
+      setLink("");
+      if (out.new) onRead(out.decision);
+    } catch (e) { setSaid(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Fact label="From Google">
+      <div data-testid="google-file" style={{ display: "grid", gap: 6 }}>
+        {files.length > 0 && <span style={{ color: "var(--t3)" }}>{`${countNoun(files.length, "file")} read here`}</span>}
+        <Input aria-label="A Google file's link" value={link} onChange={e => setLink(e.target.value)}
+          placeholder="a Sheets, Slides or Docs link" />
+        <Button size="xs" variant="secondary" disabled={busy || !link.trim()} onClick={() => void read()}>Read its comments</Button>
+        {said && <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>{said}</span>}
+      </div>
+    </Fact>
   );
 }
 
