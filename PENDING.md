@@ -763,6 +763,15 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       the recipe, or carrying its own name. Found live, NOT changed (the user's call): Markdown Penetration, approved,
       reads 1 in every month — price_history logs price changes, and every one after the first month's load is a
       markdown.*
+    - *Other industries (the user, 2026-10-26: "What about other industries?"):* coverage read every dataset of a
+      connection holding several as Olist's (fixed, `d170b7e1`; prewarm takes `?schema=`); the workspace's airlines,
+      zomato_data, bakehouse and amazon datasets are EMPTY — the airline data is in `main`, beside a bakery sample.
+      At the user's word the Curator was turned on (app scope) and `main` re-profiled: an airline, the airline pack;
+      the writer proposed 10 airline metrics, all passing (5 more over a text-chunk table in the generic area were
+      noise: the generic area is never written for, `926306c8`); the airline map's words now place every airline
+      table (`999cf5ee`) — Operations holds flights, crew and boarding, its on-time performance open for the next
+      writer run. The airline, SaaS, food-delivery, logistics and manufacturing packs carry 6 metric patterns each
+      against retail's 34; banking is a draft and not read.
 
 
 63. [~] **The Briefing adapts to any number of figures, and each reader chooses them** (the user, 2026-10-26: *"how can a
@@ -774,4 +783,6 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     a blank figure with its reason and its fix); **Choose figures** — front · below · hidden, per reader per dataset
     (`briefing_figures` in the person's preferences, beside the switches; every approved figure is still measured). A
     Briefing whose figures fit on the front reads as it did. `web/lib/briefingFigures.ts`, `brief/BriefFigures.tsx`.
-    *Proven live: owed until the build is on :3000.*
+    *Proven live 2026-10-26 on LuxExperience's Day edition (24 approved): six on the front, 11 below by area, 8 stopped
+    one line per day; hiding Gross Margin on Items stored `{"hidden": ["item_gross_margin_pct"]}` and Gross Margin %
+    took its place; "Back to the default" (added after driving it) returned it to `{}`. No model call to open it.*
