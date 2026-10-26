@@ -125,7 +125,11 @@ def test_the_entity_door_carries_the_window_and_what_it_shares(router, graph, le
     assert len(out["reads"]["months"]) == 12                                   # the twelve months stay
 
 
-def test_off_both_doors_say_so(router):
+def test_off_both_doors_say_so(router, client):
     off = {"path": "off", "said": "What uses an entity is not shown: the setting is off."}
     assert router.get_object_types_by_reads("usage-off-t", schema_name=None, window=30) == off
     assert router.get_object_type_uses("customer", "usage-off-t", schema_name=None) == off
+    # the list's address is its own door, never an entity called "uses"
+    served = client.get("/object-types/uses", params={"connection_id": "usage-off-t", "window": 30})
+    assert served.status_code == 200 and served.json() == off
+    assert client.get("/object-types/uses", params={"connection_id": "usage-off-t", "window": 0}).status_code == 422
