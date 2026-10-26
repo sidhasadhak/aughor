@@ -13,7 +13,7 @@ from typing import Any, AsyncGenerator, Callable, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aughor.agent.chart_vocab import answer_chart_payload
 from aughor.agent.state import AgentState
@@ -921,9 +921,34 @@ class ChatRequest(BaseModel):
 
 
 class AskFocus(BaseModel):
-    """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id."""
-    kind: Literal["departure", "automation", "metric"]
-    id: str
+    """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
+
+    Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+    up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
+    ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
+    own filters on it. Both are read again server-side through the object door under the asker's row policy
+    (`agent.ask_subject`); off, they contribute nothing."""
+    kind: Literal["departure", "automation", "metric", "objects", "set"]
+    id: str = Field(default="", max_length=200)
+    objects: list[str] = Field(default_factory=list, max_length=50)
+    label: str = Field(default="", max_length=80)
+    dashboard: str = Field(default="", max_length=64)
+    owner: str = Field(default="", max_length=200)
+    set: str = Field(default="", max_length=40)
+    values: dict[str, Any] = Field(default_factory=dict)
+    chosen: dict[str, str] = Field(default_factory=dict)
+    filters: list[dict] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def names_what_it_is_about(self) -> "AskFocus":
+        # one object is named by its id, as SP-15 always required; a subject by its references or its set
+        if self.kind in ("departure", "automation", "metric") and not self.id:
+            raise ValueError(f"a {self.kind} on screen is named by its id")
+        if self.kind == "objects" and not self.objects:
+            raise ValueError("a subject of objects names at least one, as <type>:<key>")
+        if self.kind == "set" and not (self.dashboard and self.set):
+            raise ValueError("a subject set is named by its dashboard and its name")
+        return self
 
 
 class AskRequest(BaseModel):
@@ -3900,9 +3925,11 @@ async def _stream_analyst(
     origin_finding: Optional[dict] = None,
     purpose: str = "",
     shape: Optional[str] = None,
+    subject_prose: str = "",
 ) -> AsyncGenerator[str, None]:
     """Serve one deep `/ask` turn as the ANALYST (CA-3) — the phase library as tools,
-    the sequence as the model's, under the deep step budget.
+    the sequence as the model's, under the deep step budget. Arc FA-2 — ``subject_prose`` is
+    what the reader chose, handed beside the turn's memory; "" leaves the context as before.
 
     Same shape as :func:`_stream_converse` — the shared bridge, a different body. The
     frames are the deep path's own vocabulary: ``phase_complete`` as each slice lands,
@@ -3975,6 +4002,8 @@ async def _stream_analyst(
             _memory = (build_history_section(history)
                        + build_prior_answers_section(
                            resolve_prior_answers(question, connection_id, session_id)))
+            if subject_prose:
+                _memory = subject_prose + "\n\n" + _memory if _memory else subject_prose
             result = run_analyst(
                 connection_id, question,
                 origin_finding=origin_finding,
@@ -5330,7 +5359,18 @@ def _joined(*parts: str) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def _focus_prose_for(req, conn_id: str) -> str:
+async def _ask_subject_for(req, conn_id: str, request) -> Any:
+    """Arc FA-2 — the subject a turn carries, read for the person asking (`agent.ask_subject`), off the event loop: the
+    reads are the object door's. None with ``canvas.ask_about_chosen`` off, or when the focus is SP-15's one object."""
+    from aughor.agent.ask_subject import is_subject, on, resolve
+    focus = getattr(req, "focus", None)
+    if not is_subject(focus) or not on():
+        return None
+    from aughor.dashboards.home import person_of
+    return await asyncio.to_thread(resolve, focus, conn_id, req.schema_name, person=person_of(request))
+
+
+def _focus_prose_for(req, conn_id: str, subject=None) -> str:
     """SP-15 — the object the palette was summoned from, explained for the conversation.
 
     ONE body, two readers: this is the same `explain` the roster carries, run once before
@@ -5338,10 +5378,17 @@ def _focus_prose_for(req, conn_id: str) -> str:
     it (the baseline this wave beats: eight steps and no answer, twice). The result is
     handed as a tool result — claims bound to it, the roster's law — and named as such so
     the model cites it rather than restating it. Best-effort: an object that cannot be
-    read degrades the turn to a plain conversation, never fails it."""
+    read degrades the turn to a plain conversation, never fails it.
+
+    Arc FA-2 — a subject of chosen objects or a set is handed the same way, as `subject` reads it
+    (`agent.ask_subject`); with ``canvas.ask_about_chosen`` off there is no subject, and a focus of
+    that kind contributes nothing."""
     focus = getattr(req, "focus", None)
     if focus is None:
         return ""
+    from aughor.agent.ask_subject import is_subject
+    if is_subject(focus):
+        return subject.prose() if subject is not None else ""
     try:
         from aughor.agent.spotlight_explain import explain_object
         told = explain_object(conn_id, {"kind": focus.kind, "id": focus.id})
@@ -5745,6 +5792,12 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         _route_ev["trace_id"] = _ambient() or ""
     except Exception:  # noqa: BLE001 — a receipt field, never a dependency
         _route_ev["trace_id"] = ""
+    # Arc FA-2 — what the reader chose, read once for them under their row policy: the conversation and the
+    # analyst are handed it, and the receipt says it — and whether the body answering read it. None when
+    # `canvas.ask_about_chosen` is off or the focus is no subject: the receipt and both bodies are as before.
+    _subject = await _ask_subject_for(req, conn_id, request)
+    if _subject is not None:
+        _route_ev["subject"] = _subject.receipt(carried=_use_converse or _use_analyst)
     yield _sse("route", _route_ev)
 
     if _use_analyst:
@@ -5764,6 +5817,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             schema_scope=req.schema_name, origin_finding=_origin,
             purpose=req.purpose,
             shape=route.shape,   # decided once at the door; the analyst serves this shape
+            subject_prose=_subject.prose() if _subject is not None else "",
         )
         # FL-1b — the analyst runs through the same K1 bridge as the graph path:
         # a supervised job (so a closed tab no longer kills it mid-run and
@@ -5808,7 +5862,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
                              # CI-4 — a seeded/dossier turn hands its finding to the
                              # conversation instead of bypassing it; SP-15 — a turn
                              # summoned from an object hands that object's live state.
-                             origin_prose=_joined(_focus_prose_for(req, conn_id),
+                             origin_prose=_joined(_focus_prose_for(req, conn_id, _subject),
                                                   await _origin_prose_for(req, conn_id)))
             if _use_converse else
             _stream_chat(req.question, conn_id, req.history,
@@ -5913,7 +5967,8 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
         stream, question=req.question, conn_id=conn_id, door="ask", depth=req.depth,
         canvas_id=req.canvas_id or "", schema=req.schema_name or "",
         purpose=req.purpose or "", agent_id=req.agent_id or "",
-        focus=req.focus.model_dump() if getattr(req, "focus", None) else None,
+        # what the focus says, and only that: SP-15's `{kind, id}` as it always was; FA-2's subject without its empty fields
+        focus=req.focus.model_dump(exclude_defaults=True) if getattr(req, "focus", None) else None,
         prior_turn=_prior_turn_text(req.history))
     # ambient session + asker → trace attribution (RC-4: the asker is why LF-2's
     # user field was empty on every headless door — nobody was setting it)

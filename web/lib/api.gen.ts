@@ -17456,15 +17456,58 @@ export interface components {
         /**
          * AskFocus
          * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
+         *
+         *     Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+         *     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
+         *     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
+         *     own filters on it. Both are read again server-side through the object door under the asker's row policy
+         *     (`agent.ask_subject`); off, they contribute nothing.
          */
         AskFocus: {
-            /** Id */
+            /** Chosen */
+            chosen?: {
+                [key: string]: string;
+            };
+            /**
+             * Dashboard
+             * @default
+             */
+            dashboard: string;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Id
+             * @default
+             */
             id: string;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "departure" | "automation" | "metric";
+            kind: "departure" | "automation" | "metric" | "objects" | "set";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Objects */
+            objects?: string[];
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
+            /**
+             * Set
+             * @default
+             */
+            set: string;
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
         };
         /** AssignRoleRequest */
         AssignRoleRequest: {

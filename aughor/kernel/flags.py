@@ -177,6 +177,15 @@ FLAG_ENV = {
     # by their words (BM25) instead, each hit marked matched by words, and every caller says so. OFF: a failed embed
     # makes the document search unavailable, as before.
     "knowledge.hybrid_documents": "AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS",
+    # Arc FA, FA-2 (ROADMAP §3.60). ON: a dashboard's ticked objects and a set a piece reads can be asked about in the
+    # Data Canvas — the question carries them as its subject, read again through the object door under the asker's row
+    # policy, at most 50 by key and title with the total, what is withheld from them said. OFF: no piece offers it, a
+    # subject of objects or a set contributes nothing, and every turn is asked as before.
+    "canvas.ask_about_chosen": "AUGHOR_CANVAS_ASK_ABOUT_CHOSEN",
+    # Arc FA, FA-4 (ROADMAP §3.60). ON: the builder shows each set as its chain with a count at each step, and a set of
+    # fixed conditions can be kept as a segment — declared by the person as a condition rule, in the draft; a rule's
+    # condition may count the last days. OFF: the builder shows each set's one count, and a rule refuses `in_last`.
+    "ontology.set_segments": "AUGHOR_ONTOLOGY_SET_SEGMENTS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -1024,6 +1033,26 @@ FLAG_META = {
                        "with the question. Answers and the chat say the match was by words. Off: the search says "
                        "it could not run.",
     },
+    "canvas.ask_about_chosen": {
+        "label": "Ask about the objects you chose",
+        "summary": "A dashboard's ticked objects, or a set a piece shows, can be asked about in the Data Canvas. The "
+                   "question carries them as its subject.",
+        "facts": [{"kind": "free", "text": "No extra model calls"},
+                  {"kind": "private", "text": "Your row policy holds"}],
+        "description": "They are read again through the object door as you may see them: at most 50, by key and "
+                       "name, with how many there are. Objects withheld from you are counted and said, never listed. "
+                       "Nothing goes in the page's address. Off: no piece offers it, and questions are asked as before.",
+    },
+    "ontology.set_segments": {
+        "label": "Keep a dashboard set as a segment",
+        "summary": "A set of fixed conditions can be declared as a segment of the ontology, in the draft. The builder "
+                   "counts each step of a set.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Counts each step shown"}],
+        "description": "Keeping it declares a condition rule in your name, counted before it is written. Readers get "
+                       "it when the ontology is published. A set that reads a reader's value, a chosen object or a "
+                       "count cannot be kept, and says why. Off: the builder shows each set's one count.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1546,6 +1575,16 @@ GRADUATION_QUEUE: dict = {
                                   "by words, every hit marked so, the door, the chat tool and the prompt saying it. "
                                   "Falsifier: a words-only hit read as a match by meaning, or a document outside the "
                                   "caller's scope ranked, stops it",
+    # Arc FA, FA-2 (ROADMAP §3.60), queued 2026-10-26. No model call of its own; the question asked is an ordinary turn.
+    "canvas.ask_about_chosen": "receipt: on theLook, twelve objects ticked on a dashboard and a set a table reads are each "
+                               "asked about in the Data Canvas; the turn names them by key, a reader under a row policy "
+                               "is told how many are withheld, and a set past fifty says how many it holds. Falsifier: "
+                               "a subject that lists an object its reader may not see stops it",
+    # Arc FA, FA-4 (ROADMAP §3.60), queued 2026-10-26. No model call.
+    "ontology.set_segments": "receipt: on theLook, a dashboard set of fixed conditions is kept as a segment, lands in the "
+                             "draft counted, reaches readers when published and reads the count the set read; a set "
+                             "reading a reader's value is refused with its sentence. Falsifier: a kept segment that "
+                             "counts other objects than the set it was kept from stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "

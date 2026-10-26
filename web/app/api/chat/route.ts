@@ -96,8 +96,9 @@ interface ChatBody {
   brief_period?: string;
   /** SP-15 — the OBJECT the question was summoned from (a held row's "Ask Spotlight"),
    *  structurally: kind + id, never parsed out of the prose. Forwarded verbatim; the
-   *  backend opens the turn on that object's live state. */
-  focus?: { kind: string; id: string } | null;
+   *  backend opens the turn on that object's live state. Arc FA-2 — or the subject a reader
+   *  chose on a dashboard (`kind` objects or set, `lib/askSubject.ts`), read again by the backend. */
+  focus?: { kind: string; id?: string; [more: string]: unknown } | null;
 }
 
 /**

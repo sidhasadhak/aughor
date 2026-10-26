@@ -25,6 +25,7 @@
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { AskAboutPiece } from "@/components/dashboards/AskAbout";
 import { useCellBox, useMeasured, useSettled } from "@/components/dashboards/cellBox";
 import { Foot, Frame, Title } from "@/components/dashboards/DashboardTile";
 import { Masked } from "@/components/objects/Masked";
@@ -62,6 +63,9 @@ export interface Picked { objectType: string; typeId: string; pk: string }
 interface PiecesValue {
   connectionId?: string;
   schema?: string;
+  /** The key the dashboard drawn is remembered under (`<connection>:<id>`, `shared:<owner>:<id>`) — what a question about
+   *  one of its sets names it by (Arc FA-2); none outside a dashboard. */
+  dashboardId?: string;
   /** Each table's chosen object, by the choice it names (`chooses`) or else the table's element key. */
   picked: Record<string, Picked>;
   pick: (choice: string, p: Picked | null) => void;
@@ -401,9 +405,9 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what each query is asked
   }, [queryKey, tick]);
   const value = useMemo<PiecesValue>(() => ({
-    connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
+    connectionId, schema, dashboardId, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
     processes, actions, filters, toggle, clear, search, asGroup, say, valueOf, readerValues, setValue,
-  }), [connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
+  }), [connectionId, schema, dashboardId, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
     processes, actions, filters, toggle, clear, search, asGroup, say, valueOf, readerValues, setValue]);
   return <PiecesContext.Provider value={value}>{children}</PiecesContext.Provider>;
 }
@@ -746,6 +750,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
       </div>
       <Foot icon="table" aside={
         <span style={{ display: "inline-flex", gap: 4 }}>
+          <AskAboutPiece query={query} ticked={ticks_} total={page.total} typeId={page.type_id} />
           <Button size="icon-xs" variant="ghost" aria-label="Previous page" disabled={offset === 0}
             onClick={() => setOffset(o => Math.max(0, o - limit))}><Icon name="chevl" /></Button>
           <Button size="icon-xs" variant="ghost" aria-label="Next page"
