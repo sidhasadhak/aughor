@@ -113,6 +113,11 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc FA, FA-3 (ROADMAP §3.60), 2026-10-26: `ontology.put_back` (an earlier version back into the draft) and
     # `ontology.retiring` (a declaration marked retiring with a successor and a day). Neither calls a model; each entry
     # names its receipt and the falsifier.
+    # Arc MC (ROADMAP §3.62), 2026-10-26: `metrics.figure_gates` (a metric's figures checked at approval),
+    # `metrics.coverage_map` (the areas, placement and the matrix), `metrics.coverage_proposals` (recipes and the
+    # ontology's derivations proposed by code), `metrics.coverage_writer` (one model call per uncovered area when
+    # profiled — the only one that spends), `metrics.blind_spot_proposals` and `briefing.metric_cap`. Each entry names
+    # the receipt and the falsifier.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
                                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
@@ -120,6 +125,8 @@ def test_the_queue_is_named_and_migrations_are_empty():
                                      "automations.objects_admitted", "packs.installed_versions",
                                      "packs.dashboard_templates", "agents.grounding_read", "graph.declarations",
                                      "objects.find", "knowledge.hybrid_documents", "canvas.ask_about_chosen",
-                                     "ontology.set_segments", "ontology.put_back", "ontology.retiring"}
+                                     "ontology.set_segments", "ontology.put_back", "ontology.retiring",
+                                     "metrics.figure_gates", "metrics.coverage_map", "metrics.coverage_proposals",
+                                     "metrics.coverage_writer", "metrics.blind_spot_proposals", "briefing.metric_cap"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

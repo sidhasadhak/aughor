@@ -104,6 +104,16 @@ describe("PaperNumbers", () => {
     expect(screen.getByText("+3.1%")).toBeInTheDocument();
     expect(screen.queryByText("0")).toBeNull();
   });
+
+  it("reads by area when the figures carry one: a heading over each area's first figure, none without", () => {
+    const { rerender } = render(<PaperNumbers title="The week in numbers" rows={[
+      { key: "g", label: "GMV", value: "€1.2M", area: "Orders & sales" },
+      { key: "a", label: "AOV", value: "€640", area: "Orders & sales" },
+      { key: "r", label: "Item return rate", value: "31%", area: "Returns" }]} />);
+    expect(screen.getAllByTestId("paper-area").map(h => h.textContent)).toEqual(["Orders & sales", "Returns"]);
+    rerender(<PaperNumbers title="The week in numbers" rows={[{ key: "g", label: "GMV", value: "€1.2M" }]} />);
+    expect(screen.queryAllByTestId("paper-area")).toHaveLength(0);
+  });
 });
 
 describe("InBrief", () => {

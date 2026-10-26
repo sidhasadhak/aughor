@@ -249,6 +249,11 @@ FINGERPRINTS: dict[str, FingerprintSpec] = {
             "IP-3 — a package's gate 4 receipt: SHA-256 over its anatomy files (paths and bytes). "
             "A receipt whose fingerprint differs describes a package that has since changed, and CI fails it.",
         ),
+        FingerprintSpec(
+            "coverage_binding", "aughor.semantic.coverage_proposals", "binding_fingerprint", "staleness",
+            "Arc MC — the binding a recipe's gate verdict was read under. A verdict whose binding fingerprint "
+            "differs from the binding as it stands is not applied to the catalogue's row: the roles moved.",
+        ),
         # ── content: identity for dedup / idempotency, NOT staleness ──
         FingerprintSpec(
             "sql_args", "aughor.agent.wandering", "args_fingerprint", "content",

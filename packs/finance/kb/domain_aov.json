@@ -1,6 +1,9 @@
 [
   {
     "id": "average_order_value",
+    "area": "revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Average Order Value (AOV)",
     "business_definition": "AOV = merchandise value per completed order: each order's lines (quantity × unit price) summed, before refunds, discounts and fees — the same basis as GMV — over the number of distinct completed orders. Rising AOV means customers are buying more per transaction. Falling AOV can signal pricing pressure, mix shift to cheaper products, or promotional discounting.",
     "intent_tags": ["AOV", "average order value", "basket size", "order value", "spend per order"],

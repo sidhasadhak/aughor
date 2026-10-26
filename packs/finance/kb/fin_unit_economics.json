@@ -1,6 +1,9 @@
 [
   {
     "id": "fin_gross_margin",
+    "area": "profitability",
+    "kind": "rate",
+    "direction": "up",
     "title": "Gross Margin",
     "intent_tags": [
       "gross margin",
@@ -137,6 +140,9 @@
   },
   {
     "id": "fin_contribution_margin",
+    "area": "profitability",
+    "kind": "rate",
+    "direction": "up",
     "title": "Contribution Margin",
     "intent_tags": [
       "contribution margin",
@@ -269,6 +275,9 @@
   },
   {
     "id": "fin_cogs_per_unit",
+    "area": "profitability",
+    "kind": "value",
+    "direction": "down",
     "title": "COGS per Unit",
     "intent_tags": [
       "cogs per unit",

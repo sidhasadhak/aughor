@@ -1,6 +1,9 @@
 [
   {
     "id": "refund_rate",
+    "area": "refunds",
+    "kind": "rate",
+    "direction": "down",
     "title": "Refund Rate",
     "business_definition": "Refund rate = refunded amount / gross merchandise value (GMV) in the same period — money, not a count of orders. A refund is money back and a return is goods back; the return rate is its own metric. Money can go back without the goods (a damaged item refunded in place), and goods can come back without money (an exchange, store credit). High refund rates signal product quality issues, expectation mismatches, fraud, or fulfillment problems. Refunds directly reduce net revenue.",
     "intent_tags": ["refund rate", "refunds", "chargebacks", "disputes"],

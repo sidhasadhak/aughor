@@ -161,6 +161,7 @@
   "aughor/routers/query.py::query_semantic_text_columns._work::execute::__semantic_cols__": {"dialect": "native", "author": "person", "note": "a person's SQL inside a portable wrapper"},
   "aughor/semantic/answer_divergence.py::measure_impact::execute::divergence-impact": {"dialect": "native", "author": "stored", "note": "the SQL earlier runs of the question executed"},
   "aughor/semantic/answer_resolution.py::_db_find_value::execute::__resolve__": {"dialect": "declared", "author": "platform"},
+  "aughor/semantic/coverage_proposals.py::run.run_sql::execute::__coverage_gate__": {"dialect": "native", "author": "mixed", "note": "Arc MC: a coverage proposal's statement read by its gates — written over this connection's own columns by a pack's recipe bound to its roles, the object door's compiler, the platform (a blind spot's sum) or the writer's model call (MC-5), in the connection's dialect, before a person sees it", "internal": "the gates read each proposal's figure and its months before it is listed — a check, not an answer a person reads; the rows stay in the process, and the proposal is audited when a person adopts it"},
   "aughor/semantic/cross_source.py::execute_plan::read_typed_rows::{_HOME_LABEL}": {"dialect": "generated", "author": "platform"},
   "aughor/semantic/measure_grain.py::detect_measure_grain::execute::measure_grain": {"dialect": "declared", "author": "platform"},
   "aughor/semantic/metrics.py::_run_check_sql::execute::{label}": {"dialect": "native", "author": "person", "note": "a metric's quality test or freshness SQL"},

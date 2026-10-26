@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_inventory_turnover",
+    "area": "inventory",
+    "kind": "rate",
+    "direction": "up",
     "title": "Inventory Turnover Ratio",
     "intent_tags": [
       "inventory turnover",
@@ -141,6 +144,9 @@
   },
   {
     "id": "ec_dio",
+    "area": "inventory",
+    "kind": "duration",
+    "direction": "down",
     "title": "Days Inventory Outstanding (DIO)",
     "intent_tags": [
       "days inventory outstanding",
@@ -407,6 +413,9 @@
   },
   {
     "id": "ec_revenue_by_category",
+    "area": "orders_sales",
+    "kind": "value",
+    "direction": "up",
     "title": "Revenue by Category",
     "intent_tags": [
       "revenue by category",
@@ -542,6 +551,9 @@
   },
   {
     "id": "ec_stockout_rate",
+    "area": "inventory",
+    "kind": "rate",
+    "direction": "down",
     "title": "Stockout Rate",
     "intent_tags": [
       "stockout rate",

@@ -40,7 +40,8 @@ def door(monkeypatch):
     monkeypatch.setattr(R, "_reopen_questions", lambda *a: None)
     import aughor.kernel.ledger as L
     monkeypatch.setattr(L.Ledger, "default", classmethod(lambda cls: SimpleNamespace(
-        emit=lambda kind, payload: seen.events.append(payload))))
+        emit=lambda kind, payload: seen.events.append(payload),
+        kv_get=lambda store, key, default=None: default)))     # no flag overrides: every flag at its default
     return seen
 
 

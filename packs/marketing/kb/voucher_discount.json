@@ -1,6 +1,9 @@
 [
   {
     "id": "vd_redemption_rate",
+    "area": "promotions",
+    "kind": "rate",
+    "direction": "either",
     "title": "Voucher redemption rate",
     "intent_tags": ["redemption rate", "voucher redemption", "coupon redemption", "discount code usage"],
     "sql_features": ["aggregation", "join"],
@@ -16,6 +19,9 @@
   },
   {
     "id": "vd_discount_depth",
+    "area": "promotions",
+    "kind": "rate",
+    "direction": "down",
     "title": "Average discount depth by campaign",
     "intent_tags": ["discount depth", "average discount", "discount percentage", "markdown rate"],
     "sql_features": ["aggregation"],

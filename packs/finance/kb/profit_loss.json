@@ -44,6 +44,9 @@
   },
   {
     "id": "pl_contribution_margin",
+    "area": "profitability",
+    "kind": "value",
+    "direction": "up",
     "title": "Contribution margin by product / SKU",
     "intent_tags": ["contribution margin", "product margin", "sku profitability", "variable margin", "direct margin"],
     "sql_features": ["aggregation", "join"],
@@ -86,6 +89,9 @@
   },
   {
     "id": "pl_operating_leverage",
+    "area": "profitability",
+    "kind": "analysis",
+    "direction": "either",
     "title": "Operating leverage measurement",
     "intent_tags": ["operating leverage", "fixed vs variable costs", "revenue sensitivity", "cost structure"],
     "sql_features": ["cte", "window"],

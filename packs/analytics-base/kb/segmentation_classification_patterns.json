@@ -651,6 +651,9 @@
   },
   {
     "id": "seg_cohort_assignment",
+    "area": "analysis",
+    "kind": "analysis",
+    "direction": "either",
     "title": "Cohort Assignment by First Event",
     "intent_tags": [
       "acquisition cohort",

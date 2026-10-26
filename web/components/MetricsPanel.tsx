@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Card, Chip, Empty, Figure, Figures, Label, MUTED, NUM, NeedsYou, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
 import { FoldLine, GroupHead, Sql, ToolsMenu, rowButtonStyle } from "@/components/semantic/parts";
 import { AdoptProposals } from "@/components/semantic/AdoptProposals";
+import { CoverageCard } from "@/components/semantic/CoverageCard";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -1289,6 +1290,9 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
       {adding && (
         <Card label="New metric" testId="metric-new">{editorForm}</Card>
       )}
+
+      {/* Arc MC — the areas a business like this one is read by, and how far its metrics cover them. */}
+      {connId && !every && <CoverageCard connId={connId} schema={schema || undefined} rows={rows} onAdopted={() => { load(); }} />}
 
       {/* The proposals, adopted as a set: dated, proposed and approved together, approved once (2026-10-23). */}
       {connId && !every && <AdoptProposals connId={connId} schema={schema || undefined} rows={rows} onDone={() => { load(); }} />}

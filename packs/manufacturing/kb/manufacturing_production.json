@@ -1,6 +1,9 @@
 [
   {
     "id": "mfg_oee",
+    "area": "production",
+    "kind": "rate",
+    "direction": "up",
     "title": "Overall Equipment Effectiveness (OEE)",
     "intent_tags": [
       "oee",
@@ -147,6 +150,9 @@
   },
   {
     "id": "mfg_first_pass_yield",
+    "area": "quality",
+    "kind": "rate",
+    "direction": "up",
     "title": "First Pass Yield / Quality Rate",
     "intent_tags": [
       "first pass yield",
@@ -285,6 +291,9 @@
   },
   {
     "id": "mfg_scrap_rate",
+    "area": "quality",
+    "kind": "rate",
+    "direction": "down",
     "title": "Scrap / Defect Rate (PPM)",
     "intent_tags": [
       "scrap rate",
@@ -423,6 +432,9 @@
   },
   {
     "id": "mfg_cycle_time_takt",
+    "area": "production",
+    "kind": "duration",
+    "direction": "down",
     "title": "Cycle Time vs Takt Time",
     "intent_tags": [
       "cycle time",
@@ -561,6 +573,9 @@
   },
   {
     "id": "mfg_throughput",
+    "area": "production",
+    "kind": "volume",
+    "direction": "up",
     "title": "Throughput (Units per Period)",
     "intent_tags": [
       "throughput",
@@ -700,6 +715,9 @@
   },
   {
     "id": "mfg_downtime_mtbf_mttr",
+    "area": "maintenance",
+    "kind": "duration",
+    "direction": "down",
     "title": "Unplanned Downtime + MTBF / MTTR",
     "intent_tags": [
       "downtime",

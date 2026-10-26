@@ -1,6 +1,9 @@
 [
   {
     "id": "monthly_recurring_revenue",
+    "area": "recurring_revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Monthly Recurring Revenue (MRR)",
     "business_definition": "MRR is the predictable monthly revenue from active subscriptions. MRR = sum of all active subscription amounts normalised to monthly. New MRR + Expansion MRR - Churned MRR - Contraction MRR = Net New MRR.",
     "intent_tags": ["MRR", "monthly recurring revenue", "ARR", "subscription revenue", "MRR growth", "MRR decline", "net new MRR"],

@@ -9,7 +9,7 @@
  * narrator's; the three columns are the desk's (`aughor/briefing/desk.py`: records, never a model);
  * every claim on the page carries a numbered source, listed at the foot.
  */
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { changeOf } from "@/components/brief/MetricDetail";
@@ -131,6 +131,8 @@ export interface PaperNumber {
   ended?: boolean;
   /** The metric's name in the Semantic Layer, where a definition that cannot be measured is fixed. */
   metric?: string;
+  /** Arc MC — the area it reads on, while the Briefing reads by area: a heading goes over each area's first figure. */
+  area?: string;
 }
 
 /** An edition's measured metrics as the numbers box prints them: every figure is the edition's own
@@ -145,7 +147,8 @@ export function rangeNumbers(stored: BriefingRangeBlock): PaperNumber[] {
       const t = changeOf(m, "previous");
       return { key: m.metric, label: m.name, value: m.current_text ?? "—",
                change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined,
-               note: m.current_partial ? `only ${m.current_partial}` : undefined };
+               note: m.current_partial ? `only ${m.current_partial}` : undefined,
+               ...(m.area?.name ? { area: m.area.name } : {}) };
     }),
     ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
                                     unknown: u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured",
@@ -171,7 +174,13 @@ export function PaperNumbers({ title, rows, note, after, connectionId }: {
       {rows.length === 0
         ? <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>No figure was measured for this edition.</div>
         : rows.map((r, i) => (
-          <div key={r.key} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0", borderTop: i ? RULE : "none" }}>
+          <Fragment key={r.key}>
+          {r.area && r.area !== rows[i - 1]?.area && (
+            <div data-testid="paper-area" className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase",
+              letterSpacing: ".06em", padding: i ? "10px 0 2px" : "0 0 2px" }}>{r.area}</div>
+          )}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0",
+            borderTop: i && !(r.area && r.area !== rows[i - 1]?.area) ? RULE : "none" }}>
             <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 0, flex: 1 }}>
               {r.label}
               {r.note && <span className="aug-fs-xs" data-testid="paper-number-note" style={{ display: "block", color: "var(--amb4)" }}>{r.note}</span>}
@@ -185,6 +194,7 @@ export function PaperNumbers({ title, rows, note, after, connectionId }: {
                     color: r.change.sign > 0 ? "var(--grn4)" : r.change.sign < 0 ? "var(--red4)" : "var(--t3)" }}>{r.change.text}</span>}
                 </span>}
           </div>
+          </Fragment>
         ))}
       {note && <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 10 }}>{note}</div>}
       {(unmeasured.length > 0 || ended.length > 0) && (

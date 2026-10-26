@@ -27,7 +27,7 @@ MIN_AGREEING = 3
 _SCALES = (1.0, 100.0, 0.01)
 
 
-def _months(today: date, n: int = TWIN_MONTHS) -> list:
+def complete_months(today: date, n: int = TWIN_MONTHS) -> list:
     """The ``n`` complete calendar months before ``today``'s, oldest first, as windows."""
     from aughor.semantic.metric_time import Window
 
@@ -88,7 +88,7 @@ def twin_of(m: Any, approved: list, *, run_sql: Callable[[str], tuple], dialect:
     candidates_ = candidates(m, approved)
     if not candidates_:
         return dict(NO_TWIN)
-    windows = _months(today)
+    windows = complete_months(today)
     mine, why = _figures(m, windows, run_sql, dialect)
     if mine is None:
         return {"twin": None, "months": 0, "checked": False, "why": why}

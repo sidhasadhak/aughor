@@ -1,0 +1,20 @@
+# Arc MC (ROADMAP §3.62) — the areas a food-delivery marketplace is read by, its income statement first.
+areas:
+  - id: orders
+    name: Orders
+    question: How much was ordered?
+    words: [order, orders, basket, cart, cancellation]
+  - id: marketplace
+    name: Marketplace economics
+    question: What does the marketplace keep?
+    words: [commission, merchant, restaurant, fee, take rate]
+    absorbs: [revenue, profitability]
+  - id: delivery
+    name: Delivery
+    question: Did it arrive hot and on time?
+    words: [delivery, courier, rider, dasher, dispatch, trip]
+  - id: customers
+    name: Customers
+    question: Do they order again?
+    words: [customer, customers, user, users, cohort, retention]
+    absorbs: [experience]

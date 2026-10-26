@@ -1,6 +1,9 @@
 [
   {
     "id": "retention_cohorts",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Cohort Retention Analysis",
     "business_definition": "Cohort retention tracks what percentage of users acquired in a given period are still active N periods later. It isolates product quality from acquisition volume. Healthy retention curves flatten at a non-zero level.",
     "intent_tags": ["retention", "cohort retention", "cohort analysis", "day 30 retention", "weekly retention", "user retention"],

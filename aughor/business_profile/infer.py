@@ -410,6 +410,14 @@ def infer_business_profile(connection_id: str,
         connection_id, profile.industry, profile.business_model,
         len(profile.north_star_metrics), len(profile.key_questions), len(recipes), profile.confidence,
     )
+    # Arc MC — the areas the data covers are proposed for once the profile stands, on a thread; with
+    # `metrics.coverage_writer` on, one model call per uncovered area (the user's call, 2026-10-26: automatically when
+    # profiled). Nothing starts while every coverage flag is off.
+    try:
+        from aughor.semantic.coverage_proposals import run_in_background
+        run_in_background(connection_id, schema_name, write=True, why="the connection was profiled")
+    except Exception as exc:  # noqa: BLE001 — a coverage run that cannot start leaves the profile as built
+        logger.warning("[profile:%s] coverage run did not start (non-fatal): %s", connection_id, exc)
     return profile
 
 

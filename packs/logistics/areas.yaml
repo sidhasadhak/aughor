@@ -1,0 +1,16 @@
+# Arc MC (ROADMAP §3.62) — the areas a logistics operation is read by.
+areas:
+  - id: service_level
+    name: Service level
+    question: Did it arrive on time and in full?
+    words: [delivery, shipment, consignment, stop, attempt, pod]
+    absorbs: [fulfilment]
+  - id: transit
+    name: Transit
+    question: How long does it take?
+    words: [transit, route, leg, lane, trip, scan]
+  - id: cost_capacity
+    name: Cost and capacity
+    question: What does each shipment cost, and is the fleet full?
+    words: [vehicle, truck, trailer, fleet, capacity, fuel, cost, load]
+    absorbs: [profitability]

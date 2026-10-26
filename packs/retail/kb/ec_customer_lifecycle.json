@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_clv",
+    "area": "customers",
+    "kind": "value",
+    "direction": "up",
     "title": "Customer Lifetime Value (CLV)",
     "intent_tags": [
       "clv",
@@ -156,6 +159,9 @@
   },
   {
     "id": "ec_repeat_rate",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Repeat Purchase Rate",
     "intent_tags": [
       "repeat rate",
@@ -292,6 +298,9 @@
   },
   {
     "id": "ec_new_vs_returning",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "either",
     "title": "New vs Returning Customer Ratio",
     "intent_tags": [
       "new vs returning",
@@ -565,6 +574,9 @@
   },
   {
     "id": "ec_cohort_retention",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Cohort Retention Rate",
     "intent_tags": [
       "cohort retention",

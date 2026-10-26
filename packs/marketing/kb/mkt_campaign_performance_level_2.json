@@ -1,6 +1,9 @@
 [
   {
     "id": "mkt_cpa_by_creative",
+    "area": "marketing",
+    "kind": "value",
+    "direction": "down",
     "title": "Cost per Acquisition by Creative",
     "intent_tags": [
       "CPA by creative",
@@ -513,6 +516,9 @@
   },
   {
     "id": "mkt_landing_page_conversion_rate",
+    "area": "marketing",
+    "kind": "rate",
+    "direction": "up",
     "title": "Landing Page Conversion Rate",
     "intent_tags": [
       "landing page conversion rate",

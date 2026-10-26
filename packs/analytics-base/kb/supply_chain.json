@@ -1,6 +1,9 @@
 [
   {
     "id": "sc_days_on_hand",
+    "area": "inventory",
+    "kind": "duration",
+    "direction": "either",
     "title": "Inventory days on hand (DOH)",
     "intent_tags": ["days on hand", "inventory days", "doh", "stock coverage", "days of inventory"],
     "sql_features": ["aggregation", "join"],
@@ -45,6 +48,9 @@
   },
   {
     "id": "sc_lead_time",
+    "area": "fulfilment",
+    "kind": "duration",
+    "direction": "down",
     "title": "Supplier lead time analysis",
     "intent_tags": ["lead time", "supplier lead time", "delivery time", "purchase order lead time", "supplier speed"],
     "sql_features": ["aggregation"],
@@ -59,6 +65,9 @@
   },
   {
     "id": "sc_fill_rate",
+    "area": "fulfilment",
+    "kind": "rate",
+    "direction": "up",
     "title": "Order fill rate / service level",
     "intent_tags": ["fill rate", "service level", "order fulfillment", "line fill rate", "perfect order rate"],
     "sql_features": ["aggregation"],
@@ -116,6 +125,9 @@
   },
   {
     "id": "sc_inventory_turnover",
+    "area": "inventory",
+    "kind": "rate",
+    "direction": "up",
     "title": "Inventory turnover and weeks of supply",
     "intent_tags": ["inventory turnover", "stock turnover", "weeks of supply", "wos", "inventory efficiency"],
     "sql_features": ["aggregation", "join"],
@@ -130,6 +142,9 @@
   },
   {
     "id": "sc_order_cycle_time",
+    "area": "fulfilment",
+    "kind": "duration",
+    "direction": "down",
     "title": "Order-to-delivery cycle time",
     "intent_tags": ["order cycle time", "delivery time", "order to ship", "fulfillment time", "time to deliver"],
     "sql_features": ["aggregation"],

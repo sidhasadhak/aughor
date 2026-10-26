@@ -1,6 +1,9 @@
 [
   {
     "id": "conversion_funnel",
+    "area": "conversion",
+    "kind": "rate",
+    "direction": "up",
     "title": "Conversion Funnel Analysis",
     "business_definition": "A conversion funnel tracks the percentage of users who complete each step toward a goal (e.g. visit → signup → activation → payment). Funnel analysis finds where and why users drop off.",
     "intent_tags": ["conversion", "funnel", "drop-off", "conversion rate", "signup conversion", "trial conversion", "checkout conversion"],

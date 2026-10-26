@@ -1,0 +1,15 @@
+# Arc MC (ROADMAP §3.62) — the areas customer's knowledge-base patterns are read on. An industry pack takes one into its
+# own area by naming it in `absorbs`; an area no industry takes is read under its own name.
+areas:
+  - id: customers
+    name: Customers
+    question: Who are they, and do they stay?
+    words: [customer, customers, user, users, member, account, cohort, retention, churn, loyalty, lifetime]
+  - id: acquisition
+    name: Acquisition
+    question: What does a new customer cost?
+    words: [acquisition, lead, leads, signup]
+  - id: experience
+    name: Experience
+    question: Are customers happy?
+    words: [nps, survey, csat, feedback, review, rating]

@@ -1,6 +1,9 @@
 [
   {
     "id": "ca_cac",
+    "area": "acquisition",
+    "kind": "value",
+    "direction": "down",
     "title": "Customer acquisition cost (CAC) by channel",
     "intent_tags": ["cac", "customer acquisition cost", "cost to acquire", "acquisition cost by channel"],
     "sql_features": ["aggregation", "join"],
@@ -16,6 +19,9 @@
   },
   {
     "id": "ca_ltv_cac",
+    "area": "acquisition",
+    "kind": "rate",
+    "direction": "up",
     "title": "LTV:CAC ratio by acquisition channel",
     "intent_tags": ["ltv cac ratio", "lifetime value to cac", "channel efficiency", "ltv cac", "payback ratio"],
     "sql_features": ["cte", "join"],
@@ -30,6 +36,9 @@
   },
   {
     "id": "ca_payback_period",
+    "area": "acquisition",
+    "kind": "duration",
+    "direction": "down",
     "title": "CAC payback period",
     "intent_tags": ["payback period", "cac payback", "months to recover cac", "time to payback"],
     "sql_features": ["cte", "window"],
@@ -44,6 +53,9 @@
   },
   {
     "id": "ca_nps",
+    "area": "experience",
+    "kind": "quality",
+    "direction": "up",
     "title": "NPS score aggregation (Net Promoter Score)",
     "intent_tags": ["nps", "net promoter score", "promoters detractors", "customer satisfaction", "survey score"],
     "sql_features": ["aggregation"],
@@ -144,6 +156,9 @@
   },
   {
     "id": "ca_nrr",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Net Revenue Retention (NRR) and Gross Revenue Retention (GRR)",
     "intent_tags": ["nrr", "net revenue retention", "grr", "gross revenue retention", "dollar retention", "expansion revenue"],
     "sql_features": ["cte", "join"],

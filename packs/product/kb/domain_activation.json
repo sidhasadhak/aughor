@@ -1,6 +1,9 @@
 [
   {
     "id": "product_activation",
+    "area": "conversion",
+    "kind": "rate",
+    "direction": "up",
     "title": "Product Activation & Time-to-Value",
     "business_definition": "Activation is the moment a new user experiences the core value of the product for the first time. Activation rate = users who hit the activation event / total signups. Low activation is the leading cause of early churn.",
     "intent_tags": ["activation", "onboarding", "time to value", "user activation", "first value", "feature adoption"],

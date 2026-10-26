@@ -10326,6 +10326,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/coverage/{conn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Metric Coverage
+         * @description Arc MC, MC-2 — the map this connection's metrics are read against and how far they cover it: per area, in the
+         *     map's order, the data placed in it, its metrics, the knowledge base's patterns, the proposals waiting — every
+         *     placement with its reason. ``figures`` reads the approved metrics' figures that were not read within the hour, so no
+         *     area is said covered by one that never moves; without it, an unread metric is said as not checked.
+         */
+        get: operations["get_metric_coverage_metrics_coverage__conn_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/coverage/{conn_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Metric Coverage
+         * @description Arc MC, MC-3/4/6 — propose by code for the areas the data covers, every proposal through the gates, kept beside
+         *     the profile. No model call: the writer runs when the connection is profiled, or on its own door.
+         */
+        post: operations["run_metric_coverage_metrics_coverage__conn_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/coverage/{conn_id}/write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write Metric Coverage
+         * @description Arc MC, MC-5 — the knowledge base's patterns written for this schema now, one model call per uncovered area, on
+         *     a thread; the coverage view says the calls when they are made. The same run starts by itself when the connection is
+         *     profiled (the user's call, 2026-10-26).
+         */
+        post: operations["write_metric_coverage_metrics_coverage__conn_id__write_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/enforcement-rate": {
         parameters: {
             query?: never;
@@ -20376,6 +20442,12 @@ export interface components {
          *     workspace's resolved effective settings.
          */
         OrgSettings: {
+            /**
+             * Briefing Metric Cap
+             * @description How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the platform's default — 24 while `briefing.metric_cap` is on, 12 while it is off. Each metric costs three warehouse queries per Briefing.
+             * @default 0
+             */
+            briefing_metric_cap: number;
             /**
              * Chart Palette
              * @description Named chart palette (e.g. 'tableau', 'colorblind'); empty = theme default
@@ -41594,6 +41666,108 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_metric_coverage_metrics_coverage__conn_id__get: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                figures?: boolean;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_metric_coverage_metrics_coverage__conn_id__run_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_metric_coverage_metrics_coverage__conn_id__write_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

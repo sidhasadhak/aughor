@@ -1,6 +1,9 @@
 [
   {
     "id": "fd_delivery_time",
+    "area": "delivery",
+    "kind": "duration",
+    "direction": "down",
     "title": "Average Delivery Time",
     "intent_tags": [
       "delivery time",
@@ -139,6 +142,9 @@
   },
   {
     "id": "fd_orders_per_active_user",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Orders per Active User (Ordering Frequency)",
     "intent_tags": [
       "orders per active user",
@@ -271,6 +277,9 @@
   },
   {
     "id": "fd_cancellation_rate",
+    "area": "orders",
+    "kind": "rate",
+    "direction": "down",
     "title": "Cancellation Rate (by Party)",
     "intent_tags": [
       "cancellation rate",
@@ -409,6 +418,9 @@
   },
   {
     "id": "fd_courier_utilization",
+    "area": "delivery",
+    "kind": "rate",
+    "direction": "up",
     "title": "Courier Utilization (Deliveries per Online Hour)",
     "intent_tags": [
       "courier utilization",
@@ -541,6 +553,9 @@
   },
   {
     "id": "fd_retention_cohort_rate",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Repeat / Retention Cohort Rate",
     "intent_tags": [
       "retention rate",
@@ -674,6 +689,9 @@
   },
   {
     "id": "fd_take_rate",
+    "area": "marketplace",
+    "kind": "rate",
+    "direction": "up",
     "title": "Take Rate (Commission / GMV)",
     "intent_tags": [
       "take rate",

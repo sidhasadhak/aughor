@@ -1,6 +1,9 @@
 [
   {
     "id": "saas_mrr",
+    "area": "recurring_revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Monthly Recurring Revenue (MRR / ARR)",
     "intent_tags": [
       "mrr",
@@ -146,6 +149,9 @@
   },
   {
     "id": "saas_nrr",
+    "area": "recurring_revenue",
+    "kind": "rate",
+    "direction": "up",
     "title": "Net Revenue Retention (NRR)",
     "intent_tags": [
       "nrr",
@@ -285,6 +291,9 @@
   },
   {
     "id": "saas_revenue_churn",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "down",
     "title": "Gross Revenue Churn, Logo Churn & Customer Churn",
     "intent_tags": [
       "churn",
@@ -425,6 +434,9 @@
   },
   {
     "id": "saas_cac",
+    "area": "acquisition",
+    "kind": "value",
+    "direction": "down",
     "title": "Customer Acquisition Cost (CAC)",
     "intent_tags": [
       "cac",
@@ -563,6 +575,9 @@
   },
   {
     "id": "saas_ltv",
+    "area": "customers",
+    "kind": "value",
+    "direction": "up",
     "title": "Customer Lifetime Value (LTV) & LTV:CAC",
     "intent_tags": [
       "ltv",
@@ -701,6 +716,9 @@
   },
   {
     "id": "saas_cac_payback",
+    "area": "acquisition",
+    "kind": "duration",
+    "direction": "down",
     "title": "CAC Payback Period",
     "intent_tags": [
       "cac payback",

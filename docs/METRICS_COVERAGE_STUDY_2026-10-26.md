@@ -1,7 +1,8 @@
 # Metrics that cover the business — the framework (2026-10-26)
 
 *Drafted 2026-10-26 at the user's word; the framework came first (the user: "Proceed with framework first"). Adopted
-the same day as Arc MC with the six calls taken (§7; ROADMAP §3.62, §6 item 55; PENDING item 62). Nothing built yet.*
+the same day as Arc MC with the six calls taken (§7; ROADMAP §3.62, §6 item 55; PENDING item 62). **Built the same day
+at the user's word ("Go ahead and build entire arc mc"), MC-0…MC-6, six flags, off by default — §9.***
 
 ## 0. The ask
 
@@ -245,3 +246,26 @@ the knowledge base is not one; that is the finding. Not checked: whether the 60,
 character schema cap cuts LuxExperience's schema (its 33 tables are small enough that it probably does not — the
 prompt's count is the binding limit either way); what a scoped model proposer actually proposes (MC-5 is a build, and it
 spends).
+
+## 9. Built (2026-10-26)
+
+Each wave behind its own flag, off by default and byte-identical off (each with a test that says so).
+
+| Wave | Flag | Where | What it does |
+|---|---|---|---|
+| MC-0 | `metrics.figure_gates` | `semantic/metric_gates.py`; `routers/metrics.py` (approve, adopt) | reads a metric's last six months **at the day its data ends** and refuses at approval one that reads one value in every month (`reads_constant`), one whose median is outside its recipe's sane range (`outside_sane_range`, the band's basis said), and one whose recipe roles are bound to a column of the wrong type or to a column its formula tests for emptiness that is never empty (`binding_mistyped`). A gate that cannot read its figures says so and does not refuse |
+| MC-1 | — (data) | `packs/*/areas.yaml`; every metric pattern's `area`, `kind`, `direction`; `semantic/metric_map.py` | the map: an industry's areas in its reading order (retail's twelve, the income statement first), the function and base areas it takes in through `absorbs`, the ones it does not read under their own names, the generic layer's last area. 130 metric patterns tagged; a pattern naming an undeclared area is a problem said, never dropped |
+| MC-2 | `metrics.coverage_map` | `semantic/metric_coverage.py`; `GET /metrics/coverage/{conn}`; the Metrics tab's Coverage card | every table placed by its name, its entity's domain and the metrics that read it; every metric by its lineage, the pattern it is, its words, its tables — each with why. Covered = an approved metric whose figures move; an unread one is "not checked". Each area names its open patterns |
+| MC-3 | `metrics.coverage_proposals` | `semantic/coverage_proposals.py` | a recipe bound to this connection's roles, resolved and gated; the catalogue's industry row carries the verdict while the binding it read stands (`gate_failed` is never adoptable) |
+| MC-4 | `metrics.coverage_proposals` | the same | each measured promise's on-time rate, each stage's conversion, each measured rule's share — compiled by the object door and counted against the ontology's own filters at the same moment |
+| MC-5 | `metrics.coverage_writer` | `semantic/coverage_writer.py`; profiling's hook; `POST …/write` | when a connection is profiled (the user's call), one call per area with data and patterns its metrics do not compute yet — an area thin on metrics is as open as one with none — handed those patterns, the metrics already there and the area's own tables. Code refuses a proposal reading a table its area was not given, or citing a pattern it does not compute |
+| MC-6 | `metrics.blind_spot_proposals`, `briefing.metric_cap` | `coverage_proposals.blind_spot_proposals`; `briefing/ranges.py` | a profiled measure three findings aggregate with no metric reading it is proposed; the Briefing measures up to the workspace's cap (24 by default; Settings ▸ Briefing), read by area in the map's order |
+
+The proposals live beside the business profile they were made for (`business_profile.store.save_coverage`), the
+explorer's own proposal store; the catalogue lists them as its fourth source, `coverage`. Approval is the person's, through
+the adopt door that exists.
+
+**Found while building** — the first draft of the writer called only on areas with no working metric; on LuxExperience
+that skips Traffic & conversion, covered by one metric beside 22 patterns — the thin areas the user's question was
+about. It now calls on every area with data and open patterns.
+

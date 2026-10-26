@@ -1,6 +1,9 @@
 [
   {
     "id": "fin_recognized_revenue",
+    "area": "revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Recognized Revenue",
     "intent_tags": [
       "recognized revenue",
@@ -139,6 +142,9 @@
   },
   {
     "id": "fin_deferred_revenue",
+    "area": "recurring_revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Deferred Revenue",
     "intent_tags": [
       "deferred revenue",

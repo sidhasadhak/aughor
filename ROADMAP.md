@@ -12178,7 +12178,7 @@ first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything t
 
 ---
 
-### 3.62 · Arc MC — metrics that cover the business (DRAFTED 2026-10-26 · `docs/METRICS_COVERAGE_STUDY_2026-10-26.md` · ✅ ADOPTED the same day — §6 item 55, the six calls taken · nothing built; PENDING item 62)
+### 3.62 · Arc MC — metrics that cover the business (DRAFTED 2026-10-26 · `docs/METRICS_COVERAGE_STUDY_2026-10-26.md` · ✅ ADOPTED the same day — §6 item 55, the six calls taken · BUILT the same day, MC-0…MC-6, six flags off by default — the study's §9; PENDING item 62)
 
 **The ask** (the user, 2026-10-26, on LuxExperience): *"only 12 proposed metrics.. for an e-commerce organisation that
 is probably not even 50% of the matrix.. what are we missing?"*, then *"Missing in terms of approach or logic.."*, then
@@ -12212,6 +12212,16 @@ adoption and approval by people only, through the doors that exist · the Briefi
 
 **The laws it keeps.** A model proposes and never approves · industry nouns live in packs, never in core code · every
 proposal says its gates' verdicts and why one failed · nothing is measured as a period's figure that a window cannot bound.
+
+**Built 2026-10-26** (the user: *"Go ahead and build entire arc mc"*) — flags `metrics.figure_gates` (MC-0),
+`metrics.coverage_map` (MC-1/2), `metrics.coverage_proposals` (MC-3/4), `metrics.coverage_writer` (MC-5, the only one
+that spends), `metrics.blind_spot_proposals` and `briefing.metric_cap` (MC-6). The map is `packs/*/areas.yaml` plus
+area · kind · direction on all 130 metric patterns (`semantic/metric_map.py`); placement and the matrix
+`semantic/metric_coverage.py` (`GET /metrics/coverage/{conn}`, the Metrics tab's Coverage card); proposals
+`semantic/coverage_proposals.py` and `semantic/coverage_writer.py`, kept beside the business profile and listed as the
+catalogue's fourth source; the gates `semantic/metric_gates.py`. One change from the study, found building: the writer
+calls on every area with data and patterns its metrics do not compute yet, not only on areas with no metric — a covered
+area thin on metrics (LuxExperience's Traffic & conversion: one metric, 22 patterns) is what the user asked about.
 
 ---
 

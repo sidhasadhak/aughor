@@ -31,6 +31,9 @@
   },
   {
     "id": "fin_mom_growth",
+    "area": "revenue",
+    "kind": "analysis",
+    "direction": "either",
     "title": "Month-over-month and year-over-year growth",
     "intent_tags": [
       "mom",
@@ -217,6 +220,9 @@
   },
   {
     "id": "fin_days_sales_outstanding",
+    "area": "receivables",
+    "kind": "duration",
+    "direction": "down",
     "title": "Days sales outstanding (DSO)",
     "intent_tags": [
       "dso",
@@ -309,6 +315,9 @@
   },
   {
     "id": "fin_expense_ratio",
+    "area": "profitability",
+    "kind": "rate",
+    "direction": "down",
     "title": "Expense ratio and cost breakdown",
     "intent_tags": [
       "expense ratio",

@@ -199,6 +199,9 @@ export interface OrgSettings {
   /** The exploration principles §7 — the organisation's monthly budget, in model tokens, for what the
    *  Explorer spends on its own initiative; 0 = none. */
   exploration_monthly_tokens?: number;
+  /** Arc MC — how many approved headline metrics a Briefing measures; 0 = the platform's default (24 while the
+   *  Briefing reads by area, 12 while it does not). */
+  briefing_metric_cap?: number;
 }
 
 /** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
@@ -1121,9 +1124,9 @@ export async function getMetrics(connectionId?: string): Promise<Metric[]> {
 export interface CatalogueMetric {
   name: string;
   label: string;
-  /** "defined" | "industry" | "explorer" — where this metric came from. */
+  /** "defined" | "industry" | "explorer" | "coverage" — where this metric came from. */
   source: string;
-  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected". */
+  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected" | "gate_failed". */
   state: string;
   sql: string;
   unit: string;
@@ -1147,6 +1150,100 @@ export interface CatalogueMetric {
   /** The dataset it belongs to; "*" — every dataset of the connection. A row is (source, schema,
    *  name): two datasets may each have their own metric of one name. */
   schema: string;
+  /** Arc MC — the area of the map it reads on, the pattern it computes, how a coverage proposal was made, and its
+   *  gates' verdicts. Absent unless a coverage run read it. */
+  area?: string;
+  pattern?: string;
+  origin?: string;
+  gates?: Record<string, CoverageGate> | null;
+  time_column?: string;
+  time_kind?: string;
+}
+
+// ── Arc MC — the areas a connection's metrics cover ────────────────────────────────────────────────────────────────
+
+/** One gate's verdict: passed, failed with why, or not read (null) with why. */
+export interface CoverageGate { ok: boolean | null; why: string }
+export interface CoverageTable { name: string; rows: number | null; dated: boolean; why: string }
+export interface CoverageAreaMetric { name: string; label: string; status: string; why: string; moves: CoverageGate | null }
+export interface CoveragePattern {
+  id: string; title: string; pack_id: string; area: string; kind: string; direction: string; definition: string;
+  proposable: boolean;
+}
+export interface CoverageArea {
+  id: string; name: string; question: string; pack_id: string; generic: boolean; order: number;
+  patterns: CoveragePattern[]; recipes: string[];
+  /** covered — an approved metric that moves; unchecked — approved, its figures not read yet; uncovered — data and no
+   *  working metric; no_data — nothing placed here holds rows. */
+  state: "covered" | "unchecked" | "uncovered" | "no_data";
+  has_data: boolean; rows: number;
+  tables: CoverageTable[]; metrics: CoverageAreaMetric[];
+  proposals: number; adoptable: number; failed: number; declined: number;
+  /** The patterns no metric or proposal here computes yet, and whether the writer would call on this area. */
+  open_patterns?: string[]; writable?: boolean;
+  said: string[];
+}
+export interface CoverageProposal {
+  name: string; label: string; area: string;
+  /** recipe · ontology · pattern · area · blind_spot */
+  source: string;
+  pattern: string; pattern_title?: string; state: "proposed" | "gate_failed"; reason: string;
+  gates: Record<string, CoverageGate>; sql: string; time_column: string; definition: string;
+  derived_from?: string; findings?: number; written_by?: string; declined?: boolean;
+}
+export interface CoverageSpendArea {
+  area: string; name: string; tables: string[]; patterns: number; proposals: number;
+  skipped: { pattern: string; why: string }[]; error: string;
+}
+export interface CoverageRun {
+  run_at: string; why: string; said: string[];
+  spend: { calls: number; model: string; at: string; done_at?: string; areas: CoverageSpendArea[] } | null;
+}
+export interface MetricCoverage {
+  connection_id: string; schema: string | null; industry_pack: string;
+  areas: CoverageArea[]; unplaced_tables: string[]; said: string[];
+  counts: { areas: number; with_data: number; covered: number; uncovered: number; unchecked: number; patterns: number;
+            open_patterns?: number; writable?: number };
+  proposals: CoverageProposal[]; run: CoverageRun | null; flags: Record<string, boolean>;
+}
+
+/** The coverage view, or null while `metrics.coverage_map` is off (the door answers 404). ``figures`` reads the
+ *  approved metrics' figures not read within the hour. */
+export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage | null> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema", schema);
+  if (figures) q.set("figures", "true");
+  const qs = q.toString();
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}${qs ? `?${qs}` : ""}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The coverage could not be read"));
+  }
+  return res.json();
+}
+
+/** Propose by code for the areas the data covers — no model call. */
+export async function runMetricCoverage(connectionId: string, schema?: string):
+    Promise<{ run_at: string; proposals: number; adoptable: number; failed: number; said: string[] }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/run${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The proposals could not be made"));
+  }
+  return res.json();
+}
+
+/** Write the knowledge base's patterns for this schema — one model call per uncovered area, on a thread. */
+export async function writeMetricCoverage(connectionId: string, schema?: string): Promise<{ started: boolean }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/write${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The writer could not be started"));
+  }
+  return res.json();
 }
 
 /** A proposal a person removed — never proposed here again until it is restored. */
@@ -7732,6 +7829,8 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
+  /** Arc MC — the area of the map it reads on, while the Briefing reads by area (`briefing.metric_cap`). */
+  area?: { id: string; name: string } | null;
   /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
    *  the range; `ownFigures` reads it as not measured, as the server now says it. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;

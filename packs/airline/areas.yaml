@@ -1,0 +1,20 @@
+# Arc MC (ROADMAP §3.62) — the areas an airline is read by, its income statement first.
+areas:
+  - id: unit_revenue
+    name: Unit revenue and cost
+    question: What does each seat earn and cost?
+    words: [fare, ticket, booking, revenue, ancillary, yield, cost]
+    absorbs: [revenue, profitability]
+  - id: network
+    name: Traffic and capacity
+    question: Are the seats filled?
+    words: [flight, flights, route, aircraft, seat, capacity, leg, passenger, fleet]
+  - id: operations
+    name: Operations
+    question: Did we fly as scheduled?
+    words: [delay, departure, arrival, punctuality, cancellation, diversion, otp]
+  - id: customers
+    name: Customers
+    question: Who flies, and do they come back?
+    words: [customer, loyalty, member, frequent flyer]
+    absorbs: [experience]

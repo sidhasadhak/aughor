@@ -728,4 +728,11 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     (recipes, ontology-derived, a scoped model call) → gates (moves · sane range · binding types) → people adopt.
     Waves MC-0…MC-6. *✅ ADOPTED 2026-10-26 (ROADMAP §6 item 55): deprecate the two that read 1 (done the same day) ·
     knowledge base + generic layer · MC-5 automatically when profiled · all proposals that pass, by area · the
-    Briefing's default raised to 24 · gates refuse at approval. Nothing built.*
+    Briefing's default raised to 24 · gates refuse at approval.* **BUILT 2026-10-26** at the user's word (*"Go ahead
+    and build entire arc mc"*), each wave behind its flag, off by default (the study's §9):
+    - [~] MC-0 `metrics.figure_gates` — moves · sane range · binding types, refused at approval and at the adopt door.
+    - [~] MC-1 the map — `packs/*/areas.yaml`, area/kind/direction on 130 patterns, `semantic/metric_map.py`.
+    - [~] MC-2 `metrics.coverage_map` — placement with why, the matrix, the Metrics tab's Coverage card.
+    - [~] MC-3/MC-4 `metrics.coverage_proposals` — bound recipes gated; ontology on-time rates, conversions, shares.
+    - [~] MC-5 `metrics.coverage_writer` — one call per open area on profiling; area and pattern gates in code.
+    - [~] MC-6 `metrics.blind_spot_proposals` + `briefing.metric_cap` — blind spots proposed; Briefing cap 24, by area.

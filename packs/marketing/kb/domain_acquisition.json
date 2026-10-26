@@ -1,6 +1,9 @@
 [
   {
     "id": "new_customer_acquisition",
+    "area": "acquisition",
+    "kind": "volume",
+    "direction": "up",
     "title": "New Customer Acquisition & CAC",
     "business_definition": "New customer acquisition measures how many net-new customers are added per period. CAC (Customer Acquisition Cost) = total sales and marketing spend / new customers acquired. Healthy CAC < LTV/3.",
     "intent_tags": ["new customers", "customer acquisition", "CAC", "acquisition cost", "new signups", "growth", "leads"],

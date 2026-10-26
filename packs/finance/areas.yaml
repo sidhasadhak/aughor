@@ -1,0 +1,28 @@
+# Arc MC (ROADMAP §3.62) — the areas finance's knowledge-base patterns are read on. An industry pack takes one into its
+# own area by naming it in `absorbs` (retail reads `refunds` as its Returns); an area no industry takes is read under
+# its own name. `words` place a table or a metric by its name.
+areas:
+  - id: revenue
+    name: Revenue
+    question: How much did we earn?
+    words: [revenue, sale, sales, billing, income]
+  - id: recurring_revenue
+    name: Recurring revenue
+    question: Is recurring revenue growing?
+    words: [subscription, plan, mrr, arr, renewal, contract]
+  - id: profitability
+    name: Profitability
+    question: What did we keep?
+    words: [margin, cogs, profit, expense, pnl]
+  - id: payments
+    name: Payments
+    question: Did the money land?
+    words: [payment, payments, charge, dunning]
+  - id: refunds
+    name: Refunds
+    question: What did we give back?
+    words: [refund, refunds, credit note]
+  - id: receivables
+    name: Receivables
+    question: Are we paid on time?
+    words: [receivable, receivables, invoice, dso]

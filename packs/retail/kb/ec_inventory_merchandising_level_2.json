@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_sell_through_rate",
+    "area": "inventory",
+    "kind": "rate",
+    "direction": "up",
     "title": "Sell-through Rate",
     "intent_tags": [
       "sell-through rate",
@@ -127,6 +130,9 @@
   },
   {
     "id": "ec_dead_stock_rate",
+    "area": "inventory",
+    "kind": "rate",
+    "direction": "down",
     "title": "Dead Stock Rate",
     "intent_tags": [
       "dead stock rate",
@@ -254,6 +260,9 @@
   },
   {
     "id": "ec_overstock_index",
+    "area": "inventory",
+    "kind": "rate",
+    "direction": "down",
     "title": "Overstock Index",
     "intent_tags": [
       "overstock index",
@@ -381,6 +390,9 @@
   },
   {
     "id": "ec_markdown_depth",
+    "area": "margin_pricing",
+    "kind": "rate",
+    "direction": "down",
     "title": "Markdown Depth",
     "intent_tags": [
       "markdown depth",
@@ -507,6 +519,9 @@
   },
   {
     "id": "ec_new_product_revenue_share",
+    "area": "orders_sales",
+    "kind": "rate",
+    "direction": "up",
     "title": "New Product Revenue Share",
     "intent_tags": [
       "new product revenue share",
