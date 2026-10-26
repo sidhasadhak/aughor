@@ -860,6 +860,16 @@ def transition_metric(name: str, req: TransitionRequest):
         from aughor import govern
         govern.guard(_action, name)
     now = datetime.now(timezone.utc).isoformat()
+    # A definition whose date cannot bound its rows is not made authoritative: every period's figure would be another
+    # period's (the user, 2026-10-26: "Make sure that this never happens again"). Its dates unset is not this — that
+    # metric is simply not measured for a period, and says so.
+    if str(req.action or "").strip().lower() == "approve":
+        from aughor.semantic.metric_time import unbounded_date
+        if (why := unbounded_date(m)):
+            raise HTTPException(status_code=409, detail={
+                "reason": "window_unbounded",
+                "message": (f"{m.label or name} cannot be approved: {why}. A day's, a week's or a month's figure "
+                            "would not be that period's.")})
     # One measure, one approved definition (the user, 2026-10-08: "Why should we have duplicates?").
     # The name check at definition never saw two names for one figure; the approval is where a
     # definition becomes authoritative, so it is checked here, by its figures.

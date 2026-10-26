@@ -126,6 +126,80 @@ def optional_side(tree, grain_table: str) -> str:
     return ""
 
 
+def _filter_around(table) -> Optional[Any]:
+    """The filter ``table`` is read inside — an EXISTS, an IN over a subquery, or a subquery compared in a WHERE or a
+    HAVING — or None when the table is read as rows: in a FROM or a JOIN, a CTE's or a derived table's included."""
+    from sqlglot import exp
+    node = table.parent
+    while node is not None:
+        if isinstance(node, exp.Exists) or (isinstance(node, exp.In) and node.args.get("query") is not None):
+            return node
+        if isinstance(node, exp.Subquery) and isinstance(node.parent, (exp.Where, exp.Having, exp.Predicate)):
+            return node
+        node = node.parent
+    return None
+
+
+def filter_only(tree, grain_table: str, grain_column: str = "") -> str:
+    """The filter that is the only place a statement reads ``grain_table``, said — or ``""`` when the statement reads
+    rows from that table, or matches it on its own date. A window filters the date's table; read only inside a
+    filter matched on some other column, the window keeps every row whose group has any day in it. LuxExperience's
+    marketing ROAS (2026-10-26) read ``marketing_campaigns`` WHERE EXISTS a ``dim_date`` row of the same
+    ``fiscal_year`` and was dated on ``dim_date.date``: a day's window kept that day's whole fiscal year, so a day's
+    figure would have been the year's. Measured the same day over the live install's 31 dated metrics: this one alone."""
+    from sqlglot import exp
+    want, date = bare(grain_table), bare(grain_column)
+    refs = [t for t in tree.find_all(exp.Table) if bare(t.name) == want]
+    filters = []
+    for t in refs:
+        f = _filter_around(t)
+        if f is None:
+            return ""                                 # read as rows somewhere: the window bounds them
+        filters.append((t, f))
+    if not filters:
+        return ""                                     # not read at all is said by the caller
+    links: set[str] = set()
+    for t, f in filters:
+        own = {str(t.alias_or_name or "").lower(), t.name.lower()}
+        for eq in f.find_all(exp.EQ):
+            sides = [s for s in (eq.left, eq.right) if isinstance(s, exp.Column)]
+            if len(sides) != 2:
+                continue
+            mine = [s for s in sides if str(s.table or "").lower() in own or not s.table]
+            if any(bare(s.name) == date for s in mine):
+                return ""                             # matched on its own date: a day's window keeps a day
+            links.update(s.name for s in sides if str(s.table or "").lower() in own)
+    how = f"matched on {', '.join(sorted(links))}" if links else "not matched on its date"
+    return f"its date table {grain_table} is read only inside a filter, {how}, so a window keeps whole groups of rows"
+
+
+def window_problem(sql: str, time_column: Optional[str], dialect: str = "duckdb") -> str:
+    """Why a window cannot bound this statement's rows by its date — the reasons `scoped_statement` refuses a period
+    for — or ``""`` when one can, or when there is no date to bound by. Read from the statement alone: nothing runs."""
+    table, _col = split_grain(time_column)
+    if not table or not str(sql or "").strip():
+        return ""
+    try:
+        import sqlglot
+        tree = sqlglot.parse_one(str(sql), read=dialect)
+    except Exception:  # noqa: BLE001 — a statement that does not parse is said where it is measured
+        return ""
+    if tree is None:
+        return ""
+    return unbounded(tree, table, _col)
+
+
+def unbounded(tree, grain_table: str, grain_column: str = "") -> str:
+    """Why a window on ``grain_table`` cannot bound the parsed statement's rows, with the fix — or ``""``."""
+    optional = optional_side(tree, grain_table)
+    if optional:
+        return f"{optional}, so a window cannot bound the statement's rows — read from that table, or join it inner"
+    filtered = filter_only(tree, grain_table, grain_column)
+    if filtered:
+        return f"{filtered} — join it to the rows the figure is made of, or give those rows a date"
+    return ""
+
+
 def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "duckdb",
                      rewrite=None) -> tuple[Optional[str], str, int]:
     """``sql`` with every reference to ``grain_table`` replaced by that table filtered to
@@ -135,7 +209,8 @@ def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "d
     references substituted, or ``(None, why, 0)``; ``n == 0`` is said, never silently run as the
     whole history. A grain table on the optional side of an outer join is refused by name
     (:func:`optional_side`): a filter there bounds nothing, and the figure would be the whole
-    history dressed as a window."""
+    history dressed as a window. So is one read only inside a filter matched on something other
+    than its date (:func:`filter_only`): the window would keep whole groups, a year dressed as a day."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -148,10 +223,10 @@ def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "d
         tree, why = rewrite(tree)
         if tree is None:
             return None, why, 0
-    optional = optional_side(tree, grain_table)
-    if optional:
-        return None, (f"{optional}, so a window cannot bound the statement's rows — read from that table, "
-                      "or join it inner"), 0
+    grain_column = next((c.name for c in predicate.find_all(exp.Column)), "") if predicate is not None else ""
+    why = unbounded(tree, grain_table, grain_column)
+    if why:
+        return None, why, 0
     ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
     want = bare(grain_table)
     n = 0
