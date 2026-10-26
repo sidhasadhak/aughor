@@ -137,6 +137,21 @@ ACTIONS: tuple[PaletteEntry, ...] = (
 
 ENTRIES: tuple[PaletteEntry, ...] = TRIGGERS + ACTIONS
 
+#: Entries offered only while their flag is on — off, the palette is `ENTRIES`, byte for byte.
+#: Arc FA, FA-5: the objects a rule or segment newly admits, after the promise trigger it sits
+#: beside (both are about the ontology's declarations rather than a table).
+FLAGGED: tuple[tuple[str, PaletteEntry], ...] = (
+    ("automations.objects_admitted",
+     PaletteEntry("objects_admitted", "trigger", "Objects admitted",
+                  "Objects a rule or segment newly admits — their keys, the count said", "filter", 55)),
+)
+
+
+def offered() -> tuple[PaletteEntry, ...]:
+    """What this deployment offers: every entry, and each flagged one whose flag is on."""
+    from aughor.kernel.flags import flag_enabled
+    return ENTRIES + tuple(entry for flag, entry in FLAGGED if flag_enabled(flag))
+
 
 @dataclass(frozen=True)
 class _Prereq:
@@ -213,6 +228,10 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         return sum(1 for p in (graph.processes or {}).values()
                    if any(st.promise is not None for st in p.stages))
 
+    def segments() -> int:
+        from aughor.automations.admitted import watchable_segments
+        return watchable_segments(conn_id)
+
     return {
         # The Slack sentence is the one the rail already shows, word for word: two
         # surfaces explaining the same absence differently is how a reader learns the
@@ -268,6 +287,14 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         "promise_breached": _Prereq(
             processes, "No declared process with a measured promise on this connection — "
                        "declare one on the Ontology's process panel first."),
+        # Arc FA, FA-5 — names an entity and a segment on it, so the module's one rule: ready
+        # exactly when this connection's cached graph holds a segment the trigger could list (a
+        # measured rule, a verified segment, a measured promise's overdue segment). Not gated on
+        # releases: with them on it reads what was published, off what was saved — either way
+        # what every consumer reads.
+        "objects_admitted": _Prereq(
+            segments, "No rule or segment on this connection's ontology to watch — declare a "
+                      "rule or a segment on the Ontology first."),
     }
 
 
@@ -283,7 +310,7 @@ def entries(conn_id: Optional[str] = None) -> list[dict]:
 
     prereqs = _prereqs(conn_id)
     out: list[dict] = []
-    for entry in ENTRIES:
+    for entry in offered():
         availability, reason = READY, ""
         prereq = prereqs.get(entry.kind)
         if prereq is not None:

@@ -46,6 +46,8 @@ def condition_label(cond: Any) -> str:
         return f"metric · monitor {cfg.get('monitor_id', '')}".strip(" ·")
     if kind in ("source_change", "entity_appears"):
         return f"{kind} · {cfg.get('table', '')}".strip(" ·")
+    if kind == "objects_admitted":
+        return f"objects_admitted · {cfg.get('entity', '')} · {cfg.get('segment', '')}".strip(" ·")
     return kind or "condition"
 
 
