@@ -95,10 +95,12 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
     # …and `objects.completeness` (ED-6): every object read says how complete it is.
     # Arc FA, FA-2 (ROADMAP §3.60), 2026-10-26: `canvas.ask_about_chosen` — ticked objects or a set a piece reads, asked
-    # about in the Data Canvas. No model call; its entry names its receipt and the falsifier.
+    # about in the Data Canvas; and FA-4, `ontology.set_segments` — a dashboard set kept as a segment. Neither calls a
+    # model; each entry names its receipt and the falsifier.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
                                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
-                                     "ontology.impacts_only", "objects.completeness", "canvas.ask_about_chosen"}
+                                     "ontology.impacts_only", "objects.completeness", "canvas.ask_about_chosen",
+                                     "ontology.set_segments"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

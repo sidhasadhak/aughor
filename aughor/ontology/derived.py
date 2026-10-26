@@ -247,6 +247,9 @@ def process_derivations(process: Process) -> Derivations:
 
 
 def _condition_words(condition: dict) -> str:
+    if condition.get("op") == "in_last":
+        # Arc FA-4 — a dashboard set kept as a segment counts the last days, as the set said it
+        return f"{condition.get('path')} in the last {condition.get('value')} days"
     rhs = condition.get("value_path") or condition.get("values") or condition.get("value")
     return f"{condition.get('path')} {condition.get('op')}" + ("" if rhs in (None, "", []) else f" {rhs}")
 

@@ -425,3 +425,67 @@ export function readerSet(spec: WireSpec, name: string, sent: Record<string, unk
   if ("waiting" in read) return read;
   return { entity: r.entity, segment: r.segment, filters: read.filters, label: r.label };
 }
+
+/** One condition of a rule, as `POST /ontology/rules` declares it (`aughor/ontology/business_rules.py`). */
+export interface RuleCondition { path: string; op: string; value?: unknown; values?: unknown[] }
+/** The most conditions one rule holds (`business_rules._MAX_CONDITIONS`). */
+export const MAX_RULE_CONDITIONS = 10;
+
+/** Arc FA-4 — a set kept as a segment: its entity and its conditions down the sets it starts from, flattened, with the
+ *  author's values in place — a condition rule's definition. Or why it cannot be one, in a sentence: a segment holds the
+ *  same objects for everyone, by conditions that all hold and never change on the page. */
+export function segmentRule(spec: WireSpec, name: string): { entity: string; label: string; conditions: RuleCondition[] } | Refused {
+  const whole = readSet(spec, name);
+  if (isRefused(whole)) return whole;
+  const sets = spec.sets ?? {};
+  const values = spec.values ?? {};
+  const own = sets[name];
+  const conditions: RuleCondition[] = [];
+  let at: string | null | undefined = name;
+  const walked: string[] = [];
+  while (at && !walked.includes(at)) {
+    walked.push(at);
+    const set: DashboardSetDef | undefined = sets[at];
+    if (!set) return { refused: `The set ${q(own?.label ?? name)} starts from ${q(at)}, which this dashboard does not hold.` };
+    const who = at === name ? `The set ${q(set.label)}` : `The set ${q(own?.label ?? name)} starts from ${q(set.label)}, which`;
+    if (set.linked_to) return { refused: `${who} is linked to the object a reader chooses, and a segment holds the same objects for everyone.` };
+    if (set.traverse) return { refused: `${who} gets the objects its objects link to, and a segment keeps one entity's objects by their own properties.` };
+    if (set.combine) return { refused: `${who} is combined with another set, and a segment is one list of conditions that all hold.` };
+    if (set.segment) return { refused: `${who} keeps the segment ${q(set.segment.replace(/[_-]+/g, " "))}, and a segment is declared from conditions alone.` };
+    for (const c of set.where ?? []) {
+      const cond: RuleCondition = { path: c.path, op: c.op };
+      if (c.value_from) {
+        const v = values[c.value_from];
+        const by = v?.from?.by ?? "author";
+        const named = q(v?.label ?? c.value_from);
+        if (by === "reader") return { refused: `${who} reads ${named}, a value the reader sets on the page, and a segment's conditions are fixed.` };
+        if (by === "chosen") return { refused: `${who} reads ${named} off the object a reader chooses, and a segment's conditions are fixed.` };
+        if (by !== "author") {
+          const how = by === "count" ? "counted" : by === "sum" ? "summed" : "read from a query";
+          return { refused: `${who} reads ${named}, which is ${how} on the page, and a segment's conditions are fixed, never read.` };
+        }
+        if (c.op === "in" || c.op === "not_in") cond.values = Array.isArray(v?.value) ? v.value : v?.value == null ? [] : [v.value];
+        else cond.value = v?.value ?? null;
+      } else if (c.op === "in" || c.op === "not_in") {
+        cond.values = c.values ?? [];
+      } else if (c.op !== "is_null" && c.op !== "not_null") {
+        cond.value = c.value;
+      }
+      conditions.push(cond);
+    }
+    at = set.entity ? null : set.from;
+  }
+  const label = own?.label ?? name;
+  if (!conditions.length) return { refused: `The set ${q(label)} keeps no conditions, and a segment is declared from at least one.` };
+  if (conditions.length > MAX_RULE_CONDITIONS) {
+    return { refused: `The set ${q(label)} keeps ${conditions.length} conditions down the sets it starts from, and a segment keeps at most ${MAX_RULE_CONDITIONS}.` };
+  }
+  return { entity: whole.entity, label, conditions };
+}
+
+/** Arc FA-4 — the id a segment kept from a set is declared under: its label in snake case, as a rule's id reads
+ *  (`late_dispatch`), never longer than a rule's id may be. */
+export function segmentId(label: string): string {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "set";
+  return /^[a-z]/.test(slug) ? slug : `set_${slug}`.slice(0, 64);
+}
