@@ -5745,6 +5745,8 @@ export interface IntegrationProvider {
    *  ask again. Not a secret: it travels in the browser's own address bar during the
    *  dance. Empty when the provider was never set up. */
   client_id: string;
+  /** Why the stored client id cannot be this provider's ("" when it can) — Connect is withheld while it is set. */
+  client_id_problem?: string;
   /** A masked preview of the stored secret ("abcd••••••"), or "". Enough to say one
    *  exists; never enough to read it. */
   secret_preview: string;

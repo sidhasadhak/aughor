@@ -88,6 +88,8 @@ def catalog(request: Request):
             # it comes back whole; the secret comes back as a masked PREVIEW, which is
             # the difference between "there is one" and "here it is".
             "client_id": app.client_id if app else "",
+            # A stored client id that cannot be this provider's — said on the card, and Connect withheld.
+            "client_id_problem": p.client_id_problem(app.client_id) if app else "",
             "secret_preview": app.to_safe_dict()["client_secret"] if app else "",
             # The override, when one was set. Empty means "derive it from the request",
             # which is what the `redirect_uri` beside this payload already shows.
@@ -100,7 +102,7 @@ def catalog(request: Request):
             # that refuses `http://` cannot be connected from a laptop, and offering the
             # button anyway is how a fresh install spends an evening on a tunnel to reach
             # a token nothing consumes yet. False routes the card to `alt_door`.
-            "oauth_ready": _oauth_ready(p, app, request),
+            "oauth_ready": _oauth_ready(p, app, request) and not (app and p.client_id_problem(app.client_id)),
             "alt_door": p.alt_door,
             "connection": conn.to_safe_dict() if conn else None,
             # Each product its own card (Google, 2026-10-07): connected when the grant covers
@@ -193,6 +195,9 @@ def put_app(provider_id: str, body: AppBody, request: Request):
     secret = body.client_secret.strip() or (stored.client_secret if stored else "")
     if not body.client_id.strip() or not secret:
         raise HTTPException(422, "client_id and client_secret are both required")
+    problem = provider.client_id_problem(body.client_id)
+    if problem:
+        raise HTTPException(422, problem)
     app = store.save_app(ProviderApp(
         id=provider_id, client_id=body.client_id.strip(),
         client_secret=secret,
@@ -222,6 +227,11 @@ def connect(provider_id: str, request: Request, product: Optional[str] = None):
     # refuses http://) would otherwise send the provider a URI nobody registered.
     # `complete()` reads it back off the pending flow, so both legs carry the same string.
     app = store.get_app(provider_id)
+    provider_ = get_provider(provider_id)
+    problem = provider_.client_id_problem(app.client_id) if (provider_ and app) else ""
+    if problem:
+        # never send a person to the provider with a client it will refuse (`invalid_client`)
+        raise HTTPException(422, f"{problem}. Set up the {provider_.name} app again.")
     try:
         url = broker.begin(provider_id, user_id=_user(),
                            redirect_uri=(app.redirect_uri if app else "")

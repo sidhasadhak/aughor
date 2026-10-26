@@ -375,6 +375,13 @@ export function IntegrationsPanel() {
             ? <ConnectMenu p={p} label="Reconnect" busy={busy !== ""} onConnect={(pv, pr) => void connect(pv, pr)} />
             : <Button variant="secondary" size="xs" disabled={busy === p.id} onClick={() => void connect(p.id)}>Reconnect</Button>} />,
       );
+    } else if (p.configured && p.client_id_problem) {
+      // A stored client the provider will refuse (`invalid_client`): the act is to fix the app, never to Connect.
+      needs.push(
+        <NeedsRow key={`client-${p.id}`} testId="needs-client-problem" title={`${p.name}'s stored client id is wrong`}
+          detail={p.client_id_problem}
+          actions={<Button variant="secondary" size="xs" onClick={() => openSetup(p)}>Edit app</Button>} />,
+      );
     } else if (p.configured && conn?.status !== "active" && !products.some(pr => pr.connected)) {
       needs.push(
         <NeedsRow key={`half-${p.id}`} testId="needs-half-set-up" title={`${p.name} is set up, but nothing is connected`}
@@ -469,6 +476,11 @@ export function IntegrationsPanel() {
               )}
             </div>
             {meta && <div className="aug-fs-xs" title={meta} style={{ ...MUTED, ...ONE_LINE }}>{meta}</div>}
+            {p.client_id_problem && (
+              <div className="aug-fs-xs" data-testid={`integration-client-problem-${p.id}`} style={{ color: "var(--amb4)" }}>
+                {`${p.client_id_problem}. Edit the app to fix it — Connect is held until then.`}
+              </div>
+            )}
           </div>
           <div style={{ ...ROW, flexWrap: "nowrap", gap: 4 }}>
             {/* A provider whose OAuth cannot complete HERE routes to the door that can. Slack refuses `http://`, a
@@ -531,8 +543,9 @@ export function IntegrationsPanel() {
                     title={pr.connected ? "connected" : stale ? "needs reconnecting" : "not connected"} />
                   <span className="aug-fs-sm" title={about} style={{ ...ONE_LINE, color: "var(--t1)" }}>{pr.name}</span>
                   {pr.connected ? <Chip tone="up">connected</Chip> : (
-                    <Button variant="outline" size="xs" disabled={!p.configured || busy === key}
-                      title={p.configured ? undefined : `Set up the ${p.name} app first — one app serves every ${p.name} product`}
+                    <Button variant="outline" size="xs" disabled={!p.configured || !!p.client_id_problem || busy === key}
+                      title={p.client_id_problem ? p.client_id_problem
+                        : p.configured ? undefined : `Set up the ${p.name} app first — one app serves every ${p.name} product`}
                       onClick={() => void connect(p.id, pr.id)}>
                       {busy === key ? "…" : stale ? "Reconnect" : "Connect"}
                     </Button>

@@ -42,7 +42,7 @@ def test_the_catalog_flips_set_up_into_connect(client, no_provider_calls):
     assert before["redirect_uri"].endswith("/oauth/callback")
 
     r = client.put("/integrations/google/app",
-                   json={"client_id": "cid-1", "client_secret": "cs-1"})
+                   json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "cs-1"})
     assert r.status_code == 200
     assert r.json()["app"]["client_secret"] != "cs-1", "the secret must come back masked"
 
@@ -52,7 +52,7 @@ def test_the_catalog_flips_set_up_into_connect(client, no_provider_calls):
 
 def test_connect_returns_the_authorize_url(client, no_provider_calls):
     client.put("/integrations/google/app",
-               json={"client_id": "cid-1", "client_secret": "cs-1"})
+               json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "cs-1"})
     r = client.post("/integrations/google/connect")
     assert r.status_code == 200
     assert r.json()["authorize_url"].startswith(
@@ -92,11 +92,11 @@ def test_the_catalog_shows_back_what_was_stored(client):
     browser's address bar during the dance; it is not a secret), the secret only as a
     masked preview: enough to say one EXISTS, never enough to read it."""
     client.put("/integrations/google/app",
-               json={"client_id": "cid-123", "client_secret": "shh-super-secret"})
+               json={"client_id": "123-cidabc.apps.googleusercontent.com", "client_secret": "shh-super-secret"})
 
     google = next(p for p in client.get("/integrations/catalog").json()["providers"]
                   if p["id"] == "google")
-    assert google["client_id"] == "cid-123"
+    assert google["client_id"] == "123-cidabc.apps.googleusercontent.com"
     assert google["secret_preview"] and "shh-super-secret" not in google["secret_preview"]
     assert "•" in google["secret_preview"]
 
@@ -105,19 +105,19 @@ def test_a_blank_secret_keeps_the_stored_one(client):
     """The secret is never readable, so requiring it back on every edit would force a
     rotation to fix a typo in the client id."""
     client.put("/integrations/google/app",
-               json={"client_id": "cid-1", "client_secret": "secret-1"})
-    fixed = client.put("/integrations/google/app", json={"client_id": "cid-2"})
+               json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "secret-1"})
+    fixed = client.put("/integrations/google/app", json={"client_id": "2222-cidtwo.apps.googleusercontent.com"})
     assert fixed.status_code == 200, fixed.text
 
     from aughor.integrations.store import get_app_decrypted
     app = get_app_decrypted("google")
-    assert app.client_id == "cid-2"
+    assert app.client_id == "2222-cidtwo.apps.googleusercontent.com"
     assert app.client_secret == "secret-1"      # unchanged, not blanked
 
 
 def test_an_authored_callback_is_stored_and_used(client):
     client.put("/integrations/google/app", json={
-        "client_id": "cid", "client_secret": "sec",
+        "client_id": "9-cid.apps.googleusercontent.com", "client_secret": "sec",
         "redirect_uri": "https://tunnel.example.com/oauth/callback"})
 
     google = next(p for p in client.get("/integrations/catalog").json()["providers"]
@@ -133,7 +133,7 @@ def test_a_callback_that_cannot_complete_is_refused_at_save(client):
     """Only one route can finish the exchange; a URI that does not end there is a flow
     that breaks after the person has already consented."""
     bad = client.put("/integrations/google/app", json={
-        "client_id": "c", "client_secret": "s", "redirect_uri": "https://example.com/hello"})
+        "client_id": "1-c.apps.googleusercontent.com", "client_secret": "s", "redirect_uri": "https://example.com/hello"})
     assert bad.status_code == 422
     assert "/oauth/callback" in bad.json()["detail"]
 
@@ -270,3 +270,26 @@ def test_a_grants_own_verdict_outranks_a_scope_sentence(client):
                                      scopes="chat:write channels:read", status="revoked"))
     rows = client.get("/integrations/operations?connection_id=ic_gone").json()["operations"]
     assert {r["availability"] for r in rows} == {"unavailable"}
+
+
+# ── a client id of the wrong shape (found 2026-10-27: Google answered `Error 401: invalid_client`) ─────────────────
+
+def test_a_google_client_id_of_the_wrong_shape_is_refused_by_name(client):
+    bad = client.put("/integrations/google/app", json={"client_id": "demo-client-id.apps.googleusercontent.com",
+                                                       "client_secret": "demo-secret"})
+    assert bad.status_code == 422 and "is not a Google client id" in bad.json()["detail"]
+    pasted_secret = client.put("/integrations/google/app", json={"client_id": "GOCSPX-abc123", "client_secret": "s"})
+    assert pasted_secret.status_code == 422
+
+
+def test_a_stored_placeholder_is_said_on_its_card_and_connect_never_reaches_google(client):
+    from aughor.integrations.models import ProviderApp
+    from aughor.integrations.store import save_app
+    save_app(ProviderApp(id="google", client_id="demo-client-id.apps.googleusercontent.com", client_secret="demo"))
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
+    assert "is not a Google client id" in google["client_id_problem"] and google["oauth_ready"] is False
+    refused = client.post("/integrations/google/connect?product=comments")
+    assert refused.status_code == 422 and "Set up the Google app again" in refused.json()["detail"]
+    save_app(ProviderApp(id="google", client_id="123456789012-abc.apps.googleusercontent.com", client_secret="s"))
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
+    assert google["client_id_problem"] == "" and google["oauth_ready"] is True
