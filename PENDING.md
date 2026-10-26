@@ -715,3 +715,25 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     `AUGHOR_INBOUND_EMAIL_DOMAIN` and `AUGHOR_INBOUND_EMAIL_SECRET` and a mail provider posts to a PUBLIC address
     (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
     user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Branch kept local; the coverage test skipped.
+
+62. [ ] **What Grist teaches — Arc SV, the platform's own state survives** (the user, 2026-10-26, on
+    `gristlabs/grist-core`: *"We have to get the most out of this - truly incredible repo"*) — **studied 2026-10-26**,
+    nothing built: `docs/GRIST_STUDY_2026-10-26.md`. Grist owns its data and Aughor reads data it does not own, so its
+    spreadsheet half (Python formulas, a sandboxed engine, forms that write rows, full-access widgets) is refused (§6);
+    its substrate is taken. Measured: 46 SQLite stores (1,109 MB) and no scheduled backup — the recovery recipe is
+    `.recover` from the damaged file; 17 stores migrate as they open inside the API and none copies itself first
+    (the 2026-08-14 half-committed ledger migration came back from a backup taken by hand); the migration test lists 5
+    of the 17 by hand. **SV-1** a labelled backup before every migration + the migration test enumerated from the code
+    (S, no flag — call 2) · **SV-2** rolling backups inside the API, kept by a port of Grist's `shouldKeepSnapshots`,
+    a restore that lists every removal it would undo (M, `state.backups`) · **SV-3** incremental equals rebuilt —
+    first on the API connectors' sync, where three defects were found and one REPRODUCED on a scratch DuckDB
+    (positional `INSERT … SELECT *` wrote deal 2 as `email='2', id=7`); latent, no API connector is configured.
+    Five disciplines go into planned work (study §4 — FA-5's *leaves*, stale row policies named when
+    `ontology.security` graduates, the App-as-widget's input mapping, *unknown* in a read under a past release, errors
+    as values). **Five calls are the user's (study §8).** *Extended 2026-10-26 at the user's "Do you not see this as an
+    addition to the Dashboard feature that we have?"* — study §10: piece by piece against the Dashboard vocabulary,
+    most of Grist's widget model is already here; it adds a **breakdown piece** (objects grouped by a property, a
+    measure per group, a click that narrows every piece — over `ObjectQuery.by`, which the object door already has;
+    `dashboard.breakdowns`, M), **rows marked by a declared rule** (`dashboard.marks`, S–M) and **comments on a figure
+    or an object as said claims** (recorded, not proposed). Mockup for approval: `design-mockups/dashboard-breakdown.html`
+    (three screens, every number theLook's through the object door). **Four more calls (study §10.5).**
