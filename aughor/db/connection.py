@@ -2137,6 +2137,10 @@ def _open_connection(
 ) -> DatabaseConnection:
     if conn_type == "aughor_ops":
         return AughorOpsConnection(dsn, connection_id=connection_id or "aughor_ops")
+    if conn_type == "sheets":
+        # Arc SH — the sheets, read from the projection the API process writes (`aughor/sheets/connection.py`)
+        from aughor.sheets.connection import SheetsConnection
+        return SheetsConnection(dsn, connection_id=connection_id or "sheets")
     if conn_type == "duckdb":
         if _duckdb_is_local(dsn):
             # IN-4 — a file the connection names inside the checkout's data/ is read from the
@@ -2170,7 +2174,7 @@ def connection_traits(conn_type: str) -> dict:
     installed (importing the class module raises) — answer ``None`` values:
     the client must degrade to a generic grammar, never guess."""
     cls = None
-    if conn_type in ("duckdb", "aughor_ops"):
+    if conn_type in ("duckdb", "aughor_ops", "sheets"):
         cls = DuckDBConnection
     elif conn_type == "postgres":
         cls = PostgresConnection

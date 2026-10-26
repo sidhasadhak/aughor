@@ -94,9 +94,15 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # …and `dashboard.app_versions` (ED-4): an App's readers read the version last published, a later keep a draft.
     # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
     # …and `objects.completeness` (ED-6): every object read says how complete it is.
+    # Arc SH (ROADMAP §3.64), 2026-10-27: `sheets.core`, `sheets.grid` and `sheets.combine` — the sheets, editing them and
+    # combining them; no model call; each graduates on its wave's falsifier read on the live install.
+    # Arc SV, SV-2 (ROADMAP §3.63), 2026-10-27: `state.backups` — the API's hourly backups of its own state. No model
+    # call; it graduates on a week of the live install's backups read and one restore proven on a copy, and its entry
+    # names the p95 falsifier that moves it to a quiet hour.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
                                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
-                                     "ontology.impacts_only", "objects.completeness"}
+                                     "ontology.impacts_only", "objects.completeness", "state.backups",
+                                     "sheets.core", "sheets.grid", "sheets.combine"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

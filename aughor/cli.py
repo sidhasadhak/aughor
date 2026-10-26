@@ -500,6 +500,130 @@ def migrate_state(source: Optional[Path], yes: bool) -> None:
     console.print(f"\n[green]Done.[/green] {out.reason}")
 
 
+def _size(n: Optional[int]) -> str:
+    if n is None:
+        return "?"
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+@cli.command("backups")
+@click.argument("name", required=False)
+def backups_cmd(name: Optional[str]) -> None:
+    """List the backups of this install's own state, newest first — or show what one holds.
+
+    Backups are taken by the API every hour that something changed, while the `state.backups` flag is on. This only
+    reads the backups folder, so it is safe while the API is serving.
+    """
+    from aughor.db import backups as _backups
+
+    if name:
+        try:
+            b = _backups.resolve(name)
+            manifest = b.manifest()
+        except (LookupError, OSError, ValueError) as exc:
+            console.print(f"[red]{escape(str(exc))}[/red]")
+            raise SystemExit(1) from None
+        console.print(f"[bold]{b.name}[/bold]  taken {manifest.get('taken_at')}  ({manifest.get('reason')})")
+        if not manifest.get("complete", False):
+            console.print("[red]Incomplete:[/red] " + "; ".join(
+                f"{f.get('path')}: {f.get('error')}" for f in manifest.get("failed") or []))
+        table = Table(box=box.SIMPLE, show_edge=False)
+        table.add_column("Source", overflow="fold")
+        for col in ("Kind", "How", "Rows", "Stored"):
+            table.add_column(col)
+        for rel, e in sorted((manifest.get("sources") or {}).items()):
+            rows = sum((e.get("rows") or {}).values()) if e.get("kind") == "sqlite" else ""
+            how = e.get("how", "") + (f" from {e['from']}" if e.get("from") else "")
+            table.add_row(escape(rel), e.get("kind", ""), how, f"{rows:,}" if rows != "" else "", _size(e.get("bytes")))
+        console.print(table)
+        not_copied = manifest.get("not_copied") or []
+        if not_copied:
+            console.print(f"[bold]Not copied ({len(not_copied)}):[/bold]")
+            for item in not_copied:
+                console.print(f"  [dim]{escape(item.get('path', ''))}[/dim] — {escape(item.get('why', ''))}")
+        return
+
+    found = _backups.list_backups()
+    last = _backups.read_last_run()
+    if last:
+        console.print(f"Last check {last.get('at')}: [bold]{last.get('outcome')}[/bold] — {escape(last.get('reason') or '')}")
+    if not found:
+        console.print(f"[yellow]No backups yet[/yellow] in {_backups.backups_dir()}. "
+                      "They are taken by the API while the state.backups flag is on.")
+        return
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Backup", no_wrap=True)
+    for col in ("Stores", "Files", "New", "Holds"):
+        table.add_column(col, justify="right", no_wrap=True)
+    for b in found:
+        try:
+            m = b.manifest()
+        except (OSError, ValueError) as exc:
+            table.add_row(f"{b.name} [red](unreadable: {escape(str(exc))})[/red]", "", "", "", "")
+            continue
+        sources = (m.get("sources") or {}).values()
+        totals = m.get("totals") or {}
+        table.add_row(
+            b.name + ("" if m.get("complete") else " [red](incomplete)[/red]"),
+            str(sum(1 for e in sources if e.get("kind") == "sqlite")),
+            str(sum(1 for e in sources if e.get("kind") == "file")),
+            _size(totals.get("bytes_new")), _size(totals.get("bytes")),
+        )
+    console.print(table)
+    console.print("[dim]New = stored by this backup; Holds = everything it holds, most of it hard-linked to the "
+                  "backup before. `aughor backups <name>` shows one; `aughor restore <name>` puts one back.[/dim]")
+
+
+@cli.command("restore")
+@click.argument("name")
+@click.option("--yes", is_flag=True, help="Go on without asking, after the list of what the restore brings back.")
+def restore_cmd(name: str, yes: bool) -> None:
+    """Put a backup of this install's own state back in place of the present one.
+
+    Refused while the API is serving. Before anything changes it checks the backup, lists every removal made since
+    that the restore would bring back, and asks; then it keeps a labelled backup of the present, so the restore can be
+    undone the same way. The SQL audit log and the model-call log are never restored over.
+    """
+    from aughor.db import backups as _backups
+
+    def _confirm(plan: dict) -> bool:
+        console.print(f"[bold]Restore {plan['backup']}[/bold] (taken {plan.get('taken_at')}): "
+                      f"{len(plan['restored'])} stores and files")
+        if plan["removals"]:
+            console.print(f"\n[yellow]It brings back {len(plan['removals'])} thing(s) removed since:[/yellow]")
+            for line in plan["removals"]:
+                console.print(f"  • {escape(line)}")
+        else:
+            console.print("\nNo removal recorded since the backup is brought back.")
+        if plan["set_aside"]:
+            console.print("\n[yellow]Made since the backup, and set aside:[/yellow]")
+            for line in plan["set_aside"]:
+                console.print(f"  • {escape(line)}")
+        for line in plan["kept"]:
+            console.print(f"[dim]Kept as it is: {escape(line)}[/dim]")
+        for line in plan.get("warnings") or []:
+            console.print(f"[yellow]Note:[/yellow] {escape(line)}")
+        if yes:
+            return True
+        return click.confirm("\nRestore it?", default=False)
+
+    out = _backups.restore(name, confirm=_confirm)
+    colour = {"restored": "green", "declined": "yellow"}.get(out.status, "red")
+    console.print(f"\n[{colour}]{out.status.capitalize()}.[/{colour}] {escape(out.reason)}")
+    for problem in out.problems[:10]:
+        console.print(f"  [red]•[/red] {escape(problem)}")
+    for line in out.warnings:
+        console.print(f"  [yellow]•[/yellow] {escape(line)}")
+    if out.status == "restored":
+        console.print("Start the API again; a store restored from an older version migrates as it opens.")
+    if out.status in ("refused", "failed"):
+        raise SystemExit(1)
+
+
 @cli.command()
 @click.option("--api-port", default=8000, show_default=True, type=int, help="Port for the API")
 @click.option("--web-port", default=3000, show_default=True, type=int, help="Port for the web app")

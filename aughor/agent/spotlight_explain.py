@@ -39,6 +39,11 @@ def explain_object(connection_id: str, args: dict) -> dict:
     """The object's live state, or a found=False answer that says what was looked for."""
     kind = str(args.get("kind") or "").strip().lower()
     ident = str(args.get("id") or "").strip()
+    if kind == "sheet":
+        # Arc SH, SH-4 — the sheet a person asks beside: its table, columns and the view on screen as the grid's own
+        # filter and count. Not one of the roster's KINDS, so the tool a model calls reads exactly as it did.
+        from aughor.sheets.chat import explain_sheet
+        return explain_sheet(ident)
     if kind not in KINDS:
         return {"found": False, "kind": kind, "id": ident, "kinds": list(KINDS),
                 "summary": (f"Nothing explained: {kind!r} is not a kind this tool knows — "

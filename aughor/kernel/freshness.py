@@ -249,6 +249,12 @@ FINGERPRINTS: dict[str, FingerprintSpec] = {
             "IP-3 — a package's gate 4 receipt: SHA-256 over its anatomy files (paths and bytes). "
             "A receipt whose fingerprint differs describes a package that has since changed, and CI fails it.",
         ),
+        FingerprintSpec(
+            "backup_source", "aughor.db.backups", "source_fingerprint", "staleness",
+            "Arc SV-2 — whether a state file's copy in the last backup is out of date: size, mtime and inode of "
+            "the file, and of a store's non-empty -wal (a WAL store's file does not move while its writes sit in "
+            "the WAL). Not a hash: hashing every byte each hour would cost what the copy costs.",
+        ),
         # ── content: identity for dedup / idempotency, NOT staleness ──
         FingerprintSpec(
             "sql_args", "aughor.agent.wandering", "args_fingerprint", "content",
@@ -343,6 +349,9 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
                          "AV-0's closed part vocabulary — carried on every answer_parts frame "
                          "so a client can refuse a shape newer than it understands. Nothing is "
                          "stored under it: an answer's parts live only in the turn."),
+        LogicVersionSpec("backup_manifest", "aughor.db.backups", "MANIFEST_FORMAT",
+                         "Arc SV-2's backup manifest envelope; a restore refuses a manifest newer than it "
+                         "understands rather than half-restoring it. Sibling of graph_pack and ontology_bundle."),
         LogicVersionSpec("ontology_explorer", "aughor.ontology.explorer", "EXPLORER_VERSION",
                          "ON-7b's prompt and draft schema — the `@<version>` in every explorer proposal's "
                          "provenance. A bump rebuilds nothing: it names which explorer said a claim, and a "

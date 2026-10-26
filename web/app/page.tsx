@@ -27,7 +27,7 @@ import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
-import { getCanvases } from "@/lib/api";
+import { getCanvases, getSystemFlags } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -71,6 +71,7 @@ const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel"
 const PlaybookPanel     = dynamic(() => import("@/components/PlaybookPanel").then(m => ({ default: m.PlaybookPanel })),      { ssr: false, loading });
 const RecommendationInbox= dynamic(() => import("@/components/RecommendationInbox").then(m => ({ default: m.RecommendationInbox })), { ssr: false, loading });
 const DocumentsPage     = dynamic(() => import("@/components/documents/DocumentsPage").then(m => ({ default: m.DocumentsPage })),{ ssr: false, loading });
+const SpreadsheetsPage  = dynamic(() => import("@/components/sheets/SpreadsheetsPage").then(m => ({ default: m.SpreadsheetsPage })),{ ssr: false, loading });
 const CatalogScreen     = dynamic(() => import("@/components/CatalogScreen").then(m => ({ default: m.CatalogScreen })),      { ssr: false, loading });
 const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").then(m => ({ default: m.CanvasBrowser })),      { ssr: false, loading });
 const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
@@ -169,6 +170,7 @@ type NavTab =
   | "health"
   | "playbook"
   | "documents"        // the global document corpus — see the nav comment on why it is here
+  | "spreadsheets"     // Arc SH — the sheets people make, edit, combine and chat with (flag sheets.core)
   | "catalog"
   | "builder"           // legacy deep link — resolves to the Query workbench (SE-1)
   | "query"
@@ -331,6 +333,9 @@ const NAV_SECTIONS = [
       { id: "catalog",  icon: "db",      label: "Catalog" },
       { id: "builder",  icon: "builder", label: "SQL Editor" },
       { id: "semantic", icon: "layers",  label: "Semantic Layer" },
+      // Arc SH (2026-10-27, shown first in the ten-screen mockup and approved): the sheets people make, edit, combine
+      // and chat with — one row, the last the rail fits at 1440×900. Listed only with `sheets.core` on.
+      { id: "spreadsheets", icon: "table", label: "Spreadsheets" },
     ],
   },
   {
@@ -380,6 +385,13 @@ function Sidebar({
     if (id === "now" && counts && waitingOnAPerson(counts)) return { value: waitingOnAPerson(counts), waiting: true, noun: "waiting on a person" };
     return null;
   };
+  // Arc SH — the Spreadsheets row stands only while `sheets.core` is on: off, the rail is as it was.
+  const [sheetsOn, setSheetsOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getSystemFlags().then(f => { if (live) setSheetsOn(!!f["sheets.core"]?.value); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
   // Collapsed (the toggle at the head, or ⌘\), the rail is a column of icons: every row keeps its
   // aria-label, and a hover names it — after 600ms for the first label, then its neighbours at once.
   const [collapsed, toggleCollapsed] = useNavCollapsed();
@@ -455,7 +467,7 @@ function Sidebar({
                 </span>
               )}
             </div>
-            {section.items.map(renderItem)}
+            {section.items.filter(item => item.id !== "spreadsheets" || sheetsOn).map(renderItem)}
           </div>
         ))}
       </div>
@@ -913,7 +925,7 @@ const VALID_TABS = new Set<NavTab>([
   "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "dashboards", "operations", "agentic-ops", "control-room", "evals", "data",
-  "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
+  "health", "playbook", "documents", "spreadsheets", "catalog", "builder", "query", "connections", "metrics",
   // AO-4 — `integrations` is an Operations layer alias like `monitors`; it was missing
   // here, so `?tab=integrations` (the link every Slack door hands out) opened Home.
   "monitors", "actions", "integrations", "activity", "security", "semantic", "settings",
@@ -2194,6 +2206,12 @@ export default function Home() {
             {tab === "documents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <DocumentsPage connectionId={selectedConn} connections={connections} />
+              </div>
+            )}
+
+            {tab === "spreadsheets" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <SpreadsheetsPage onAsk={q => goToChat(q)} />
               </div>
             )}
 

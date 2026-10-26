@@ -4250,7 +4250,7 @@ export async function getCanvases(workspaceId?: string): Promise<Canvas[]> {
 
 /** Extract a readable message from a FastAPI error body, whose `detail`
  *  may be a string OR an array of validation-error objects. */
-function fastApiError(body: unknown, fallback: string): string {
+export function fastApiError(body: unknown, fallback: string): string {
   const detail = (body as { detail?: unknown } | null)?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {

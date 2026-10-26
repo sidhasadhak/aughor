@@ -83,15 +83,32 @@ def _run_attribution(c: sqlite3.Connection) -> None:
         add_column_if_missing(c, "overlay_edit_history", column, "TEXT NOT NULL DEFAULT ''")
 
 
+def _sheet_changes(c: sqlite3.Connection) -> None:
+    """Arc SH, SH-1 — a history row names the change it belongs to: the edits one act made (a row added with its
+    values, a newer file merged), undone and redone together."""
+    add_column_if_missing(c, "overlay_edit_history", "change_id", "TEXT NOT NULL DEFAULT ''")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_overlay_history_change ON overlay_edit_history (change_id)")
+    c.execute('CREATE INDEX IF NOT EXISTS ix_overlay_history_table ON overlay_edit_history (connection_id, "table")')
+
+
 #: The columns TC-2 added, which a read with `actions.run_attribution` off does not return.
 RUN_COLUMNS = ("run_id", "run_kind", "trace_id")
 
-#: Forward-only; append the next Migration when the schema evolves. Version 4 is numbered by construction, not off a
-#: live `PRAGMA user_version` (the live store was not opened): 3 is the highest version this file has listed, and
-#: versions come only from this file.
+#: Arc SH — the edits that ARE a sheet's values, read by the sheets' projection and never merged onto a query result as
+#: an annotation: a cell a person set (``body`` the value as JSON), and a row added or removed (``body`` ``added`` or
+#: ``removed``; withdrawing returns a row to what its source says). ``table`` is the sheet's id, ``column`` a column id,
+#: ``row_key`` the row's number and ``key_column`` ``_row``.
+SHEET_CELL = "sheet_cell"
+SHEET_ROW = "sheet_row"
+SHEET_KINDS = (SHEET_CELL, SHEET_ROW)
+
+#: Forward-only; append the next Migration when the schema evolves. Versions 4 and 5 are numbered by construction, not
+#: off a live `PRAGMA user_version` (the live store was not opened): each is one above the highest this file had listed,
+#: and versions come only from this file.
 _MIGRATIONS: list = [Migration(2, "object edits: object_type, note, actor, origin", _object_edits),
                      Migration(3, "the edit layer's history and versions", _edit_history),
-                     Migration(4, "the run and trace each change was made through", _run_attribution)]
+                     Migration(4, "the run and trace each change was made through", _run_attribution),
+                     Migration(5, "the change each history row belongs to", _sheet_changes)]
 
 
 class EditConflict(Exception):
@@ -190,16 +207,22 @@ def _history_version(c: sqlite3.Connection, edit_id: str) -> int:
 
 
 def _record(c: sqlite3.Connection, edit: OverlayEdit, event: str, previous: str, version: int,
-            run: Optional[dict] = None) -> None:
+            run: Optional[dict] = None, change_id: str = "") -> None:
     """One history row. ``run`` (TC-2 — `attribution.stamp`, empty with `actions.run_attribution` off) adds the run and
     the trace the change was made through, and its moment to the microsecond; without it the row is written as it always
-    was."""
+    was. ``change_id`` (Arc SH) names the change the row belongs to; "" for an edit made on its own."""
     import uuid
     columns = ["id", "edit_id", "org_id", "connection_id", "object_type", '"table"', "column", "row_key", "event",
                "body", "previous", "note", "actor", "origin", "source", "version", "at"]
     values = [uuid.uuid4().hex, edit.id, edit.org_id, edit.connection_id, edit.object_type, edit.table, edit.column,
               edit.row_key, event, edit.body if event == "set" else "", previous, edit.note, edit.actor, edit.origin,
               edit.source, version, _now()]
+    if change_id:
+        columns.append("change_id")
+        values.append(change_id)
+        # to the microsecond: one person's changes to a sheet are replayed in order to undo them, and two fall inside
+        # one second whenever a row is added and then edited
+        values[columns.index("at")] = datetime.now(timezone.utc).isoformat()
     if run:
         columns += list(RUN_COLUMNS)
         values += [str(run.get(k) or "") for k in RUN_COLUMNS]
@@ -368,6 +391,190 @@ def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -
             c.close()
 
 
+# ── a sheet's values (Arc SH) ──────────────────────────────────────────────────────────────────────────────────
+
+class SheetEdit(BaseModel):
+    """One change to a sheet's value, as a sheet's change hands it to the edit layer: a cell set or cleared (``value``,
+    JSON), or a row added or removed. ``expected_version`` is the version the person read (0 when they saw none);
+    None writes without that check (a merge, which is checked as a whole)."""
+    kind: str                      # SHEET_CELL | SHEET_ROW
+    row: int
+    column: str = ""
+    body: str = ""                 # SHEET_CELL: the value as JSON · SHEET_ROW: "added" | "removed"
+    withdraw: bool = False         # return the cell or row to what its source says
+    expected_version: Optional[int] = None
+
+
+def _sheet_edit(sheet_id: str, e: SheetEdit, *, org_id: str, actor: str, origin: str, note: str) -> OverlayEdit:
+    edit = OverlayEdit(connection_id=SHEETS_CONNECTION, org_id=org_id, table=sheet_id,
+                       column=e.column if e.kind == SHEET_CELL else "", row_key=str(int(e.row)), key_column="_row",
+                       kind=e.kind, body=e.body, source="user", actor=actor, origin=origin, note=note)
+    edit.id = edit.natural_key()
+    return edit
+
+
+#: The one connection the sheets are, to the rest of Aughor (`aughor.sheets.model.SHEETS_CONNECTION`).
+SHEETS_CONNECTION = "sheets"
+
+
+def save_sheet_change(sheet_id: str, edits: list[SheetEdit], *, change_id: str, actor: str, origin: str = "",
+                      note: str = "", org_id: str = "") -> list[dict]:
+    """Write one change to a sheet's values — every edit in it, or none (one transaction). Each is a new version of its
+    cell or row, kept in the history with the value it replaced and the change it belongs to; one made against a version
+    that is no longer current raises `EditConflict` naming who changed it, and nothing of the change is written.
+
+    Returns, per edit, ``{"row", "column", "version", "previous"}``."""
+    if not edits:
+        return []
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    from aughor.actions.attribution import stamp
+    run = stamp()
+    out: list[dict] = []
+    with _LOCK:
+        c = _conn()
+        try:
+            c.execute("BEGIN")
+            for e in edits:
+                edit = _sheet_edit(sheet_id, e, org_id=org_id, actor=actor, origin=origin, note=note)
+                existing = c.execute("SELECT body, version, actor FROM overlay_edits WHERE id=?",
+                                     (edit.id,)).fetchone()
+                current = int(existing["version"] or 0) if existing is not None else _history_version(c, edit.id)
+                if e.expected_version is not None and int(e.expected_version) != current:
+                    last = c.execute("SELECT actor, at FROM overlay_edit_history WHERE edit_id=? ORDER BY version DESC "
+                                     "LIMIT 1", (edit.id,)).fetchone()
+                    who = f" by {last['actor'] or 'someone'} at {str(last['at'])[:16].replace('T', ' ')}" if last else ""
+                    raise EditConflict(f"this was changed{who} since you read it — read at version {e.expected_version}, "
+                                       f"it is at version {current} now; it was not changed again", current)
+                previous = str(existing["body"]) if existing is not None else ""
+                version = current + 1
+                if e.withdraw:
+                    if existing is None:
+                        continue            # nothing set: the source's value already stands
+                    c.execute("DELETE FROM overlay_edits WHERE id=?", (edit.id,))
+                    _record(c, edit, "withdrawn", previous, version, run, change_id)
+                else:
+                    edit.created_at = _now()
+                    edit.version = version
+                    c.execute("""
+                        INSERT OR REPLACE INTO overlay_edits
+                            (id, org_id, connection_id, "table", column, row_key, key_column,
+                             kind, body, source, created_at, last_used_at, use_count,
+                             object_type, note, actor, origin, version)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (edit.id, edit.org_id, edit.connection_id, edit.table, edit.column, edit.row_key,
+                          edit.key_column, edit.kind, edit.body, edit.source, edit.created_at, None, 0,
+                          "", edit.note, edit.actor, edit.origin, edit.version))
+                    _record(c, edit, "set", previous, version, run, change_id)
+                out.append({"row": int(e.row), "column": edit.column, "kind": e.kind, "version": version,
+                            "previous": previous, "withdrawn": e.withdraw})
+            c.commit()
+            return out
+        except Exception:
+            c.rollback()
+            raise
+        finally:
+            c.close()
+
+
+def sheet_values(sheet_id: str, org_id: str = "") -> list[OverlayEdit]:
+    """The current edits of one sheet — what its projection applies over its source."""
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            rows = c.execute('SELECT * FROM overlay_edits WHERE connection_id = ? AND "table" = ? AND org_id = ? '
+                             'AND kind IN (?, ?)', (SHEETS_CONNECTION, sheet_id, org_id, *SHEET_KINDS)).fetchall()
+            return [_row_to_edit(r) for r in rows]
+        finally:
+            c.close()
+
+
+def sheet_mark(sheet_id: str, org_id: str = "") -> str:
+    """What a sheet's values stand at — the count and the newest of its history rows. A projection built at another
+    mark is in doubt, and rebuilt."""
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            row = c.execute('SELECT COUNT(*) AS n, MAX(at) AS last FROM overlay_edit_history WHERE connection_id = ? '
+                            'AND "table" = ? AND org_id = ?', (SHEETS_CONNECTION, sheet_id, org_id)).fetchone()
+            return f"{int(row['n'] or 0)}:{row['last'] or ''}"
+        finally:
+            c.close()
+
+
+def sheet_history(sheet_id: str, *, org_id: str = "", row: Optional[int] = None, column: str = "",
+                  change_id: str = "", limit: int = 500) -> list[dict]:
+    """A sheet's value history, newest first: who set what, what it replaced, which change it was — narrowed to one
+    row, one cell, or one change."""
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    sql = ('SELECT * FROM overlay_edit_history WHERE connection_id = ? AND "table" = ? AND org_id = ?')
+    args: list = [SHEETS_CONNECTION, sheet_id, org_id]
+    if row is not None:
+        sql += " AND row_key = ?"
+        args.append(str(int(row)))
+    if column:
+        sql += " AND column = ?"
+        args.append(column)
+    if change_id:
+        sql += " AND change_id = ?"
+        args.append(change_id)
+    sql += " ORDER BY at DESC, version DESC LIMIT ?"
+    args.append(int(limit))
+    with _LOCK:
+        c = _conn()
+        try:
+            return [{k: v for k, v in dict(r).items() if k not in RUN_COLUMNS} for r in c.execute(sql, args).fetchall()]
+        finally:
+            c.close()
+
+
+def sheet_changes(sheet_id: str, *, org_id: str = "", limit: int = 200) -> list[dict]:
+    """A sheet's value changes, newest first, one row per change: its id, who made it, when, what made it and how many
+    edits it holds."""
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            rows = c.execute(
+                'SELECT change_id, MIN(actor) AS actor, MIN(origin) AS origin, MIN(note) AS note, MAX(at) AS at, '
+                'COUNT(*) AS edits FROM overlay_edit_history WHERE connection_id = ? AND "table" = ? AND org_id = ? '
+                "AND change_id != '' GROUP BY change_id ORDER BY MAX(at) DESC LIMIT ?",
+                (SHEETS_CONNECTION, sheet_id, org_id, int(limit))).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            c.close()
+
+
+def purge_sheet(sheet_id: str, org_id: str = "") -> int:
+    """A removed sheet takes its values and their history with it (the removal default: everything but the audit and
+    the model-call logs). Its definition's tombstone, on the ledger, is written first and stays."""
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            n = c.execute('DELETE FROM overlay_edits WHERE connection_id = ? AND "table" = ? AND org_id = ?',
+                          (SHEETS_CONNECTION, sheet_id, org_id)).rowcount
+            c.execute('DELETE FROM overlay_edit_history WHERE connection_id = ? AND "table" = ? AND org_id = ?',
+                      (SHEETS_CONNECTION, sheet_id, org_id))
+            c.commit()
+            return n
+        finally:
+            c.close()
+
+
 def edit_history(connection_id: str, *, object_type: str = "", row_key: str = "", column: str = "",
                  org_id: Optional[str] = None, limit: int = 200) -> list[dict]:
     """Arc OC-6 — every version of the edits on a connection's objects, newest first: who set what, what it replaced,
@@ -410,7 +617,9 @@ def apply_overlay(result, connection_id: str, org_id: str = "") -> "object":
         if not org_id:
             from aughor.org.context import current_org_id
             org_id = current_org_id()
-        edits = edits_for_connection(connection_id, org_id)
+        # Arc SH — a sheet's values are already IN the table a sheets query reads (the projection applies them);
+        # merged again here they would be noise on every result, so they are not annotations.
+        edits = [e for e in edits_for_connection(connection_id, org_id) if e.kind not in SHEET_KINDS]
         if not edits:
             return result
 

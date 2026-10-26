@@ -149,6 +149,12 @@ FLAG_ENV = {
     # dashboard is a draft, and an App's readers read the version last published until its owner publishes again.
     # OFF: readers read every version the moment it is kept, as before.
     "dashboard.app_versions": "AUGHOR_DASHBOARD_APP_VERSIONS",
+    # Arc SH (ROADMAP §3.64), 2026-10-27 — Sheets: tables people make, edit, combine and chat with. Each wave stands on
+    # `sheets.core`; with it off none answers and the Sheets connection is not listed.
+    "sheets.core": "AUGHOR_SHEETS_CORE",
+    "sheets.grid": "AUGHOR_SHEETS_GRID",
+    "sheets.chat": "AUGHOR_SHEETS_CHAT",
+    "sheets.combine": "AUGHOR_SHEETS_COMBINE",
     # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
@@ -230,6 +236,11 @@ FLAG_ENV = {
     # an object's changes door reads them oldest first with each run's metered cost. OFF: they record who
     # made them, as before, and the changes door answers 404.
     "actions.run_attribution": "AUGHOR_ACTIONS_RUN_ATTRIBUTION",
+    # Arc SV, SV-2 (ROADMAP §3.63, adopted 2026-10-27). ON: the API backs up its own state every hour that something
+    # changed — every SQLite store but checkpoints.db through the backup API, every other file copied — kept by Grist's
+    # retention rule, restored with `aughor restore` (`db/backups.py`). OFF: nothing is scheduled, nothing is written,
+    # and /health reads as before.
+    "state.backups": "AUGHOR_STATE_BACKUPS",
     # Arc TC, TC-4 (ROADMAP §3.59). ON: the first check back within its limit after an alert writes one *recovered*
     # alert naming the alert it closes, when, and the value that came back; the alert lists and the Monitors page read
     # that alert as closed; a check says "within its limit" apart from "suppressed by its grace period"; and a recovery
@@ -753,6 +764,18 @@ FLAG_META = {
                        "changes list every edit and action on it, oldest first, with the run's model cost when it was "
                        "metered. Off: changes record who made them, as before.",
     },
+    "state.backups": {
+        "label": "Back up Aughor's own state every hour",
+        "summary": "Every hour that something changed, Aughor keeps a checked copy of its own stores and files. "
+                   "Old copies are thinned out over eight weeks.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "schedule", "text": "Hourly, when something changed"},
+                  {"kind": "needs", "text": "Free disk space"}],
+        "description": "It keeps the newest five, one an hour for a day, one a day for two weeks and one a week for "
+                       "eight. A copy is skipped when the disk is nearly full, and the health check says so. A "
+                       "restore asks first and never rewinds the query audit or the model-call log. Turned on, the "
+                       "first copy comes within the hour. Off: nothing is scheduled or copied.",
+    },
     "monitors.recovery": {
         "label": "Alerts that close when a metric recovers",
         "summary": "The first check back within its limit after an alert closes that alert. A check also says "
@@ -942,6 +965,44 @@ FLAG_META = {
                        "says how many are declared and do not hold. An analysis no longer proposes causes of its own, and "
                        "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
                        "as before.",
+    },
+    "sheets.core": {
+        "label": "Spreadsheets: tables you make and keep",
+        "summary": "Make a sheet from a file, a query's rows or nothing. Aughor keeps it, and every chat and "
+                   "dashboard can read it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Kept in Aughor, not your warehouse"}],
+        "description": "A sheet keeps the file it came from, and each value says which row of the file it was. "
+                       "Removing a sheet keeps a record that it was removed. Off: there is no Spreadsheets page "
+                       "and no Sheets connection.",
+    },
+    "sheets.grid": {
+        "label": "Edit sheets in place",
+        "summary": "Change a cell, add or remove rows and columns, and undo. Every change keeps who made it and "
+                   "when.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Nothing is deleted"}],
+        "description": "A value is checked against its column's kind before it is kept. A change made over someone "
+                       "else's is refused and names them. Off: sheets are read but not changed.",
+    },
+    "sheets.chat": {
+        "label": "Ask about a sheet, and have changes proposed",
+        "summary": "Ask a sheet questions beside it, or ask for a change. The assistant proposes; you apply what "
+                   "you want.",
+        "facts": [{"kind": "model", "text": "1 call per question or proposal"},
+                  {"kind": "private", "text": "Nothing changes until you apply it"}],
+        "description": "Answers are queries on the sheet, each with its receipt. A proposal is checked and counted "
+                       "before you see it, and each change applied says the assistant proposed it. Off: the panel "
+                       "beside a sheet is not shown.",
+    },
+    "sheets.combine": {
+        "label": "Combine sheets",
+        "summary": "Link a sheet to another by a key, total another sheet's rows, or add a newer file. Every miss "
+                   "is counted first.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Merges are previewed cell by cell"}],
+        "description": "A linked column follows the sheet it reads when that sheet changes. A newer file is "
+                       "matched on a key and applied as one change you can undo. Off: each sheet stands alone.",
     },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
@@ -1178,6 +1239,11 @@ EXPERIMENT: dict = {
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",
     # Arc TC, TC-2, 2026-10-26. It adds to what every change records, so it is watched before it graduates.
+    # Arc SH, SH-4 (ROADMAP §3.64), 2026-10-27. It adds model calls beside a sheet, so it is watched before it graduates.
+    "sheets.chat": "does the chat beside a sheet answer what the grid shows — of the questions asked about a sheet in two "
+                   "weeks, does each answer count the same rows as the grid's view, and is a proposal applied in part "
+                   "at least once? Falsifier (§3.64, SH-4): a chat answer about a sheet differs from the grid's own "
+                   "count of the same rows — stop",
     "actions.run_attribution": "does every change say what made it — of the edits and audited actions recorded in two "
                                "weeks with it on, does each one made inside a run name that run, and is an object's "
                                "changes opened? Falsifier (§3.59, TC-2): an edit made by an automation shows no run "
@@ -1410,6 +1476,13 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc SV, SV-2 (ROADMAP §3.63), queued 2026-10-27. No model call, no prompt: it graduates on a week of the live
+    # install's own backups, read, and one restore proven on a copy.
+    "state.backups": "receipt: on the live install, a week of hourly backups with the disk they take measured, not "
+                     "estimated; one restored into a scratch state folder reads every store's rows as its manifest "
+                     "says; and /health and /catalog/tree p95 within 20% while one runs. Falsifier: a p95 that rises "
+                     "more than 20% during a backup moves it to a quiet hour; a restore that brings back a removal it "
+                     "did not list stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "
@@ -1418,6 +1491,16 @@ GRADUATION_QUEUE: dict = {
     "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
                              "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "
                              "alert summary names a cause the impacts store does not hold stops it",
+    # Arc SH, SH-1/SH-2/SH-7 (ROADMAP §3.64), queued 2026-10-27. No model call.
+    "sheets.core": "receipt: on the live install, an uploaded file is made a sheet and its table equals a fresh "
+                   "rebuild from the file and its changes; a removed sheet stays removed after a restart. Falsifier: "
+                   "the materialized table differs from a fresh rebuild stops it",
+    "sheets.grid": "receipt: on the live install, cells are edited, rows added and removed and undone in the grid; "
+                   "each change reads back the same through the Sheets connection. Falsifier: an edit made in the "
+                   "grid is not what the chat's next read of the same cell returns stops it",
+    "sheets.combine": "receipt: on the live install, a sheet is linked to another by a key and a third one's rows "
+                      "totalled per key; every miss is counted before it is kept. Falsifier: a linked total differs from "
+                      "the same total computed by SQL over the two sheets stops it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "

@@ -39,8 +39,18 @@ POSTGRES_BUILTIN_ID = "mydb"
 SAMPLES_ID = "samples"
 WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
 AUGHOR_OPS_ID = "aughor_ops"  # Aughor-on-Aughor: the platform's own task_history/jobs/events
+#: Arc SH — the sheets people make, as one connection (`aughor/sheets/connection.py`); listed only with `sheets.core` on.
+SHEETS_ID = "sheets"
 #: The builtin connections: their ids are the same on every install.
-_BUILTIN_IDS = frozenset({BUILTIN_ID, POSTGRES_BUILTIN_ID, SAMPLES_ID, WORKSPACE_ID, AUGHOR_OPS_ID})
+_BUILTIN_IDS = frozenset({BUILTIN_ID, POSTGRES_BUILTIN_ID, SAMPLES_ID, WORKSPACE_ID, AUGHOR_OPS_ID, SHEETS_ID})
+
+
+def _sheets_on() -> bool:
+    try:
+        from aughor.sheets import on
+        return on()
+    except Exception:  # noqa: BLE001 — an unreadable flag is off
+        return False
 
 
 def _aughor_ops_available() -> bool:
@@ -197,6 +207,18 @@ def list_connections(org_id: str | None = None) -> list[dict]:
             "builtin": True,
         })
 
+    # Arc SH — the sheets people make in Spreadsheets, as one connection. Off, it is not listed at all.
+    if SHEETS_ID not in hidden and _sheets_on():
+        rows.append({
+            "id": SHEETS_ID,
+            "name": "Sheets",
+            "conn_type": "sheets",
+            "dsn_preview": "sheets://",
+            "schema_name": None,
+            "meta": {"builtin_sheets": True},
+            "builtin": True,
+        })
+
     # Include default Postgres if configured and not removed
     if POSTGRES_BUILTIN_ID not in hidden and _postgres_builtin_dsn():
         rows.append({
@@ -283,6 +305,8 @@ def get_meta(conn_id: str) -> dict:
         return {"builtin_samples": True, "schema_name": "ecommerce"}
     if conn_id == AUGHOR_OPS_ID:
         return {"builtin_aughor_ops": True, "schema_name": "aughor_ops"}
+    if conn_id == SHEETS_ID:
+        return {"builtin_sheets": True}
     if conn_id == WORKSPACE_ID:
         from aughor.demo.setup import samples_db_path
         samples_path = samples_db_path()
@@ -402,6 +426,7 @@ def get_conn_type(conn_id: str) -> str:
         SAMPLES_ID: "duckdb",
         WORKSPACE_ID: "local_upload",
         AUGHOR_OPS_ID: "aughor_ops",
+        SHEETS_ID: "sheets",
         BUILTIN_ID: "duckdb",
         POSTGRES_BUILTIN_ID: "postgres",
     }.get(conn_id)
@@ -423,6 +448,10 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
         return "duckdb", str(samples_db_path())
     if conn_id == WORKSPACE_ID:
         return "local_upload", "local://"
+    if conn_id == SHEETS_ID:
+        if not _sheets_on():
+            raise KeyError("the Sheets connection needs the 'sheets.core' flag")
+        return "sheets", "sheets://"
     if conn_id == AUGHOR_OPS_ID:
         if not _aughor_ops_available():
             raise KeyError("aughor_ops is available only when obs.task_table is enabled")
@@ -456,6 +485,8 @@ def delete_connection(conn_id: str) -> bool:
         raise ValueError("The Sample Catalog cannot be deleted.")
     if conn_id == WORKSPACE_ID:
         raise ValueError("The Workspace cannot be deleted.")
+    if conn_id == SHEETS_ID:
+        raise ValueError("The Sheets connection holds every sheet; remove a sheet from Spreadsheets instead.")
     deleted = conn_id not in (BUILTIN_ID, POSTGRES_BUILTIN_ID)
     if not deleted:
         # Hide the builtin so it won't reappear on restart

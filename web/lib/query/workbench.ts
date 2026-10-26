@@ -191,7 +191,9 @@ export function resultTools(s: {
   filtered: boolean;
   /** Schedules already on this statement, once known. */
   scheduleCount: number;
-  act: { addChart: () => void; export: () => void; pin: () => void; schedule: () => void };
+  /** Arc SH — whether sheets are on here (`sheets.core`); off, there is no way to keep the rows as a sheet. */
+  sheets?: boolean;
+  act: { addChart: () => void; export: () => void; pin: () => void; schedule: () => void; keepAsSheet?: () => void };
 }): ToolSpec[] {
   return [
     { label: "Add a chart", onSelect: s.act.addChart, testId: "results-add-viz", hidden: !s.hasRows,
@@ -203,6 +205,10 @@ export function resultTools(s: {
       hidden: !s.hasRows || !s.connected, title: "This query, as a card on the dashboard" },
     { label: s.scheduleCount > 0 ? `Schedule (${s.scheduleCount})…` : "Schedule…", onSelect: s.act.schedule,
       testId: "results-schedule", hidden: !s.connected, title: "Run this query on a cadence" },
+    // Arc SH, SH-7 — the statement's rows, run once more and kept frozen as a sheet, the statement saved beside them.
+    { label: "Keep the rows as a sheet…", onSelect: s.act.keepAsSheet ?? (() => undefined), testId: "results-keep-sheet",
+      hidden: !s.sheets || !s.hasRows || !s.connected || !s.act.keepAsSheet,
+      title: "A sheet of this query's rows, frozen when kept — to edit, link and chat with in Spreadsheets" },
   ];
 }
 

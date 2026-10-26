@@ -921,8 +921,9 @@ class ChatRequest(BaseModel):
 
 
 class AskFocus(BaseModel):
-    """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id."""
-    kind: Literal["departure", "automation", "metric"]
+    """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id. Arc SH, SH-4 — or the sheet
+    a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with ``sheets.chat`` on)."""
+    kind: Literal["departure", "automation", "metric", "sheet"]
     id: str
 
 

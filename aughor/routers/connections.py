@@ -971,6 +971,10 @@ def _stage_upload(file: UploadFile):
     return tmp_dir, tmp_path
 
 
+#: Public: a file brought to Spreadsheets is received with the same cap (`aughor/routers/sheets.py`).
+stage_upload = _stage_upload
+
+
 def _rearm_exploration_after_upload(conn_id: str, schema: str | None) -> bool:
     """Re-arm background schema-exploration after new tables land via upload.
 

@@ -741,7 +741,13 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     - seven guards mutation-tested; proven on an isolated ledger;
     - full unit suite 15,144 passed.
 
-    **Next: SV-2.** *Extended 2026-10-26 at the user's "Do you not see this as an
+    ✅ **SV-2 BUILT 2026-10-27** behind `state.backups`, off (local, not pushed — ROADMAP §3.63 "SV-2, built"): hourly
+    backups inside the API, only when something changed, unchanged sources hard-linked; Grist's retention ported with
+    its tests; `aughor restore` that refuses while serving, lists what comes back, asks, and puts the originals back on
+    any failure; never over the audit log, the model-call log carried. 45 tests, 30 mutants killed. **Open:** the live
+    p95 while a backup runs (its graduation receipt); an `aughor doctor` line.
+
+    ~~**Next: SV-2.**~~ *Extended 2026-10-26 at the user's "Do you not see this as an
     addition to the Dashboard feature that we have?"* — study §10: piece by piece against the Dashboard vocabulary,
     most of Grist's widget model is already here; it adds a **breakdown piece** (objects grouped by a property, a
     measure per group, a click that narrows every piece — over `ObjectQuery.by`, which the object door already has;
@@ -766,7 +772,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     never a warehouse. Next: the arc written down and the Spreadsheets page mocked on real data, before any build.
     *Closed 2026-10-27: Teable recorded as dropped (ROADMAP §4.12); the spreadsheet work continues as item 66.*
 
-66. [ ] **Arc SH — Sheets: tables people make, edit and chat with** (the user, 2026-10-27, after Teable was dropped:
+66. [~] **Arc SH — Sheets: tables people make, edit and chat with** (the user, 2026-10-27, after Teable was dropped:
     *"within our platform users should be able to work with spreadsheets the way screenshots suggest.. Is it really so
     hard to incorporate it in our platform?"*, then *"write the spreadsheet arc (steps, sizes, the calls) and mock up the
     Spreadsheets page on real data before anything is built"*) — **drafted, not adopted, nothing built**:
@@ -789,3 +795,10 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     ✅ **ADOPTED 2026-10-27** — ROADMAP §3.64, §6 item 56, all ten calls as recommended (the user: *"The ten-screen
     Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first)"*).
     Nothing built; SH-1 waits for SV-1 and SV-2 (item 64).
+    ✅ **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** (the user: *"Take SV-2 till SH-7 in one go"*), behind
+    `sheets.core` · `sheets.grid` · `sheets.chat` · `sheets.combine`, all off; local on `claude/grist-core-exploration-df8c99`,
+    not pushed — ROADMAP §3.64 "SH-1 … SH-7, built". Every wave's falsifier is a test; live on a scratch API over the Olist
+    files the oracle held, an edit read back through the SQL Editor's route, and the linked *Paid* total equalled SQL over
+    the two sheets (R$16,008,872.12). Open: **the rail row's placement** (the rail already overflows 22 px at
+    1440×900 — call 7's fallback is a Catalog tab); the chat's model path proven only with the scripted model; SH-3,
+    SH-5, SH-6, SH-8 not built.

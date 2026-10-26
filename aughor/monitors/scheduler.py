@@ -14,7 +14,11 @@ What remains here, deliberately:
                        the debounce so the operator always sees the raw verdict, and
                        files nothing: the scheduled check owns the record and the send.
     evict_matcache_once() — hourly housekeeping; needs a clock, is not a monitor.
-    start() / stop() — the APScheduler thread now carries ONLY the housekeeping job
+    backup_state_once() — Arc SV-2's hourly backup of the platform's own state, a job here
+                       only while `state.backups` is on (`db/backups.py`). Never on
+                       serverless: a warm instance is not a clock, and its disk is not
+                       the state's.
+    start() / stop() — the APScheduler thread now carries ONLY the housekeeping jobs
                        (api.py starts it on always-on processes; /cron/tick calls
                        evict_matcache_once directly on serverless).
 """
@@ -47,6 +51,54 @@ def evict_matcache_once() -> None:
             logger.info("matcache housekeeping evicted %d expired row(s)", n)
     except Exception as exc:
         logger.warning("matcache housekeeping failed (non-fatal): %s", exc)
+
+
+#: The backup job's id — present on the clock only while `state.backups` is on.
+BACKUPS_JOB_ID = "state_backups"
+
+
+def backup_state_once() -> None:
+    """Hourly, behind `state.backups`: back up the state directory if anything changed (Arc SV-2). Re-reads the flag,
+    so turning it off stops the next run without a restart."""
+    try:
+        from aughor.db.backups import run_scheduled
+        run_scheduled()
+    except Exception as exc:
+        logger.warning("state backup failed (non-fatal): %s", exc)
+
+
+def _sync_backups_job() -> None:
+    """Put the backup job on the clock while the flag is on, and take it off when it is not. Run at start and on every
+    hourly tick, so a flag turned on in Settings takes effect within the hour, and off it leaves nothing scheduled."""
+    try:
+        from datetime import datetime, timezone
+
+        from aughor.db.backups import EVERY, FIRST_RUN_AFTER, FLAG
+        from aughor.kernel.flags import flag_enabled
+        job = _scheduler.get_job(BACKUPS_JOB_ID)
+        if flag_enabled(FLAG):
+            if job is None:
+                _scheduler.add_job(
+                    backup_state_once,
+                    trigger=IntervalTrigger(seconds=EVERY.total_seconds()),
+                    id=BACKUPS_JOB_ID,
+                    name="state backups",
+                    # Minutes after boot, not an hour: an API restarted more often than hourly would otherwise never
+                    # back anything up. `run_scheduled` skips a run within the hour of the last check.
+                    next_run_time=datetime.now(timezone.utc) + FIRST_RUN_AFTER,
+                    max_instances=1,
+                    coalesce=True,
+                    replace_existing=True,
+                )
+        elif job is not None:
+            _scheduler.remove_job(BACKUPS_JOB_ID)
+    except Exception as exc:
+        logger.warning("state backup scheduling failed (non-fatal): %s", exc)
+
+
+def _hourly_housekeeping() -> None:
+    evict_matcache_once()
+    _sync_backups_job()
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -101,19 +153,20 @@ def trigger_now_read(monitor_id: str) -> tuple[Optional[MonitorAlert], str]:
 
 
 def start() -> None:
-    """Start the housekeeping scheduler (matcache eviction only)."""
+    """Start the housekeeping scheduler (matcache eviction; state backups while `state.backups` is on)."""
     global _started
     if _started:
         return
 
     try:
         _scheduler.add_job(
-            evict_matcache_once,
+            _hourly_housekeeping,
             trigger=IntervalTrigger(hours=1),
             id="matcache_evict",
             name="matcache eviction",
             replace_existing=True,
         )
+        _sync_backups_job()
         _scheduler.start()
         _started = True
         logger.info("Housekeeping scheduler started (matcache eviction hourly)")

@@ -12178,7 +12178,7 @@ first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything t
 
 ---
 
-### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted · **SV-1 BUILT 2026-10-27**, uncommitted on the session branch)
+### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
 **The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
 make up 1,085 MB: system, audit, checkpoints and automations. None is backed up on a schedule. The recovery recipe is
@@ -12224,7 +12224,45 @@ recommended … and start SV-1"*):**
   eight weeks.
 - **SV-2 copies every store but `checkpoints.db`,** LangGraph's resume points for runs in flight.
 
-### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · nothing built)
+**SV-2, built 2026-10-27** (`aughor/db/backups.py`, `aughor/db/retention.py`; flag `state.backups`, off, in the
+graduation queue — receipt: a week of the live install's backups read and one restore proven on a copy; the user:
+*"Take SV-2 till SH-7 in one go"*):
+- **Inside the API, the one writer.** A job on the hourly housekeeping clock only while the flag is on (added and
+  removed within the hour of a flip), first run five minutes after boot, refused unless this process is the one
+  serving the state folder, and nothing within 55 minutes of the last check. Never on serverless.
+- **What is copied.** Every SQLite store in the state folder but `checkpoints.db`, inside one read transaction — the
+  row counts and the copy are one snapshot — then `journal_mode=DELETE`, `quick_check`, rows and version compared, then
+  gzip (level 1: 32% of a ledger-shaped 340 MB store in 3.1 s; the live install's small stores to 1–3%). Plain files
+  and folders — uploads, documents, the sheets' files — byte for byte. Everything left out is NAMED in the manifest
+  with why: `checkpoints.db`, DuckDB files (the sheets' projection and its stamps among them — they rebuild),
+  hand-made backups, `luxexperience_warehouse` (never entered), the key file, logs, links.
+- **Only when something changed.** Each source's fingerprint — size, mtime and inode, and a store's non-empty `-wal`
+  (the live `audit.db` was 23:55 while its `-wal` was 01:53) — read before the copy; an unchanged source is hard-linked
+  from the last backup, so each backup folder is a whole point in time and pruning one breaks no other. Nothing changed:
+  no backup, and "unchanged" recorded.
+- **Disk.** Free space must stay above the larger of 10 GiB and a tenth of the disk (46 GiB on the live disk, 79 free);
+  a backup that would cross it is skipped and `/health` says so.
+- **Retention** — a port of Grist's `shouldKeepSnapshots` (Apache-2.0 header; its 8 tests ported as their `+`/`-`
+  strings, its exact counts reproduced) with the decided caps, measured from the clock rather than the newest backup so
+  a quiet install still lets a removal go within 8 weeks; SV-1's pre-migration copies go at 30 days.
+- **Restore** (`aughor restore <stamp>`, `aughor backups` to list): refuses while serving; refuses an unfinished backup
+  or a newer manifest; checks every stored file's sha256 and stages each store before anything live moves; lists what it
+  would bring back — tombstones, removals the governance audit approved after the stamp, connections, files — and asks;
+  takes a labelled copy of the present; moves the live files aside, puts the backup's in place, checks again, and on any
+  failure puts the originals back. Never over `audit.db`, and the model-call log (`session_events` in the ledger) is
+  carried forward into the restored ledger.
+- **Proven.** 45 tests (`tests/unit/test_backups.py`, `test_backups_retention.py`); 30 guards mutation-tested, all
+  killed. On an isolated state folder: 9 stores copied in 4.2 s (340 MB → 110 MB); a second backup copied 3 and linked 7;
+  40 hourly backups pruned to 26 in 113 MB; a restore refused while serving, then run in a new process — the connection
+  removed after the backup came back, the audit log and the model-call log kept; a fault injected into the in-place
+  check left all 13 live files byte-identical. The falsifier measured only in-process (`/health` p95 0.25 → 1.07 ms
+  while a 340 MB backup ran, most of it disk); **the live install's HTTP p95 has not been measured** — that is its
+  graduation receipt.
+- **Found in review, across the two arcs:** the sheets' projection stamps (`projection.marks.json`) were first backed
+  up beside the files. Restored, they would match the restored stores and leave the live — newer — projection
+  standing. They are left out with the projection now, so a restore always rebuilds the sheets.
+
+### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below)
 
 **What the user asked for.** *"within our platform users should be able to work with spreadsheets the way screenshots
 suggest"*:
@@ -12264,6 +12302,67 @@ doc §3.
 - Backups before people's typing.
 - One rail row in the Data group, measured to fit before it is built (§4.10).
 - The platform still writes nothing to a customer's warehouse (§4.7, amended).
+
+**SH-1, SH-2, SH-4 and SH-7, built 2026-10-27** (branch `claude/grist-core-exploration-df8c99`, local, not pushed; the
+user: *"Take SV-2 till SH-7 in one go"*). Four flags, each off and each standing on `sheets.core`: `sheets.core`,
+`sheets.grid`, `sheets.combine` in the graduation queue with the arc's falsifiers as their receipts, `sheets.chat` an
+experiment (it adds model calls). Off, no route answers, the Sheets connection is not listed, the rail has no row and
+nothing is written.
+- **The model, as adopted — no new store of record.** `aughor/sheets/`: a definition on the lifecycle (`model.py`,
+  kind `sheet`, every change a version recorded with who, what and what made it; removal an `archived` version written
+  FIRST — the tombstone); a sheet's values in the edit layer, which gained row grain (`actions/overlay.py`: kinds
+  `sheet_cell` and `sheet_row`, migration 5 adds the change a history row belongs to); the file a person brought kept
+  beside its typed rows (`source.parquet`, every row with its file row as `_row`); the table people read a DuckDB
+  projection per organisation (`projection.py`), stamped with the versions it was built at and rebuilt when missing or in
+  doubt. To the rest of Aughor, one built-in connection, *Sheets* (`connection.py`), a cursor of that projection.
+- **SH-1.** Kinds read from the file as written and taken only where every value reads back (`kinds.py`) — a zip
+  written `01037` stays Text; a column all at midnight is offered as a Date and says so. The kinds are checked again
+  where the typed rows are written, so no import loses a value to its kind. One sheet per Excel tab, named. A query's
+  rows kept frozen, run once more through the connection's doors, the statement saved beside them. The Spreadsheets home
+  lists the sheets and the Workspace's uploaded files, each one click from a sheet. A glossary row for *Sheet*.
+- **SH-2.** A typed cell edited in place, refused in a sentence when it does not read as its kind; rows added (a number
+  never reused) and removed (superseded, never deleted); columns added, described, renamed, retyped only to a kind every
+  value fits, taken off (undo brings them back); hide, sort, filter, group, search; totals at the foot over the rows the
+  view shows; each cell's story (imported from file row N, set by whom and when); undo and redo as the changes' own
+  history, ONE change taken back whole, refused — naming who — over someone else's change; a stale write refused naming
+  who changed it; a row as a record: every field and where it came from, the rows linked both ways, its history, and
+  comments kept as said claims in the Record (call 10). Grid views a person keeps (a filter, sort and hidden columns,
+  shared) landed here because SH-4 proposes them; SH-3 still owns boards, calendars, group totals, rules and personal
+  views. The toolbar's undo never offers the change that made a sheet — undoing it removes the sheet, so only the
+  proposal card's *Undo — remove the sheet* says so by name.
+- **SH-4.** The chat beside a sheet asks through the one ask door with the sheet as the object on screen (`AskFocus`
+  kind `sheet`, explained by `sheets/chat.py`): the table, its columns with kinds, and the view as the grid's own filter
+  and count. A change asked for comes back as ONE proposal — a view, a computed column, a column to fill, a link, a
+  total — each checked and counted by code before a person sees it (an expression is parsed against an allowlist of
+  scalar functions and run on the sheet); applied all or in part as one change recorded as proposed by the assistant
+  and applied by the person. A file dropped into the chat becomes one proposal for a new sheet; undo removes it whole.
+  Question or change is read from the first words, the other way one click under the answer.
+- **SH-7.** A link counts every match, miss and empty key before it is kept, and refuses to bring columns from a sheet
+  that repeats its key; a total per key (sum, count, average, min, max, earliest, latest) shows empty, never zero, for a
+  row with none, a count 0; a newer file is matched on a key, previewed cell by cell, applied as ONE change against the
+  version previewed, never removing a row; *Keep the rows as a sheet…* in the SQL Editor's results.
+- **Proven.** 34 unit tests (`tests/unit/test_sheets_core.py`, `_combine.py`, `_chat.py`) and 12 web tests (`web/lib/sheets.test.ts`, `components/sheets/SheetChat.test.tsx`) hold every falsifier:
+  SH-1's oracle after every kind of change and a 60-step random sequence; SH-2's edit read back through the Sheets
+  connection; SH-4's view counted the same by the grid, the grounding and the grounding's own SQL; SH-7's linked total
+  equal to SQL over the two sheets. 15 guards mutation-tested, all killed — two only after their tests were sharpened:
+  the oracle compares the table with a rebuild made by the same code, so a removal both forgot was invisible to it until
+  a removed row was asserted gone directly. Live, on a scratch API over copies of the Olist files: orders (99,441 rows)
+  read in 1.6 s and made in 2 s, equal to its rebuild; a cell edited in the grid read back through the SQL Editor's own
+  route; orders linked to customers, 99,441 matched, 0 missed; *Paid* totalled from payments, R$16,008,872.12, equal to
+  SQL over the two sheets on every row, the one order with no payment empty. The model path is proven with the scripted
+  model only: the scratch API had none configured, and the chat said so in the server's words.
+- **Measured on the way.**
+  - **The rail does not fit at 1440×900 — before this row.** It already overflows by 22 px (Evals half hidden since the
+    look of #627); the Spreadsheets row makes it 52. Call 7 said: the rail row if it fits, otherwise a tab of the
+    Catalog. The row is built behind `sheets.core` (off, the rail is as it was) and **the placement is the user's
+    call**.
+  - **Olist's review dates are not all midnight**: 85 read 01:00 on 2017-10-15, the night Brazil's clocks skipped
+    midnight. The lossless rule keeps the column a Date & time, and the import says why.
+- **The order to turn them on:** `state.backups` (§3.63, SV-2) first, then `sheets.core` — the arc's SH-0 falsifier:
+  a sheet's change written with no backup taken within the hour stops SH-1's release.
+- **Not built, and said.** SH-3, SH-5, SH-6, SH-8. Excel's binary `.xls` (DuckDB reads `.xlsx` only — the import says
+  "save it as .xlsx"). A sheet's files are local: they do not ride object-store mirroring as uploads do. The grid pages
+  500 rows at a time rather than scrolling the whole sheet.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
