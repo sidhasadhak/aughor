@@ -1,5 +1,10 @@
 # Grist — what a relational spreadsheet teaches a platform that owns none of the data (study, 2026-10-26)
 
+> **Adopted in part, 2026-10-27:** Arc SV's SV-1 and SV-2, as Arc SH's precondition (ROADMAP §3.63, §6 item 56).
+> The §8 calls 2–4 were decided the same day, each as recommended: SV-1 with no flag; backups keep the newest 5,
+> hourly 24, daily 14, weekly 8; every store but `checkpoints.db`. **SV-1 built 2026-10-27** (ROADMAP §3.63). Open: SV-2's
+> build, SV-3 and §10.5. PENDING 64.
+
 **The ask.** The user, 2026-10-26: *"https://github.com/gristlabs/grist-core — We have to get the most out of this -
 truly incredible repo."*
 

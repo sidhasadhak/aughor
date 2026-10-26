@@ -716,7 +716,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
     user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Branch kept local; the coverage test skipped.
 
-62. [ ] **What Grist teaches — Arc SV, the platform's own state survives** (the user, 2026-10-26, on
+64. [~] **What Grist teaches — Arc SV, the platform's own state survives** (the user, 2026-10-26, on
     `gristlabs/grist-core`: *"We have to get the most out of this - truly incredible repo"*) — **studied 2026-10-26**,
     nothing built: `docs/GRIST_STUDY_2026-10-26.md`. Grist owns its data and Aughor reads data it does not own, so its
     spreadsheet half (Python formulas, a sandboxed engine, forms that write rows, full-access widgets) is refused (§6);
@@ -730,10 +730,62 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     (positional `INSERT … SELECT *` wrote deal 2 as `email='2', id=7`); latent, no API connector is configured.
     Five disciplines go into planned work (study §4 — FA-5's *leaves*, stale row policies named when
     `ontology.security` graduates, the App-as-widget's input mapping, *unknown* in a read under a past release, errors
-    as values). **Five calls are the user's (study §8).** *Extended 2026-10-26 at the user's "Do you not see this as an
+    as values). **Five calls are the user's (study §8).**
+    ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — ROADMAP §3.63, §6 item 56. Still open: the study's
+    §8 calls 2–4 (SV-1 without a flag; the backups' window; which stores), SV-3, and §10.5's breakdown piece.
+    ✅ *Calls 2–4 decided the same day, as recommended* (no flag · newest 5, hourly 24, daily 14, weekly 8 · every store but
+    `checkpoints.db`). **SV-1 BUILT 2026-10-27** (uncommitted on the session branch):
+    - a labelled, verified, single-file copy before every pending migration of a store with rows;
+    - a failed copy (including a damaged store) holds the migration back, named on `/health`;
+    - the 17 migrating stores enumerated from the code, each re-migrated with its rows;
+    - seven guards mutation-tested; proven on an isolated ledger;
+    - full unit suite 15,144 passed.
+
+    **Next: SV-2.** *Extended 2026-10-26 at the user's "Do you not see this as an
     addition to the Dashboard feature that we have?"* — study §10: piece by piece against the Dashboard vocabulary,
     most of Grist's widget model is already here; it adds a **breakdown piece** (objects grouped by a property, a
     measure per group, a click that narrows every piece — over `ObjectQuery.by`, which the object door already has;
     `dashboard.breakdowns`, M), **rows marked by a declared rule** (`dashboard.marks`, S–M) and **comments on a figure
     or an object as said claims** (recorded, not proposed). Mockup for approval: `design-mockups/dashboard-breakdown.html`
     (three screens, every number theLook's through the object door). **Four more calls (study §10.5).**
+
+65. [x] **A spreadsheet section people make and then chat with — Teable** (the user, 2026-10-26: *"Chuck grist.. check
+    this: https://github.com/teableio/teable … all we need to do is push our chat experience there.. framework already
+    exists!"*) — **studied 2026-10-26**, nothing built or run: `docs/TEABLE_STUDY_2026-10-26.md`. The premise does
+    not hold: Teable's chat panel, App Builder and agent are NOT in its open code (the panel is commented out; the one
+    open AI route is a single prompt → text; chat ships only with three closed runtime images). What its open (AGPL)
+    code is: a spreadsheet whose every sheet is a real Postgres table, base = schema — which Aughor can read as an
+    ordinary connection. Recommended: **option A** — Teable unmodified beside Aughor, read-only as a Postgres
+    connection, a *Spreadsheets* page in the rail with Aughor's chat beside the sheet (the parked side assistant,
+    §3.61), proved first in one sitting (study §3). Option B (our own sheet section, MIT canvas grid) reverses the
+    §4.7 refusal of row editing; C (fork) and D (their chat calls us) not recommended / not possible. **Five calls are
+    the user's (study §4).**
+    *Decided 2026-10-27: Teable DROPPED* (the user: "chuck it.. within our platform users should be able to work with
+    spreadsheets the way screenshots suggest") — its chat and App Builder are self-hostable only as closed images, no
+    source, no licence file. Direction: spreadsheets built INSIDE Aughor (option B), Aughor writing its own sheets,
+    never a warehouse. Next: the arc written down and the Spreadsheets page mocked on real data, before any build.
+    *Closed 2026-10-27: Teable recorded as dropped (ROADMAP §4.12); the spreadsheet work continues as item 66.*
+
+66. [ ] **Arc SH — Sheets: tables people make, edit and chat with** (the user, 2026-10-27, after Teable was dropped:
+    *"within our platform users should be able to work with spreadsheets the way screenshots suggest.. Is it really so
+    hard to incorporate it in our platform?"*, then *"write the spreadsheet arc (steps, sizes, the calls) and mock up the
+    Spreadsheets page on real data before anything is built"*) — **drafted, not adopted, nothing built**:
+    `docs/SPREADSHEETS_ARC_2026-10-27.md` + `design-mockups/spreadsheets.html` (four screens — a sheet with the chat
+    beside it, after Apply, a board, a new sheet from a file — every row the uploaded `olist_orders_dataset.csv`, read
+    with the upload door's reader). The model: a sheet = its source file + people's changes in the edit layer (row grain
+    added) + a definition on the lifecycle substrate; the table is a DuckDB projection rebuilt from both — no new store
+    of record. Waves SH-1 core (M–L) · SH-2 grid (L) · SH-4 chat that PROPOSES (M) · SH-3 views (M) · SH-6 everywhere
+    (S) · SH-5 model-written columns only on its call (M). Measured on the way: uploads are rebuilt in memory from their
+    files, so a sheet cannot live there; Olist's 1,729 "open" orders are a median 295 days past estimate — the mockup's
+    chat says they look abandoned, not late. **Eight calls are the user's (arc §5).**
+    *Extended 2026-10-27 at the user's "Is something missing?" → "fold the missing items in":* backups FIRST (Arc SV-1/SV-2
+    are SH-1's precondition — people's typing exists nowhere else); the Spreadsheets home; a sheet made by the chat from a
+    dropped file; SH-7 combining (link by a key with misses counted, totals of linked rows, a newer file as a keyed
+    merge, a query's rows kept as a sheet); totals at the foot, column descriptions, a row opened as a record; SH-8
+    sharing (workspace first, said on the Share button; then chosen people); the model column capped at the semantic
+    operators' 200 rows a fill, 25 a call. Mockup now ten screens on Olist orders, customers, payments and reviews (money
+    in R$). A figure corrected on the way: "late" compared a time with a midnight date — by calendar day it is 6,535
+    late (median 7 days), not 7,827 (1,292 were delivered ON the estimated day). **Ten calls now (arc §5).**
+    ✅ **ADOPTED 2026-10-27** — ROADMAP §3.64, §6 item 56, all ten calls as recommended (the user: *"The ten-screen
+    Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first)"*).
+    Nothing built; SH-1 waits for SV-1 and SV-2 (item 64).

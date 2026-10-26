@@ -12178,6 +12178,93 @@ first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything t
 
 ---
 
+### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted · **SV-1 BUILT 2026-10-27**, uncommitted on the session branch)
+
+**The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
+make up 1,085 MB: system, audit, checkpoints and automations. None is backed up on a schedule. The recovery recipe is
+`sqlite3 .recover` from the damaged file (`kernel/ledger.py:647-668`), because no good copy exists to return to.
+
+Seventeen stores migrate as they open, inside the API, and none copies itself first. The 2026-08-14 half-committed
+ledger migration came back only from a backup taken by hand. The migration test lists 5 of the 17 by hand.
+
+Arc SH makes this urgent: once people type into sheets, the platform holds data that exists nowhere else.
+
+| # | Builds | Flag · size | Falsifier |
+|---|---|---|---|
+| **SV-1** | **A labelled backup before every migration.** `run_migrations` copies a file-backed SQLite store through `Connection.backup()` to `<store>.<UTC date>.v<old>-before-v<new>.bak`, numbered and never overwriting, verifies it with `quick_check`, then migrates. If the backup fails, the migration does not run, and the health route says so. A Postgres store says it was not copied. The migration test is enumerated from the code (every caller of `run_migrations`), each store from empty and from its base with rows. | none (decided 2026-10-27) · S | A pending migration runs with no `.bak` beside it → stop |
+| **SV-2** | **Rolling backups inside the API,** the one writer. Each store is copied through the backup API, and the JSON files and YAML trees are archived. Each copy is verified by `db/migrate.py`'s verifier and recorded in a manifest. Retention is a port of Grist's `shouldKeepSnapshots` (Apache-2.0, attributed). `aughor restore <stamp>` refuses while serving, lists every removal it would undo, asks, and never restores over the audit or the model-call logs. | `state.backups` · M | The API's p95 rises by more than 20% while a backup runs → move it to a quiet hour |
+| **SV-3** | **Incremental equals rebuilt**, first on `connectors/api/base_sync.py`: a positional insert writes values into the wrong columns (reproduced on a scratch DuckDB), the watermark is stamped after the fetch, and a table with no key duplicates rows. Latent: no API connector is configured. | none · S | — |
+
+**SV-1, built 2026-10-27** (`aughor/db/migrations.py`, no flag):
+- **The copy.** Before the first pending migration of a store that holds rows, `run_migrations` copies it through the
+  backup API to `backups/<file>.<UTC date>.v<old>-before-v<new>.bak`, numbered, never overwriting. The copy is one
+  self-contained file, because it leaves WAL before it closes. It must answer `quick_check` and read the old version
+  before anything migrates.
+- **When the copy fails,** and that includes a damaged store, the migration does not run. The store opens at its
+  version, and `/health` says `migrations.held_back` and goes `degraded`.
+- **Not copied, and logged:** a store with no rows, one in memory, one on Postgres.
+- **The test enumerates the stores from the code** (`tests/unit/test_store_migrations.py`): every
+  `run_migrations(..., store=…)` call, 17 today. Each is opened fresh, given a row per table, wound back to v1 and
+  migrated again. That proves every existing migration re-runs on a full store and that its copy keeps every row.
+- **Seven guards mutation-tested,** each killed.
+- **Proven on an isolated ledger** by the real constructor: `backups/system.db.<date>.v1-before-v12.bak`, `quick_check`
+  ok, the row kept, and `/health` naming the copy.
+- **Found by that proof and fixed:** the copy first came out in WAL mode, with `-wal` and `-shm` beside it.
+- **Full unit suite:** 15,144 passed. Its first run caught four things the targeted runs did not: the SQLite-seam and
+  tuning ratchets, the damaged-ledger probe, and a retired word.
+- **Not yet live.** It reaches the install when this branch is merged and the API restarted. 80 GiB was free on
+  2026-10-27; `system.db` is 372 MB.
+
+**Decided 2026-10-27 (the Grist study's §8 calls 2–4, each as recommended; the user: *"Take Arc SV's three calls as
+recommended … and start SV-1"*):**
+- **SV-1 ships with no flag.** A backup beside a store changes no read, answer or prompt; ED-0's fixes shipped the same
+  way.
+- **Backups keep:** the newest 5, the latest per hour for 24 hours, per day for 14 days and per week for 8 weeks,
+  nothing older. A labelled pre-migration backup is kept for 30 days. So a removal is gone from every backup within
+  eight weeks.
+- **SV-2 copies every store but `checkpoints.db`,** LangGraph's resume points for runs in flight.
+
+### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · nothing built)
+
+**What the user asked for.** *"within our platform users should be able to work with spreadsheets the way screenshots
+suggest"*:
+- a table made from an Excel file;
+- typed cells, with chips, check boxes and dates;
+- views as tabs: grouped, a board, filtered, a calendar;
+- a chat beside it that does the work.
+
+The mockup holds ten screens, every row from the Olist files in the Workspace connection.
+
+**The model — no new store of record.** A sheet is three things, and the table people read is a DuckDB projection of
+them per workspace, rebuilt whenever it is missing or in doubt (the Grist study's oracle tests it):
+- **its source:** a file, a query's rows, or nothing;
+- **people's changes,** in the edit layer, which gains row grain;
+- **a definition** on the lifecycle substrate.
+
+To the rest of Aughor the sheets are one connection, *Sheets*.
+
+| # | Builds | Flag (off) · size |
+|---|---|---|
+| **SH-1** | Sheets Aughor keeps, and the Spreadsheets home. A sheet comes from a file (an Excel workbook gives one sheet per tab), blank, or a query's or a chat answer's rows. Kinds are checked at import (Date kept apart from Date & time). Removal writes its tombstone first. A glossary row for *Sheet*. | `sheets.core` · M–L |
+| **SH-2** | The grid: typed editing, rows and columns, hide, sort, filter, group and search, cell history, undo and redo; totals at the foot; column descriptions; a row opened as a record | `sheets.grid` · L |
+| **SH-4** | The chat beside the sheet: it answers by query with its receipt, makes a sheet from a dropped file, and **proposes** changes a person applies | `sheets.chat` · M |
+| **SH-7** | Combining: link by a key with every miss counted; totals of linked rows; a newer file as a keyed merge previewed cell by cell; a query's rows kept as a sheet | `sheets.combine` · M–L |
+| **SH-3** | Views: saved grids with group totals, a board, a calendar, rows marked by a declared rule; shared or personal | `sheets.views` · M |
+| **SH-8** | Sharing: the workspace first, said on the Share button; then chosen people or groups; a stale write refused, naming who changed it | `sheets.sharing` · M |
+| **SH-6** | Sheets everywhere: live (never "settled"); *Make a dashboard from this sheet*; the breakdown piece and the Briefing over sheets | `sheets.everywhere` · S |
+| **SH-5** | Columns a model writes: a view a person picks, at most 200 rows a fill, 25 a call; cost said first; marked everywhere; never a source | `sheets.model_columns` · M |
+
+**Order.** SV-1 → SV-2 → SH-1 → SH-2 → SH-4 → SH-7 → SH-3 → SH-8 → SH-6 → SH-5. Each wave's falsifier is in the arc
+doc §3.
+
+**The laws it keeps.**
+- A model proposes; a person applies.
+- No model authors a fact.
+- Withheld is said: a value that did not fit its kind, a link's misses, a sheet not shared with you, unfilled model rows.
+- Backups before people's typing.
+- One rail row in the Data group, measured to fit before it is built (§4.10).
+- The platform still writes nothing to a customer's warehouse (§4.7, amended).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -12316,6 +12403,10 @@ invariant here; §6 item 37(g) records them as refused, at the user's *"adopt al
   A credential is a governed object here (§3.4); an import, if ever wanted, takes host, port and database, and
   the person enters the secret.
 
+**Amended 2026-10-27 (§6 item 56, call 1).** The refusal of dbx's write side stands for a customer's warehouse.
+Sheets (§3.64) are different: they are the workspace's own tables, made by its people. Aughor writes them, every change
+with its source, who and when, superseded never deleted. Nothing in a sheet is ever written back to a warehouse.
+
 ### 4.8 · What Agent Ops will not become — REFUSED (2026-10-03)
 
 The Agent Ops study (`docs/AGENT_OPS_STUDY_2026-10-03.md`, §7) measured the surface against what the field ships, and
@@ -12390,6 +12481,28 @@ that change entirely for all panels (making it one theme).. I cannot have half d
 commit was dropped before it was merged; nothing of it ships. What stands: the two skins, each one theme for every
 panel, switched by the one toggle; the Workbench preset (six knobs) and the entity's uses section are untouched by
 this. Rule in CLARITY §3: one skin across the shell and the page.
+
+### 4.12 · Teable or Grist as the spreadsheet — DROPPED (2026-10-26/27)
+
+The user asked for a spreadsheet section people make and then chat with, first through Grist (*"truly incredible
+repo"*), then through Teable (*"all we need to do is push our chat experience there.. framework already exists!"*).
+What was measured (`docs/GRIST_STUDY_2026-10-26.md`, `docs/TEABLE_STUDY_2026-10-26.md`):
+- **Teable's chat and App Builder are not in its open code.** The open repo has the chat panel commented out, and its
+  one AI route sends one prompt and returns text. They ship only with Teable's cloud or as three closed, prebuilt
+  images with no source and no licence file.
+- **Teable's open half is AGPL-3.0**, 1.57M lines of TypeScript, and its brand assets may not be removed. Putting our
+  chat inside it means publishing a fork.
+- **Grist owns its data and runs user Python in a sandbox.** Aughor runs no user code (§6 item 50(d)).
+
+The user, 2026-10-27: *"chuck it.. within our platform users should be able to work with spreadsheets"*.
+
+**What stands:**
+- Sheets are built in Aughor (§3.64).
+- Grist's substrate ideas are taken as Arc SV (§3.63) and its breakdown idea as a Dashboards piece (the Grist study
+  §10).
+- Teable's MIT canvas grid stays an option for SH-2 if the house grid cannot carry 100,000 rows.
+
+Re-propose only with new facts: an open-licensed chat in Teable, or a customer who already runs one of them.
 
 ## 5 · Sequencing
 
@@ -14564,6 +14677,33 @@ the browser** · **measure the premise before building.**
     inbound only** (reverses §3.18's "no email in either direction" for arrivals; the platform still never sends one);
     the user creates the Google OAuth client, guided; a run's summary, spans, logs and trajectory are admin-only like
     the trace; the coverage test (real decisions rebuilt by hand) is skipped for now.
+
+56. ✅ **DECIDED 2026-10-27 — Arc SH adopted, with Arc SV's SV-1 and SV-2 first** (§3.63, §3.64;
+    `docs/SPREADSHEETS_ARC_2026-10-27.md`, `design-mockups/spreadsheets.html`, `docs/GRIST_STUDY_2026-10-26.md`).
+    - **The path:**
+      1. *"We have to get the most out of this"* (Grist) → the study: take its substrate.
+      2. *"Do you not see this as an addition to the Dashboard feature?"* → a breakdown piece, mocked.
+      3. *"Chuck grist.. check this"* (Teable) → its chat is closed (§4.12).
+      4. *"Is it really so hard to incorporate it in our platform?"* → the arc and a four-screen mockup.
+      5. *"Is something missing?"* → ten gaps folded in, ten screens.
+      6. *"looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first)"*.
+    - **The ten calls, each as recommended:**
+      - **(1) Aughor writes its own sheets.** Never a warehouse; §4.7 amended.
+      - **(2) Where a sheet's table lives:** a DuckDB projection per workspace, rebuilt from source plus changes.
+      - **(3) Where changes live:** the edit layer, gaining row grain. No sheet change log of its own.
+      - **(4) The grid:** the house's TanStack grid, extended for editing.
+      - **(5) Columns a model writes are allowed,** marked, filling a view a person picks (at most 200 rows a fill),
+        with the calls and cost said first.
+      - **(6) The chat proposes and a person applies,** every time.
+      - **(7) The rail row:** "Spreadsheets" in the Data group, measured to fit at 1440×900 first. If it does not fit,
+        Sheets is a tab of the Catalog.
+      - **(8) Sharing:** the workspace in the first version, said on the Share button.
+      - **(9) Backups first:** SH-1 waits for SV-1 and SV-2.
+      - **(10) Comments on a record** are said claims in the Record, readable by whoever can read the row.
+    - **Arc SV's own calls, decided the same day, each as recommended** (the Grist study §8.2–8.4): SV-1 with no flag;
+      backups keep the newest 5, hourly 24, daily 14 and weekly 8, nothing older; every store but `checkpoints.db`.
+      **SV-1 built the same day** (§3.63); SV-2 next.
+    - **Still open:** SV-3; the Grist study's breakdown piece for Dashboards (§10.5, calls 6–9).
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
