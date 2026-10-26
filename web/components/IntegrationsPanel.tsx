@@ -476,6 +476,12 @@ export function IntegrationsPanel() {
               )}
             </div>
             {meta && <div className="aug-fs-xs" title={meta} style={{ ...MUTED, ...ONE_LINE }}>{meta}</div>}
+            {!!p.withheld_products?.length && (
+              <div className="aug-fs-xs" data-testid={`integration-withheld-${p.id}`} style={{ color: "var(--amb4)" }}>
+                {`${p.name} did not grant ${p.withheld_products.join(", ")} on the last connect — connect that card again and `
+                  + `tick its box on ${p.name}'s page.`}
+              </div>
+            )}
             {p.client_id_problem && (
               <div className="aug-fs-xs" data-testid={`integration-client-problem-${p.id}`} style={{ color: "var(--amb4)" }}>
                 {`${p.client_id_problem}. Edit the app to fix it — Connect is held until then.`}

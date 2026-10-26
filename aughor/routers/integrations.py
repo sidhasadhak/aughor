@@ -105,6 +105,8 @@ def catalog(request: Request):
             "oauth_ready": _oauth_ready(p, app, request) and not (app and p.client_id_problem(app.client_id)),
             "alt_door": p.alt_door,
             "connection": conn.to_safe_dict() if conn else None,
+            # The cards the last consent asked for and the provider did not grant — said, never read as connected.
+            "withheld_products": [pr.name for pr in p.products_needing(conn.withheld)] if conn and conn.withheld else [],
             # Each product its own card (Google, 2026-10-07): connected when the grant covers
             # its scopes, and the tools that connecting it lets an automation run.
             "products": [{
@@ -266,6 +268,14 @@ def oauth_callback(state: str = "", code: str = "", error: str = ""):
         conn = broker.complete(state, code)
     except broker.BrokerError as exc:
         return _page("Not connected", str(exc))
+    if conn.withheld:
+        provider = get_provider(conn.provider)
+        cards = [p.name for p in provider.products_needing(conn.withheld)] if provider else []
+        what = ", ".join(cards) or conn.withheld
+        return _page("Connected, but not what was asked",
+                     f"{provider.name if provider else conn.provider} did not grant {what}. Its consent page lists each "
+                     "permission with its own box, and one was left unticked. Connect that card again and tick it. "
+                     "You can close this tab and return to Aughor.")
     return _page("Connected",
                  f"{conn.provider} is connected{f' as {conn.account}' if conn.account else ''}. "
                  "You can close this tab and return to Aughor.")

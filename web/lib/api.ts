@@ -5747,6 +5747,8 @@ export interface IntegrationProvider {
   client_id: string;
   /** Why the stored client id cannot be this provider's ("" when it can) — Connect is withheld while it is set. */
   client_id_problem?: string;
+  /** The cards the last consent asked for and the provider did not grant (a box left unticked on its page). */
+  withheld_products?: string[];
   /** A masked preview of the stored secret ("abcd••••••"), or "". Enough to say one
    *  exists; never enough to read it. */
   secret_preview: string;

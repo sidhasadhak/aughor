@@ -230,3 +230,28 @@ def test_revoke_tells_the_provider_then_clears_our_copy(google_app, exchange):
         "the row stays for audit; the tokens must not"
     with pytest.raises(broker.BrokerError, match="revoked"):
         broker.fresh_access_token(conn.id)
+
+
+# ── what the provider did not grant (2026-10-27) ─────────────────────────────────────────────────────────────────
+
+DRIVE = "https://www.googleapis.com/auth/drive.readonly"
+
+
+def test_a_consent_that_withholds_a_cards_scope_is_recorded_and_said(google_app, exchange):
+    """The user's case: Google's consent page lists each permission with its own box; one was left unticked and the
+    grant read as connected while holding only their sign-in."""
+    url = broker.begin("google", user_id="u1", redirect_uri="http://localhost:8000/oauth/callback",
+                       scopes=f"openid email {DRIVE}")
+    exchange["responses"][0]["scope"] = "email https://www.googleapis.com/auth/userinfo.email openid"
+    conn = broker.complete(_state_of(url), "auth-code-1")
+    assert conn.status == "active" and conn.withheld == DRIVE
+    from aughor.integrations.providers import get_provider
+    assert [p.name for p in get_provider("google").products_needing(conn.withheld)] == ["Google Drive comments"]
+
+
+def test_a_full_grant_withholds_nothing_and_a_short_spelling_counts_as_granted(google_app, exchange):
+    url = broker.begin("google", user_id="u1", redirect_uri="http://localhost:8000/oauth/callback",
+                       scopes=f"openid https://www.googleapis.com/auth/userinfo.email {DRIVE}")
+    exchange["responses"][0]["scope"] = f"openid email {DRIVE}"
+    assert broker.complete(_state_of(url), "auth-code-1").withheld == ""
+    assert broker.withheld_scopes("openid email", "openid https://www.googleapis.com/auth/userinfo.email") == ""

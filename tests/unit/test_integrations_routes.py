@@ -293,3 +293,17 @@ def test_a_stored_placeholder_is_said_on_its_card_and_connect_never_reaches_goog
     save_app(ProviderApp(id="google", client_id="123456789012-abc.apps.googleusercontent.com", client_secret="s"))
     google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
     assert google["client_id_problem"] == "" and google["oauth_ready"] is True
+
+
+def test_a_withheld_card_is_said_on_the_return_page_and_on_the_catalog(client, monkeypatch):
+    from aughor.integrations import broker
+    from aughor.integrations.models import Connection
+    from aughor.integrations.store import save_connection
+    drive = "https://www.googleapis.com/auth/drive.readonly"
+    conn = Connection(provider="google", user_id="", scopes="openid email", withheld=drive, status="active")
+    monkeypatch.setattr(broker, "complete", lambda state, code: conn)
+    page = client.get("/oauth/callback", params={"state": "s", "code": "c"})
+    assert "Connected, but not what was asked" in page.text and "did not grant Google Drive comments" in page.text
+    save_connection(conn)
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
+    assert google["withheld_products"] == ["Google Drive comments"]

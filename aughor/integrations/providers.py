@@ -88,6 +88,11 @@ class Provider(BaseModel):
     client_id_pattern: str = ""
     client_id_example: str = ""
 
+    def products_needing(self, scopes: str) -> list["Product"]:
+        """The products of this provider whose scopes are among ``scopes`` — what a withheld grant leaves unconnected."""
+        missing = set((scopes or "").split())
+        return [p for p in self.products if set(p.scopes.split()) & missing]
+
     def client_id_problem(self, client_id: str) -> str:
         """Why ``client_id`` cannot be this provider's client id, in words; "" when it can (or no shape is known)."""
         import re
