@@ -18041,6 +18041,10 @@ export interface components {
          *     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
          *     fires when a new key shows up in a table.
          *
+         *     ``objects_admitted`` (Arc FA, FA-5) fires for the objects a rule or segment newly admits:
+         *     each check lists the segment's keys, the first records who is already in without firing,
+         *     and a later one hands the chain the keys that entered (`automations.admitted`).
+         *
          *     ``webhook`` (DS-17) fires when something outside this deployment calls the chain's own
          *     URL. It is the only kind whose cause is not something the engine can observe on a tick,
          *     which is why its probe reads the RUN rather than the world — see ``evaluate_conditions``.
@@ -18061,7 +18065,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created";
+            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created" | "objects_admitted";
         };
         /** ConfirmCandidateRequest */
         ConfirmCandidateRequest: {

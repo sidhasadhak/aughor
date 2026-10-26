@@ -243,6 +243,12 @@ FLAG_ENV = {
     # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
     # replaces the definition, runs keep neither, and the version and replay doors answer 404.
     "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
+    # Arc FA, FA-5 (ROADMAP §3.60; the user's calls, 2026-10-26). ON: an automation may be triggered by the objects a
+    # rule or segment newly admits — each check lists the segment's keys under the row policy of the person who saved
+    # the automation, the first check records who is already in and says so without firing, and a later check fires once
+    # with the keys that entered (withheld, with their count said, above the 50 a step runs once per). OFF: the trigger
+    # is not offered, a save naming it is refused, and a stored one reads nothing and says it is off.
+    "automations.objects_admitted": "AUGHOR_AUTOMATIONS_OBJECTS_ADMITTED",
     # Arc TC, TC-5 (ROADMAP §3.59). ON: each automation and monitor on the hub map says how often its runs failed over a
     # window (seven days unless asked), counted at the run store: "no runs" where none ran, never 0%, and "not permitted"
     # where the reader may not see its runs, never left off. OFF: the map carries no failure rate.
@@ -774,6 +780,18 @@ FLAG_META = {
                        "when it kept less. A past run can be replayed: its own version walks what started it, and "
                        "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
                        "keeps neither.",
+    },
+    "automations.objects_admitted": {
+        "label": "Act on each object a rule admits",
+        "summary": "An automation can start when objects enter a rule or a segment. It hands its steps the keys of "
+                   "the objects that entered.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads keys every minute"},
+                  {"kind": "private", "text": "Sees only what its owner sees"}],
+        "description": "The first check records the objects already in and says how many, without firing. Each "
+                       "later check fires once for the objects that entered since, and says how many left. More "
+                       "than 50 at once are counted and their keys withheld. The objects are listed under the row "
+                       "policy of the person who saved the automation. Off: the trigger is not offered.",
     },
     "hub.failure_rate": {
         "label": "Failure rate on the hub map",
@@ -1410,6 +1428,12 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc FA, FA-5 (ROADMAP §3.60), queued 2026-10-26. No model call; a warehouse read of keys on each check.
+    "automations.objects_admitted": "receipt: on theLook, an automation on a published rule records the objects already "
+                                    "in on its first check and says so without firing, then fires once with the keys of "
+                                    "the objects that enter afterwards, listed under its owner's row policy. Falsifier: "
+                                    "an object already in when the watch began fires it, or a withheld list is run "
+                                    "over as empty — either stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "

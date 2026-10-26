@@ -56,6 +56,11 @@ _CONDITION_REQUIRED: dict[str, tuple[str, ...]] = {
     # configuration, and `domain` / `min_confidence` narrow it.
     "promise_breached": ("process",),
     "finding_created":  (),
+    # Arc FA, FA-5 — the objects a rule or segment newly admits: the entity, and the segment
+    # read on it (a published rule's id, a declared segment, or a promise's `overdue_<noun>`).
+    # Both NAME something in the ontology, so both are required at construction; whether the
+    # names resolve is the save door's question (`automations.admitted.listing_problem`).
+    "objects_admitted": ("entity", "segment"),
 }
 
 
@@ -67,6 +72,10 @@ class Condition(BaseModel):
     already-tested alert conditions become available to any effect, not just to an alert.
     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
     fires when a new key shows up in a table.
+
+    ``objects_admitted`` (Arc FA, FA-5) fires for the objects a rule or segment newly admits:
+    each check lists the segment's keys, the first records who is already in without firing,
+    and a later one hands the chain the keys that entered (`automations.admitted`).
 
     ``webhook`` (DS-17) fires when something outside this deployment calls the chain's own
     URL. It is the only kind whose cause is not something the engine can observe on a tick,
@@ -80,7 +89,7 @@ class Condition(BaseModel):
     answering confidently and wrongly.
     """
     kind: Literal["schedule", "metric", "source_change", "entity_appears", "webhook",
-                  "promise_breached", "finding_created"]
+                  "promise_breached", "finding_created", "objects_admitted"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -123,6 +132,8 @@ class Condition(BaseModel):
         if self.kind == "finding_created":
             dom = str(self.config.get("domain", "") or "")
             return f"finding_created({dom})" if dom else "finding_created"
+        if self.kind == "objects_admitted":
+            return f"objects_admitted({self.entity}.{self.segment})"
         return f"{self.kind}({self.entity or self.table})"
 
     @property
@@ -130,6 +141,12 @@ class Condition(BaseModel):
         """Arc OC-3 — the entity a `source_change` / `entity_appears` trigger watches, when it names one; its table is
         read from the entity's backing (`ontology.keys.entity_table`) and kept in `table` beside it."""
         return str(self.config.get("entity", "") or "")
+
+    @property
+    def segment(self) -> str:
+        """Arc FA, FA-5 — the segment an `objects_admitted` trigger lists on its entity: a published rule's id, a
+        declared segment, or a promise's `overdue_<noun>`."""
+        return str(self.config.get("segment", "") or "")
 
 
 # ── effects ──────────────────────────────────────────────────────────────────────

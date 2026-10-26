@@ -137,6 +137,18 @@ CREATE TABLE IF NOT EXISTS automation_run_stamps (
     created_at     TEXT NOT NULL DEFAULT ''
 );
 
+-- Arc FA, FA-5: the objects an `objects_admitted` trigger last saw in its segment, one row per
+-- key, keyed PER AUTOMATION and per target like `probe_state` (whose row for the same target holds
+-- what the keys were listed under). A sidecar in the base DDL for `probe_state`'s reason — IF NOT
+-- EXISTS converges fresh and existing stores alike, so it needs no migration number — and written
+-- only by that trigger, so with `automations.objects_admitted` off it stays empty.
+CREATE TABLE IF NOT EXISTS admitted_keys (
+    automation_id TEXT NOT NULL,
+    target        TEXT NOT NULL,
+    object_key    TEXT NOT NULL,
+    PRIMARY KEY (automation_id, target, object_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_auto_conn      ON automations (conn_id);
 CREATE INDEX IF NOT EXISTS idx_runs_automation ON automation_runs (automation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_conn       ON automation_runs (conn_id);
@@ -474,6 +486,11 @@ def upsert_automation(automation: Automation) -> Automation:
                     last_run_at=excluded.last_run_at,
                     last_status=excluded.last_status
             """, _automation_params(automation))
+            # FA-5 — a trigger taken off the chain (or moved to another segment or connection) takes
+            # what it last saw with it: put back later, it records afresh instead of firing for every
+            # object that entered while it was gone. The record, not the condition's absence, is
+            # what a check reads, so the record is what goes (AGENTS.md, reversing durable intent).
+            _prune_admitted(conn, automation)
             conn.commit()
             # HB-2: `declared_by`/`probation` are preserved-on-conflict above, so the
             # incoming model can disagree with what the row now holds. Returning the
@@ -497,6 +514,8 @@ def delete_automation(automation_id: str) -> bool:
             conn.execute("DELETE FROM automation_run_stamps WHERE automation_id = ?",
                          (automation_id,))
             conn.execute("DELETE FROM probe_state WHERE automation_id = ?", (automation_id,))
+            # FA-5 — the keys a trigger last saw go with the trigger's automation.
+            conn.execute("DELETE FROM admitted_keys WHERE automation_id = ?", (automation_id,))
             # The arrangement goes with the thing it arranged — otherwise a new automation
             # that reused the id would open onto a stranger's layout.
             conn.execute("DELETE FROM automation_layouts WHERE automation_id = ?",
@@ -1034,6 +1053,97 @@ def set_probe_baseline(automation_id: str, target: str, version: str) -> None:
                        version = excluded.version, updated_at = excluded.updated_at""",
                 (automation_id, target, version, now_iso_z()),
             )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+# ── Arc FA, FA-5 · what an `objects_admitted` trigger last saw ─────────────────────
+# One row per key in `admitted_keys`, and beside it, in `probe_state` under the same target, what
+# the keys were listed under (the segment's definition and the reader). Written by
+# `automations.admitted` only: a first check (or a changed definition) RECORDS the whole set;
+# a later check DROPS the keys that left; a fired tick ADDS the keys it handed the chain.
+
+_KEY_CHUNK = 500
+
+
+def _prune_admitted(conn: sqlite3.Connection, automation: Automation) -> None:
+    """Drop the record of every `objects_admitted` target this automation no longer watches."""
+    from aughor.automations.admitted import KIND, PREFIX, target_of
+    keep = sorted({target_of(c, automation.conn_id) for c in automation.conditions if c.kind == KIND})
+    not_kept = f" AND target NOT IN ({', '.join('?' for _ in keep)})" if keep else ""
+    conn.execute(f"DELETE FROM admitted_keys WHERE automation_id = ?{not_kept}", (automation.id, *keep))
+    # `substr`, not LIKE: the prefix holds an underscore, which LIKE reads as any character.
+    conn.execute(f"DELETE FROM probe_state WHERE automation_id = ? AND substr(target, 1, ?) = ?{not_kept}",
+                 (automation.id, len(PREFIX), PREFIX, *keep))
+
+
+def get_admitted_keys(automation_id: str, target: str) -> set[str]:
+    """The keys the trigger last saw in its segment (empty when it has recorded none)."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT object_key FROM admitted_keys WHERE automation_id = ? AND target = ?",
+                (automation_id, target)).fetchall()
+            return {r[0] for r in rows}
+        finally:
+            conn.close()
+
+
+def record_admitted(automation_id: str, target: str, keys: Sequence[str], listed_under: str) -> None:
+    """A first check, or one whose definition or reader changed: the whole set replaces what was kept, and what it
+    was listed under is kept beside it — one transaction, so a check never reads half a record."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute("DELETE FROM admitted_keys WHERE automation_id = ? AND target = ?",
+                         (automation_id, target))
+            conn.executemany(
+                "INSERT OR IGNORE INTO admitted_keys (automation_id, target, object_key) VALUES (?, ?, ?)",
+                [(automation_id, target, k) for k in keys])
+            conn.execute(
+                """INSERT INTO probe_state (automation_id, target, version, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(automation_id, target) DO UPDATE SET
+                       version = excluded.version, updated_at = excluded.updated_at""",
+                (automation_id, target, listed_under, now_iso_z()))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def drop_admitted(automation_id: str, target: str, keys: Sequence[str]) -> None:
+    """The keys that left the segment — dropped on the check that saw them go, so one that comes back is new again."""
+    keys = list(keys)
+    if not keys:
+        return
+    with _LOCK:
+        conn = _connect()
+        try:
+            for i in range(0, len(keys), _KEY_CHUNK):
+                chunk = keys[i:i + _KEY_CHUNK]
+                conn.execute(
+                    f"DELETE FROM admitted_keys WHERE automation_id = ? AND target = ? "
+                    f"AND object_key IN ({', '.join('?' for _ in chunk)})",
+                    (automation_id, target, *chunk))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def add_admitted(automation_id: str, target: str, keys: Sequence[str]) -> None:
+    """The keys a FIRED tick handed the chain — added only then, so a check whose other condition held it back sees
+    them as new again (the probes' own rule: a change is committed on a fired tick, never swallowed)."""
+    keys = list(keys)
+    if not keys:
+        return
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.executemany(
+                "INSERT OR IGNORE INTO admitted_keys (automation_id, target, object_key) VALUES (?, ?, ?)",
+                [(automation_id, target, k) for k in keys])
             conn.commit()
         finally:
             conn.close()
