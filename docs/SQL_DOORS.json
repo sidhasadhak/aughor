@@ -173,6 +173,7 @@
   "aughor/quality/expectations.py::measure::execute::expectations": {"dialect": "native", "author": "stored", "note": "ED-3: an expectation's count of the rows that break it, compiled for the engine, audited as a stored definition's read"},
   "aughor/ontology/security_sql.py::_admitted_keys::execute::edit_history_rows": {"dialect": "declared", "author": "door", "note": "ED-1: which edited objects the reader may see, read through the object door's FROM"},
   "aughor/semantic/trusted_verify.py::verify::execute_bounded::__trusted_verify__": {"dialect": "native", "author": "person", "note": "a trusted query"},
+  "aughor/sheets/service.py::create_from_rows::execute_typed::sheet-keep": {"dialect": "native", "author": "person", "note": "Arc SH, SH-7: a person's own statement from the SQL Editor, run once more through the connection's door, read-only, to keep its rows as a sheet"},
   "aughor/sql/executor.py::execute_guarded::execute::{query_id}": {"dialect": "door", "author": "door", "note": "the guard battery runs the statement it rendered for the engine at entry"},
   "aughor/sql/executor.py::execute_guarded::execute::{query_id}#2": {"dialect": "door", "author": "door", "note": "the deterministic repair of the engine's own statement"},
   "aughor/sql/executor.py::execute_guarded::execute::{query_id}#3": {"dialect": "native", "author": "model", "note": "a repair whose prompt names the dialect"},

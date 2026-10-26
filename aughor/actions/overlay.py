@@ -598,9 +598,10 @@ def edit_history(connection_id: str, *, object_type: str = "", row_key: str = ""
     # Arc TC, TC-2 — with `actions.run_attribution` on, each version says which run made it; off, a row reads exactly as
     # it did before the columns existed.
     from aughor.actions.attribution import describe, enabled
+    # Arc SH — the change a row belongs to is a sheet's (read by `sheet_history`); an object's history reads as before
     if enabled():
-        return [{**r, **describe(r)} for r in out[:limit]]
-    return [{k: v for k, v in r.items() if k not in RUN_COLUMNS} for r in out[:limit]]
+        return [{**{k: v for k, v in r.items() if k != "change_id"}, **describe(r)} for r in out[:limit]]
+    return [{k: v for k, v in r.items() if k not in RUN_COLUMNS and k != "change_id"} for r in out[:limit]]
 
 
 # ── read-time merge ─────────────────────────────────────────────────────────────
