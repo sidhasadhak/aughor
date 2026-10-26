@@ -1197,7 +1197,7 @@ export interface CoverageSpendArea {
 }
 export interface CoverageRun {
   run_at: string; why: string; said: string[];
-  spend: { calls: number; model: string; at: string; done_at?: string; areas: CoverageSpendArea[] } | null;
+  spend: { calls: number; model: string; at: string; done_at?: string; why?: string; areas: CoverageSpendArea[] } | null;
 }
 export interface MetricCoverage {
   connection_id: string; schema: string | null; industry_pack: string;

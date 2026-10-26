@@ -482,6 +482,7 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
         if write and flag_enabled(FLAG_WRITER):
             from aughor.semantic import coverage_writer
             written, spend = coverage_writer.write(connection_id, schema_name, mmap, db=db, taken=proposals)
+            spend["why"] = why                          # the calls keep the reason they were made
             proposals += written
         elif previous.get("spend") and flag_enabled(FLAG_WRITER):
             # a run without the writer keeps what the last written run wrote, re-checked below

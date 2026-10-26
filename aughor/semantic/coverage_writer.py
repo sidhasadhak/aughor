@@ -222,7 +222,7 @@ def write(connection_id: str, schema_name: Optional[str], mmap, *, db, taken: li
                 why = _computes(pattern.kind, sql, dialect)
                 pattern_gate = {"ok": not why, "why": why or f"it computes {pattern.title}"}
             else:
-                pattern_gate = {"ok": True, "why": "it cites no pattern"}
+                pattern_gate = None                     # it cites none: there is no pattern to compute
             time_column = (w.time_column or "").strip()
             if time_column and time_column.count(".") >= 1:
                 table, column = time_column.rsplit(".", 1)
@@ -236,7 +236,7 @@ def write(connection_id: str, schema_name: Optional[str], mmap, *, db, taken: li
                 "sql": sql, "tables": read, "time_column": time_column, "time_kind": "flow",
                 "gates": {"area": ({"ok": False, "why": (f"it reads {', '.join(outside)}, which its area was not "
                                                          "given")} if outside else {"ok": True, "why": ""}),
-                          "pattern": pattern_gate},
+                          **({"pattern": pattern_gate} if pattern_gate else {})},
                 "written_by": spend["model"] or "a model", "made_at": CP.now()})
             record["proposals"] += 1
         record["skipped"] = [{"pattern": s.pattern_id, "why": s.why[:200]} for s in got.skipped][:20]

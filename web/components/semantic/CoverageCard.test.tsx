@@ -49,7 +49,7 @@ const COVERAGE: MetricCoverage = {
       sql: "SELECT 1", time_column: "order_items.created_at", definition: "" },
   ],
   run: { run_at: "2026-10-26T18:00:00+00:00", why: "the connection was profiled", said: [],
-         spend: { calls: 4, model: "test-model", at: "2026-10-26T18:00:00+00:00", areas: [] } },
+         spend: { calls: 4, model: "test-model", at: "2026-10-26T18:00:00+00:00", why: "the connection was profiled", areas: [] } },
   flags: { "metrics.coverage_proposals": true, "metrics.coverage_writer": true, "metrics.blind_spot_proposals": false },
 };
 

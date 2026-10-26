@@ -49,7 +49,8 @@ export function proposalsOf(coverage: MetricCoverage, area: string): CoveragePro
 
 /** The verdicts a proposal's gates read, as one line: the failed one first. */
 export function gateLine(gates: Record<string, CoverageGate>): string {
-  const entries = Object.entries(gates || {});
+  // a proposal written before 2026-10-26's fix carries a pattern gate that only says it cites none
+  const entries = Object.entries(gates || {}).filter(([g, v]) => !(g === "pattern" && v.why === "it cites no pattern"));
   const failed = entries.filter(([, v]) => v.ok === false).map(([g, v]) => `${GATE_WORDS[g] ?? g}: no — ${v.why}`);
   if (failed.length) return failed.join(" · ");
   const passed = entries.filter(([, v]) => v.ok === true).map(([g]) => GATE_WORDS[g] ?? g);
@@ -181,7 +182,7 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
       {spend && (
         <p className="aug-fs-xs" style={{ ...MUTED, margin: "6px 0 0" }} data-testid="coverage-spend">
           {`Written from the knowledge base by ${spend.model || "a model"}: ${countNoun(spend.calls, "model call")}, one per area, ${dayWords(spend.at)}`}
-          {coverage.run?.why ? ` — ${coverage.run.why}` : ""}.
+          {spend.why ? ` — ${spend.why}` : ""}.
           {spend.areas.some(x => x.error) ? ` ${countNoun(spend.areas.filter(x => x.error).length, "call")} failed.` : ""}
         </p>
       )}
