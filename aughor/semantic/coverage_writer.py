@@ -35,6 +35,9 @@ MAX_TABLES = 10
 MAX_COLUMNS = 30
 #: Patterns handed to one call.
 MAX_PATTERNS = 14
+#: The fewest rows a table joined on a key must hold to be handed beside an area's own — live 2026-10-26, every call on
+#: LuxExperience was handed `financial_summary`, `ownership` and `platforms` (25, 12 and 5 rows, keyed by platform).
+NEIGHBOUR_MIN_ROWS = 100
 
 
 class _Proposal(BaseModel):
@@ -112,6 +115,8 @@ def _neighbours(area_tables: list[str], facts: dict, entry: dict) -> list[str]:
             if other in area_tables or other in out or other not in facts:
                 continue
             theirs = set(facts[other].columns)
+            if (facts[other].rows or 0) < NEIGHBOUR_MIN_ROWS:
+                continue                    # a lookup of a handful of rows keyed like a fact is not what an area reads
             if grain in mine or (grains.get(t) and grains[t] in theirs):
                 out.append(other)
     return out

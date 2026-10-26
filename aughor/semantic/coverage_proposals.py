@@ -97,8 +97,20 @@ def _first_number(rows: list) -> Optional[float]:
     return None
 
 
+def _date_type(time_column: str, columns: Optional[dict]) -> str:
+    """The profiled type of a proposal's date column, or "" when the profiler did not read it."""
+    table, _, col = str(time_column or "").rpartition(".")
+    want = (table.split(".")[-1].lower(), col.lower())
+    for key, prof in (columns or {}).items():
+        if isinstance(prof, dict):
+            t = str(prof.get("table") or str(key).split(".", 1)[0]).split(".")[-1].lower()
+            if (t, str(prof.get("column") or str(key).split(".", 1)[-1]).lower()) == want:
+                return str(prof.get("dtype") or "")
+    return ""
+
+
 def gate(p: dict, *, connection_id: str, schema_name: Optional[str], run_sql: Callable[[str], tuple], dialect: str,
-         approved: list, band: Optional[dict] = None, band_label: str = "") -> dict:
+         approved: list, band: Optional[dict] = None, band_label: str = "", columns: Optional[dict] = None) -> dict:
     """Read every gate a proposal can be read by, in order, into ``p["gates"]``; set its state and the first failing
     gate's reason. Gates that do not apply to its source were set by its proposer (area, pattern, count, binding) or
     are left out."""
@@ -125,6 +137,11 @@ def gate(p: dict, *, connection_id: str, schema_name: Optional[str], run_sql: Ca
     if gates["runs"]["ok"]:
         if not m.time_column:
             gates["dated"] = {"ok": False, "why": "no date on the tables it reads dates it, so no period has a figure"}
+        elif metric_gates.column_kind(dtype := _date_type(m.time_column, columns)) in ("integer", "number"):
+            # Live 2026-10-26: the writer dated LuxExperience's cost per click by `marketing_campaigns.fiscal_year` —
+            # a year is a number, not a day, so no day, week or month of it exists.
+            gates["dated"] = {"ok": False, "why": (f"its date, {m.time_column}, is {dtype} — a number, not a day, so no "
+                                                   "day, week or month has a figure")}
         else:
             gates["dated"] = {"ok": True, "why": ""}
             ok, why = metric_time.measurable(m)
@@ -135,6 +152,10 @@ def gate(p: dict, *, connection_id: str, schema_name: Optional[str], run_sql: Ca
         figures, months, why = metric_gates.recent_figures(m, run_sql, dialect)
         p["figures"], p["months"] = figures, months
         gates["moves"] = metric_gates.moves(figures, why)
+        if figures is None:
+            # A definition already approved is never refused for figures that could not be read; a PROPOSAL is not
+            # offered until they are — adopting it would make a metric no period can measure.
+            gates["moves"]["ok"] = False
         if band:
             gates["sane_range"] = metric_gates.sane(figures, band, band_label or "its recipe")
         if gates["moves"].get("ok") is not False and approved:
@@ -482,10 +503,13 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
             return list(res.columns or []), list(res.rows or []), res.error
 
         dialect = getattr(db, "dialect", "") or "duckdb"
+        from aughor.tools.profile_cache import merged_profile_entry
+        columns = (merged_profile_entry(connection_id) or {}).get("columns") or {}
         for p in kept:
             try:
                 gate(p, connection_id=connection_id, schema_name=schema_name, run_sql=run_sql, dialect=dialect,
-                     approved=approved, band=p.get("sane_range"), band_label=f"the {p.get('label')} recipe")
+                     approved=approved, band=p.get("sane_range"), band_label=f"the {p.get('label')} recipe",
+                     columns=columns)
             except Exception as exc:  # noqa: BLE001 — a proposal whose gates could not be read is said, not offered
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "a coverage proposal's gates could not be read", counter="coverage.gate")
@@ -496,11 +520,33 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
         except Exception as exc:  # noqa: BLE001 — a connection that will not close is said; the run stands
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the coverage run's connection did not close", counter="coverage.close")
+    one_measure_once(kept)
     payload = {"run_at": now(), "why": why, "proposals": kept, "spend": spend, "said": said + mmap.problems,
                "flags": {f: flag_enabled(f) for f in (FLAG_PROPOSALS, FLAG_WRITER, FLAG_BLIND)}}
     if not profile_store.save_coverage(connection_id, schema_name, payload):
         payload["said"].append("this dataset has no business profile yet, so the proposals were not kept — profile it")
     return payload
+
+
+def one_measure_once(proposals: list[dict]) -> None:
+    """Two proposals that read the same figure (at one scale) in every month both have one are one measure: the first
+    stays, each later one is refused naming it. Across tables too — two different measures agreeing to nine places
+    month after month is not a coincidence a business has (`metric_twins`); live 2026-10-26, three LuxExperience
+    consent proposals read 0.6196 alike."""
+    from aughor.semantic.metric_twins import agree
+
+    kept: list[dict] = []
+    for p in proposals:
+        if p.get("state") != STATE_PROPOSED or not p.get("figures"):
+            continue
+        twin = next((q for q in kept if agree(p["figures"], q["figures"])), None)
+        if twin is None:
+            kept.append(p)
+            continue
+        months = sum(1 for a, b in zip(p["figures"], twin["figures"]) if a is not None and b is not None)
+        p["gates"]["twin"] = {"ok": False, "why": (f"it reads exactly what {twin.get('label')}, proposed here too, reads "
+                                                   f"in each of the last {months} months — one measure, proposed twice")}
+        p["state"], p["reason"] = STATE_GATE_FAILED, f"{GATE_WORDS['twin']} — no: {p['gates']['twin']['why']}"
 
 
 def stored(connection_id: str, schema_name: Optional[str] = None) -> list[dict]:

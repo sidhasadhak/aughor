@@ -130,7 +130,7 @@ def _a(word: str) -> str:
     return f"{'an' if word[:1].lower() in 'aeiou' else 'a'} {word}"
 
 
-def _category(dtype: str) -> str:
+def column_kind(dtype: str) -> str:
     d = (dtype or "").lower()
     if not d:
         return ""
@@ -192,7 +192,7 @@ def binding_problems(formula: str, roles: dict, bound: dict, columns: dict) -> l
         declared = attrs.get(attr)
         want = str((declared.get("type") if isinstance(declared, dict) else getattr(declared, "type", "")) or "")
         prof = profile(table, column)
-        kind = _category(str(prof.get("dtype") or ""))
+        kind = column_kind(str(prof.get("dtype") or ""))
         if want and kind and kind in (_WRONG.get(str(want)) or set()):
             out.append(f"{role}.{attr} is {_a(want)}, and it is bound to {table}.{column}, {_a(str(prof.get('dtype')))} "
                        "column")

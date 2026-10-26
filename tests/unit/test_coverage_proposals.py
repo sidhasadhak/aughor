@@ -244,3 +244,44 @@ def test_an_area_a_metric_already_covers_is_still_written_for_its_open_patterns_
     orders = next(u for u in provider.prompts if "AREA: Orders & sales" in u)
     assert "ALREADY MEASURED here (do not write these again): GMV" in orders
     assert "PATTERN ec_gmv " not in orders and "PATTERN ec_aov " in orders
+
+
+def test_a_number_is_not_a_date_and_two_proposals_of_one_figure_are_one_measure():
+    """Live 2026-10-26 on LuxExperience: cost per click dated by `fiscal_year`, and three consent proposals reading
+    0.6196 alike."""
+    from aughor.semantic.metric_gates import column_kind
+    assert CP._date_type("marketing_campaigns.fiscal_year", {"marketing_campaigns.fiscal_year": {
+        "table": "marketing_campaigns", "column": "fiscal_year", "dtype": "integer"}}) == "integer"
+    assert column_kind("integer") == "integer" and column_kind("text") == "text" and column_kind("date") == "time"
+    same = [0.57, 0.61, 0.65, 0.61]
+    rows = [{"label": "Marketing consent rate", "state": CP.STATE_PROPOSED, "figures": same, "gates": {}},
+            {"label": "Email subscribed rate", "state": CP.STATE_PROPOSED, "figures": list(same), "gates": {}},
+            {"label": "Open rate", "state": CP.STATE_PROPOSED, "figures": [0.2, 0.3, 0.25, 0.28], "gates": {}}]
+    CP.one_measure_once(rows)
+    assert [r["state"] for r in rows] == [CP.STATE_PROPOSED, CP.STATE_GATE_FAILED, CP.STATE_PROPOSED]
+    assert rows[1]["reason"] == ("no approved metric measures the same — no: it reads exactly what Marketing consent "
+                                 "rate, proposed here too, reads in each of the last 4 months — one measure, proposed twice")
+
+
+def test_a_proposal_dated_by_a_year_number_is_refused_before_its_figures_are_read(shop, monkeypatch):
+    conn, path = shop
+    import duckdb
+    c = duckdb.connect(str(path))
+    c.execute("CREATE TABLE campaigns AS SELECT 2025 AS fiscal_year, 10.0 AS spend, 100 AS clicks")
+    c.close()
+    from aughor.tools import profile_cache
+    entry = profile_cache.merged_profile_entry(conn)
+    entry["columns"]["campaigns.fiscal_year"] = {"table": "campaigns", "column": "fiscal_year", "dtype": "integer"}
+    p = {"name": "cpc", "label": "Cost per click", "sql": "SELECT SUM(spend) / SUM(clicks) FROM campaigns",
+         "time_column": "campaigns.fiscal_year", "gates": {}}
+    from aughor.db.connection import open_connection
+    db = open_connection("duckdb", str(path))
+
+    def run_sql(sql):
+        r = db.execute("t", sql, internal=True)
+        return list(r.columns or []), list(r.rows or []), r.error
+    CP.gate(p, connection_id=conn, schema_name=None, run_sql=run_sql, dialect="duckdb", approved=[],
+            columns=entry["columns"])
+    db.close()
+    assert p["state"] == CP.STATE_GATE_FAILED
+    assert p["gates"]["dated"]["why"].startswith("its date, campaigns.fiscal_year, is integer — a number, not a day")
