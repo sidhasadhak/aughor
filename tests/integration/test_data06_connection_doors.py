@@ -30,7 +30,8 @@ NOT_A_REGISTRY_CONNECTION = {
 
 
 def _names_a_connection(name: str) -> bool:
-    return name in ("connection_id", "conn_id") or name.endswith("_connection_id")
+    # `connection` since FA-7: `GET /ask/context` and `DELETE /metrics/{name}` name theirs so, and the guard did not read it
+    return name in ("connection_id", "conn_id", "connection") or name.endswith("_connection_id")
 
 
 def _doors() -> list[tuple[APIRoute, list[str]]]:
@@ -85,6 +86,7 @@ def test_the_guard_reads_every_name_a_connection_goes_by_in_the_path_and_the_que
                         _request(path_params={"connection_id": theirs}, principal=intruder),
                         _request(query=f"conn_id={theirs}", principal=intruder),
                         _request(query=f"connection_id={theirs}", principal=intruder),
+                        _request(query=f"connection={theirs}", principal=intruder),
                         _request(query=f"reference_connection_id={theirs}", principal=intruder)):
             with pytest.raises(HTTPException) as refused:
                 connection_owner_guard(request)
@@ -120,5 +122,32 @@ def test_another_org_is_refused_by_the_guard_on_every_door_that_names_its_connec
         assert len(answered) >= 140, len(answered)
         wrong = {door: got for door, got in answered.items() if got[0] != 403 or "belongs to another org" not in got[1]}
         assert not wrong, wrong
+    finally:
+        registry.delete_connection(theirs)
+
+
+def test_the_grounding_receipt_refuses_another_orgs_connection_and_answers_its_own(client, monkeypatch, tmp_path):
+    """FA-7's defect: `GET /ask/context` names its connection `connection`, which the guard did not read, so with
+    identity on another organisation's grounding — its schema slice, glossary, trusted SQL — was one request away. The
+    owner's own read still reaches the door (the read itself is stubbed: no warehouse, no embedder)."""
+    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    from aughor.agent import grounding
+    from aughor.db import registry
+    from aughor.org.context import using_org
+
+    import duckdb
+    duckdb.connect(str(tmp_path / "orgA.duckdb")).close()      # an empty warehouse the door can open read-only
+    monkeypatch.setattr(grounding, "build_grounding_context",
+                        lambda q, c, **k: grounding.GroundingContext(question=q, connection_id=c))
+    with using_org("orgA"):
+        theirs = registry.add_connection("orgA-grounding", "duckdb", str(tmp_path / "orgA.duckdb"))
+    try:
+        refused = client.get("/ask/context", params={"connection": theirs, "question": "revenue"},
+                             headers={"X-Aughor-Org": "orgB"})
+        assert refused.status_code == 403 and "belongs to another org" in refused.text
+        own = client.get("/ask/context", params={"connection": theirs, "question": "revenue"},
+                         headers={"X-Aughor-Org": "orgA"})
+        assert own.status_code == 200, own.text
+        assert own.json()["receipt"]["connection_id"] == theirs
     finally:
         registry.delete_connection(theirs)
