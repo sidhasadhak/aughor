@@ -92,9 +92,21 @@ def health():
     except Exception as exc:
         wal_drifted = []
         wal = {"error": f"{type(exc).__name__}: {exc}"}
+    # Arc SV-1 — a store whose copy before migrating failed stays at its old version; code that reads
+    # the columns the migration would have added fails until it migrates, so it is named here.
+    from aughor.db.migrations import migration_report
+    migrations = migration_report()
     return {
-        "status": "degraded" if (ledger_error or wal_drifted) else "ok",
+        "status": "degraded" if (ledger_error or wal_drifted or not migrations["ok"]) else "ok",
         "ledger": {"ok": not ledger_error, "error": ledger_error},
+        "migrations": {
+            **migrations,
+            "detail": (
+                f"{len(migrations['held_back'])} store(s) held at their old version — the copy before migrating failed"
+                if not migrations["ok"] else
+                f"{len(migrations['backed_up'])} store(s) copied before migrating since this process started"
+            ),
+        },
         "stores": {
             "ok": not wal_drifted,
             "wal_drifted": wal_drifted,

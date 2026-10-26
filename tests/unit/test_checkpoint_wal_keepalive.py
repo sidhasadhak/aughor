@@ -161,6 +161,10 @@ _SEAM_EXEMPT = {
     # read-only and writes each destination exactly once. A WAL keepalive here would be the
     # opposite of what is wanted — it would hold handles open on the very files being copied.
     "aughor/db/migrate.py",
+    # Arc SV-1's copy before a migration: it opens a file it has just created to receive the
+    # backup, and then the copy read-only to check it — each once, closed at once. Neither is
+    # a store; a keepalive would hold a handle on a file nothing else ever opens.
+    "aughor/db/migrations.py",
     # `residue_of` (idea 1): after a delete it opens every SQLite file under the data dir
     # READ-ONLY (`mode=ro`), once, to look for the deleted id. It writes nothing and holds
     # nothing; a keepalive would only pin files that belong to other stores.
