@@ -646,6 +646,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/grounding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Grounding Read
+         * @description Arc FA, FA-7 — the grounding read for a session caller: what the MCP tool ``ground_agent`` reads, so the agent
+         *     gate holds it to the organisation's policy (a read) and audits it. The same read as the agent's HTTP door — every
+         *     block with its content, the absent ones with why, the embedder said, no model asked — journaled as
+         *     ``agent.grounding_read``. Flag ``agents.grounding_read``; off, a 404.
+         */
+        get: operations["agent_grounding_read_agents_custom__agent_id__grounding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}/guardrails": {
         parameters: {
             query?: never;
@@ -5234,7 +5257,10 @@ export interface paths {
         /**
          * Search Documents Endpoint
          * @description Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
-         *     body, another connection's schema docs are left out, as they are for a question.
+         *     body, another connection's schema docs are left out, as they are for a question. FA-1 (flag
+         *     ``knowledge.hybrid_documents``): when the embedder is down and the store is up, the hits are the
+         *     passages matched by their words, each carrying ``matched_by: "words"`` and the sentence ``said``;
+         *     503 only when the store cannot be read either.
          */
         post: operations["search_documents_endpoint_documents_search_post"];
         delete?: never;
@@ -5440,6 +5466,29 @@ export interface paths {
          *     receipt — or the ask door's own SSE with ``?stream=1`` for a caller that renders it.
          */
         post: operations["door_ask_doors_agents__agent_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/agents/{agent_id}/grounding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Grounding
+         * @description What this agent would read for the question — every grounding block with its content, the absent ones with
+         *     why, whether the embedder was called and which — and no model is asked (flag ``agents.grounding_read``; off, the
+         *     door is a 404 whatever the key or the body). Journaled as ``agent.grounding_read`` without the question or the
+         *     content.
+         */
+        post: operations["door_grounding_doors_agents__agent_id__grounding_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10913,6 +10962,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/object-types/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Types By Reads
+         * @description ROADMAP §3.60 (Arc FA, FA-3) — every entity of the scope ranked by how often audited statements named its tables
+         *     in the last ``window`` days, the least read first — the list a person cleaning up reads: each with its reads, the
+         *     day it was last read, how many people read it where the session log says who ran the statement, and the tables it
+         *     shares with another entity (a statement naming a shared table counts for both, said beside it). Behind
+         *     `ontology.entity_usage`: off, the door says so. No model call; the platform's own log, never the warehouse.
+         */
+        get: operations["get_object_types_by_reads_object_types_uses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/object-types/{object_type}": {
         parameters: {
             query?: never;
@@ -10975,6 +11048,30 @@ export interface paths {
         get: operations["get_object_catalog_objects_catalog_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/find": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Object Find
+         * @description Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+         *     entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
+         *     the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
+         *     ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
+         *     with more matches than shown. 404 while the flag is off. No model call.
+         */
+        post: operations["post_object_find_objects_find_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12509,6 +12606,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/history/put-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put Back Declaration Version
+         * @description Arc FA, FA-3 — put an earlier version of one declaration back (ROADMAP §3.60). Its fields go through the normal
+         *     save path into the DRAFT, counted again by the kind's own measurement first and classed like any change, so readers
+         *     get it only when a person publishes. A withdrawn version puts back the fields it had; one that says what readers
+         *     read already takes the waiting change away. Refused with a sentence while `ontology.put_back` or releases are off
+         *     and for an organisation's ontology (409), for a version the history does not hold (404), and for one that no
+         *     longer counts on this ontology (400) — nothing is written then. No model call.
+         */
+        post: operations["put_back_declaration_version_ontology_history_put_back_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/impacts": {
         parameters: {
             query?: never;
@@ -13187,6 +13309,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/retiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Declaration Retiring
+         * @description Arc FA, FA-3 — mark one declaration of any kind *retiring* (ROADMAP §3.60): it still serves, and every reader is
+         *     told "retiring on <date> — use <successor> instead". The successor must be another element of the same kind on this
+         *     ontology (400 otherwise, with the sentence; 404 for an element there is none of). Written through the normal save
+         *     path — with releases on it waits in the draft as a MEANING change. 409 while `ontology.retiring` is off.
+         */
+        put: operations["mark_declaration_retiring_ontology_retiring_put"];
+        post?: never;
+        /**
+         * Unmark Declaration Retiring
+         * @description Arc FA, FA-3 — take a retiring mark off: the element is no longer said to be going. A MEANING change like the mark
+         *     itself; the element's other declarations are untouched. 404 when it carries no mark; 409 while the setting is off.
+         */
+        delete: operations["unmark_declaration_retiring_ontology_retiring_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/routing-proposals": {
         parameters: {
             query?: never;
@@ -13835,6 +13985,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Templates
+         * @description The dashboard templates of the active packs bound on this connection, each card saying whether this connection
+         *     can make it — and every bound pack whose templates wait, with why. No model call, nothing written. Declared before
+         *     `/packs/{pack_id}`, which would otherwise take the word for a pack id.
+         */
+        get: operations["get_pack_templates_packs_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/upload": {
         parameters: {
             query?: never;
@@ -13890,6 +14062,10 @@ export interface paths {
          * @description Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
          *     bound columns are checked to actually exist and `verified` reflects that (column-existence
          *     half of verification; recipe dry-run is the live step).
+         *
+         *     Arc FA, FA-6 (`packs.installed_versions`): on, the binding records the MANIFEST's version — never the
+         *     `version` a caller sends — who bound it, and a snapshot of what the pack offered, which an upgrade is
+         *     diffed against. Off, the binding is stored exactly as it always was.
          */
         post: operations["post_bind_packs__pack_id__bind_post"];
         delete?: never;
@@ -14006,6 +14182,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/installs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Installs
+         * @description Every connection and schema this pack is bound on: the version installed there, whether what it offered then
+         *     was recorded, who bound it, and the version the pack is at now.
+         */
+        get: operations["get_pack_installs_packs__pack_id__installs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/propose": {
         parameters: {
             query?: never;
@@ -14098,6 +14295,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/templates/{template_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Template Draft
+         * @description Turn a pack's dashboard template into ONE dashboard draft for the asker on this connection, with no model call:
+         *     a card whose metric the connection has not registered and approved is skipped and said, and the rest is staged
+         *     through the dashboards' one proposal path. Kept, the dashboard's source is `pack:<id>@<version> template`.
+         */
+        post: operations["post_template_draft_packs__pack_id__templates__template_id__draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/terms": {
         parameters: {
             query?: never;
@@ -14134,6 +14353,34 @@ export interface paths {
          *     `decline`, refuses them: the row goes and a tombstone keeps the next bind from bringing it back.
          */
         post: operations["post_confirm_terms_packs__pack_id__terms_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/packs/{pack_id}/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pack Upgrade
+         * @description What upgrading this connection's binding would bring: the version installed and the one available, the items
+         *     added, changed and removed since, each one a person declined marked with the version it was declined in, and the
+         *     unchanged items they declined, which stay declined. Read-only, no model call.
+         */
+        get: operations["get_pack_upgrade_packs__pack_id__upgrade_get"];
+        put?: never;
+        /**
+         * Post Pack Upgrade
+         * @description Upgrade this connection's binding to the pack's version: the role map is kept, only the new and changed terms
+         *     and alerts are proposed — never an unchanged one a person declined — and what the pack now offers is recorded.
+         *     Refused (409) when there is nothing to upgrade to.
+         */
+        post: operations["post_pack_upgrade_packs__pack_id__upgrade_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17286,15 +17533,73 @@ export interface components {
         /**
          * AskFocus
          * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
+         *
+         *     Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+         *     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
+         *     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
+         *     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
+         *     (`agent.ask_subject`); off, they contribute nothing.
          */
         AskFocus: {
-            /** Id */
+            /** Chosen */
+            chosen?: {
+                [key: string]: string;
+            };
+            /**
+             * Dashboard
+             * @default
+             */
+            dashboard: string;
+            /**
+             * Entity
+             * @default
+             */
+            entity: string;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Id
+             * @default
+             */
             id: string;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "departure" | "automation" | "metric";
+            kind: "departure" | "automation" | "metric" | "objects" | "set";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Narrowed
+             * @default false
+             */
+            narrowed: boolean;
+            /** Objects */
+            objects?: string[];
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
+            /**
+             * Segment
+             * @default
+             */
+            segment: string;
+            /**
+             * Set
+             * @default
+             */
+            set: string;
+            /** Values */
+            values?: {
+                [key: string]: unknown;
+            };
         };
         /** AssignRoleRequest */
         AssignRoleRequest: {
@@ -18041,6 +18346,10 @@ export interface components {
          *     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
          *     fires when a new key shows up in a table.
          *
+         *     ``objects_admitted`` (Arc FA, FA-5) fires for the objects a rule or segment newly admits:
+         *     each check lists the segment's keys, the first records who is already in without firing,
+         *     and a later one hands the chain the keys that entered (`automations.admitted`).
+         *
          *     ``webhook`` (DS-17) fires when something outside this deployment calls the chain's own
          *     URL. It is the only kind whose cause is not something the engine can observe on a tick,
          *     which is why its probe reads the RUN rather than the world — see ``evaluate_conditions``.
@@ -18061,7 +18370,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created";
+            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created" | "objects_admitted";
         };
         /** ConfirmCandidateRequest */
         ConfirmCandidateRequest: {
@@ -18572,6 +18881,26 @@ export interface components {
              * @default
              */
             session_id: string;
+        };
+        /** DoorGround */
+        DoorGround: {
+            /**
+             * Asker
+             * @default
+             */
+            asker: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Question */
+            question: string;
+            /**
+             * Schema
+             * @default
+             */
+            schema: string;
         };
         /** DraftRequest */
         DraftRequest: {
@@ -21562,6 +21891,13 @@ export interface components {
              */
             tenant_id: string;
         };
+        /** TemplateDraftIn */
+        TemplateDraftIn: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
+        };
         /** TermsVerdictIn */
         TermsVerdictIn: {
             /** Connection Id */
@@ -21827,6 +22163,13 @@ export interface components {
             settings_override?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** UpgradeIn */
+        UpgradeIn: {
+            /** Connection Id */
+            connection_id: string;
+            /** Schema */
+            schema?: string | null;
         };
         /** UserAgentCreate */
         UserAgentCreate: {
@@ -22861,6 +23204,19 @@ export interface components {
              */
             val: string;
         };
+        /**
+         * _FindRequest
+         * @description Arc FA, FA-1 — the words an object goes by, and how many of each entity's matches to show.
+         */
+        _FindRequest: {
+            /**
+             * Limit Per Entity
+             * @default 5
+             */
+            limit_per_entity: number;
+            /** Q */
+            q: string;
+        };
         /** _FlagPatch */
         _FlagPatch: {
             /** State */
@@ -23017,6 +23373,18 @@ export interface components {
             property: string;
             /** Values */
             values: string[];
+        };
+        /**
+         * _PutBack
+         * @description Arc FA, FA-3 — the version of one declaration to put back into the draft, as `GET /ontology/history` numbers it.
+         */
+        _PutBack: {
+            /** Kind */
+            kind: string;
+            /** Target Id */
+            target_id: string;
+            /** Version */
+            version: number;
         };
         /** _QueryBuildRequest */
         _QueryBuildRequest: {
@@ -23200,6 +23568,26 @@ export interface components {
         _RestoreVersionRequest: {
             /** Version */
             version: number;
+        };
+        /**
+         * _Retiring
+         * @description Arc FA, FA-3 — one declaration marked retiring: the element of the same kind to use instead, the day it is meant
+         *     to go (YYYY-MM-DD), and the person's own words.
+         */
+        _Retiring: {
+            /** Kind */
+            kind: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** On */
+            on: string;
+            /** Successor */
+            successor: string;
+            /** Target Id */
+            target_id: string;
         };
         /**
          * _RoutingProposal
@@ -24981,6 +25369,42 @@ export interface operations {
                 "application/json": components["schemas"]["GoldenCertify"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_grounding_read_agents_custom__agent_id__grounding_get: {
+        parameters: {
+            query: {
+                question: string;
+                connection_id?: string;
+                schema?: string;
+                asker?: string;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -32882,6 +33306,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DoorAsk"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_grounding_doors_agents__agent_id__grounding_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorGround"];
             };
         };
         responses: {
@@ -42228,6 +42687,40 @@ export interface operations {
             };
         };
     };
+    get_object_types_by_reads_object_types_uses_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description days back, today included */
+                window?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_object_type_object_types__object_type__get: {
         parameters: {
             query?: {
@@ -42268,6 +42761,8 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                /** @description the recent window's days back, today included */
+                window?: number;
             };
             header?: never;
             path: {
@@ -42309,6 +42804,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_object_find_objects_find_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_FindRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -44980,6 +45513,42 @@ export interface operations {
             };
         };
     };
+    put_back_declaration_version_ontology_history_put_back_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PutBack"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     declare_ontology_impact_ontology_impacts_post: {
         parameters: {
             query?: {
@@ -46093,6 +46662,76 @@ export interface operations {
     publish_ontology_release_ontology_release_publish_post: {
         parameters: {
             query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_declaration_retiring_ontology_retiring_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_Retiring"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_declaration_retiring_ontology_retiring_delete: {
+        parameters: {
+            query: {
+                kind: string;
+                target_id: string;
                 connection_id?: string | null;
                 schema_name?: string | null;
             };
@@ -47245,6 +47884,38 @@ export interface operations {
             };
         };
     };
+    get_pack_templates_packs_templates_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_pack_upload_packs_upload_post: {
         parameters: {
             query?: never;
@@ -47516,6 +48187,37 @@ export interface operations {
             };
         };
     };
+    get_pack_installs_packs__pack_id__installs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_propose_on_connect_packs__pack_id__propose_post: {
         parameters: {
             query?: never;
@@ -47652,6 +48354,42 @@ export interface operations {
             };
         };
     };
+    post_template_draft_packs__pack_id__templates__template_id__draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateDraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_pack_terms_packs__pack_id__terms_get: {
         parameters: {
             query: {
@@ -47698,6 +48436,75 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TermsVerdictIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pack_upgrade_packs__pack_id__upgrade_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_pack_upgrade_packs__pack_id__upgrade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeIn"];
             };
         };
         responses: {

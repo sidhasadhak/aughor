@@ -105,6 +105,12 @@ def validate_loaded(pack: Pack) -> ValidationReport:
     from aughor.packs.priors import prior_problems
     r.errors.extend(prior_problems(pack))
 
+    # ── Arc FA, FA-6 — a dashboard template names the pack's own metrics and places every card it lists. Held on every
+    # pack, like the priors: a template is a declaration whether or not templates are listed on this install.
+    if pack.dashboards:
+        from aughor.packs.templates import template_problems
+        r.errors.extend(template_problems(pack))
+
     # ── knowledge layer (IP-1) — a package is REFERENCE the agents read (§3.17), not a
     # steering pack, so the steering completeness warnings below do not apply to it ──────
     if m.layer or m.industry:

@@ -581,6 +581,24 @@ FAN_PUBLISHED: tuple[str, ...] = ("count",)
 #: reader goes quietly blind (GUARD_SKIP's lesson, same file).
 FAN_EMPTY_SKIP = "nothing to iterate"
 
+#: FA-5 — the key a WITHHELD list carries in place of its items: how many there were. A
+#: producer that may not hand a chain its list (too many to send one by one, or items that
+#: read as personal data) publishes `{"withheld": N, "said": "..."}` where the list would
+#: be — never `[]`, which every reader would take for "none arrived".
+WITHHELD = "withheld"
+
+
+def withheld_list(count: int, said: str) -> dict:
+    """A list withheld from the chain: its count and the sentence that says why."""
+    return {WITHHELD: int(count), "said": said}
+
+
+def withheld_said(value: Any) -> Optional[str]:
+    """The sentence a withheld list carries, or None when ``value`` is not one."""
+    if isinstance(value, dict) and isinstance(value.get(WITHHELD), int) and not isinstance(value.get(WITHHELD), bool):
+        return str(value.get("said") or f"{value[WITHHELD]} items were withheld")
+    return None
+
 
 def fan_source(effect: Any) -> Any:
     """The list a step runs once per item of, or ``None`` when it runs exactly once.
@@ -636,6 +654,11 @@ def fan_items(effect: Any, context: dict[str, dict], *,
     if dry_item is not None and is_binding(src):
         return [dry_item]
     items = resolve(src, context)
+    said = withheld_said(items)
+    if said is not None:
+        # FA-5 — a list its producer withheld is refused in the producer's words. Run as empty, it
+        # would read as "nothing to iterate" — a quiet morning — when objects did arrive.
+        raise FanRefused(f"for_each over a withheld list is refused — {said}")
     if isinstance(items, str) or not isinstance(items, list):
         got = type(items).__name__
         detail = " (a string runs once per character)" if isinstance(items, str) else ""
@@ -1159,6 +1182,10 @@ TRIGGER_PUBLISHED: dict[str, tuple[str, ...]] = {
                          "process_securable"),
     "finding_created": ("finding_id", "finding", "domain", "confidence",
                         "generated_at", "count_new", "about"),
+    # Arc FA, FA-5 — `admitted` is the keys that entered, a list a step may run once per
+    # (`{"$from": "item.value"}` is one key), or a WITHHELD list above the fan-out cap;
+    # `count` is how many entered either way, `left` how many left, `said` the sentence.
+    "objects_admitted": ("entity", "segment", "admitted", "count", "left", "said"),
 }
 
 

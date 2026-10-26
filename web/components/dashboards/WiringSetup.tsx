@@ -23,11 +23,13 @@ import {
 } from "@/lib/dashboards/catalog";
 import { dropWire, freshWireName, putSet, putValue, renameValue, type DashboardSpec } from "@/lib/dashboards/edit";
 import { lineOf, setTitles, wireWords } from "@/lib/dashboards/names";
-import { choicesOf, doorConditions, isRefused, readSet, readersOf } from "@/lib/dashboards/sets";
+import { choicesOf, doorConditions, isRefused, readSet, readersOf, segmentId, segmentRule } from "@/lib/dashboards/sets";
 import { typedValue, valueFits, valueWords } from "@/lib/dashboards/values";
+import { useFlagOn } from "@/lib/flagOn";
 import { formatCount, formatSeconds } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
+import { declareRule, getProcesses } from "@/lib/objectTypes";
 
 type Change = (next: DashboardSpec, note: string) => void;
 const words = (s: string) => wireWords(s);
@@ -495,8 +497,142 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
           )}
         </span>
       </Row>
+      <SetSegments spec={spec} name={name} connectionId={connectionId} schema={schema} />
       <ReadBy spec={spec} name={name} onChange={onChange} onGone={onGone} />
     </div>
+  );
+}
+
+export const SEGMENTS_FLAG = "ontology.set_segments";
+
+/** Arc FA-4 — while `ontology.set_segments` is on: the set as its chain, a count at each step, and the door that keeps
+ *  it as a segment of the ontology. Off, nothing — the setup is as it was. */
+function SetSegments({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
+  const on = useFlagOn(SEGMENTS_FLAG);
+  if (!on) return null;
+  return (
+    <>
+      <SetChain spec={spec} name={name} connectionId={connectionId} schema={schema} />
+      <KeepAsSegment spec={spec} name={name} connectionId={connectionId} schema={schema} />
+    </>
+  );
+}
+
+/** The set step by step: each set down the chain it starts from, from the first to this one, each read whole and
+ *  counted — and a set one of them is combined with, counted beside it. A set that starts from no other set and is
+ *  combined with none is its one count, said above. */
+function SetChain({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
+  const r = readSet(spec, name);
+  if (isRefused(r)) return null;
+  const steps = [...r.chain].reverse();
+  if (steps.length < 2 && !spec.sets?.[name]?.combine) return null;
+  return (
+    <Row label="Step by step" testid="set-chain" hint="Each set it starts from, read whole; a set it is combined with, counted beside it.">
+      <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+        {withUniqueKeys(steps, s => s).map(([k, step]) => (
+          <ChainStep key={k} spec={spec} name={step} connectionId={connectionId} schema={schema} />
+        ))}
+      </ol>
+    </Row>
+  );
+}
+
+function ChainStep({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
+  const set = spec.sets?.[name];
+  const count = useSetCount(spec, name, connectionId, schema);
+  const other = set?.combine;
+  return (
+    <li data-testid="set-chain-step" data-name={name} className="aug-fs-sm" style={{ color: "var(--t1)" }}>
+      <span style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{set?.label ?? words(name)}</span>
+        <span style={{ marginLeft: "auto", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>{count.text}</span>
+      </span>
+      {other && <CombinedStep spec={spec} op={other.op} name={other.set} connectionId={connectionId} schema={schema} />}
+    </li>
+  );
+}
+
+function CombinedStep({ spec, op, name, connectionId, schema }: { spec: DashboardSpec; op: SetCombine; name: string; connectionId: string; schema?: string }) {
+  const count = useSetCount(spec, name, connectionId, schema);
+  return (
+    <span data-testid="set-chain-combined" data-name={name} className="aug-fs-xs" style={{ display: "flex", gap: 8, color: "var(--t3)", paddingLeft: 12 }}>
+      <span>{COMBINE_LINE[op](spec.sets?.[name]?.label ?? words(name))}</span>
+      <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{count.text}</span>
+    </span>
+  );
+}
+
+/** A rule's condition as written down, for comparing a set's with a rule's: what it holds and nothing it leaves empty. */
+const conditionKey = (c: Record<string, unknown>) => JSON.stringify(Object.keys(c).sort()
+  .filter(k => ["path", "op", "value", "values"].includes(k) && c[k] !== null && c[k] !== "" && !(Array.isArray(c[k]) && !(c[k] as unknown[]).length))
+  .map(k => [k, c[k]]));
+
+/** "Keep as a segment": the set's conditions, flattened with the author's values in place, declared as a condition rule
+ *  by the person — counted before it is written, in the draft until the ontology is published. A set that cannot be one
+ *  says why, in a sentence; one already kept says under which name. The set itself stays as it is. */
+function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
+  const rule = segmentRule(spec, name);
+  const releaseOn = useFlagOn("ontology.release");
+  const [declared, setDeclared] = useState<{ id: string; admitted: number | null } | null>(null);
+  const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false);
+  const wanted = isRefused(rule) ? "" : JSON.stringify([rule.entity.toLowerCase(), rule.conditions.map(c => conditionKey(c as unknown as Record<string, unknown>))]);
+  const [found, setFound] = useState<{ wanted: string; id: string; admitted: number | null } | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    let alive = true;
+    // a rule already declared with this very definition: the set was kept as it
+    getProcesses(connectionId, schema).then(p => {
+      if (!alive) return;
+      const as = (entity: string, x: { conditions?: Record<string, unknown>[] }) =>
+        JSON.stringify([(entity ?? "").toLowerCase(), (x.conditions ?? []).map(conditionKey)]);
+      const hit = (p.rules ?? []).find(x => x.kind === "condition" && (as(x.entity, x) === wanted || as(x.entity_id, x) === wanted));
+      setFound(hit ? { wanted, id: hit.id, admitted: hit.admitted } : null);
+    }).catch(() => { /* none found is none said */ });
+    return () => { alive = false; };
+  }, [wanted, connectionId, schema]);
+  if (isRefused(rule)) {
+    return (
+      <Row label="Keep as a segment" testid="set-segment">
+        <span className="aug-fs-xs" data-testid="set-segment-refused" style={{ color: "var(--t3)", lineHeight: 1.45 }}>{rule.refused}</span>
+      </Row>
+    );
+  }
+  const kept = declared ?? (found && found.wanted === wanted ? found : null);
+  if (kept) {
+    return (
+      <Row label="Keep as a segment" testid="set-segment">
+        <span className="aug-fs-sm" data-testid="set-segment-kept" style={{ color: "var(--t1)" }}>
+          Kept as segment <span className="aug-mono">{kept.id}</span>
+          {kept.admitted != null && <span style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}> · {formatCount(kept.admitted)}</span>}
+        </span>
+        {declared && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            {releaseOn ? "In the draft: readers get it when the ontology is published." : "Served now, to every reader of this connection."}
+          </span>
+        )}
+      </Row>
+    );
+  }
+  const id = segmentId(rule.label);
+  const keep = () => {
+    setBusy(true);
+    setProblem("");
+    declareRule(connectionId, { id, display_name: rule.label, entity: rule.entity, kind: "condition", conditions: rule.conditions }, schema)
+      .then(r => setDeclared({ id: r.id, admitted: r.admitted }))
+      .catch(e => setProblem((e as Error).message || "The segment could not be kept."))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Row label="Keep as a segment" testid="set-segment"
+      hint={`Declares ${id} in the ontology as yours, counted first${releaseOn ? "; readers get it when the ontology is published" : ""}. The set stays as it is.`}>
+      <span>
+        <Button size="xs" variant="secondary" data-testid="set-segment-keep" disabled={busy} onClick={keep}>
+          {busy ? "Keeping…" : "Keep as a segment"}
+        </Button>
+      </span>
+      {problem && <span className="aug-fs-xs" data-testid="set-segment-problem" style={{ color: "var(--amb4)" }}>{problem}</span>}
+    </Row>
   );
 }
 

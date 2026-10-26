@@ -25,11 +25,29 @@ surfaced here.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 logger = logging.getLogger(__name__)
+
+#: Arc FA, FA-7 — a read that must tell a block that FAILED from one that found nothing installs a list here
+#: (:func:`watch_failures`); :func:`_safe` appends the failure, and :func:`build_grounding_context` says it on the block's
+#: note. None by default: nothing is recorded, and every block reads as before.
+_FAILURES: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar("aughor_grounding_failures", default=None)
+
+
+@contextmanager
+def watch_failures() -> Iterator[list]:
+    """Inside the block, a producer that fails is said on its block's ``note`` instead of reading as empty."""
+    failures: list = []
+    token = _FAILURES.set(failures)
+    try:
+        yield failures
+    finally:
+        _FAILURES.reset(token)
 
 
 def _safe(fn: Callable[[], str], reason: str) -> str:
@@ -44,6 +62,9 @@ def _safe(fn: Callable[[], str], reason: str) -> str:
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, reason, counter="grounding.block")
+        watched = _FAILURES.get()
+        if watched is not None:
+            watched.append(type(exc).__name__)
         return ""
 
 
@@ -300,6 +321,9 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
      lambda q, c, **k: external_docs(q, c, k.get("canvas_id") or ""), False),
 ]
 
+#: The blocks computed only when the caller resolved a schema — a reader that says why a block is absent reads it here.
+SCHEMA_BLOCKS: frozenset[str] = frozenset(key for key, _t, _p, needs in _BLOCKS if needs)
+
 
 @dataclass
 class GroundingBlock:
@@ -381,9 +405,22 @@ def build_grounding_context(
     producer degrades to an empty block, never an error.
     """
     blocks: list[GroundingBlock] = []
+    watched = _FAILURES.get()
+    embeds = None
+    if watched is not None:
+        # A retriever that swallows an embedder failure returns "" — a search that never ran, read as "nothing
+        # matched". Under a watch, the embedder's own failures are attributed to the block they happened in.
+        from aughor.semantic.embedder import current_tally
+        embeds = current_tally()
     for key, title, producer, _needs in _BLOCKS:
+        failed_before = len(watched) if watched is not None else 0
+        embeds_failed_before = embeds["failed"] if embeds is not None else 0
         out = producer(question, connection_id, db=db, schema=schema, eff_schema=eff_schema,
                        canvas_id=canvas_id)
         content, note = out if isinstance(out, tuple) else (out, "")
+        if watched is not None and len(watched) > failed_before and not note:
+            note = f"could not be produced ({watched[-1]}); the answer path would have gone without it"
+        elif embeds is not None and embeds["failed"] > embeds_failed_before and not note and not (content or "").strip():
+            note = "its search could not run — the embedder failed — so this is not a true empty"
         blocks.append(GroundingBlock(key=key, title=title, content=content, note=note))
     return GroundingContext(question=question, connection_id=connection_id, blocks=blocks)

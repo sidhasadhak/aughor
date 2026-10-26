@@ -29,7 +29,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 import { TabStrip } from "@/components/ui/tab-strip";
-import { countNoun, formatCount } from "@/lib/format";
+import { countNoun, endedDay, formatCount, utcDayWords } from "@/lib/format";
 import { getOntologyKeys, getTableColumns, keyVocabularyEntry, type TableColumn, type VocabularyKey } from "@/lib/api";
 import { ColumnTypeSquare } from "@/components/icons/columnType";
 import { declaredActionsHref } from "@/lib/objectLinks";
@@ -77,6 +77,11 @@ import {
   declareEditStates,
   withdrawEditStates,
   type EditStates,
+  getDeclarationHistory,
+  markRetiring,
+  putBackVersion,
+  unmarkRetiring,
+  type DeclarationHistory,
 } from "@/lib/objectTypes";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -310,6 +315,10 @@ function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenP
     body = (
       <>
         <OriginSection detail={detail} />
+        {!inDomain && (
+          <VersionsSection kind="entity" targetId={detail.id} name={detail.display_name} stamp={detail}
+            connectionId={connectionId} schema={schema} onChanged={onChanged} />
+        )}
         <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       </>
     );
@@ -354,6 +363,8 @@ function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenP
           </p>
         )}
         <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+        <RetiringLine detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen}
+          onChanged={onChanged} readOnly={inDomain} />
         {editing && declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
         <TypeFigures detail={detail} />
       </header>
@@ -2028,6 +2039,216 @@ function WithdrawnSection({ detail, connectionId, schema, onChanged }: {
       ))}
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
+  );
+}
+
+const VERSION_TAG: Record<string, string> = { declared: "aug-tag-blue", drafted: "aug-tag-violet", withdrawn: "aug-tag-gray" };
+
+/** Arc OC-1, Arc FA (FA-3) — one declaration, version by version, newest first: when each took effect, who made it,
+ *  where it came from, its note and what it changed. While putting back is on, an earlier version goes back into the
+ *  draft from its row — counted again and classed like any change, so readers get it only when a person publishes; why
+ *  it cannot go back here is said instead of a button. */
+function VersionsSection({ kind, targetId, name, stamp, connectionId, schema, onChanged }: {
+  kind: string;
+  targetId: string;
+  name: string;
+  /** A newer read of the element, so the history is read again with it. */
+  stamp: unknown;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const editing = useEditing();
+  const [history, setHistory] = useState<DeclarationHistory | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<number | null>(null);
+  const [said, setSaid] = useState("");
+  const [problem, setProblem] = useState("");
+  const [reread, setReread] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setError("");
+    getDeclarationHistory(kind, targetId, connectionId, schema)
+      .then((next) => { if (live) setHistory(next); })
+      .catch((e: unknown) => { if (live) setError(errorText(e)); });
+    return () => { live = false; };
+  }, [kind, targetId, connectionId, schema, stamp, reread]);
+  const putBack = async (version: number) => {
+    setBusy(version);
+    setProblem("");
+    setSaid("");
+    try {
+      const out = await putBackVersion(connectionId, kind, targetId, version, schema);
+      setSaid(out.said);
+      setReread((n) => n + 1);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  // Shown while putting back is on — the history door then says whether a version can go back here. Off, the tab is
+  // what it was: where the type comes from and what was withdrawn.
+  if (error || !history?.put_back) return null;
+  const offer = history.put_back;
+  return (
+    <Section title="Versions" aside={history.kept ? "every save and withdrawal, newest first" : "not kept on this install"}>
+      {history.versions.length === 0 ? (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
+          Nobody has declared anything on {name} yet — what the builder read is all there is.
+        </p>
+      ) : (
+        <ol style={{ margin: 0, padding: 0 }}>
+          {history.versions.map((v, i) => {
+            const when = utcDayWords(v.in_force_from || v.recorded_at, true);
+            const note = v.declaration_note || v.note;
+            return (
+              <li key={`v:${v.version ?? "kept"}:${i}`} data-testid="entity-version"
+                style={{ listStyle: "none", padding: "7px 0", borderTop: i ? RULE : undefined }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                  <span className="aug-fs-sm" style={{ ...MONO, color: "var(--t1)" }}>
+                    {v.version == null ? "as found" : `v${v.version}`}
+                  </span>
+                  <span className={`aug-tag ${VERSION_TAG[v.state] ?? "aug-tag-gray"}`}>{v.state}</span>
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    {[when, v.by, v.source].filter(Boolean).join(" · ")}
+                  </span>
+                  {editing && offer.enabled && i > 0 && v.version != null && (
+                    <Button variant="ghost" size="xs" style={{ marginLeft: "auto" }} disabled={busy !== null}
+                      data-testid="entity-version-put-back" onClick={() => putBack(v.version as number)}
+                      title="Write this version's fields into the draft — counted again, and read by everyone once the draft is published">
+                      {busy === v.version ? "Putting back…" : "Put back into the draft"}
+                    </Button>
+                  )}
+                </div>
+                {note && <p className="aug-fs-xs" style={{ margin: "3px 0 0", color: "var(--t2)" }}>{note}</p>}
+                {v.changes.length > 0 && (
+                  <ul style={{ margin: "3px 0 0", padding: 0 }}>
+                    {v.changes.slice(0, 6).map((c, j) => (
+                      <li key={`c:${j}`} className="aug-fs-xs" style={{ ...MONO, listStyle: "none", color: "var(--t3)" }}>{c}</li>
+                    ))}
+                    {v.changes.length > 6 && (
+                      <li className="aug-fs-xs" style={{ listStyle: "none", color: "var(--t3)" }}>
+                        and {countNoun(v.changes.length - 6, "more change")}
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {editing && !offer.enabled && offer.said && (
+        <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--t3)" }} data-testid="entity-version-why-not">
+          An earlier version cannot be put back here: {offer.said}.
+        </p>
+      )}
+      {said && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--grn4)" }}>{said}</p>}
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
+    </Section>
+  );
+}
+
+/** Arc FA, FA-3 — an entity marked retiring: still served, and every reader is told what replaces it and when ("retiring
+ *  on Tue 1 Dec 2026 — use Customer instead"; after the day, "past its retiring date"). While editing, the door to mark
+ *  it — another entity, a day, a note — or to take the mark off; with releases on either waits in the draft as a change
+ *  of meaning. Nothing renders while marking retiring is off: the detail then carries no `retiring` at all. */
+function RetiringLine({ detail, types, connectionId, schema, onOpen, onChanged, readOnly }: {
+  detail: ObjectTypeDetail;
+  types: TypeMapRow[];
+  connectionId: string;
+  schema?: string;
+  onOpen: (objectType: string) => void;
+  onChanged: () => void;
+  readOnly: boolean;
+}) {
+  const editing = useEditing();
+  const [open, setOpen] = useState(false);
+  const [successor, setSuccessor] = useState("");
+  const [day, setDay] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  if (detail.retiring === undefined) {
+    return detail.retiring_said
+      ? <p className="aug-fs-xs" style={{ margin: "8px 0 0", color: "var(--t3)" }}>{detail.retiring_said}</p>
+      : null;
+  }
+  const mark = detail.retiring;
+  const others = types.filter((t) => t.id !== detail.id);
+  const write = async (act: () => Promise<unknown>) => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await act();
+      setOpen(false);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const successorRow = mark ? types.find((t) => t.id === mark.successor) : undefined;
+  return (
+    <div className="aug-fs-xs" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }} data-testid="entity-retiring">
+      {mark && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span className="aug-tag aug-tag-amber">{mark.past ? "past its retiring date" : "retiring"}</span>
+          <span style={{ color: "var(--t2)" }} data-testid="entity-retiring-said">
+            {mark.past ? `past its retiring date, ${endedDay(mark.on)}` : `retiring on ${endedDay(mark.on)}`} — use{" "}
+            {successorRow ? (
+              <Button variant="ghost" size="xs" onClick={() => onOpen(successorRow.object_type)} title={`Open ${successorRow.display_name}`}>
+                {mark.successor_name}
+              </Button>
+            ) : mark.successor_name}{" "}instead
+          </span>
+          {editing && !readOnly && (
+            <Button variant="minimal" size="xs" disabled={busy} style={{ marginLeft: "auto" }}
+              onClick={() => write(() => unmarkRetiring(connectionId, "entity", detail.id, schema))}
+              title="It is no longer said to be going">
+              Take the mark off
+            </Button>
+          )}
+        </div>
+      )}
+      {mark?.note && <span style={{ color: "var(--t3)" }}>{mark.note}</span>}
+      {!mark && editing && !readOnly && !open && (
+        <span>
+          <Button variant="minimal" size="xs" onClick={() => setOpen(true)} data-testid="entity-retiring-open"
+            title="Say it is going, and what to use instead — it keeps serving until it is withdrawn">
+            Mark retiring
+          </Button>
+        </span>
+      )}
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", borderRadius: "var(--r2)",
+                      background: "var(--bg-2)" }} data-testid="entity-retiring-form">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <SelectField style={SELECT} value={successor} aria-label="Use instead" onChange={(e) => setSuccessor(e.target.value)}>
+              <option value="">use instead…</option>
+              {others.map((t) => <option key={t.id} value={t.id}>{t.display_name}</option>)}
+            </SelectField>
+            <Input type="date" value={day} aria-label="Retiring on" onChange={(e) => setDay(e.target.value)}
+              style={{ ...FIELD, width: 150 }} />
+          </div>
+          <Input value={note} aria-label="Note" placeholder="why, in a few words" onChange={(e) => setNote(e.target.value)}
+            style={FIELD} />
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <Button variant="outline" size="xs" disabled={busy || !successor || !day} data-testid="entity-retiring-save"
+              onClick={() => write(() => markRetiring(connectionId,
+                { kind: "entity", target_id: detail.id, successor, on: day, note: note.trim() || undefined }, schema))}>
+              {busy ? "Marking…" : "Mark retiring"}
+            </Button>
+            <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+            <span style={{ color: "var(--t3)" }}>It keeps serving; every reader is told to use the other instead.</span>
+          </div>
+        </div>
+      )}
+      {problem && <span style={{ color: "var(--red5)" }}>{problem}</span>}
+    </div>
   );
 }
 

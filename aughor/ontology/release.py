@@ -309,7 +309,25 @@ def publish(conn: str, schema: str, *, by: str) -> dict:
     made = _record(conn, schema, by=by, note=f"{len(rows)} change{'s' if len(rows) != 1 else ''} published",
                    changes=summary)
     restated = _restate(conn, rows, before_id, made["id"], by)
-    return {**made, "published": summary, "restated_claims": restated, "previous": before_id}
+    out = {**made, "published": summary, "restated_claims": restated, "previous": before_id}
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("graph.declarations"):
+        out["graph"] = _refresh_graph(conn, schema)
+    return out
+
+
+def _refresh_graph(conn: str, schema: str) -> dict:
+    """Arc FA, FA-1 — rebuild the connection graph the moment a release is published, so the graph search finds what
+    the release holds and nothing it withdrew. Built as the published ontology whatever view the door reads.
+    Best-effort: the publish stands, and a graph that did not rebuild says why."""
+    from aughor.ontology.graph_freshness import refresh_context_graph
+    from aughor.ontology.overrides import viewing
+    with viewing("published"):
+        result = refresh_context_graph(conn, schema or None, force=True)
+    if result is None or not result.rebuilt:
+        why = getattr(getattr(result, "verdict", None), "reason", "") if result is not None else ""
+        return {"rebuilt": False, "why": why or "this scope has no built ontology to project the graph from"}
+    return {"rebuilt": True, "indexed": result.indexed}
 
 
 def discard(conn: str, schema: str, *, kind: str = "", target_id: str = "") -> int:

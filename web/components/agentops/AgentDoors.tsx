@@ -170,6 +170,12 @@ export function AgentDoors({ agent, onChat, onOpenAutomation, onOpenIntegrations
           <DoorRow kind="a2a" title="A2A — an agent card and a message/send endpoint"
             state={doors.a2a.state} hue={doors.a2a.state === "open" ? "positive" : "muted"}
             detail={`card ${doors.a2a.card} · POST ${doors.a2a.url} (JSON-RPC message/send, bearer key)`} />
+          {doors.grounding && (
+            <DoorRow kind="grounding" title="Grounding — what this agent would read, with no model asked"
+              state={doors.grounding.state}
+              hue={doors.grounding.state === "open" ? "positive" : doors.grounding.state === "paused" ? "caution" : "muted"}
+              detail={`POST ${doors.grounding.url} with the key · {question, connection_id?, schema?} · MCP tool ${doors.grounding.tool}`} />
+          )}
           {doors.teams.bots.length === 0 ? (
             <DoorRow kind="teams" title="Microsoft Teams — no bot fronts this agent"
               state={doors.teams.state} hue="muted"

@@ -37,6 +37,7 @@ import { DashboardBuilder, EditBar } from "@/components/dashboards/DashboardBuil
 import { ComposedDashboard, type DashboardDoors, type ReadState } from "@/components/dashboards/ComposedDashboard";
 import { FindingPicker } from "@/components/dashboards/FindingPicker";
 import { ObjectDashboardStarter } from "@/components/dashboards/ObjectDashboardStarter";
+import { PackTemplatePicker } from "@/components/dashboards/PackTemplatePicker";
 import { OntologyPieceComposer } from "@/components/dashboards/OntologyPieceComposer";
 import { PiecePicker } from "@/components/dashboards/PiecePicker";
 import { QuerySetup } from "@/components/dashboards/QuerySetup";
@@ -286,13 +287,15 @@ function DraftReview({ connectionId, dashboardId, result, proposal, held, onKept
 /** A new dashboard, three ways (2026-10-09): empty — its name and a first note in the person's words, since a dashboard
  *  holding nothing is refused; for a declared process — its board, its open-and-overdue objects and one beside them;
  *  or drafted by a model for an area, the one way here that asks one. The walk-through found only the last. */
-function NewDashboard({ connectionId, schema, fromObject, sym, onKept, onClose }: {
+function NewDashboard({ connectionId, schema, fromObject, fromPack = false, sym, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (dashboardId: string) => void; onClose: () => void;
   /** Whether a dashboard may start from an object here (`ontology.object_dashboards`). */
   fromObject: boolean;
+  /** Arc FA, FA-6 — whether a bound pack's dashboard template is offered here (`packs.dashboard_templates`). */
+  fromPack?: boolean;
   sym: string;
 }) {
-  const [way, setWay] = useState<"empty" | "object" | "process" | "draft">("empty");
+  const [way, setWay] = useState<"empty" | "object" | "pack" | "process" | "draft">("empty");
   const [types, setTypes] = useState<{ object_type: string; display_name: string }[] | null>(null);
   const [entity, setEntity] = useState("");
   // Arc AP-5 — what each object suggests a dashboard be; none while shapes are off (the route says so with a 404)
@@ -351,7 +354,8 @@ function NewDashboard({ connectionId, schema, fromObject, sym, onKept, onClose }
   return (
     <div data-testid="dashboard-new" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-        {([["empty", "Start empty"], ...(fromObject ? [["object", "From an object"] as const] : []), ["process", "For a process"],
+        {([["empty", "Start empty"], ...(fromObject ? [["object", "From an object"] as const] : []),
+           ...(fromPack ? [["pack", "From a pack template"] as const] : []), ["process", "For a process"],
            ["draft", "Draft it with a model"]] as const).map(([w, label]) => (
           <Button key={w} size="xs" variant={way === w ? "secondary" : "ghost"} aria-pressed={way === w}
             data-testid={`dashboard-new-${w}`} disabled={drafting || starting || !!proposal} onClick={() => setWay(w)}>{label}</Button>
@@ -413,6 +417,14 @@ function NewDashboard({ connectionId, schema, fromObject, sym, onKept, onClose }
               onKept={onKept} onCancel={() => setEntity("")} />
           )}
         </div>
+      )}
+
+      {way === "pack" && (
+        <PackTemplatePicker connectionId={connectionId} schema={schema} disabled={!!proposal}
+          onDrafted={async out => {
+            setResult(out); setProposal(null);
+            if (out.staged) setProposal(await getProposalById(out.proposal_id));
+          }} />
       )}
 
       {way === "process" && (
@@ -746,6 +758,8 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [piecesOn, setPiecesOn] = useState(false);
   // A dashboard started from an object (2026-10-10), while `ontology.object_dashboards` is on.
   const [objectsOn, setObjectsOn] = useState(false);
+  // Arc FA, FA-6 — a dashboard started from a bound pack's template, while `packs.dashboard_templates` is on
+  const [templatesOn, setTemplatesOn] = useState(false);
   // Arc AP-1 — a dashboard built in place, while `dashboard.builder` is on: read first, and Edit opens the builder.
   const [builderOn, setBuilderOn] = useState(false);
   // Arc AP-2 and AP-3 — sets, choices and action buttons, while `dashboard.wiring` is on
@@ -806,6 +820,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
         setWiringOn(!!f["dashboard.wiring"]?.value); setStructureOn(!!f["dashboard.app_pieces"]?.value);
         setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["dashboard.queries"]?.value);
         setVariablesOn(!!f["dashboard.variables"]?.value); setQuestionsOn(!!f["dashboard.questions"]?.value);
+        setTemplatesOn(!!f["packs.dashboard_templates"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -1375,7 +1390,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
 
       {newOpen && (
         <NewDashboard connectionId={connectionId} schema={schema} onClose={() => setNewOpen(false)}
-          fromObject={piecesOn && objectsOn} sym={data?.currency_symbol || "$"}
+          fromObject={piecesOn && objectsOn} fromPack={templatesOn} sym={data?.currency_symbol || "$"}
           onKept={id => { setNewOpen(false); choose(id); reload(); }} />
       )}
 

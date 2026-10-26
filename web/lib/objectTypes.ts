@@ -331,6 +331,10 @@ export interface ObjectTypeDetail {
   expressions?: TypeExpression[];
   /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */
   withdrawn?: { bindings: string[]; links: { relationship: string; from_entity: string; to_entity: string }[] };
+  /** Arc FA, FA-3 — present only while marking retiring is on: the type's mark, or null when it carries none. */
+  retiring?: RetiringMark | null;
+  /** Said when whether it is retiring could not be read. */
+  retiring_said?: string;
   path: "object_type";
   connection_id: string;
   schema_name: string;
@@ -516,7 +520,138 @@ export interface ObjectTypeUses {
   dashboards: { id: string; title: string; pieces: string[] }[];
   /** Said when the dashboards could not be listed; the rest still stands. */
   dashboards_said?: string;
-  reads: { tables: string[]; months: { month: string; reads: number }[]; source: string; said?: string };
+  reads: {
+    tables: string[]; months: { month: string; reads: number }[]; source: string; said?: string;
+    /** Arc FA, FA-3 — the last thirty days, today included. */
+    window?: ReadsWindow;
+    /** Its tables another entity is read from too — a statement naming one counts for both. */
+    shared?: SharedTable[];
+    shared_said?: string;
+  };
+}
+
+/** Arc FA, FA-3 — an entity's reads over a recent window: how many statements named its tables, the newest one's
+ *  moment, and how many people the session log names for the runs that issued them. `readers` is null when the log
+ *  could not be read; `unattributed` reads name no one, and `readers_said` says so. */
+export interface ReadsWindow {
+  days: number;
+  reads: number;
+  last_read: string | null;
+  readers: number | null;
+  unattributed: number | null;
+  readers_said?: string;
+}
+
+export interface SharedTable { table: string; with: string[] }
+
+/** One entity in the list a person cleaning up reads, the least read first. `reads` is null when it is not counted
+ *  (no table bound, or the log unread) — `said` says which. */
+export interface EntityReadsRow extends Partial<Omit<ReadsWindow, "reads">> {
+  entity: string;
+  object_type: string;
+  display_name: string;
+  tables: string[];
+  part_of: string;
+  reads: number | null;
+  said?: string;
+  shared?: SharedTable[];
+  shared_said?: string;
+}
+
+export interface EntitiesByReads {
+  path: "by_reads";
+  connection_id: string;
+  schema_name: string;
+  days: number;
+  source: string;
+  entities: EntityReadsRow[];
+  said?: string;
+}
+
+/** Arc FA, FA-3 — every entity ranked by its reads over the last `days` days, the least read first. `path: "off"`
+ *  while what uses an entity is not shown. */
+export async function getEntitiesByReads(
+  connectionId: string, schemaName?: string, days = 30,
+): Promise<EntitiesByReads | { path: "off"; said: string }> {
+  const res = await fetch(`${getApiBase()}/object-types/uses?${scope(connectionId, schemaName, { window: String(days) })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Arc FA, FA-3 — a declaration marked retiring: the element of the same kind to use instead, the day it goes, and
+ *  the sentence every reader is told ("retiring on 2026-12-01 — use Customer instead"). */
+export interface RetiringMark {
+  successor: string;
+  successor_name: string;
+  on: string;
+  note?: string;
+  past: boolean;
+  said: string;
+}
+
+/** Mark one declaration retiring. It waits in the draft while releases are on, as a change of meaning. */
+export async function markRetiring(
+  connectionId: string,
+  mark: { kind: string; target_id: string; successor: string; on: string; note?: string },
+  schemaName?: string,
+): Promise<{ retiring: RetiringMark | null; landed: "draft" | "published" }> {
+  const res = await fetch(`${getApiBase()}/ontology/retiring?${scope(connectionId, schemaName)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mark),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Take a retiring mark off. */
+export async function unmarkRetiring(connectionId: string, kind: string, targetId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/retiring?${scope(connectionId, schemaName, { kind, target_id: targetId })}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Arc OC-1 — one version of a declaration, newest first in its history. `version` is null for a declaration whose
+ *  history starts at its next change. */
+export interface DeclarationVersion {
+  version: number | null;
+  state: "declared" | "drafted" | "withdrawn";
+  in_force_from: string;
+  recorded_at: string;
+  by: string;
+  note: string;
+  fields: Record<string, unknown>;
+  source: string;
+  changes: string[];
+  /** Arc FA, FA-3 — the declaration's own note ("put back from version 2"), while putting back is on. */
+  declaration_note?: string;
+}
+
+export interface DeclarationHistory {
+  element: string;
+  kept: boolean;
+  versions: DeclarationVersion[];
+  /** Arc FA, FA-3 — present while putting back is on: whether a version can go back into the draft here, and why not. */
+  put_back?: { enabled: boolean; said: string };
+}
+
+export async function getDeclarationHistory(
+  kind: string, targetId: string, connectionId: string, schemaName?: string,
+): Promise<DeclarationHistory> {
+  const res = await fetch(`${getApiBase()}/ontology/history?${scope(connectionId, schemaName, { kind, target_id: targetId })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Arc FA, FA-3 — put an earlier version back into the draft. Refused with the sentence when it cannot go back. */
+export async function putBackVersion(
+  connectionId: string, kind: string, targetId: string, version: number, schemaName?: string,
+): Promise<{ landed: "draft" | "discard"; said: string; change: ReleaseChange | null; warnings: string[] }> {
+  const res = await fetch(`${getApiBase()}/ontology/history/put-back?${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, target_id: targetId, version }),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
 }
 
 export async function getObjectTypeUses(

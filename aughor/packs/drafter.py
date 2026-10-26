@@ -79,7 +79,7 @@ def _parts(po: PackOntology, graph: OntologyGraph, matched: dict[str, str], pack
             if not column:
                 continue
             out.append(ProposedPart(entity=parent_id, table=table, key=column, name=snake_name(child),
-                                    reason=f"{_by(pack_id)}: a {obj.name} is made of its {child} rows"))
+                                    reason=part_reason(pack_id, obj.name, child)))
     return out
 
 
@@ -100,7 +100,7 @@ def _links(po: PackOntology, graph: OntologyGraph, matched: dict[str, str],
             if verb.strip():
                 names.append(ProposedLinkName(
                     link=rel.id, name=f"{snake_name(rel.from_entity)}_{snake_name(verb)}_{snake_name(rel.to_entity)}",
-                    reason=f"{_by(pack_id)}: {lk.from_object} {lk.verb or 'relates to'} {lk.to_object}"))
+                    reason=link_reason(pack_id, lk)))
             continue
         # no join found: proposed on the pack's key where the from-side holds it, and counted before it lands
         holder = graph.entities[a]
@@ -108,8 +108,7 @@ def _links(po: PackOntology, graph: OntologyGraph, matched: dict[str, str],
         target_key = _key_of(graph.entities[b])
         if via and target_key:
             links.append(ProposedLink(from_entity=a, to_entity=b, verb=lk.verb or "relates to", from_column=via,
-                                      to_column=target_key,
-                                      reason=f"{_by(pack_id)}: {lk.from_object} {lk.verb or 'relates to'} {lk.to_object}"))
+                                      to_column=target_key, reason=link_reason(pack_id, lk)))
     return names, links
 
 
@@ -154,3 +153,14 @@ def _processes(po: PackOntology, graph: OntologyGraph, matched: dict[str, str],
 
 def _by(pack_id: str) -> str:
     return f"the {pack_id} pack" if pack_id else "the pack"
+
+
+def part_reason(pack_id: str, obj: str, part: str) -> str:
+    """Why a part is proposed — said in one place, so a reader of the draft record (an upgrade's declined items,
+    `aughor/packs/upgrade.py`) can tell which of the pack's claims a withdrawn proposal was."""
+    return f"{_by(pack_id)}: a {obj} is made of its {part} rows"
+
+
+def link_reason(pack_id: str, lk: ExpectedLink) -> str:
+    """Why a link, or a link's name, is proposed — said in one place, for the same reader as :func:`part_reason`."""
+    return f"{_by(pack_id)}: {lk.from_object} {lk.verb or 'relates to'} {lk.to_object}"

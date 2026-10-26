@@ -95,7 +95,9 @@ def check(files: dict[str, str]) -> dict[str, Any]:
                 "anatomy": pack.manifest.anatomy, "static_gate": "gate 3 held" if applies(pack) else "gate 3 not declared (anatomy 0)",
                 "declares": {"metrics": len(pack.metrics), "roles": len(pack.entities), "plays": len(pack.playbooks),
                              "goldens": len(pack.evals), "ontology": pack.ontology is not None, "monitors": len(pack.monitors),
-                             "scenarios": len(pack.scenarios), "missions": len(pack.missions)}}
+                             "scenarios": len(pack.scenarios), "missions": len(pack.missions),
+                             # Arc FA, FA-6 — counted only where a pack ships one, so every other check reads as before
+                             **({"dashboards": len(pack.dashboards)} if pack.dashboards else {})}}
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -149,6 +151,11 @@ def upload(files: dict[str, str], *, by: str, source: str = "upload", source_url
             "next": f"a person activates it: POST /packs/{pack_id}/status {{status: active}} — a grounded pack through its evals on a connection"}
 
 
+def _templates_on() -> bool:
+    from aughor.packs.templates import on
+    return on()
+
+
 def guide() -> dict[str, Any]:
     """The authoring guide, read from the models that define the anatomy."""
     from aughor.packs import models as M
@@ -170,6 +177,10 @@ def guide() -> dict[str, Any]:
         {"file": "monitors/*.yaml", "declares": "a watch with its PRIOR normal range and where it was measured — or unmeasured, said", "schema": schema(M.PackMonitorPrior)},
         {"file": "scenarios/*.yaml", "declares": "a projection template over a method of the ladder", "schema": schema(M.PackScenarioTemplate)},
         {"file": "missions/*.yaml", "declares": "a mission template a person writes a mission from", "schema": schema(M.PackMissionTemplate)},
+        # Arc FA, FA-6 — described while templates are listed on this install (`packs.dashboard_templates`)
+        *([{"file": "dashboards/*.yaml", "declares": "a dashboard template a person keeps a dashboard from: cards naming the "
+                                                     "pack's metrics, and sections laying them out",
+            "schema": schema(M.PackDashboardTemplate)}] if _templates_on() else []),
         {"file": "questions.yaml", "declares": "canonical and diagnostic questions, routing tags", "schema": schema(M.PackQuestions)},
         {"file": "evals/*.yaml", "declares": "golden questions, each with the expected metric, dataset, value and tolerance", "schema": schema(M.PackEval)},
         {"file": "sources.yaml", "declares": "the cited sources a range, a play or a golden rests on", "schema": schema(M.PackSource)},

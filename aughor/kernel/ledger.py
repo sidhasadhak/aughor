@@ -1606,6 +1606,26 @@ class Ledger:
             out.append(d)
         return out
 
+    def session_people(self, trace_ids: list[str], *, org_id: Optional[str] = None) -> dict[str, str]:
+        """The person each run was for, by trace id, where the session log says — a run it never logged (the log is
+        on with `obs.session_log` and pruned by age), or logged with no person, is absent. Arc FA, FA-3: who read an
+        entity, read from the runs whose statements named its tables. Read-only."""
+        wanted = sorted({t for t in trace_ids if t})
+        out: dict[str, str] = {}
+        for i in range(0, len(wanted), 500):
+            chunk = wanted[i:i + 500]
+            q = (f"SELECT trace_id, MAX(user_id) FROM session_events WHERE trace_id IN ({','.join('?' * len(chunk))})"
+                 " AND user_id IS NOT NULL AND user_id != ''")
+            args: list[Any] = list(chunk)
+            if org_id:
+                q += " AND org_id=?"
+                args.append(org_id)
+            q += " GROUP BY trace_id"
+            with self._lock:
+                rows = self._conn.execute(q, args).fetchall()
+            out.update({str(r[0]): str(r[1]) for r in rows if r[1]})
+        return out
+
     def purge_connection(self, conn_id: str) -> dict[str, int]:
         """Delete what the kernel kept about one connection — its jobs, their events, the
         artifacts they produced (and those artifacts' lineage), and the task traces labelled

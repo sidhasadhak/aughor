@@ -153,7 +153,25 @@ def _preamble(state: str, reason: str) -> str:
     )
 
 
-def _skill_answer_from_graph(state: str, reason: str) -> str:
+#: FA-1 — the rows a pack's types table gains when its graph holds declarations; a graph without them ships the table
+#: as it was, byte for byte.
+_DECLARATION_NODE_ROW = ("| `declaration` | a published segment, process, rule, impact, action or link; "
+                         "`data.decl_kind` says which, `data.entities` what it is about |\n")
+_DECLARATION_EDGE_ROW = "| `defines` (from a `declaration`) | the declaration is about this table's entity |\n"
+
+
+def _skill_answer_from_graph(state: str, reason: str, *, declarations: bool = False) -> str:
+    text = _skill_answer_from_graph_text(state, reason)
+    if declarations:
+        text = text.replace("| `brief` | a synthesized executive narrative |\n",
+                            "| `brief` | a synthesized executive narrative |\n" + _DECLARATION_NODE_ROW)
+        text = text.replace("| `resolves` | a settled reading of an ambiguous term on this connection |\n",
+                            "| `resolves` | a settled reading of an ambiguous term on this connection |\n"
+                            + _DECLARATION_EDGE_ROW)
+    return text
+
+
+def _skill_answer_from_graph_text(state: str, reason: str) -> str:
     return f"""---
 name: answer-from-aughor-graph
 description: Answer a question about this warehouse's tables, joins, metrics or
@@ -408,7 +426,8 @@ def export_pack(
     _write(root / "graph.json", json.dumps(payload, indent=2, sort_keys=True, default=str))
     _write(root / "README.md", _readme(cg, state, reason, payload["counts"]))
     _write(root / "install.sh", _INSTALL_SH, executable=True)
-    _write(skills / "answer-from-graph.md", _skill_answer_from_graph(state, reason))
+    _write(skills / "answer-from-graph.md", _skill_answer_from_graph(
+        state, reason, declarations=any(n.kind == "declaration" for n in cg.nodes.values())))
     _write(skills / "trace-lineage.md", _skill_trace_lineage(state, reason))
 
     return ExportedPack(

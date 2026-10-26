@@ -17,6 +17,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
+import { AskAboutPiece } from "@/components/dashboards/AskAbout";
 import { useCellBox, useMeasured, useSettled } from "@/components/dashboards/cellBox";
 import { Foot, Frame, Title } from "@/components/dashboards/DashboardTile";
 import { Body, Reading, Unread, WaitingWords, useNoun, usePieces, useSetQuery } from "@/components/dashboards/OntologyPieces";
@@ -154,7 +155,10 @@ export function ObjectListPiece({ elementKey, entity, set, setFrom, chooses, tic
         })}
         {page.rows.length === 0 && <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>No objects in this set.</div>}
       </Body>
-      <Foot icon="list" aside={<Pager offset={offset} shown={page.rows.length} total={page.total} limit={limit} onPage={setOffset} />}>
+      <Foot icon="list" aside={<>
+        <AskAboutPiece query={query} ticked={ticks_} total={page.total} typeId={page.type_id} />
+        <Pager offset={offset} shown={page.rows.length} total={page.total} limit={limit} onPage={setOffset} />
+      </>}>
         {page.rows.length ? `${formatCount(offset + 1)}–${formatCount(offset + page.rows.length)} of ${page.total == null ? "…" : formatCount(page.total)}` : "none"}
         {ticks_.length > 0 && ` · ${formatCount(ticks_.length)} ticked`}
       </Foot>

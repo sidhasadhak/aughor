@@ -150,6 +150,7 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # Bot Framework's signature) and are auth-exempt by prefix in `api.py` — open here.
     ("POST", "/doors/agents/{agent_id}/ask"): None,
     ("POST", "/doors/agents/{agent_id}/webhook"): None,
+    ("POST", "/doors/agents/{agent_id}/grounding"): None,   # FA-7 — a read with the agent's key; it writes nothing
     ("POST", "/doors/a2a/{agent_id}"): None,
     ("POST", "/doors/teams/{bot_id}/messages"): None,
 

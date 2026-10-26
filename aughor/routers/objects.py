@@ -207,9 +207,19 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
                                  dialect=getattr(db, "dialect", "") or "duckdb",
                                  keyed=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
         return _complete({"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
-                          **instance.to_dict(), "related": related}, clock, **_object_facts(instance))
+                          **instance.to_dict(), "related": related,
+                          **_retiring_of(graph, _entity_id(graph, object_type), connection_id)}, clock, **_object_facts(instance))
     finally:
         db.close()
+
+
+def _entity_id(graph: Any, object_type: str) -> str:
+    """The entity id an object page's type names — "" when it names none (the page answered already)."""
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
+    try:
+        return find_object_type(graph, object_type).id
+    except ObjectQueryRefused:
+        return ""
 
 
 def _object_facts(instance: Any) -> dict:
@@ -376,6 +386,47 @@ def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
         db.close()
 
 
+class _FindRequest(BaseModel):
+    """Arc FA, FA-1 — the words an object goes by, and how many of each entity's matches to show."""
+    q: str
+    limit_per_entity: int = 5
+
+
+@router.post("/objects/find", dependencies=[Depends(preview_from_request)])
+def post_object_find(body: _FindRequest, connection_id: str = BUILTIN_ID,
+                     schema_name: Optional[str] = Query(default=None)):
+    """Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+    entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
+    the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
+    ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
+    with more matches than shown. 404 while the flag is off. No model call."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("objects.find"):
+        raise HTTPException(status_code=404, detail="Finding an object by its name is off on this install.")
+    from aughor.semantic.completeness import Clock, policy_words
+    from aughor.semantic.object_find import find_objects
+    from aughor.semantic.object_query import ObjectQueryRefused
+    from aughor.sql.executor import execute_guarded
+
+    clock = Clock()
+    graph = _served_graph(connection_id, schema_name)
+    db = _open_scoped(connection_id, schema_name, graph)
+    try:
+        try:
+            found = find_objects(graph, lambda sql: execute_guarded(db, sql, query_id="objects.find"), body.q,
+                                 dialect=getattr(db, "dialect", "") or "duckdb", overlay=_accepted_edits(connection_id),
+                                 per_entity=body.limit_per_entity)
+        except ObjectQueryRefused as exc:
+            return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
+                              "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
+    finally:
+        db.close()
+    said = policy_words(graph, found["withheld"])
+    out = {"path": "found", "connection_id": connection_id, "schema_name": graph.schema_name, **found,
+           "withheld_said": said}
+    return _complete(out, clock, shown=len(found["hits"]), withheld=found["withheld"], masked=found["masked"], said=said)
+
+
 def _titles_facts(graph: Any, found: dict, body: Any) -> dict:
     """The names read for a set of keys: the first ``MAX_TITLES`` of them when more were asked, and a row policy's
     narrowing — a key it withholds is absent from the map, so it is said."""
@@ -418,6 +469,29 @@ def get_object_type_map(connection_id: str = BUILTIN_ID, schema_name: Optional[s
     return object_type_map(_served_graph(connection_id, schema_name), overlay=_accepted_edits(connection_id))
 
 
+def _days(window: Any) -> int:
+    """The window a usage door was asked for — its default when called as a function, where FastAPI's Query stands."""
+    from aughor.ontology.entity_uses import WINDOW_DAYS
+    return window if isinstance(window, int) else WINDOW_DAYS
+
+
+@router.get("/object-types/uses")
+def get_object_types_by_reads(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None),
+                              window: int = Query(default=30, ge=1, le=365,
+                                                  description="days back, today included")):
+    """ROADMAP §3.60 (Arc FA, FA-3) — every entity of the scope ranked by how often audited statements named its tables
+    in the last ``window`` days, the least read first — the list a person cleaning up reads: each with its reads, the
+    day it was last read, how many people read it where the session log says who ran the statement, and the tables it
+    shares with another entity (a statement naming a shared table counts for both, said beside it). Behind
+    `ontology.entity_usage`: off, the door says so. No model call; the platform's own log, never the warehouse."""
+    from aughor.ontology import entity_uses
+    if not entity_uses.enabled():
+        return {"path": "off", "said": "What uses an entity is not shown: the setting is off."}
+    graph = _served_graph(connection_id, schema_name)
+    return {"path": "by_reads", "connection_id": connection_id, "schema_name": graph.schema_name,
+            **entity_uses.ranked_by_reads(graph, connection_id, days=_days(window))}
+
+
 @router.get("/object-types/{object_type}")
 def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
                     schema_name: Optional[str] = Query(default=None), domain: Optional[str] = Query(default=None)):
@@ -441,12 +515,31 @@ def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
         return {"path": "refused", "refused": exc.reason, "available": exc.available,
                 "connection_id": connection_id, "schema_name": graph.schema_name}
     return {"path": "object_type", "connection_id": connection_id, "schema_name": graph.schema_name, **body,
-            "withdrawn": _withdrawn_of(connection_id, graph.schema_name or "", str(body.get("id") or ""))}
+            "withdrawn": _withdrawn_of(connection_id, graph.schema_name or "", str(body.get("id") or "")),
+            **_retiring_of(graph, str(body.get("id") or ""), connection_id)}
+
+
+def _retiring_of(graph: Any, entity_id: str, connection_id: str) -> dict:
+    """Arc FA, FA-3 — ``{"retiring": …}`` while `ontology.retiring` is on: the entity's mark — its successor, its day,
+    and the sentence readers are told — or None when it carries none, which tells the panel it may mark it. ``{}``
+    while the setting is off, so the answer is exactly what it was."""
+    from aughor.ontology import retiring
+    if not retiring.enabled():
+        return {}
+    try:
+        mark = retiring.mark_for(graph, "entity", entity_id, conn=connection_id)
+    except Exception as exc:  # noqa: BLE001 — the page still reads; the gap is journaled, never shown as no mark
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an entity's retiring mark could not be read for its page", counter="ontology.retiring")
+        return {"retiring_said": "Whether it is retiring could not be read."}
+    return {"retiring": mark}
 
 
 @router.get("/object-types/{object_type}/uses")
 def get_object_type_uses(object_type: str, connection_id: str = BUILTIN_ID,
-                         schema_name: Optional[str] = Query(default=None)):
+                         schema_name: Optional[str] = Query(default=None),
+                         window: int = Query(default=30, ge=1, le=365,
+                                             description="the recent window's days back, today included")):
     """ROADMAP §6 item 53 — what one entity is used by: its dependents (automations, processes, rules, actions,
     links, parts, metrics — each with how), every dashboard whose pieces read it, and how many audited statements
     named its tables in each of the last twelve months. Behind `ontology.entity_usage`: off, the door says so and
@@ -463,7 +556,8 @@ def get_object_type_uses(object_type: str, connection_id: str = BUILTIN_ID,
         return {"path": "refused", "refused": exc.reason, "available": exc.available,
                 "connection_id": connection_id, "schema_name": graph.schema_name}
     return {"path": "uses", "connection_id": connection_id, "schema_name": graph.schema_name,
-            "entity": str(body.get("id") or object_type), **entity_uses.uses_of(graph, connection_id, body)}
+            "entity": str(body.get("id") or object_type),
+            **entity_uses.uses_of(graph, connection_id, body, days=_days(window))}
 
 
 def _withdrawn_of(connection_id: str, schema: str, entity_id: str) -> dict:

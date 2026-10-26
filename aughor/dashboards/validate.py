@@ -114,6 +114,14 @@ def wiring(spec: Any) -> Optional[dict]:
     return out if isinstance(out, dict) else None
 
 
+def read_set(spec: Any, name: str, values: dict, chosen: dict) -> Optional[dict]:
+    """Arc FA-2 — one set of ``spec`` as a reader's page reads it: with the values it holds there now and the objects
+    chosen there (`readerSet` in `web/lib/dashboards/sets.ts`). ``{entity, segment, filters, label}``, or ``{refused}`` /
+    ``{waiting}`` — or None when the rules cannot run. An author's value is the author's, whatever a page sends."""
+    out, _why = _run({"op": "read_set", "spec": spec, "name": name, "values": values, "chosen": chosen})
+    return out if isinstance(out, dict) else None
+
+
 def grammar() -> Optional[str]:
     """What the writer of a dashboard is told, as the web writes it from its own catalog — or
     None when the rules cannot run. The server keeps no copy (CT-5). The grid is told of only

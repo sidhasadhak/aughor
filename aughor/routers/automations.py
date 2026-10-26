@@ -484,6 +484,30 @@ def _keyed_triggers(payload: dict) -> dict:
     return payload
 
 
+def _admitted_triggers(payload: dict) -> dict:
+    """Arc FA, FA-5 — an `objects_admitted` trigger is refused at the save door while its flag is off, and, on, when
+    the segment it names cannot be listed on the automation's connection: the listing is compiled once, as the person
+    saving, and nothing is run. 422 with the compiler's own words — a trigger that cannot read its segment would sit
+    looking schedulable and say so only on its first check."""
+    for c in payload.get("conditions") or []:
+        if not (isinstance(c, dict) and c.get("kind") == "objects_admitted"):
+            continue
+        from aughor.automations.admitted import FLAG, enabled, listing_problem
+        if not enabled():
+            raise HTTPException(status_code=422, detail=(
+                f"the objects_admitted trigger is off on this deployment ({FLAG}) — turn it on to act on the objects "
+                "a rule admits"))
+        try:
+            cond = Condition(**c)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+        problem = listing_problem(str(payload.get("conn_id") or ""), cond)
+        if problem:
+            raise HTTPException(status_code=422, detail=(
+                f"objects_admitted({cond.entity}.{cond.segment}) cannot be listed — {problem}"))
+    return payload
+
+
 @router.post("/automations")
 def create(body: CreateAutomationRequest):
     """Create an automation. A malformed condition or effect is rejected HERE, at construction —
@@ -496,7 +520,7 @@ def create(body: CreateAutomationRequest):
             # workspace (a pack install) stays honestly unowned.
             from aughor.workspace.context import current_workspace_id
             payload["workspace_id"] = current_workspace_id() or ""
-        automation = Automation(**_keyed_triggers(payload))
+        automation = Automation(**_admitted_triggers(_keyed_triggers(payload)))
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     if automation.agent_id:
@@ -534,7 +558,7 @@ def update(automation_id: str, body: CreateAutomationRequest):
         for kept in ("exposed_as_tool", "timezone"):
             if kept not in body.model_fields_set:
                 authored[kept] = getattr(existing, kept)
-        automation = Automation(**_keyed_triggers(authored), id=automation_id,
+        automation = Automation(**_admitted_triggers(_keyed_triggers(authored)), id=automation_id,
                                 created_at=existing.created_at,
                                 agent_id=existing.agent_id,
                                 last_run_at=existing.last_run_at,

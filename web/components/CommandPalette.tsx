@@ -7,6 +7,8 @@
  *   • Nav actions   — static destinations within the app
  *   • Investigations — recent history (fetched from /investigations)
  *   • Tables         — schema tables for the selected connection
+ *   • Objects        — FA-1 (flag `objects.find`): an object by the name it goes by, across entities, fetched from
+ *                      the server as you type — outside the Fuse index, like the Spotlight row
  *
  * Keyboard: ↑↓ navigate, Enter activate, Escape close.
  * Fuse.js powers all fuzzy matching with character-level highlights.
@@ -25,10 +27,13 @@ import { useAughorChat } from "@/lib/useAughorChat";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { getSystemFlags } from "@/lib/api";
+import { findObjects, type ObjectFindAnswer } from "@/lib/objects";
+import { objectHref } from "@/lib/objectLinks";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ItemType = "command" | "action" | "investigation" | "table" | "canvas" | "spotlight";
+type ItemType = "command" | "action" | "investigation" | "table" | "canvas" | "object" | "spotlight";
 
 interface PaletteItem {
   id: string;
@@ -48,13 +53,14 @@ interface PaletteItem {
 }
 
 // Section header order and display names
-const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table", "canvas", "spotlight"];
+const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table", "canvas", "object", "spotlight"];
 const SECTION_LABELS: Record<ItemType, string> = {
   command:       "Commands",
   action:        "Navigation",
   investigation: "Recent Agent runs",
   table:         "Tables",
   canvas:        "Canvases",
+  object:        "Objects",
   spotlight:     "Spotlight",
 };
 
@@ -134,6 +140,28 @@ interface CommandPaletteProps {
   /** SP-2 — the tab the palette was summoned over; rides every Spotlight ask as
    *  one line of prompt orientation ("schedule this" knows what *this* is). */
   surface?: string;
+  /** FA-1 — where an object found by name opens: its page. */
+  onOpenObject?: (href: string) => void;
+}
+
+/** The words a find answers for, spaced as the server reads them — an answer to an earlier query is never shown. */
+function findWords(q: string): string {
+  return q.trim().split(/\s+/).join(" ");
+}
+
+/** FA-1 — what the Objects group says it read: "searched 9 of 14 entities", and what it could not show. */
+function findSaid(found: ObjectFindAnswer): string {
+  const parts = [found.said];
+  // each entity by the name a reader knows it by, as its hits are labelled — never its identifier
+  const label = (type: string) => found.hits.find(h => h.type === type)?.entity_label || type;
+  if (found.more.length) parts.push(`more in ${found.more.map(label).join(", ")}`);
+  if (found.withheld.length || found.masked.length) parts.push("some withheld from you");
+  return parts.join(" · ");
+}
+
+/** Every entity the search did not read, with why, and what a row policy kept from the reader — the group's tooltip. */
+function findDetail(found: ObjectFindAnswer): string {
+  return [...found.skipped.map(s => `${s.entity}: ${s.why}`), ...found.withheld_said].join("\n");
 }
 
 /**
@@ -167,7 +195,8 @@ export function GlobalCommands({ onNavigate, onGoToChat, onAddSource }: {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat, surface = "" }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat, surface = "",
+                                onOpenObject = (href) => window.location.assign(href) }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   // ── SP-2: the Spotlight answer pane ──────────────────────────────────────
@@ -268,6 +297,49 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     // shared hook is typed, so the coercion becomes explicit rather than accidental.
     setTables((paletteSchema?.tables ?? []).map(t => ({ ...t, row_count: t.row_count ?? "" })));
   }, [paletteSchema]);
+
+  // ── FA-1: objects found by name ──────────────────────────────────────────
+  // Read only while `objects.find` is on, from two characters, a beat after the last keystroke; a newer query
+  // aborts the one in flight. Off, nothing is fetched and the palette searches what it always did.
+  const [findOn, setFindOn] = useState(false);
+  const [found, setFound] = useState<ObjectFindAnswer | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setFindOn(!!f["objects.find"]?.value); })
+      .catch(() => { if (alive) setFindOn(false); });
+    return () => { alive = false; };
+  }, [open]);
+  useEffect(() => {
+    const words = findWords(query);
+    if (!open || !findOn || mode !== "search" || words.length < 2) return;   // an answer to other words is never shown
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      findObjects(words, selectedConn, undefined, ctl.signal)
+        .then(a => { if (!ctl.signal.aborted) setFound(a && a.path === "found" ? a : null); })
+        .catch(() => { if (!ctl.signal.aborted) setFound(null); });
+    }, 250);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [query, open, findOn, mode, selectedConn]);
+  const foundNow = findOn && found && found.q === findWords(query) && (!selectedConn || found.connection_id === selectedConn)
+    ? found : null;
+  const openObjectRef = useRef(onOpenObject);
+  useEffect(() => { openObjectRef.current = onOpenObject; });
+  const objectRows = useMemo<FuseResult<PaletteItem>[]>(() => {
+    if (!foundNow) return [];
+    const seen = new Set<string>();
+    return foundNow.hits.flatMap(h => {
+      const id = `object-${h.type}-${h.key}`;
+      if (seen.has(id)) return [];
+      seen.add(id);
+      const item: PaletteItem = {
+        id, label: h.title || h.key, sublabel: `${h.entity_label} · ${h.key}`, type: "object", icon: "node",
+        accent: "var(--grn3)",
+        onSelect: () => openObjectRef.current(objectHref(h.type, h.key, selectedConn, foundNow.schema_name || undefined)),
+      };
+      return [{ item, refIndex: 0, matches: [] }];
+    });
+  }, [foundNow, selectedConn]);
 
   // Escape backs out one level: spotlight → search → closed.
   useEffect(() => {
@@ -443,8 +515,8 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       keepOpen: true,
       onSelect: () => ask(q),
     };
-    return [...results, { item: row, refIndex: 0, matches: [] }];
-  }, [results, query, ask]);
+    return [...results, ...objectRows, { item: row, refIndex: 0, matches: [] }];
+  }, [results, query, ask, objectRows]);
 
   // Group results by type preserving section order
   const grouped = useMemo(() => {
@@ -626,8 +698,14 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
             grouped.map(({ type, items }) => (
               <div key={type}>
                 {/* Section header */}
-                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t3)", borderTop: "1px solid var(--b0)" }}>
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t3)", borderTop: "1px solid var(--b0)", ...(type === "object" ? { display: "flex", gap: 8 } : {}) }}>
                   {SECTION_LABELS[type]}
+                  {type === "object" && foundNow && (
+                    <span data-testid="objects-said" title={findDetail(foundNow)}
+                      style={{ marginLeft: "auto", fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>
+                      {findSaid(foundNow)}
+                    </span>
+                  )}
                 </div>
 
                 {/* Items */}
@@ -687,6 +765,12 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
                 })}
               </div>
             ))
+          )}
+          {foundNow && foundNow.hits.length === 0 && (
+            <div data-testid="objects-none" title={findDetail(foundNow)} className="aug-fs-xs"
+              style={{ padding: "6px 14px", color: "var(--t3)", borderTop: "1px solid var(--b0)" }}>
+              No object is named &ldquo;{foundNow.q}&rdquo; — {findSaid(foundNow)}
+            </div>
           )}
         </div>
         )}
