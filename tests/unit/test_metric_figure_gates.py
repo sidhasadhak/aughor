@@ -147,3 +147,14 @@ def test_a_metric_that_only_carries_a_recipes_alias_is_not_held_to_its_band(clie
     assert G.band_of(m, conn) == (None, "")
     made = m.model_copy(update={"name": "return_rate", "lineage": ["industry: retail"]})
     assert G.band_of(made, conn)[1] == "Return rate"                           # made from it: held to it
+
+
+def test_a_gate_that_does_not_apply_is_not_said_to_be_unread():
+    """Live 2026-10-26: approving Gross Margin on Items recorded "not read: sane_range: no sane range is declared …;
+    binding: it is not made from a recipe" — neither went unread; neither applies."""
+    verdict = {"moves": {"ok": True, "why": ""},
+               "sane_range": {"ok": None, "why": "no sane range is declared for it", "applies": False},
+               "binding": {"ok": None, "why": "it is not made from a recipe with roles", "applies": False}}
+    assert G.not_read(verdict) == ""
+    verdict["moves"] = {"ok": None, "why": "its figures could not be read: the connection could not be opened"}
+    assert G.not_read(verdict) == "moves: its figures could not be read: the connection could not be opened"

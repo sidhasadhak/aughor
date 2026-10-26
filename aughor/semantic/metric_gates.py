@@ -38,7 +38,6 @@ FLAG = "metrics.figure_gates"
 
 REFUSALS = {"moves": "reads_constant", "sane_range": "outside_sane_range", "binding": "binding_mistyped"}
 
-_UNREAD = {"ok": None, "why": ""}
 
 
 def _same(a: float, b: float) -> bool:
@@ -92,7 +91,7 @@ def sane(figures: Optional[list], band: Optional[dict], label: str = "its recipe
     """Whether the figures' median sits in a declared band (``{"min", "max", "basis"}``) — a fraction's band read as a
     percent when the figures are written as one."""
     if not band or (band.get("min") is None and band.get("max") is None):
-        return {"ok": None, "why": "no sane range is declared for it"}
+        return {"ok": None, "why": "no sane range is declared for it", "applies": False}
     have = [v for v in (figures or []) if v is not None]
     if not have:
         return {"ok": None, "why": "its figures could not be read"}
@@ -209,7 +208,7 @@ def binding(m: Any, connection_id: str, schema_name: Optional[str]) -> dict:
     metric that only shares a recipe's name was not written over the package's roles, so its binding says nothing."""
     recipe = recipe_of(m, connection_id, schema_name, by_name=False)
     if recipe is None:
-        return {"ok": None, "why": "it is not made from a recipe with roles"}
+        return {"ok": None, "why": "it is not made from a recipe with roles", "applies": False}
     pack_id, pm, pack = recipe
     try:
         from aughor.packs.bindings import load_binding
@@ -305,8 +304,8 @@ def check(m: Any, connection_id: str, *, run_sql: Optional[Callable[[str], tuple
     figures, months, why = recent_figures(m, run_sql, dialect or "duckdb")
     band, title = band_of(m, connection_id, schema)
     verdict = {"moves": moves(figures, why),
-               "sane_range": sane(figures, band, f"the {title} recipe") if band else dict(_UNREAD, why="no sane range "
-                                                                                          "is declared for it"),
+               "sane_range": (sane(figures, band, f"the {title} recipe") if band
+                              else {"ok": None, "why": "no sane range is declared for it", "applies": False}),
                "binding": binding(m, connection_id, schema),
                "figures": figures, "months": months}
     _CACHE[_key(m, connection_id)] = (time.monotonic(), verdict)
@@ -323,9 +322,12 @@ def refusal(verdict: dict) -> Optional[tuple[str, str]]:
 
 
 def not_read(verdict: dict) -> str:
-    """The gates that could not be read, in one line for the audit — "" when every gate read."""
+    """The gates that could not be read, in one line for the audit — "" when every gate that applies read. A gate that
+    does not apply (no recipe, no declared range) is not one that went unread: the audit said it was, beside a metric a
+    person approved on 2026-10-26."""
     parts = [f"{g}: {(verdict.get(g) or {}).get('why')}" for g in ("moves", "sane_range", "binding")
-             if (verdict.get(g) or {}).get("ok") is None and (verdict.get(g) or {}).get("why")]
+             if (verdict.get(g) or {}).get("ok") is None and (verdict.get(g) or {}).get("why")
+             and (verdict.get(g) or {}).get("applies", True)]
     return "; ".join(parts)
 
 
