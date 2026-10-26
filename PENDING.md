@@ -763,3 +763,15 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       the recipe, or carrying its own name. Found live, NOT changed (the user's call): Markdown Penetration, approved,
       reads 1 in every month — price_history logs price changes, and every one after the first month's load is a
       markdown.*
+
+
+63. [~] **The Briefing adapts to any number of figures, and each reader chooses them** (the user, 2026-10-26: *"how can a
+    user choose what appears in the briefing and what not?"* and *"the longer the list gets the lower Trends and Gaps
+    get… no point of having such structure which doesn't adapt"*). Mocked (`design-mockups/briefing-figures.html`,
+    LuxExperience's week, 24 approved), approved (*"build the mockup"*), built: the front holds six beside the lead
+    (the default the first six in the map's order), so Trends · Gaps · Decide never move down; every other figure reads
+    under the desk in **Every figure, by area** (a figure that moved 10%+ brighter, stopped figures one line per day,
+    a blank figure with its reason and its fix); **Choose figures** — front · below · hidden, per reader per dataset
+    (`briefing_figures` in the person's preferences, beside the switches; every approved figure is still measured). A
+    Briefing whose figures fit on the front reads as it did. `web/lib/briefingFigures.ts`, `brief/BriefFigures.tsx`.
+    *Proven live: owed until the build is on :3000.*

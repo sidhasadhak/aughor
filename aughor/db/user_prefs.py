@@ -131,6 +131,45 @@ def _briefing_sections(v: Any) -> dict:
     return {"sections": out, "strip": strip}
 
 
+#: The figures a person keeps on the Briefing's front, beside the lead — the rest read under the desk, by area.
+BRIEFING_FRONT_MAX = 6
+_FIGURE_NAME_MAX = 200
+_FIGURE_SCOPES_MAX = 50
+
+
+def _briefing_figures(v: Any) -> dict:
+    """``{"<connection>[:<dataset>]": {"front": [metric, …], "hidden": [metric, …]}, …}`` — per dataset, the figures a
+    person keeps on the Briefing's front (at most six, in their order) and the ones they hide; every other approved
+    figure reads under the desk, by area (the user, 2026-10-26: "how can a user choose what appears in the briefing").
+    A figure is front or hidden, never both. Cosmetic and self-scoped: what is measured is the platform's."""
+    if not isinstance(v, dict):
+        raise ValueError("must be an object keyed by connection (and dataset)")
+    if len(v) > _FIGURE_SCOPES_MAX:
+        raise ValueError(f"at most {_FIGURE_SCOPES_MAX} datasets")
+    out: dict = {}
+    for scope, choice in v.items():
+        key = str(scope or "").strip()
+        if not key or len(key) > _FIGURE_NAME_MAX:
+            raise ValueError("each key names a connection, or a connection and its dataset")
+        if not isinstance(choice, dict):
+            raise ValueError(f"'{key}' must be an object with 'front' and 'hidden'")
+
+        def names(field: str) -> list[str]:
+            raw = choice.get(field, [])
+            if not isinstance(raw, list) or any(not isinstance(n, str) or not n.strip() or len(n) > _FIGURE_NAME_MAX
+                                                for n in raw):
+                raise ValueError(f"'{key}.{field}' must be a list of metric names")
+            return list(dict.fromkeys(n.strip() for n in raw))
+        front, hidden = names("front"), names("hidden")
+        if len(front) > BRIEFING_FRONT_MAX:
+            raise ValueError(f"the front holds at most {BRIEFING_FRONT_MAX} figures")
+        if set(front) & set(hidden):
+            raise ValueError("a figure is on the front or hidden, not both")
+        if front or hidden:
+            out[key] = {"front": front, "hidden": hidden}
+    return out
+
+
 def _timezone(value):
     """A real IANA zone or nothing — a typo'd clock must refuse, never arm a 9am that
     fires at 7 (SP-13)."""
@@ -179,6 +218,9 @@ ALLOWED_KEYS: dict[str, tuple] = {
     # platform's, and a send carries the platform's Briefing, not your switches.
     "briefing_sections": (_briefing_sections, "which of the Briefing's sections you show, in what order, "
                                               "and which of your dashboards rides with it"),
+    # Which approved figures sit on the Briefing's front and which are hidden, per dataset. Cosmetic and self-scoped
+    # like the switches: every approved figure is still measured, and a send carries the platform's Briefing.
+    "briefing_figures": (_briefing_figures, "which figures sit on your Briefing's front, and which you hide, per dataset"),
     # SP-13 — the clock drafts and new schedules speak. Cosmetic-plus: it changes what
     # NEW drafts default to, never what any existing chain does.
     "timezone": (_timezone, "the timezone drafts and new schedules speak (IANA name)"),

@@ -133,6 +133,10 @@ export interface PaperNumber {
   metric?: string;
   /** Arc MC — the area it reads on, while the Briefing reads by area: a heading goes over each area's first figure. */
   area?: string;
+  /** The day its data ends, when it ended before the range (``YYYY-MM-DD``). */
+  ends?: string;
+  /** It moved 10% or more against the comparison — read brighter in "Every figure". */
+  moved?: boolean;
 }
 
 /** An edition's measured metrics as the numbers box prints them: every figure is the edition's own
@@ -145,24 +149,28 @@ export function rangeNumbers(stored: BriefingRangeBlock): PaperNumber[] {
   return [
     ...block.measured.map(m => {
       const t = changeOf(m, "previous");
-      return { key: m.metric, label: m.name, value: m.current_text ?? "—",
+      return { key: m.metric, metric: m.metric, label: m.name, value: m.current_text ?? "—",
                change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined,
                note: m.current_partial ? `only ${m.current_partial}` : undefined,
-               ...(m.area?.name ? { area: m.area.name } : {}) };
+               ...(m.area?.name ? { area: m.area.name } : {}),
+               ...(m.rel !== null && m.rel !== undefined && Math.abs(m.rel) >= 0.1 ? { moved: true } : {}) };
     }),
     ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
                                     unknown: u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured",
-                                    why: sentence(u.reason), ended: !!u.data_ends, metric: u.metric })),
+                                    why: sentence(u.reason), ended: !!u.data_ends, metric: u.metric,
+                                    ...(u.data_ends ? { ends: u.data_ends } : {}) })),
   ];
 }
 
 /** The numbers box: one row per figure, its change against the comparison beside it; a figure the
  *  platform could not measure says so in the de-emphasis hatch, never as a zero — and under the box,
  *  why, and what to do about it (the user, 2026-10-26: the reasons sat in a tooltip nobody found). */
-export function PaperNumbers({ title, rows, note, after, connectionId }: {
+export function PaperNumbers({ title, rows, note, after, footer, connectionId }: {
   title: string; rows: PaperNumber[]; note?: string;
   /** Under the box: the Decide door on the edition's figures, when a decision can be booked here. */
   after?: ReactNode;
+  /** The box's last line: how many figures read below the desk, and the door to choosing them. */
+  footer?: ReactNode;
   /** The connection whose definitions a "not measured" figure sends the reader to fix. */
   connectionId?: string;
 }) {
@@ -222,6 +230,7 @@ export function PaperNumbers({ title, rows, note, after, connectionId }: {
           )}
         </div>
       )}
+      {footer}
       {after}
     </div>
   );

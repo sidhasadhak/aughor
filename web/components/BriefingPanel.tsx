@@ -104,6 +104,11 @@ import { getMyPreferences, listDashboards, putMyPreference } from "@/lib/api";
 import {
   DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type DashboardChoice, type SectionId,
 } from "@/lib/briefingSections";
+import {
+  PREF_KEY as FIGURES_PREF_KEY, arrange, choiceFor, normalizeFigures, scopeKey, withChoice,
+  type FigureChoice, type FiguresPref,
+} from "@/lib/briefingFigures";
+import { ChooseFigures, EveryFigure, FrontFooter } from "@/components/brief/BriefFigures";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { Icon } from "@/components/ui/icon";
@@ -2591,7 +2596,11 @@ export function BriefingPanel({
   const [myDashboards, setMyDashboards]         = useState<DashboardChoice[]>([]);
   useEffect(() => {
     let alive = true;
-    getMyPreferences().then(p => { if (alive) setSections(normalizeSections(p.preferences.briefing_sections)); }).catch(() => {});
+    getMyPreferences().then(p => {
+      if (!alive) return;
+      setSections(normalizeSections(p.preferences.briefing_sections));
+      setFiguresPref(normalizeFigures(p.preferences[FIGURES_PREF_KEY]));
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -2602,6 +2611,24 @@ export function BriefingPanel({
     }).catch(() => {});
     return () => { alive = false; };
   }, [connectionId, dashboardsOn]);
+  // The figures a reader keeps on the front, below, or hidden — per dataset, theirs alone (2026-10-26).
+  const [figuresPref, setFiguresPref] = useState<FiguresPref>({});
+  const [choosing, setChoosing] = useState(false);
+  const [figuresBusy, setFiguresBusy] = useState(false);
+  const figScope = scopeKey(connectionId, schema);
+  const saveFigures = useCallback(async (next: FigureChoice, said: string) => {
+    const before = figuresPref;
+    const pref = withChoice(figuresPref, figScope, next);
+    setFiguresPref(pref);
+    setFiguresBusy(true);
+    try {
+      await putMyPreference(FIGURES_PREF_KEY, pref);
+      toast.success(said);
+    } catch (e) {
+      setFiguresPref(before);
+      toast.error("Your choice of figures was not kept", { description: (e as Error).message.slice(0, 160) });
+    } finally { setFiguresBusy(false); }
+  }, [figuresPref, figScope]);
   const saveSections = useCallback(async (next: BriefingSectionsPref, said: string) => {
     const before = sections;
     setSections(next);
@@ -3241,6 +3268,8 @@ export function BriefingPanel({
          ...(explorerStatus?.tables_total ? [{ key: "tables", label: "Tables explored", value: formatCount(explorerStatus.tables_total) }] : []),
          ...(explorerStatus?.completed_at ? [{ key: "explored", label: "Last explored", value: new Date(explorerStatus.completed_at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) }] : [])]
       : [];
+  // The front holds six beside the lead; the rest read under the desk, by area — so the desk never moves down.
+  const arranged = rangeBlock ? arrange(numberRows, choiceFor(figuresPref, figScope)) : null;
   const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
   const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
     : rangeSelected ? "In numbers" : "The record, in numbers";
@@ -3491,7 +3520,10 @@ export function BriefingPanel({
       : `No finding could be measured for ${reask.covers}${ranged && ranged.elsewhere ? `. ${ranged.elsewhere === 1 ? "The 1 finding is" : `All ${ranged.elsewhere} are`} about all history: ${reasonWords(ranged.reasons)}` : ""}.`;
     return (
       <>
-        {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote}
+        {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle}
+          // the front's six read as one box; their areas are said in Every figure, below the desk
+          rows={arranged ? arranged.front.map(r => ({ ...r, area: undefined })) : numberRows} note={numbersNote}
+          footer={arranged && numberRows.some(r => r.metric) ? <FrontFooter arranged={arranged} onChoose={() => setChoosing(c => !c)} /> : undefined}
           connectionId={rangeBlock ? connectionId : undefined}
           after={rangeBlock && !canvasId ? (
             // a decision taken on an edition's figure cites that figure, measured for the edition's days (study §3.2)
@@ -3500,11 +3532,23 @@ export function BriefingPanel({
                     figures: rangeBlock.measured.filter(m => m.current !== null).map(m => ({ metric: m.metric, label: m.name })) }}
               testId="briefing-decide" />
           ) : undefined} />} />}
+        {choosing && arranged && (
+          <ChooseFigures rows={numberRows} choice={choiceFor(figuresPref, figScope)} busy={figuresBusy}
+            onChange={(next, said) => void saveFigures(next, said)} onClose={() => setChoosing(false)} />
+        )}
         {rangeSelected && editionBlock?.data_ended && (
           <EditionCovers connectionId={connectionId} schema={schema} workspaceId={workspaceId} current={editionBlock.preset} />
         )}
         {!canvasId && (
           <DeskColumns desk={desk ? desk.data : undefined} error={desk?.error ?? null} refs={deskRefs} connectionId={connectionId} />
+        )}
+        {on("verdict") && arranged && !arranged.fits && (
+          <EveryFigure arranged={arranged} connectionId={connectionId} comparedWith={rangeBlock?.compared_with}
+            onChoose={() => {
+              setChoosing(true);
+              // the choice opens under the front; bring it into view from down here
+              setTimeout(() => document.querySelector('[data-testid="paper-choose"]')?.scrollIntoView?.({ block: "start", behavior: "smooth" }), 60);
+            }} />
         )}
         {on("findings") && <InBrief
           title={rangeSelected ? `In brief — measured for ${rangeBlock?.covers ?? "this range"}` : "In brief — what we know"}
