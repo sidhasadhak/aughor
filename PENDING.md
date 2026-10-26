@@ -748,5 +748,18 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       (67,597 kept of 81,082) and delivery (39,510 of 43,969), three stage conversions and the completed-orders share,
       each counted as the ontology counts it.*
     - [~] MC-5 `metrics.coverage_writer` — one call per open area on profiling; area and pattern gates in code.
+      *Live on LuxExperience (the user's "Turn on all six"): 11 calls to claude-sonnet-5-5, one per open area, wrote 52
+      proposals; with the code's 2, 54 — **41 pass every gate** (cart abandonment 77%, the checkout funnel's steps,
+      CSAT 3.02, resolution 4.5 days, consent and email rates, stock-out 1.2%, NRR, first-to-second order 11.7% …),
+      13 refused with why. Reading them found three gaps, closed (`11e06549`): a year number taken for a date
+      (fiscal_year), unread figures offered as adoptable, and proposals that read one figure alike (three consent
+      rates at 0.6196). Re-checking took 240 s, so proposing by code runs on a thread (`f1c5eb93`). Nothing adopted —
+      adopting is the user's.*
     - [~] MC-6 `metrics.blind_spot_proposals` + `briefing.metric_cap` — blind spots proposed; Briefing cap 24, by area.
-      *Live on theLook: two blind spots from the findings — one proposed, one refused for having no date.*
+      *Live on theLook: two blind spots from the findings — one proposed, one refused for having no date. LuxExperience's
+      Briefing (a custom range, the no-narrative door) reads its eight figures by area, the statement's first.*
+    - *Found live and fixed (`0e26e6c4`): a recipe's band bound a metric that only matched an ALIAS — LuxExperience's
+      Item Return Rate (~31%, luxury fashion) would have been refused by retail's 0–30%; now only a metric made from
+      the recipe, or carrying its own name. Found live, NOT changed (the user's call): Markdown Penetration, approved,
+      reads 1 in every month — price_history logs price changes, and every one after the first month's load is a
+      markdown.*

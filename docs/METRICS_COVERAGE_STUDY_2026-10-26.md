@@ -269,3 +269,25 @@ the adopt door that exists.
 that skips Traffic & conversion, covered by one metric beside 22 patterns — the thin areas the user's question was
 about. It now calls on every area with data and open patterns.
 
+### 9.1 Live receipts (2026-10-26, all six flags on at the user's word)
+
+- **The matrix, LuxExperience:** 14 areas, 12 with data; 6 covered, 4 with no working metric (Fulfilment, Payments &
+  risk, CRM & consent, Service), 2 not checked (Marketing — ROAS dated only inside a filter; Inventory — 2 of 6 months
+  have a figure); 85 patterns no metric computes; six reference tables placed in no area, said.
+- **The gates found a third broken approved metric:** Markdown Penetration reads 1 in every month — `price_history`'s
+  first month is the 8,600-row price load at 0%, and every row after it is a markdown, so the share of price changes
+  that are markdowns is 1. Left for the user.
+- **MC-3:** the two mis-bound recipes refused by binding, moves and sane range, each in words (NRF's and Baymard's
+  bases quoted).
+- **MC-4, theLook:** Order Fulfilment's dispatch on-time rate (67,597 kept of 81,082) and delivery (39,510 of 43,969),
+  three stage conversions and the completed-orders share, each counted as the ontology counts it.
+- **MC-5, LuxExperience:** 11 calls (claude-sonnet-5-5), 52 written + 2 code = 54 proposals; after three gaps were
+  closed, **41 pass every gate**, 13 refused with why. With the 9 working metrics that is about 50 — the "about 55
+  the data supports" of §3.
+- **MC-6:** two blind spots on theLook (one proposed, one without a date refused); LuxExperience's Briefing reads by
+  area.
+
+Found by the receipts and closed: a recipe's band reached a metric through an alias (LuxExperience's Item Return Rate,
+~31%, would have been refused by 0–30%); a year number taken for a date; unread figures offered; proposals reading one
+figure alike; a four-minute synchronous door.
+
