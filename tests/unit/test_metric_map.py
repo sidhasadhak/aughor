@@ -74,7 +74,8 @@ def test_a_recipe_carries_its_area_and_one_without_is_placed_by_its_name():
     assert [r.name for r in retail.area("returns").recipes] == ["return_rate"]
     assert retail.area("returns").recipes[0].sane_range["max"] == 0.30
     airline = _map_for("airline")
-    assert "on_time_arrival_rate" in [r.name for r in airline.area("operations").recipes]
+    assert {r.name for r in airline.area("operations").recipes} == {"on_time_arrival_rate", "cancellation_rate",
+                                                                       "completion_factor"}
 
 
 def test_the_methods_only_area_is_not_readable_and_its_patterns_are_never_proposable():
@@ -115,3 +116,16 @@ def test_words_place_by_the_longest_phrase_and_a_pattern_is_matched_word_for_wor
     assert M.match_pattern("gmv", "GMV", retail.patterns()).id == "ec_gmv"
     assert M.match_pattern("clienteling_gmv_per_interaction", "Clienteling GMV per Interaction",
                            retail.patterns()) is None
+
+
+def test_the_workspaces_airline_tables_are_each_placed_where_an_airline_reads_them():
+    """2026-10-26, the user: "add the airline words" — on the workspace's main (re-profiled an airline), baggage,
+    upgrades, crew, boarding passes and airports were placed in no area, and flights only under capacity, so on-time
+    performance had no table to be written over."""
+    from aughor.semantic.metric_coverage import TableFacts, place_table
+    areas = _map_for("airline").readable
+    placed = {t: {p.area for p in place_table(TableFacts(t), areas)}
+              for t in ("baggage", "upgrades", "crew", "crew_assignments", "boarding_passes", "airports", "flights")}
+    assert placed == {"baggage": {"unit_revenue"}, "upgrades": {"unit_revenue"}, "crew": {"operations"},
+                      "crew_assignments": {"operations"}, "boarding_passes": {"operations"}, "airports": {"network"},
+                      "flights": {"network", "operations"}}
