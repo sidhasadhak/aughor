@@ -147,7 +147,15 @@ export function ChooseFigures({ rows, choice, onChange, onClose, busy }: {
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h3 className="aug-fs-h2" style={{ fontFamily: SERIF, fontWeight: 600, margin: 0 }}>Choose figures</h3>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{`${onFront} of ${FRONT_MAX} on the front`}</span>
-        <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} onClick={onClose}>Done</Button>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {(choice.front.length > 0 || choice.hidden.length > 0) && (
+            <Button size="xs" variant="ghost" disabled={busy} data-testid="paper-choose-default"
+              onClick={() => onChange({ front: [], hidden: [] }, "Back to the default: the first six on the front, nothing hidden.")}>
+              Back to the default
+            </Button>
+          )}
+          <Button size="xs" variant="ghost" onClick={onClose}>Done</Button>
+        </span>
       </div>
       <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "4px 0 10px" }}>
         Front — beside the lead, up to {FRONT_MAX}. Below — in Every figure, by area. Hidden — not in your Briefing. Yours

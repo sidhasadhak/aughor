@@ -63,4 +63,13 @@ describe("ChooseFigures", () => {
     expect(offered(below)).toEqual(["Below", "Hidden"]);
     expect(screen.getByText("The front is full — move one below to put another there.")).toBeInTheDocument();
   });
+
+  it("goes back to the default in one step once a choice was made", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<ChooseFigures rows={ROWS} choice={{ front: [], hidden: [] }} onChange={onChange} onClose={() => {}} />);
+    expect(screen.queryByTestId("paper-choose-default")).toBeNull();
+    rerender(<ChooseFigures rows={ROWS} choice={{ front: [], hidden: ["gmv"] }} onChange={onChange} onClose={() => {}} />);
+    fireEvent.click(screen.getByTestId("paper-choose-default"));
+    expect(onChange).toHaveBeenCalledWith({ front: [], hidden: [] }, "Back to the default: the first six on the front, nothing hidden.");
+  });
 });
