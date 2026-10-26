@@ -435,8 +435,15 @@ def search_documents(query: str, top_k: int = 4, *,
 
     Raises `DocumentSearchUnavailable` when the search itself fails; `[]` means the indexed
     documents were searched and nothing matched, or that none are indexed.
+
+    Arc FA, FA-1 (flag ``knowledge.hybrid_documents``): when the question cannot be embedded and
+    the store answers, the same scoped passages are ranked by their words instead
+    (`_search_by_words`), each hit marked ``matched_by: "words"`` with the sentence a reader is told
+    (``said``) — and a hit the embedder matched is marked ``"meaning"``. Off, hits carry neither
+    key and a failed embed raises, as before.
     """
     try:
+        hybrid = _hybrid_documents()
         from aughor.security.authz import tenant_scope
         from aughor.semantic.embedder import embed_one
         from aughor.semantic.vector_store import search
@@ -445,7 +452,13 @@ def search_documents(query: str, top_k: int = 4, *,
             # Nothing indexed. Asked of the registry, not `collection_count`, which answers 0
             # for a store that is down as well as for an empty one.
             return []
-        vector = embed_one(query)
+        try:
+            vector = embed_one(query)
+        except Exception as embed_exc:
+            if not hybrid:
+                raise
+            return _search_by_words(query, top_k, registry, connection_id=connection_id,
+                                    org_id=tenant_scope(), cause=embed_exc)
         hits = search(DOCS_COLLECTION, vector, top_k=max(top_k * 4, 16))
         org_id = tenant_scope()
         results = []
@@ -456,20 +469,74 @@ def search_documents(query: str, top_k: int = 4, *,
                 continue
             if len(results) >= top_k:
                 break
-            results.append({
-                "text": p.get("text", ""),
-                "filename": p.get("filename", ""),
-                "title": p.get("title", ""),
-                "doc_id": p.get("doc_id", ""),
-                "chunk_index": p.get("chunk_index", 0),
-                "fqn": p.get("fqn", ""),           # R8a — ontology-node provenance
-                "source_url": p.get("source_url", ""),
-                "score": h["score"],
-            })
+            results.append({**_hit(p, h["score"]), **({"matched_by": "meaning"} if hybrid else {})})
         return results
+    except DocumentSearchUnavailable:
+        raise
     except Exception as exc:
-        first = (str(exc).splitlines() or [""])[0][:200]
-        raise DocumentSearchUnavailable(f"{type(exc).__name__}: {first}") from exc
+        raise DocumentSearchUnavailable(f"{type(exc).__name__}: {_first_line(exc)}") from exc
+
+
+def _first_line(exc: BaseException) -> str:
+    return (str(exc).splitlines() or [""])[0][:200]
+
+
+def _hit(payload: dict, score: float) -> dict:
+    """One passage as a search hands it back."""
+    return {
+        "text": payload.get("text", ""),
+        "filename": payload.get("filename", ""),
+        "title": payload.get("title", ""),
+        "doc_id": payload.get("doc_id", ""),
+        "chunk_index": payload.get("chunk_index", 0),
+        "fqn": payload.get("fqn", ""),           # R8a — ontology-node provenance
+        "source_url": payload.get("source_url", ""),
+        "score": score,
+    }
+
+
+#: Arc FA, FA-1 — what every caller tells a reader of passages matched by their words alone: they share the question's
+#: words, which is not the same as answering it.
+MATCHED_BY_WORDS = "matched by words only — the embedder is unavailable"
+#: The most passages a search by words reads; one that reads this many says so (`passages_read` on each hit).
+WORDS_POOL = 20_000
+
+
+def _hybrid_documents() -> bool:
+    from aughor.kernel.flags import flag_enabled
+    return flag_enabled("knowledge.hybrid_documents")
+
+
+def matched_by_words(hits: list[dict]) -> str:
+    """The sentence a caller says of a search the words answered, or "" when the embedder matched its hits."""
+    return next((str(h.get("said") or MATCHED_BY_WORDS) for h in hits or [] if h.get("matched_by") == "words"), "")
+
+
+def _search_by_words(query: str, top_k: int, registry: dict, *, connection_id: Optional[str],
+                     org_id: Optional[str], cause: BaseException) -> list[dict]:
+    """Arc FA, FA-1 — the indexed passages ranked by the words they share with the question (BM25 over the scoped
+    corpus), when the embedder failed. Scoped exactly as the vector path is — a passage counts only while its document
+    is in the registry and in scope (`in_scope`) — and a passage that shares no word is not a match. Raises
+    `DocumentSearchUnavailable` naming both failures when the store cannot be read either."""
+    from aughor.semantic.lexical import bm25_scores
+    from aughor.semantic.vector_store import scroll_points
+    try:
+        points = scroll_points(DOCS_COLLECTION, limit=WORDS_POOL, strict=True)
+    except Exception as exc:
+        raise DocumentSearchUnavailable(
+            f"the embedder failed ({type(cause).__name__}: {_first_line(cause)}) and the document store could not be "
+            f"read ({type(exc).__name__}: {_first_line(exc)})") from exc
+    pool = []
+    for point in points:
+        p = point.get("payload") or {}
+        entry = registry.get(p.get("doc_id", ""))
+        if entry is not None and in_scope(entry, connection_id=connection_id, org_id=org_id):
+            pool.append(p)
+    scores = bm25_scores(query, [f"{p.get('title', '')} {p.get('text', '')}" for p in pool])
+    ranked = sorted((i for i in range(len(pool)) if scores[i] > 0), key=lambda i: -scores[i])[:top_k]
+    read = {"passages_read": len(points)} if len(points) >= WORDS_POOL else {}
+    said = MATCHED_BY_WORDS + (f" (the first {len(points):,} passages were read)" if read else "")
+    return [{**_hit(pool[i], round(scores[i], 4)), "matched_by": "words", "said": said, **read} for i in ranked]
 
 
 #: What a prompt reads when the documents could not be searched, in place of nothing: an
@@ -539,6 +606,11 @@ def build_external_context_section(query: str, top_k: int = 4,
         return ""
 
     lines: list[str] = []
+    words = matched_by_words(pinned_hits + hits)
+    if words:
+        # FA-1 — a passage the words matched shares the question's words, not necessarily its meaning: said first
+        lines.append(f"UPLOADED DOCUMENTS: {words}. Each passage below shares words with the question; read it "
+                     "before relying on it.")
     if pinned_hits:
         lines.append("WORKSPACE DOCUMENTS (pinned to this canvas — treat as "
                      "authoritative context for this work):")
