@@ -27,7 +27,15 @@ _DB_PATH = resolve_db_path("AUGHOR_PACK_BINDINGS_DB", Path(__file__).parent.pare
 _MIGRATIONS = [
     Migration(2, "schema_name on pack_bindings (3-key → 4-key)",
               lambda c: add_column_if_missing(c, "pack_bindings", "schema_name", "TEXT NOT NULL DEFAULT ''")),
+    # Arc FA, FA-6 (`packs.installed_versions`): who bound the pack, and what it offered when it was bound — the
+    # snapshot an upgrade is diffed against. Written only while the flag is on; '' on every row bound without it.
+    Migration(3, "bound_by and offered_json on pack_bindings (installed versions)", lambda c: _add_install_columns(c)),
 ]
+
+
+def _add_install_columns(c: sqlite3.Connection) -> None:
+    add_column_if_missing(c, "pack_bindings", "bound_by", "TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing(c, "pack_bindings", "offered_json", "TEXT NOT NULL DEFAULT ''")
 
 
 def _conn() -> sqlite3.Connection:
@@ -64,23 +72,41 @@ def save_binding(
     version: int = 1,
     verified: bool = False,
     schema: str = "",
+    *,
+    installed: Optional[dict] = None,
 ) -> dict:
     """Pin (or replace) the resolved binding for (org, pack, connection, schema). `bindings` is
     a role→{table,column,value,confidence,evidence} map. `verified` flags that every recipe
-    dry-ran successfully. `schema` distinguishes datasets on a multi-schema connection."""
+    dry-ran successfully. `schema` distinguishes datasets on a multi-schema connection.
+
+    ``installed`` (Arc FA, FA-6 — `packs.installed_versions`) is ``{"bound_by", "offered"}``: who bound it and the
+    snapshot of what the pack offered at ``version``. Without it the row is written exactly as it always was, and the
+    two columns are left as they stand."""
     org = current_org_id()
     now = _now()
     payload = json.dumps(bindings)
     c = _conn()
     try:
-        c.execute(
-            "INSERT INTO pack_bindings (org_id, pack_id, connection_id, schema_name, version, "
-            "bindings_json, verified, updated_at) VALUES (?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(org_id, pack_id, connection_id, schema_name) DO UPDATE SET "
-            "version=excluded.version, bindings_json=excluded.bindings_json, "
-            "verified=excluded.verified, updated_at=excluded.updated_at",
-            (org, pack_id, connection_id, schema or "", version, payload, 1 if verified else 0, now),
-        )
+        if installed is None:
+            c.execute(
+                "INSERT INTO pack_bindings (org_id, pack_id, connection_id, schema_name, version, "
+                "bindings_json, verified, updated_at) VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pack_id, connection_id, schema_name) DO UPDATE SET "
+                "version=excluded.version, bindings_json=excluded.bindings_json, "
+                "verified=excluded.verified, updated_at=excluded.updated_at",
+                (org, pack_id, connection_id, schema or "", version, payload, 1 if verified else 0, now),
+            )
+        else:
+            c.execute(
+                "INSERT INTO pack_bindings (org_id, pack_id, connection_id, schema_name, version, "
+                "bindings_json, verified, updated_at, bound_by, offered_json) VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pack_id, connection_id, schema_name) DO UPDATE SET "
+                "version=excluded.version, bindings_json=excluded.bindings_json, "
+                "verified=excluded.verified, updated_at=excluded.updated_at, "
+                "bound_by=excluded.bound_by, offered_json=excluded.offered_json",
+                (org, pack_id, connection_id, schema or "", version, payload, 1 if verified else 0, now,
+                 str(installed.get("bound_by") or ""), json.dumps(installed.get("offered") or {}, sort_keys=True)),
+            )
         c.commit()
     finally:
         c.close()
@@ -106,6 +132,45 @@ def load_binding(pack_id: str, connection_id: str, schema: str = "") -> Optional
         "schema": row["schema_name"], "version": row["version"], "bindings": json.loads(row["bindings_json"]),
         "verified": bool(row["verified"]), "updated_at": row["updated_at"],
     }
+
+
+def _install_of(row) -> dict:
+    try:
+        offered = json.loads(row["offered_json"] or "{}") if row["offered_json"] else {}
+    except (TypeError, ValueError):
+        offered = {}
+    return {
+        "pack_id": row["pack_id"], "connection_id": row["connection_id"], "schema": row["schema_name"],
+        "version": row["version"], "verified": bool(row["verified"]), "updated_at": row["updated_at"],
+        "bound_by": row["bound_by"] or "", "offered": offered if isinstance(offered, dict) else {},
+    }
+
+
+def load_install(pack_id: str, connection_id: str, schema: str = "") -> Optional[dict]:
+    """Arc FA, FA-6 — the binding as an install: its version, who bound it and the snapshot of what the pack offered
+    (``{}`` for a row bound before installed versions were recorded). None when the pack is not bound here."""
+    c = _conn()
+    try:
+        row = c.execute(
+            "SELECT * FROM pack_bindings WHERE org_id=? AND pack_id=? AND connection_id=? AND schema_name=?",
+            (current_org_id(), pack_id, connection_id, schema or ""),
+        ).fetchone()
+    finally:
+        c.close()
+    return _install_of(row) if row else None
+
+
+def installs_of(pack_id: str) -> list[dict]:
+    """Arc FA, FA-6 — every connection and schema this pack is bound on in the current org, as installs."""
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT * FROM pack_bindings WHERE org_id=? AND pack_id=? ORDER BY connection_id, schema_name",
+            (current_org_id(), pack_id),
+        ).fetchall()
+    finally:
+        c.close()
+    return [_install_of(r) for r in rows]
 
 
 def packs_bound_on(connection_id: str, schema: str = "") -> list[str]:
