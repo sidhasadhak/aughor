@@ -306,7 +306,10 @@ def coverage(connection_id: str, schema_name: Optional[str] = None, *, figures: 
             if hit is not None:
                 done.add(hit.id)
         open_patterns = [p.id for p in area.proposable_patterns if p.id not in done]
-        writable = has_data and (bool(open_patterns) if area.proposable_patterns else state != "covered")
+        # The generic layer's area holds what no area names, so a table there is placed and said; it is no area a
+        # person runs, so nothing is written for it — live 2026-10-26 it wrote "Review chunks" over a text-chunk table.
+        writable = (has_data and not area.generic
+                    and (bool(open_patterns) if area.proposable_patterns else state != "covered"))
         if area.generic and not area_tables and not area_metrics:
             continue                                    # the generic layer's area, empty: nothing to say
         rows.append({

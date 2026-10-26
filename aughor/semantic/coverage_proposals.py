@@ -486,7 +486,9 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
             proposals += written
         elif previous.get("spend") and flag_enabled(FLAG_WRITER):
             # a run without the writer keeps what the last written run wrote, re-checked below
-            proposals += [p for p in previous.get("proposals") or [] if p.get("source") in (SOURCE_PATTERN, SOURCE_AREA)]
+            from aughor.semantic.metric_map import OTHER
+            proposals += [p for p in previous.get("proposals") or []
+                          if p.get("source") in (SOURCE_PATTERN, SOURCE_AREA) and p.get("area") != OTHER]
             spend = previous.get("spend")
         kept: list[dict] = []
         names: set[str] = set()

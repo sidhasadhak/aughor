@@ -159,3 +159,12 @@ def test_a_dataset_of_a_connection_that_holds_several_reads_only_its_own_tables(
     # a connection that declares its one dataset reads as before
     monkeypatch.setattr(registry, "get_meta", lambda cid: {"schema_name": "luxexperience"})
     assert C.dataset_entry("lux", "luxexperience") is entry
+
+
+def test_the_generic_area_is_placed_and_said_but_never_written_for(lux):
+    """Live 2026-10-26 on the workspace's main: the writer wrote "Review chunks" and "Average chunk length" over a
+    text-chunk table the generic area held."""
+    out = C.coverage("lux", "luxexperience", mmap=lux[0])
+    other = next(a for a in out["areas"] if a["id"] == M.OTHER)
+    assert other["tables"] and other["writable"] is False
+    assert all(a["writable"] is False for a in out["areas"] if not a["has_data"])
