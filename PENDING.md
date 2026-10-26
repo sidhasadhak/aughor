@@ -715,3 +715,14 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     `AUGHOR_INBOUND_EMAIL_DOMAIN` and `AUGHOR_INBOUND_EMAIL_SECRET` and a mail provider posts to a PUBLIC address
     (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
     user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Merged 2026-10-26 as #628 (`e25badee`); the coverage test skipped (owed).
+
+62. [ ] ⚑ **Metrics that cover the business — Arc MC** (the user, 2026-10-26, on LuxExperience: *"only 12 proposed
+    metrics.. for an e-commerce organisation that is probably not even 50% of the matrix.. Missing in terms of approach
+    or logic.."*, then *"Proceed with framework first"*) — **studied 2026-10-26**, nothing built:
+    `docs/METRICS_COVERAGE_STUDY_2026-10-26.md`, ROADMAP §3.62. Measured: LuxExperience 33 tables, 12 metrics over 12
+    of them, 9 working (two read 1 in every period — the retail pack's recipes bound to the wrong tables, one a date
+    bound to an id; ROAS has no dated rows); theLook 15 metrics over 6 of 7 tables. The explorer asks one model call for
+    "the 6-8 metrics that matter MOST"; no map of the business checks coverage; the gates check the SQL, not the figure.
+    Framework: a map of areas (generic + per-pack layer) → placement → coverage matrix → proposals per uncovered area
+    (recipes, ontology-derived, a scoped model call) → gates (moves · sane range · binding types) → people adopt.
+    Waves MC-0…MC-6. **Six calls are the user's (study §7).**

@@ -12178,6 +12178,43 @@ first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything t
 
 ---
 
+### 3.62 · Arc MC — metrics that cover the business (DRAFTED 2026-10-26 · `docs/METRICS_COVERAGE_STUDY_2026-10-26.md` · not adopted — six calls are the user's · nothing built; PENDING item 62)
+
+**The ask** (the user, 2026-10-26, on LuxExperience): *"only 12 proposed metrics.. for an e-commerce organisation that
+is probably not even 50% of the matrix.. what are we missing?"*, then *"Missing in terms of approach or logic.."*, then
+*"Proceed with framework first"*.
+
+**The premise, measured.** LuxExperience has 33 tables; its 12 metrics read 12 of them, and 3 of the 12 do not work
+(two read 1 in every period — the retail pack's only recipes bound to the wrong tables, one with a date bound to an id —
+and ROAS has no dated rows). theLook has 15 metrics over 6 of 7 tables: the count follows the prompt, not the data. The
+explorer asks one model call for *"the 6-8 metrics … that matter MOST"* (`business_profile/infer.py:322`); nothing
+checks the proposals against a map of what the business measures; the proposer reads schema text, not the profiler or
+the ontology's promises; the packs supply recipes only for names the model chose; proposals are made once; the gates
+check the SQL, not the figure (a recipe's `sane_range` of 0–30% stood beside a metric reading 100%). The Briefing then
+measures at most 12 (`briefing/ranges.py:65`).
+
+**The framework.** A map of areas a business is read by (a generic layer in the platform, an industry layer per pack —
+retail's income-statement order and reading order are its spine) · every table placed in its areas, with the evidence ·
+a coverage matrix (has data · has a metric) · proposals per uncovered area, cheapest first (recipes bound to roles, then
+metrics derived from the ontology's promises and stages, then one scoped model call per area) · gates before a person
+sees one (runs · a window bounds it · it moves · within its sane range · roles bound to the right types · not a twin) ·
+adoption and approval by people only, through the doors that exist · the Briefing's cap a setting, read by the map.
+
+| Wave | Builds | Spends |
+|---|---|---|
+| MC-0 | LuxExperience's two metrics that read 1; three gates at approval (moves, sane range, binding types) | no |
+| MC-1 | The map's shape on a recipe (area, kind, direction); the generic layer; retail's industry layer | no |
+| MC-2 | Placement and the coverage matrix, read-only, on the Metrics tab | no |
+| MC-3 | Recipe proposals per uncovered area, through the gates, grouped by area | no |
+| MC-4 | Ontology-derived proposals: promise → on-time rate, stage → conversion, segment → share | no |
+| MC-5 | The scoped model proposer per uncovered area | yes |
+| MC-6 | Blind spots → proposals; the Briefing's cap a setting, read by the map's order | no |
+
+**The laws it keeps.** A model proposes and never approves · industry nouns live in packs, never in core code · every
+proposal says its gates' verdicts and why one failed · nothing is measured as a period's figure that a window cannot bound.
+
+---
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
