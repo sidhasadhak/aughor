@@ -353,6 +353,12 @@ it was not recorded" — all made before the flag); the email door built and on,
 sets its inbound domain and secret; Google comments on a named file built and on, refusing until the Drive-comments
 card is connected (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`).
 
+**Google comments proven live, 2026-10-27.** After the user's client was saved (the store had held a placeholder — now
+refused by shape), the consent screen opened to their account, a withheld permission was named, and the Drive API was
+enabled in their project, the user's own sheet was read onto the Mytheresa decision: 2 comments, each a said claim in its
+author's name pointing at its cell ("132 of 923", "300,299 EUR"), later evidence on the decision's new version, read in
+its inquiry under what it stood on — and the decision still cites nothing it did not cite when it was decided.
+
 **The user's calls, answered 2026-10-27** (ROADMAP §6 item 54(f)): local branch; *the inquiry* as people's word; *missed*
 stays; TC-2's read is an object's *changes*; four TC flags on; email inbound only; the Google client, guided; the trace's
 sub-pages admin-only; the coverage test skipped. **As first listed:** The inbound email door (it reverses §3.18); the Google OAuth client; the person-facing
