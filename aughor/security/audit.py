@@ -246,6 +246,59 @@ class AuditLogger:
         return [{"month": k, "reads": counts[k]} for k in keys]
 
     @classmethod
+    def reads_within(
+        cls,
+        connection_id: str,
+        tables_by_key: dict[str, list[str]],
+        *,
+        days: int = 30,
+        org_id: str | None = None,
+        now: float | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """For each key of ``tables_by_key`` (an entity, say), the audited statements on ``connection_id`` in the last
+        ``days`` days — today included — that named one of its tables as a whole word, as :meth:`reads_by_month` names
+        them: ``{"reads": n, "last_read": the newest such statement's ts or None, "runs": {trace id: how many of them
+        that run issued}}`` — a statement no run issued is counted under ``""``. One scan of the log for every key; a
+        key with no tables counts nothing."""
+        import re
+        from datetime import datetime, timedelta, timezone
+        stamp = datetime.fromtimestamp(now if now is not None else time.time(), tz=timezone.utc)
+        since = (stamp - timedelta(days=max(1, days) - 1)).strftime("%Y-%m-%dT00:00:00Z")
+        patterns = {}
+        for key, tables in tables_by_key.items():
+            names = [t.strip() for t in tables if t and t.strip()]
+            if names:
+                patterns[key] = re.compile(r"(?<![A-Za-z0-9_])(?:" + "|".join(re.escape(n) for n in names)
+                                           + r")(?![A-Za-z0-9_])", re.IGNORECASE)
+        out: dict[str, dict[str, Any]] = {k: {"reads": 0, "last_read": None, "runs": {}} for k in tables_by_key}
+        if not patterns:
+            return out
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses = ["connection_id = ?", "ts >= ?"]
+            params: list[Any] = [connection_id, since]
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            rows = c.execute(f"SELECT ts, sql_full, trace_id FROM audit_log WHERE {' AND '.join(clauses)}",
+                             params).fetchall()
+        finally:
+            c.close()
+        for ts, sql, trace_id in rows:
+            text = str(sql or "")
+            for key, pattern in patterns.items():
+                if not pattern.search(text):
+                    continue
+                row = out[key]
+                row["reads"] += 1
+                if row["last_read"] is None or str(ts) > row["last_read"]:
+                    row["last_read"] = str(ts)
+                run = str(trace_id or "")
+                row["runs"][run] = row["runs"].get(run, 0) + 1
+        return out
+
+    @classmethod
     def recent(
         cls,
         limit: int = 100,

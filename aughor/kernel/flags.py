@@ -214,6 +214,17 @@ FLAG_ENV = {
     # the entity, and how many audited statements named its tables in each of the last twelve months. OFF: the door
     # says it is off and the panel shows what it showed — metrics and actions.
     "ontology.entity_usage": "AUGHOR_ONTOLOGY_ENTITY_USAGE",
+    # Arc FA, FA-3 (ROADMAP §3.60). ON: a person may put an earlier version of a declaration back — its fields go
+    # through the normal save path into the DRAFT, measured again by the kind's own counts and classed like any change,
+    # so it reaches readers only when published; refused while releases are off and for an organisation's ontology.
+    # OFF: the put-back door refuses, and the history door answers exactly as before.
+    "ontology.put_back": "AUGHOR_ONTOLOGY_PUT_BACK",
+    # Arc FA, FA-3 (ROADMAP §3.60; the user, 2026-10-26: the status word is *retiring*). ON: any declaration may be
+    # marked retiring — a successor of its own kind, a date and a note — released as a MEANING change; the semantic
+    # block, the entity panel and the object page say "retiring on <date> — use <successor> instead" (after the date,
+    # "past its retiring date"; it still serves), and a withdrawal refused for what depends on it suggests retiring.
+    # OFF: the door refuses, and nothing reads or says the mark.
+    "ontology.retiring": "AUGHOR_ONTOLOGY_RETIRING",
     # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a dashboard opens to be read, and Edit
     # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
     # every piece set up there, never typed as a spec. OFF: a dashboard is arranged by its six sizes and Arrange, the
@@ -1053,6 +1064,25 @@ FLAG_META = {
                        "it when the ontology is published. A set that reads a reader's value, a chosen object or a "
                        "count cannot be kept, and says why. Off: the builder shows each set's one count.",
     },
+    "ontology.put_back": {
+        "label": "Put an earlier ontology version back",
+        "summary": "Any earlier version of an entity, link, process, rule or action can go back into the draft. "
+                   "Readers get it only once it is published.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Counts it again on your warehouse"}],
+        "description": "The version is counted again before it lands, and the draft rates the change like any other. "
+                       "It needs releases on, so nothing is served before a person publishes. Off: earlier "
+                       "versions can be read but not put back.",
+    },
+    "ontology.retiring": {
+        "label": "Mark an ontology element as retiring",
+        "summary": "Mark an entity, segment, process or rule as retiring on a date, with what to use instead. "
+                   "It keeps working meanwhile.",
+        "facts": [{"kind": "free", "text": "No model calls"}],
+        "description": "The agent and the entity's page say what replaces it and when. It is published as a change of "
+                       "meaning, so claims made under it say so. After the date it still works, and says it is past "
+                       "its retiring date. Off: nothing is marked retiring.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1585,6 +1615,16 @@ GRADUATION_QUEUE: dict = {
                              "draft counted, reaches readers when published and reads the count the set read; a set "
                              "reading a reader's value is refused with its sentence. Falsifier: a kept segment that "
                              "counts other objects than the set it was kept from stops it",
+    # Arc FA, FA-3 (ROADMAP §3.60), queued 2026-10-26. No model call; a put back is counted on the warehouse.
+    "ontology.put_back": "receipt: on theLook, a promise moved from two days to three and published is put back to two "
+                         "from its history; the draft holds it classed MEANING, readers keep three until a person "
+                         "publishes, then read two. Falsifier: a version put back that a reader sees before it is "
+                         "published stops it",
+    # Arc FA, FA-3 (ROADMAP §3.60), queued 2026-10-26. No model call.
+    "ontology.retiring": "receipt: on theLook, an entity marked retiring with a successor is published as a MEANING "
+                         "change; the agent's semantic block and the entity's page say the successor and the date, and "
+                         "a refused withdrawal names retiring. Falsifier: a retiring element that stops serving before "
+                         "it is withdrawn, or a successor that does not exist, stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "

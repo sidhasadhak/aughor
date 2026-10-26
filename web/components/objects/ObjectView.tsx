@@ -24,7 +24,8 @@ import { Masked } from "@/components/objects/Masked";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
-import { countNoun, displayCellValue, formatCount, formatMetricValue, formatMoney, formatTableNumber, relTime } from "@/lib/format";
+import { countNoun, displayCellValue, endedDay, formatCount, formatMetricValue, formatMoney, formatTableNumber, relTime } from "@/lib/format";
+import type { RetiringMark } from "@/lib/objectTypes";
 import { currencyFromColumn, currencySymbol, effectiveCurrencySymbol, isMoneyColumn, orgSettingsSnapshot, setOrgSettingsCache, subscribeOrgSettings } from "@/lib/orgSettings";
 import { getOrgSettings } from "@/lib/api";
 import { declaredActionsHref, objectHref } from "@/lib/objectLinks";
@@ -142,6 +143,21 @@ function DisplayChip({ display }: { display: NonNullable<ObjectPage["display"]> 
   );
 }
 
+/** Arc FA, FA-3 — the object's entity is marked retiring: it still reads, and the page says what replaces it and when
+ *  ("Product is retiring on Tue 1 Dec 2026 — use Brand instead"; after the day, "past its retiring date"). */
+export function RetiringChip({ typeName, mark }: { typeName: string; mark: RetiringMark }) {
+  const day = endedDay(mark.on);
+  const said = `${typeName} is ${mark.past ? `past its retiring date, ${day}` : `retiring on ${day}`} — use ${mark.successor_name} instead`;
+  return (
+    <span className="aug-fs-xs" data-testid="object-retiring" title={mark.note ? `${said}. ${mark.note}` : said}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, color: "var(--t2)", whiteSpace: "nowrap",
+               overflow: "hidden", textOverflow: "ellipsis" }}>
+      <span className="aug-tag aug-tag-amber">{mark.past ? "past its retiring date" : "retiring"}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{said}</span>
+    </span>
+  );
+}
+
 export function ObjectView({ objectType, pk, connectionId, schemaName }: {
   objectType: string;
   pk: string;
@@ -219,6 +235,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
               {loaded.key} = {loaded.pk}
             </span>
             {loaded.display && <DisplayChip display={loaded.display} />}
+            {loaded.retiring && <RetiringChip typeName={loaded.type_name} mark={loaded.retiring} />}
           </>
         ) : (
           <span className="aug-fs-ui" style={{ color: "var(--t2)" }}>{objectType} {pk}</span>

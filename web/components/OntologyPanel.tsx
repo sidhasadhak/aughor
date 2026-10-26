@@ -10,7 +10,9 @@ import { ReleaseStrip } from "@/components/ontology/ReleaseStrip";
 import { Segmented } from "@/components/ui/segmented";
 import { domainScope } from "@/lib/objectTypes";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
+import { ReadsDrawer } from "@/components/ontology/ReadsDrawer";
 import {
+  getSystemFlags,
   getOntology,
   getConnectionSettings,
   updateConnectionSettings,
@@ -54,7 +56,7 @@ interface Props {
 }
 
 /** The tools the bar's menu opens beside the map, one at a time. */
-type Drawer = "settings" | "duplicates" | "skills" | "proposals" | "overrides";
+type Drawer = "settings" | "duplicates" | "skills" | "proposals" | "overrides" | "reads";
 
 const REFRESH_OPTIONS: { label: string; value: number | null }[] = [
   { label: "Off",      value: null },
@@ -552,6 +554,13 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [drawer,            setDrawer]           = useState<Drawer | null>(null);
   const showSettings = drawer === "settings";
   const setShowSettings = (on: boolean) => setDrawer(on ? "settings" : null);
+  // Arc FA, FA-3 — the entities by their reads over thirty days, in the Tools menu while what uses an entity is shown.
+  const [usageOn,           setUsageOn]          = useState(false);
+  useEffect(() => {
+    let live = true;
+    getSystemFlags().then(f => { if (live) setUsageOn(!!f["ontology.entity_usage"]?.value); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   // What the map holds, for the figures in the bar; and a bump that opens the explorer's proposals for review.
   const [summary,           setSummary]          = useState<MapSummary | null>(null);
   const [reviewDraft,       setReviewDraft]      = useState(0);
@@ -690,6 +699,12 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
               <DropdownMenu.Item onSelect={() => tool("skills")} title="Learned skills crystallized from deep analyses">
                 Learned skills
               </DropdownMenu.Item>
+              {usageOn && (
+                <DropdownMenu.Item onSelect={() => tool("reads")} data-testid="ontology-reads-toggle"
+                  title="Every entity by how often it was read in the last 30 days, the least read first">
+                  Reads by entity
+                </DropdownMenu.Item>
+              )}
               <DropdownMenu.Separator />
               <DropdownMenu.Item onSelect={() => tool("settings")} title="Ontology settings">
                 Settings
@@ -846,6 +861,9 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           <OverridesDrawer connId={selectedConnId} schema={schema}
             onClose={close}
             onChanged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }} />
+        )}
+        {drawer === "reads" && usageOn && (
+          <ReadsDrawer connectionId={selectedConnId} schema={schema} onClose={close} />
         )}
       </div>
     </div>

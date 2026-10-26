@@ -15,9 +15,11 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Badge } from "@/components/ui/badge";
-import { countNoun, formatCount, formatMonth, pct } from "@/lib/format";
+import { countNoun, formatCount, formatMonth, pct, utcDayWords } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
-import type { ObjectTypeDetail, ObjectTypeUses, ProcessDetail, ProcessPromise, ProcessesAndRules } from "@/lib/objectTypes";
+import type {
+  ObjectTypeDetail, ObjectTypeUses, ProcessDetail, ProcessPromise, ProcessesAndRules, ReadsWindow,
+} from "@/lib/objectTypes";
 
 const muted: React.CSSProperties = { color: "var(--t3)" };
 const tabular: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
@@ -321,6 +323,12 @@ export function UsesSection({ uses }: { uses: ObjectTypeUses }) {
           No dashboard, automation, process or rule depends on it yet.
         </p>
       )}
+      {uses.reads.window && <RecentReads window={uses.reads.window} />}
+      {uses.reads.shared_said && (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }} data-testid="entity-reads-shared">
+          Shared table: {uses.reads.shared_said}
+        </p>
+      )}
       <Label right={uses.reads.tables.length > 0 && (
         <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)" }}>
           {uses.reads.tables.join(" · ")}
@@ -348,6 +356,24 @@ export function UsesSection({ uses }: { uses: ObjectTypeUses }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Arc FA, FA-3 — the last thirty days of an entity's reads, on one line: how many statements named its tables, how
+ *  many people read it where the session log says who, and the day it was last read. A reader the log does not name is
+ *  said, never counted as nobody. */
+export function RecentReads({ window: w }: { window: ReadsWindow }) {
+  return (
+    <div data-testid="entity-reads-recent" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Label right={<span style={muted}>{w.last_read ? `last read ${utcDayWords(w.last_read)}` : "not read"}</span>}>
+        Reads · {w.days} days
+      </Label>
+      <span className="aug-fs-sm" style={{ ...tabular, color: "var(--t1)" }}>
+        {countNoun(w.reads, "read")}
+        {w.readers != null && <span style={{ color: "var(--t2)" }}> · {countNoun(w.readers, "reader")}</span>}
+      </span>
+      {w.readers_said && <span className="aug-fs-xs" style={muted}>{w.readers_said}</span>}
     </div>
   );
 }

@@ -10962,6 +10962,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/object-types/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Types By Reads
+         * @description ROADMAP §3.60 (Arc FA, FA-3) — every entity of the scope ranked by how often audited statements named its tables
+         *     in the last ``window`` days, the least read first — the list a person cleaning up reads: each with its reads, the
+         *     day it was last read, how many people read it where the session log says who ran the statement, and the tables it
+         *     shares with another entity (a statement naming a shared table counts for both, said beside it). Behind
+         *     `ontology.entity_usage`: off, the door says so. No model call; the platform's own log, never the warehouse.
+         */
+        get: operations["get_object_types_by_reads_object_types_uses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/object-types/{object_type}": {
         parameters: {
             query?: never;
@@ -12582,6 +12606,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/history/put-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put Back Declaration Version
+         * @description Arc FA, FA-3 — put an earlier version of one declaration back (ROADMAP §3.60). Its fields go through the normal
+         *     save path into the DRAFT, counted again by the kind's own measurement first and classed like any change, so readers
+         *     get it only when a person publishes. A withdrawn version puts back the fields it had; one that says what readers
+         *     read already takes the waiting change away. Refused with a sentence while `ontology.put_back` or releases are off
+         *     and for an organisation's ontology (409), for a version the history does not hold (404), and for one that no
+         *     longer counts on this ontology (400) — nothing is written then. No model call.
+         */
+        post: operations["put_back_declaration_version_ontology_history_put_back_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/impacts": {
         parameters: {
             query?: never;
@@ -13255,6 +13304,34 @@ export interface paths {
          */
         post: operations["publish_ontology_release_ontology_release_publish_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/retiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Declaration Retiring
+         * @description Arc FA, FA-3 — mark one declaration of any kind *retiring* (ROADMAP §3.60): it still serves, and every reader is
+         *     told "retiring on <date> — use <successor> instead". The successor must be another element of the same kind on this
+         *     ontology (400 otherwise, with the sentence; 404 for an element there is none of). Written through the normal save
+         *     path — with releases on it waits in the draft as a MEANING change. 409 while `ontology.retiring` is off.
+         */
+        put: operations["mark_declaration_retiring_ontology_retiring_put"];
+        post?: never;
+        /**
+         * Unmark Declaration Retiring
+         * @description Arc FA, FA-3 — take a retiring mark off: the element is no longer said to be going. A MEANING change like the mark
+         *     itself; the element's other declarations are untouched. 404 when it carries no mark; 409 while the setting is off.
+         */
+        delete: operations["unmark_declaration_retiring_ontology_retiring_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -23282,6 +23359,18 @@ export interface components {
             /** Values */
             values: string[];
         };
+        /**
+         * _PutBack
+         * @description Arc FA, FA-3 — the version of one declaration to put back into the draft, as `GET /ontology/history` numbers it.
+         */
+        _PutBack: {
+            /** Kind */
+            kind: string;
+            /** Target Id */
+            target_id: string;
+            /** Version */
+            version: number;
+        };
         /** _QueryBuildRequest */
         _QueryBuildRequest: {
             /**
@@ -23464,6 +23553,26 @@ export interface components {
         _RestoreVersionRequest: {
             /** Version */
             version: number;
+        };
+        /**
+         * _Retiring
+         * @description Arc FA, FA-3 — one declaration marked retiring: the element of the same kind to use instead, the day it is meant
+         *     to go (YYYY-MM-DD), and the person's own words.
+         */
+        _Retiring: {
+            /** Kind */
+            kind: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** On */
+            on: string;
+            /** Successor */
+            successor: string;
+            /** Target Id */
+            target_id: string;
         };
         /**
          * _RoutingProposal
@@ -42563,6 +42672,40 @@ export interface operations {
             };
         };
     };
+    get_object_types_by_reads_object_types_uses_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description days back, today included */
+                window?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_object_type_object_types__object_type__get: {
         parameters: {
             query?: {
@@ -42603,6 +42746,8 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                /** @description the recent window's days back, today included */
+                window?: number;
             };
             header?: never;
             path: {
@@ -45353,6 +45498,42 @@ export interface operations {
             };
         };
     };
+    put_back_declaration_version_ontology_history_put_back_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PutBack"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     declare_ontology_impact_ontology_impacts_post: {
         parameters: {
             query?: {
@@ -46466,6 +46647,76 @@ export interface operations {
     publish_ontology_release_ontology_release_publish_post: {
         parameters: {
             query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_declaration_retiring_ontology_retiring_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_Retiring"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_declaration_retiring_ontology_retiring_delete: {
+        parameters: {
+            query: {
+                kind: string;
+                target_id: string;
                 connection_id?: string | null;
                 schema_name?: string | null;
             };
