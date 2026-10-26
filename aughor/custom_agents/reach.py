@@ -111,7 +111,7 @@ def doors_for(agent, *, public_api: str = "", public_web: str = "") -> dict[str,
     api = (public_api or "").rstrip("/")
     web = (public_web or "").rstrip("/")
     key_hint = ("issue a key on the agent's Doors tab" if not issued else "")
-    return {
+    doors: dict[str, Any] = {
         "mcp": {"state": "open" if agent.enabled else "paused", "tool": mcp_tool_name(agent),
                 "how": "the Aughor MCP server registers one tool per enabled custom agent at "
                        "start (`python -m aughor.mcp`); its caller is a principal the "
@@ -128,6 +128,13 @@ def doors_for(agent, *, public_api: str = "", public_web: str = "") -> dict[str,
                 "card": f"{api}/.well-known/agent.json" if api else "/.well-known/agent.json",
                 "url": f"{api}/doors/a2a/{agent.id}" if api else f"/doors/a2a/{agent.id}"},
     }
+    # Arc FA, FA-7 — the grounding read, listed only while `agents.grounding_read` is on (off: the list is as it was).
+    from aughor.custom_agents.grounding_read import door_state
+    grounding = door_state(agent, issued=bool(issued))
+    if grounding is not None:
+        doors["grounding"] = {**grounding, "url": f"{api}/doors/agents/{agent.id}/grounding" if api
+                              else f"/doors/agents/{agent.id}/grounding"}
+    return doors
 
 
 def a2a_card(agents: list, *, public_api: str = "") -> dict[str, Any]:

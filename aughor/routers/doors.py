@@ -18,8 +18,10 @@ import os
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
+
+from aughor.custom_agents.grounding_read import require_open as require_grounding_open
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["doors"])
@@ -91,6 +93,31 @@ async def door_ask(agent_id: str, body: DoorAsk, request: Request, stream: bool 
                           connection_id=body.connection_id or agent.connection_id,
                           principal_ref=principal, session_id=body.session_id,
                           depth=body.depth if body.depth in ("quick", "deep", "auto") else "quick")
+
+
+# ── Arc FA, FA-7 · the grounding read ────────────────────────────────────────────
+
+class DoorGround(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    question: str = Field(..., min_length=1, max_length=2000)
+    #: Who is reading, in the caller's words — the principal the journal names. "anonymous" when absent.
+    asker: str = ""
+    connection_id: str = ""
+    schema_name: str = Field("", alias="schema")
+
+
+@router.post("/doors/agents/{agent_id}/grounding", dependencies=[Depends(require_grounding_open)])
+def door_grounding(agent_id: str, body: DoorGround, request: Request):
+    """What this agent would read for the question — every grounding block with its content, the absent ones with
+    why, whether the embedder was called and which — and no model is asked (flag ``agents.grounding_read``; off, the
+    door is a 404 whatever the key or the body). Journaled as ``agent.grounding_read`` without the question or the
+    content."""
+    from aughor.custom_agents import grounding_read
+    from aughor.custom_agents.reach import principal_for
+    agent = _agent_or_401(agent_id, request)
+    return grounding_read.read(agent, question=body.question, connection_id=body.connection_id,
+                               schema=body.schema_name, principal=principal_for("http", body.asker), door="http",
+                               reader=grounding_read.agent_as_principal(agent))
 
 
 # ── AO-5d · an inbound webhook as a conversation ─────────────────────────────────

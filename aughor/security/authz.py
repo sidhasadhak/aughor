@@ -223,18 +223,25 @@ def check_owner(kind: str, resource_id: Optional[str], principal: Optional[Princ
 
 def connection_owner_guard(request: Request) -> None:
     """Object-level authz (SEC-05 / DATA-06) for a whole router: every connection a request names — a path or query
-    parameter called ``connection_id`` or ``conn_id``, or ending in ``_connection_id`` (a comparison's
+    parameter called ``connection_id``, ``conn_id`` or ``connection``, or ending in ``_connection_id`` (a comparison's
     ``reference_connection_id``) — must belong to the caller's org. Wired as a router-level dependency, so a door added
     to that router later is covered without anyone remembering to. A no-op in localhost mode (identity off), and for a
     shared builtin or an id that is no registered connection: both resolve no org, and a missing one is the door's own
     404 — exactly ``check_owner``'s contract everywhere else. A connection id carried in a request BODY is not visible
-    here; a door that reads one checks it itself."""
+    here; a door that reads one checks it itself.
+
+    ``connection`` is read since Arc FA (FA-7): ``GET /ask/context`` and ``DELETE /metrics/{name}`` name theirs so, and
+    with identity on neither asked whose it was — the same spellings the agent gate reads (``rbac/agent_gate``)."""
     principal = get_principal(request)
     if principal is None:
         return
     for name, value in (*request.path_params.items(), *request.query_params.multi_items()):
-        if value and (name in ("connection_id", "conn_id") or name.endswith("_connection_id")):
+        if value and (name in CONNECTION_PARAMS or name.endswith("_connection_id")):
             check_owner("connection", value, principal)
+
+
+#: The names a path or query parameter carries a connection id under — what :func:`connection_owner_guard` reads.
+CONNECTION_PARAMS: tuple[str, ...] = ("connection_id", "conn_id", "connection")
 
 
 # ── Read-path tenancy: org-scope list/read endpoints ─────────────────────────────

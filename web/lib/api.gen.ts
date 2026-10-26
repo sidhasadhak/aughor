@@ -646,6 +646,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/{agent_id}/grounding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Grounding Read
+         * @description Arc FA, FA-7 — the grounding read for a session caller: what the MCP tool ``ground_agent`` reads, so the agent
+         *     gate holds it to the organisation's policy (a read) and audits it. The same read as the agent's HTTP door — every
+         *     block with its content, the absent ones with why, the embedder said, no model asked — journaled as
+         *     ``agent.grounding_read``. Flag ``agents.grounding_read``; off, a 404.
+         */
+        get: operations["agent_grounding_read_agents_custom__agent_id__grounding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}/guardrails": {
         parameters: {
             query?: never;
@@ -5440,6 +5463,29 @@ export interface paths {
          *     receipt — or the ask door's own SSE with ``?stream=1`` for a caller that renders it.
          */
         post: operations["door_ask_doors_agents__agent_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/doors/agents/{agent_id}/grounding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Grounding
+         * @description What this agent would read for the question — every grounding block with its content, the absent ones with
+         *     why, whether the embedder was called and which — and no model is asked (flag ``agents.grounding_read``; off, the
+         *     door is a 404 whatever the key or the body). Journaled as ``agent.grounding_read`` without the question or the
+         *     content.
+         */
+        post: operations["door_grounding_doors_agents__agent_id__grounding_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -18674,6 +18720,26 @@ export interface components {
              */
             session_id: string;
         };
+        /** DoorGround */
+        DoorGround: {
+            /**
+             * Asker
+             * @default
+             */
+            asker: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Question */
+            question: string;
+            /**
+             * Schema
+             * @default
+             */
+            schema: string;
+        };
         /** DraftRequest */
         DraftRequest: {
             /** Area */
@@ -25096,6 +25162,42 @@ export interface operations {
                 "application/json": components["schemas"]["GoldenCertify"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_grounding_read_agents_custom__agent_id__grounding_get: {
+        parameters: {
+            query: {
+                question: string;
+                connection_id?: string;
+                schema?: string;
+                asker?: string;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -32997,6 +33099,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DoorAsk"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_grounding_doors_agents__agent_id__grounding_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorGround"];
             };
         };
         responses: {

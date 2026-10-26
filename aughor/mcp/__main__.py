@@ -14,8 +14,8 @@ import os
 import sys
 
 from aughor.mcp.server import (ontology_scopes, enable_live_tools, mcp, register_agent_tools,
-                               register_automation_tools, register_ontology_tools, register_spotlight_tools,
-                               serve_http)
+                               register_automation_tools, register_grounding_tool, register_ontology_tools,
+                               register_spotlight_tools, serve_http)
 
 _TOKEN_HELP = (
     "[aughor.mcp] --http needs AUGHOR_MCP_TOKEN. Every HTTP client presents it as "
@@ -80,6 +80,9 @@ def main() -> None:
         if added_ag:
             print(f"[aughor.mcp] exposed {len(added_ag)} custom agent(s) as tools: "
                   f"{', '.join(added_ag)}", file=sys.stderr)
+        # Arc FA, FA-7 — the agents' grounding read, while the API has `agents.grounding_read` on.
+        if asyncio.run(register_grounding_tool()):
+            print("[aughor.mcp] exposed the grounding read as ground_agent", file=sys.stderr)
 
     # Arc OC-8 — one propose tool per declared action of the scopes AUGHOR_MCP_ONTOLOGY names, never fatal.
     if ontology_scopes():
@@ -92,6 +95,7 @@ def main() -> None:
     enable_live_tools(*[s for s, skip in (("automations", args.no_automations),
                                           ("spotlight", args.no_spotlight),
                                           ("agents", getattr(args, "no_agents", False)),
+                                          ("grounding", getattr(args, "no_agents", False)),
                                           ("ontology", not ontology_scopes())) if not skip])
 
     if args.http:

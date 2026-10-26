@@ -101,11 +101,14 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # and what the pack offered, and an upgrade proposes only the new and changed) and `packs.dashboard_templates` (a
     # pack's dashboard template becomes a draft a person keeps). Neither calls a model; each entry names its receipt
     # and the falsifier.
+    # Arc FA, FA-7 (ROADMAP §3.60), 2026-10-26: `agents.grounding_read` — what a custom agent would read, at its key door
+    # and as a read-level MCP tool. No chat model; the embedder may be called and is said. Its entry names the receipt
+    # and the falsifier.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
                                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
                                      "ontology.impacts_only", "objects.completeness",
                                      "automations.objects_admitted", "packs.installed_versions",
-                                     "packs.dashboard_templates"}
+                                     "packs.dashboard_templates", "agents.grounding_read"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

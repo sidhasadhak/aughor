@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from aughor.custom_agents.grounding_read import require_open as require_grounding_open
 from aughor.kernel.agents import (
     charter_for_kind,
     effective_governance,
@@ -21,6 +22,7 @@ from aughor.kernel.agents import (
     set_governance,
 )
 from aughor.kernel.ledger import Ledger
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -274,10 +276,15 @@ def _revision_conflict(exc) -> HTTPException:
 @router.get("/agents/custom")
 def list_user_agents():
     """The active workspace's user-defined agents (the persona roster, newest first)."""
-    from aughor.custom_agents import list_agents
+    from aughor.custom_agents import grounding_read, list_agents
     from aughor.metastore import scoped_to_workspace
-    return [a.model_dump()
-            for a in scoped_to_workspace(list_agents(), key="connection_id")]
+    rows = [a.model_dump() for a in scoped_to_workspace(list_agents(), key="connection_id")]
+    if grounding_read.enabled():
+        # FA-7: how the MCP server learns the grounding read is open, from the roster it already reads — so with the
+        # flag off it asks nothing more than before, and this list is as it was.
+        for row in rows:
+            row["grounding_read"] = True
+    return rows
 
 
 @router.get("/agents/templates")
@@ -676,6 +683,28 @@ def agent_doors(agent_id: str):
     except Exception as exc:                            # noqa: BLE001 — said, not hidden
         doors["teams"] = {"bots": [], "state": f"could not read: {exc}"}
     return doors
+
+
+@router.get("/agents/custom/{agent_id}/grounding",
+            # the owner guard first: another organisation's connection is refused at every door that names one
+            dependencies=[Depends(connection_owner_guard), Depends(require_grounding_open)])
+def agent_grounding_read(agent_id: str, request: Request,
+                         question: str = Query(..., min_length=1, max_length=2000),
+                         connection_id: str = "", schema: str = "", asker: str = ""):
+    """Arc FA, FA-7 — the grounding read for a session caller: what the MCP tool ``ground_agent`` reads, so the agent
+    gate holds it to the organisation's policy (a read) and audits it. The same read as the agent's HTTP door — every
+    block with its content, the absent ones with why, the embedder said, no model asked — journaled as
+    ``agent.grounding_read``. Flag ``agents.grounding_read``; off, a 404."""
+    from aughor.custom_agents import get_agent, grounding_read
+    from aughor.security.authz import get_principal
+    agent = get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No such agent")
+    if not agent.enabled:
+        raise HTTPException(status_code=409, detail=f"agent '{agent.name}' is paused; it answers nothing")
+    principal, door = grounding_read.session_principal(request, asker)
+    return grounding_read.read(agent, question=question, connection_id=connection_id, schema=schema,
+                               principal=principal, door=door, reader=get_principal(request))
 
 
 @router.post("/agents/custom/{agent_id}/key")

@@ -90,6 +90,10 @@ KIND_CATEGORY: dict[str, str] = {
     # policy's, and bounded arguments. Data access because that is the question an auditor
     # asks of an agent: what did it reach, as whom.
     "mcp.tool_call": "data_access",
+    # Arc FA, FA-7 — a program read what a custom agent would read for a question (the grounding read, at the agent's
+    # key door or through the MCP tool): who, which agent at which revision, the connection, the blocks present. Data
+    # access because the blocks carry the connection's schema, definitions and documents; the content is never kept.
+    "agent.grounding_read": "data_access",
     # MI-1 — the two feedback doors. Both have been writing to the ledger since they
     # shipped, neither was categorized, so the governance feed could not show that a
     # person had ever graded anything. They are split by design (`chat.feedback` keys on
@@ -280,6 +284,11 @@ def _summarize(kind: str, p: dict) -> str:
         verdict = "allowed" if p.get("allowed") else f"refused ({p.get('code') or '?'})"
         return (f"agent {p.get('actor') or 'mcp'} called {p.get('tool') or p.get('route') or '?'}"
                 f" — {verdict}; needs {p.get('required_level') or '?'}, policy {p.get('policy_level') or '?'}")
+    if kind == "agent.grounding_read":
+        n = len(p.get("present") or [])
+        return (f"{p.get('principal') or 'unidentified'} read what agent {p.get('agent') or '?'} would read"
+                f" ({n} block{'s' if n != 1 else ''}, through {p.get('door') or '?'};"
+                f" {'the embedder was called' if p.get('embedder_called') else 'no embedder call'})")
     if kind == "action.approval":
         return f"{p.get('decision', '?')} {p.get('action', '?')} on {p.get('scope') or '*'}"
     if kind == "govern.tag":
@@ -568,6 +577,7 @@ _SINKS: list[tuple[str, Callable[..., list[AuditEvent]]]] = [
     ("data_access", lambda n, **w: _from_ledger("trace.payload_access", n, **w)),
     ("data_access", lambda n, **w: _from_ledger("access.justified", n, **w)),
     ("data_access", lambda n, **w: _from_ledger("mcp.tool_call", n, **w)),
+    ("data_access", lambda n, **w: _from_ledger("agent.grounding_read", n, **w)),
     ("action_decision", lambda n, **w: _from_ledger("action.approval", n, **w)),
     ("action_decision", lambda n, **w: _from_ledger("action.autonomous", n, **w)),
     ("action_decision", lambda n, **w: _from_ledger("action.undone", n, **w)),

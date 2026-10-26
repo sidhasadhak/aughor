@@ -157,6 +157,13 @@ FLAG_ENV = {
     # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
     # contract describes it. OFF: each door answers as before.
     "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
+    # Arc FA, FA-7 (ROADMAP §3.60; §6 item 52(b): the chat-compatible endpoint waits until one is asked for). ON: an agent
+    # has a grounding read at two doors — POST /doors/agents/{id}/grounding with its key, and the read-level MCP tool
+    # `ground_agent` over GET /agents/custom/{id}/grounding — returning the blocks the agent would read for a question,
+    # their content trimmed as the ask path trims, the absent ones with why, whether the embedder was called and which,
+    # and never calling a chat model; each read is journaled as `agent.grounding_read` without the content. OFF: both
+    # doors answer 404, the tool is not listed, and the Doors tab and every other door read as before.
+    "agents.grounding_read": "AUGHOR_AGENTS_GROUNDING_READ",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -959,6 +966,17 @@ FLAG_META = {
                        "policy or a masked property is named. Outside programs read the same field, described in "
                        "their contract. Off: a cut read can look complete.",
     },
+    "agents.grounding_read": {
+        "label": "Let programs read what an agent would read",
+        "summary": "A program holding an agent's key can see what the agent would be given for a question. "
+                   "No model answers it.",
+        "facts": [{"kind": "free", "text": "No chat model calls"},
+                  {"kind": "model", "text": "May call the embedding model"},
+                  {"kind": "private", "text": "Each read is recorded"}],
+        "description": "The read returns each piece of context the agent would read, cut to what the caller may see. "
+                       "A piece that is missing says why. It says whether the embedding model was called, which can "
+                       "cost at a hosted provider. Off: the read is closed and the agent's other doors are unchanged.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1463,6 +1481,12 @@ GRADUATION_QUEUE: dict = {
                                     "the objects that enter afterwards, listed under its owner's row policy. Falsifier: "
                                     "an object already in when the watch began fires it, or a withheld list is run "
                                     "over as empty — either stops it",
+    # Arc FA, FA-7 (ROADMAP §3.60), queued 2026-10-26. No chat model call; the embedder may be called.
+    "agents.grounding_read": "receipt: on the live install, a custom agent's grounding read through its key and through "
+                             "the MCP tool returns the blocks its quick answer reads for the same question, documents "
+                             "only its own, the absent blocks with why, the embedder said, and one journal entry each "
+                             "with no content. Falsifier: a read that shows a block from outside the agent's scope or "
+                             "the caller's trim, or a chat model called during one, stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "
