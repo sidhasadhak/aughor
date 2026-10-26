@@ -263,6 +263,121 @@ def load_briefs(connection_id: str) -> list[dict]:
     }]
 
 
+#: Arc FA, FA-1 — the declaration kinds that become `declaration` nodes, by the frozen target kind they are stored under,
+#: with the word a node carries. An entity and a metric are nodes of their own already (`table`, `metric`).
+DECLARATION_KINDS: dict[str, str] = {
+    "object_set": "segment", "computed_property": "computed_property", "process": "process", "rule": "rule",
+    "impact": "impact", "action": "action", "link": "link",
+}
+
+
+def _entity_named(ontology, name: str) -> str:
+    """The entity id a declaration names — by id, api name or display name, as the object door reads it; "" when none."""
+    low = str(name or "").strip().lower()
+    for eid, e in (getattr(ontology, "entities", {}) or {}).items():
+        if low and low in {eid.lower(), str(getattr(e, "api_name", "") or "").lower(),
+                           str(getattr(e, "display_name", "") or "").lower()}:
+            return eid
+    return ""
+
+
+def _declared(ontology, ov) -> Optional[dict]:
+    """What one published declaration says, read from the graph its overlay built: its name, description, the entities
+    it is about and a line of its detail. None when the overlay did not hold it (its entity gone, a link withdrawn)."""
+    kind, target = ov.target_kind, ov.target_id
+    entities = getattr(ontology, "entities", {}) or {}
+    if kind in ("object_set", "computed_property"):
+        ent = entities.get(ov.entity_id or "")
+        if ent is None:
+            return None
+        if kind == "object_set":
+            seg = (ent.segments or {}).get(ov.local_id)
+            return None if seg is None else {"name": seg.display_name or seg.id, "description": seg.description,
+                                             "entities": [ent.id], "detail": seg.filter_sql}
+        cp = next((c for c in ent.computed_properties or [] if c.id == ov.local_id), None)
+        return None if cp is None else {"name": cp.label or cp.id, "description": "", "entities": [ent.id],
+                                        "detail": " ".join(x for x in (cp.formula_sql, cp.unit) if x)}
+    if kind == "action":
+        a = (getattr(ontology, "kinetic_actions", {}) or {}).get(target)
+        if a is None:
+            return None
+        about = _entity_named(ontology, a.object_type) or _entity_named(ontology, a.entity)
+        return {"name": a.display_name or a.id, "description": a.description, "entities": [about] if about else [],
+                "detail": f"{a.kind}, risk {a.risk}"}
+    if kind == "link":
+        rel = (getattr(ontology, "relationships", {}) or {}).get(target)
+        if rel is None or ov.fields.get("withdrawn"):
+            return None
+        return {"name": rel.name or rel.api_name or rel.id, "description": "",
+                "entities": [rel.from_entity, rel.to_entity],
+                "detail": f"{rel.from_entity} {rel.verb} {rel.to_entity} ({rel.measured_cardinality or rel.cardinality})"}
+    if kind == "process":
+        p = (getattr(ontology, "processes", {}) or {}).get(target)
+        if p is None:
+            return None
+        stages = " → ".join(s.name for s in p.stages or [])
+        promises = ", ".join((s.promise.name or s.name) for s in p.stages or [] if s.promise is not None)
+        return {"name": p.display_name or p.id, "description": p.description, "entities": [p.entity],
+                "detail": "; ".join(x for x in (f"stages {stages}" if stages else "",
+                                                f"promises {promises}" if promises else "") if x)}
+    if kind == "rule":
+        r = (getattr(ontology, "rules", {}) or {}).get(target)
+        if r is None:
+            return None
+        detail = (f"{r.property} in {', '.join(r.values)}" if r.kind == "value_set"
+                  else f"{len(r.conditions)} condition{'s' if len(r.conditions) != 1 else ''}")
+        return {"name": r.display_name or r.id, "description": r.description, "entities": [r.entity], "detail": detail}
+    if kind == "impact":
+        i = (getattr(ontology, "impacts", {}) or {}).get(target)
+        if i is None:
+            return None
+        processes = getattr(ontology, "processes", {}) or {}
+        about = [i.lead] + [getattr(processes.get(str(side).split(".", 1)[0]), "entity", "")
+                            for side in (i.upstream, i.downstream)]
+        return {"name": i.display_name or i.id, "description": i.description,
+                "entities": list(dict.fromkeys(e for e in about if e)),
+                "detail": f"{i.upstream} → {i.downstream} ({i.mechanism})"}
+    return None
+
+
+def declaration_rows(ontology, overrides: list, *, release: str = "") -> list[dict]:
+    """The published declarations as the projection's rows (`context_graph._project_declarations`). ``overrides`` are
+    the PUBLISHED declarations of the scope and ``ontology`` the graph they were overlaid on. A model's proposal no
+    person confirmed is not a declaration and is left out — the release refuses it on the same ground."""
+    rows: list[dict] = []
+    for ov in overrides or []:
+        word = DECLARATION_KINDS.get(ov.target_kind)
+        if word is None:
+            continue
+        origin = str(ov.fields.get("origin") or ov.source or "human")
+        if origin == "model" or ov.source == "model":
+            continue
+        said = _declared(ontology, ov)
+        if said is None or not said["entities"]:
+            continue
+        rows.append({"decl_kind": word, "target_id": ov.target_id, **said,
+                     "origin": "pack" if origin == "pack" or ov.source.startswith("pack") else "human",
+                     "by": ov.edited_by, "at": ov.edited_at, "release": release})
+    return rows
+
+
+def load_declarations(connection_id: str, ontology) -> list[dict]:
+    """The scope's PUBLISHED declarations — what every consumer reads, never the draft, even when the build runs inside
+    a door that reads the draft (a write to `/ontology`). The release they were read from names each row while
+    `ontology.release` is on."""
+    from aughor.ontology import release
+    from aughor.ontology.overrides import draft_view, load_overrides, viewing
+    from aughor.ontology.store import load_latest_ontology
+
+    schema = getattr(ontology, "schema_name", "") or ""
+    drafted = draft_view()
+    with viewing("published"):
+        graph = (load_latest_ontology(connection_id, schema or None) if drafted else ontology) or ontology
+        published = load_overrides(connection_id, schema)
+    return declaration_rows(graph, published,
+                            release=release.current_id(connection_id, schema) if release.enabled() else "")
+
+
 def note_brief(
     connection_id: str,
     brief: dict,
@@ -408,6 +523,10 @@ def build_context_graph(
     findings = merge_finding_sources(record, legacy)
 
     briefs = _safe(lambda: load_briefs(connection_id), "briefs", [])
+    # Arc FA, FA-1 — the published declarations, only while `graph.declarations` is on; off, none is read.
+    from aughor.kernel.flags import flag_enabled
+    declarations = (_safe(lambda: load_declarations(connection_id, ontology), "declarations", [])
+                    if flag_enabled("graph.declarations") else None)
 
     cg = project_graph(
         ontology,
@@ -418,6 +537,7 @@ def build_context_graph(
         resolutions=resolutions,
         findings=findings,
         briefs=briefs,
+        declarations=declarations,
     )
 
     if persist:

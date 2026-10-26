@@ -15,6 +15,7 @@ export const KIND_HUE: Record<string, string> = {
   finding: "var(--chart-3)",
   glossary_term: "var(--chart-5)",
   brief: "var(--chart-7)",
+  declaration: "var(--chart-4)",
 };
 
 export const EDGE_HUE: Record<string, string> = {
@@ -28,6 +29,7 @@ export const EDGE_HUE: Record<string, string> = {
 /** A node kind as a reader says it. */
 export const KIND_WORD: Record<string, string> = {
   domain: "Domain", table: "Table", metric: "Metric", finding: "Finding", glossary_term: "Term", brief: "Brief",
+  declaration: "Declaration",
 };
 
 /** A node's name for the eye: a metric the semantic layer keyed in snake case (`average_delivery_time`) reads as words;

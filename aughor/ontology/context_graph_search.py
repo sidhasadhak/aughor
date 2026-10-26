@@ -55,6 +55,12 @@ def node_text(node: GraphNode) -> str:
         parts.append(d.get("table", ""))
         parts.append(d.get("column", ""))
         parts.append(d.get("subject", ""))
+    elif node.kind == "declaration":
+        # FA-1 — what it is (a segment, a process…), what it is about and what it says: "overdue dispatch" finds the
+        # process that promises it, and "order" every declaration over the Order entity.
+        parts.append(str(d.get("decl_kind", "")).replace("_", " "))
+        parts.append(" ".join(d.get("entities", []) or []))
+        parts.append(d.get("detail", ""))
     return " ".join(p for p in parts if p)
 
 

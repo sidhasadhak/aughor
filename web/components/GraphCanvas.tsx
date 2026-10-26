@@ -193,6 +193,7 @@ const LEGEND: { kind: string; word: string }[] = [
   { kind: "domain", word: "Domains" },
   { kind: "table", word: "Tables" },
   { kind: "metric", word: "Metrics" },
+  { kind: "declaration", word: "Declarations" },
 ];
 
 export function GraphCanvas({ graph, onOpenTable, onSelectionChange }: Props) {
