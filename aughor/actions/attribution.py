@@ -15,7 +15,7 @@ No new store and no new audit sink: each is a column or a payload key on a recor
 run is recorded as such (``run_kind`` ``none``) and read "by a person, outside any run"; a row from before the stamp
 (``run_kind`` empty) reads "which run made it was not recorded" — never "outside any run", which it may not have been.
 
-:func:`object_timeline` reads one object's edits and actions, oldest first, each with who or what made it, through which
+:func:`object_changes` reads one object's edits and actions, oldest first, each with who or what made it, through which
 run, and that run's model cost from the session log when the run was metered — "not metered" said, never a zero.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ KIND_WORDS = {"chat": "a question asked", "automation": "an automation", "monito
               "agent": "an agent's work"}
 #: An actor whose principal head names a machine, not a person.
 _MACHINE_HEADS = frozenset({"agent", "automation", "monitor", "service", "mcp", "system"})
-#: How many of an object's edit-history rows and how many of a connection's action entries a timeline reads.
+#: How many of an object's edit-history rows and how many of a connection's action entries an object's changes read.
 EDIT_CAP = 1000
 ACTION_CAP = 2000
 #: The most session-log events read to cost one run (a deep run measured 1,140).
@@ -140,7 +140,7 @@ def run_cost(run: dict, *, org_id: Optional[str] = None) -> dict:
     return out
 
 
-# ── one object's timeline ────────────────────────────────────────────────────────────
+# ── one object's changes ────────────────────────────────────────────────────────────
 
 def _word(name: str) -> str:
     return "".join(ch for ch in (name or "").lower() if ch.isalnum())
@@ -169,7 +169,7 @@ def _names_object(payload: dict, object_type: str, row_key: str) -> bool:
     return False
 
 
-def object_timeline(connection_id: str, object_type: str, row_key: str, *, org_id: Optional[str] = None) -> dict:
+def object_changes(connection_id: str, object_type: str, row_key: str, *, org_id: Optional[str] = None) -> dict:
     """Every edit and declared action on one object, oldest first: who or what made it, through which run, and what
     that run cost. Read from the edit layer's history and the action ledger — the records that exist; no walker."""
     from aughor.actions.authority import ACTION_KIND
@@ -204,7 +204,7 @@ def object_timeline(connection_id: str, object_type: str, row_key: str, *, org_i
             run["cost"] = costs[key]
     entries.sort(key=lambda e: (_moment(e["at"]), int(e.get("version") or 0)))
     out: dict = {"connection_id": connection_id, "object_type": object_type, "row_key": str(row_key),
-                 "timeline": entries,
+                 "changes": entries,
                  "read": {"edits": len(edits), "actions": sum(1 for e in entries if e["what"] == "action"),
                           "action_entries_scanned": len(arts)}}
     capped = []

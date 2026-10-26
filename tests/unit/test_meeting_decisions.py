@@ -16,7 +16,7 @@ import pytest
 from aughor.record import claims as C
 from aughor.record import decisions as D
 from aughor.record import meetings as MT
-from aughor.record import thread as T
+from aughor.record import inquiry_view as T
 
 NOTES = """Weekly trading meeting, Berlin.
 Ana: margin on the ultra tier fell two points in July.
@@ -65,7 +65,7 @@ def test_a_confirmed_candidate_is_a_decision_the_person_declared_with_the_meetin
     ev = d.extra["evidence"][0]
     assert ev["kind"] == "meeting" and ev["ref"] == "meeting:weekly_trading:2026-07-29" and len(ev["content_hash"]) == 64
     assert ev["excerpt"].startswith("Decision: we cap") and ev["notes_hash"] == out["notes_hash"]
-    arising = next(s for s in T.thread_of(did)["stages"] if s["stage"] == "arising")["steps"]
+    arising = next(s for s in T.view_of(did)["stages"] if s["stage"] == "arising")["steps"]
     assert any(s["line"] == "taken in a meeting" for s in arising)
     with pytest.raises(MT.MeetingRefused, match="already confirmed"):
         MT.confirm(cap["id"], by="user:ana")

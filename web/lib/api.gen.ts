@@ -90,6 +90,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/actions/edits/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Changes
+         * @description Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
+         *     what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
+         *     cost when it was metered — "not metered" said, never zero. Read as the edit history is: with object security on, a
+         *     masked property's values are emptied and an object outside the reader's rows is withheld and counted.
+         */
+        get: operations["get_object_changes_actions_edits_changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/edits/history": {
         parameters: {
             query?: never;
@@ -103,29 +126,6 @@ export interface paths {
          *     replaced, who withdrew it. Narrowed to one entity, one object (`row_key`) and one property.
          */
         get: operations["get_edit_history_actions_edits_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/actions/edits/timeline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Object Timeline
-         * @description Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
-         *     what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
-         *     cost when it was metered — "not metered" said, never zero. Read as the edit history is: with object security on, a
-         *     masked property's values are emptied and an object outside the reader's rows is withheld and counted.
-         */
-        get: operations["get_object_timeline_actions_edits_timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15331,6 +15331,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/inquiry-view/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Record Inquiry View
+         * @description The inquiry of a decision, as people read it — where it arose, what it stood on, its options, who decided and approved, what ran
+         *     under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
+         *     what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
+         *     relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked.
+         */
+        get: operations["read_record_inquiry_view_record_inquiry_view__ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/meetings/candidates": {
         parameters: {
             query?: never;
@@ -15606,29 +15629,6 @@ export interface paths {
          * @description Bring a set-aside item back before its day.
          */
         post: operations["restore_record_item_record_set_aside_restore_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/record/thread/{ref}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Record Thread
-         * @description The thread of a decision — where it arose, what it stood on, its options, who decided and approved, what ran
-         *     under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
-         *     what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
-         *     relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked.
-         */
-        get: operations["read_record_thread_record_thread__ref__get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -23940,13 +23940,12 @@ export interface operations {
             };
         };
     };
-    get_edit_history_actions_edits_history_get: {
+    get_object_changes_actions_edits_changes_get: {
         parameters: {
-            query?: {
+            query: {
+                object_type: string;
+                row_key: string;
                 connection_id?: string;
-                object_type?: string;
-                row_key?: string;
-                column?: string;
             };
             header?: never;
             path?: never;
@@ -23974,12 +23973,13 @@ export interface operations {
             };
         };
     };
-    get_object_timeline_actions_edits_timeline_get: {
+    get_edit_history_actions_edits_history_get: {
         parameters: {
-            query: {
-                object_type: string;
-                row_key: string;
+            query?: {
                 connection_id?: string;
+                object_type?: string;
+                row_key?: string;
+                column?: string;
             };
             header?: never;
             path?: never;
@@ -49646,6 +49646,39 @@ export interface operations {
             };
         };
     };
+    read_record_inquiry_view_record_inquiry_view__ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_meeting_candidates_record_meetings_candidates_get: {
         parameters: {
             query?: {
@@ -50205,39 +50238,6 @@ export interface operations {
                 "application/json": components["schemas"]["aughor__routers__record__RestoreRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_record_thread_record_thread__ref__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                ref: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -40,6 +40,14 @@ def test_a_get_override_wins_over_the_open_default():
     assert required_permission("GET", "/investigations") is None
 
 
+def test_a_runs_content_is_read_with_the_trace_never_below_it():
+    """The trace is admin-only; its summary, spans, logs and trajectory carry the same content, so they are too. Its
+    feedback — judgements, not content — stays an open read."""
+    for sub in ("", "/summary", "/spans/{span_id}", "/logs", "/trajectory"):
+        assert required_permission("GET", f"/traces/{{trace_id}}{sub}") == Permission.ADMIN_MANAGE_ORG, sub
+    assert required_permission("GET", "/traces/{trace_id}/feedback") is None
+
+
 def test_method_is_case_insensitive():
     assert required_permission("post", "/connections") == Permission.CONNECTION_CREATE
     assert required_permission("delete", "/investigations/{inv_id}") == Permission.RESOURCE_DELETE

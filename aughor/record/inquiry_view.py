@@ -1,8 +1,9 @@
-"""The thread — one decision point read from where it arose to its last consequence, forwards and backwards (the
-decision-framework study §3.1 and §3.3, `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`).
+"""The inquiry, as people read it — one decision point from where it arose to its last consequence, forwards and
+backwards (the decision-framework study §3.1 and §3.3, `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`). The user's call,
+2026-10-27: people see a decision's whole story as **the inquiry**, the stored object's own name.
 
 The user asked for *"an advanced decision flow — forwards & backwards with loops where every decision and their 'why'
-is readable if the user wishes to"*. The thread is that reader. It is a VIEW over what the Record already holds — the
+is readable if the user wishes to"*. This is that reader. It is a VIEW over what the Record already holds — the
 inquiry a decision came out of, the claims it relied on as they stood, its options and dissent, who decided and who
 approved, what ran under it, its outcome against what would have happened anyway, what was learned, and the loops —
 never a new store, as Belief and Memory are views in the model.
@@ -86,8 +87,8 @@ def _inquiry_of(d: _dec.Decision) -> Any:
     return None
 
 
-def thread_of(ref: str) -> Optional[dict]:
-    """The thread of the decision ``ref`` reads as, stage by stage, with its loops and the decisions read backwards
+def view_of(ref: str) -> Optional[dict]:
+    """The inquiry of the decision ``ref`` reads as, stage by stage, with its loops and the decisions read backwards
     and forwards from it. None when ``ref`` reads as no decision."""
     d = resolve(ref)
     if d is None:
@@ -172,9 +173,9 @@ def thread_of(ref: str) -> Optional[dict]:
                                           s.question or "its assumptions and predictions, by method",
                                           {"scenario": s.id, "methods": list(s.methods), "predictions": list(s.predictions)},
                                           ref=s.id))
-    except Exception as exc:  # noqa: BLE001 — a thread reads what it can; an unreadable scenario store is said below
+    except Exception as exc:  # noqa: BLE001 — the inquiry reads what it can; an unreadable scenario store is said below
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "the thread could not read the decision's scenarios", counter="record.thread")
+        tolerate(exc, "the inquiry could not read the decision's scenarios", counter="record.inquiry_view")
     if not stages["acting"]:
         stages["acting"].append(_step("none", "nothing recorded as run under it",
                                       "no declared action or scenario names this decision"))

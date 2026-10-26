@@ -91,6 +91,13 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # The control-room AGGREGATES (/control-room/*) stay at the floor like /jobs.
     ("GET", "/traces"): P.ADMIN_MANAGE_ORG,
     ("GET", "/traces/{trace_id}"): P.ADMIN_MANAGE_ORG,
+    # The same run's summary, spans, logs and trajectory carry the same query text and figures as the trace itself, so
+    # they sit beside it — they were open reads while the trace was admin-only (found by TC-5; the user's call,
+    # 2026-10-27). A run's feedback stays open: it holds judgements, not the run's content.
+    ("GET", "/traces/{trace_id}/summary"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/spans/{span_id}"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/logs"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/trajectory"): P.ADMIN_MANAGE_ORG,
     ("GET", "/activity"): P.ADMIN_MANAGE_ORG,
     ("GET", "/activity/stream"): P.ADMIN_MANAGE_ORG,
     # Arc TC, TC-5 — searching every run's lines at once sits with the other cross-run reads.

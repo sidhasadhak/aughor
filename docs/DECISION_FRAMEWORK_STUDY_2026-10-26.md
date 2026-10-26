@@ -346,7 +346,9 @@ the thread as its evidence. The agent's own proposal — a model writing options
 mission is composed by code, which keeps "a model proposes only" by having no model in it. The meeting door was not run
 live: it spends one model call, and none was authorised.
 
-**The user's calls, still open.** The inbound email door (it reverses §3.18); the Google OAuth client; the person-facing
+**The user's calls, answered 2026-10-27** (ROADMAP §6 item 54(f)): local branch; *the inquiry* as people's word; *missed*
+stays; TC-2's read is an object's *changes*; four TC flags on; email inbound only; the Google client, guided; the trace's
+sub-pages admin-only; the coverage test skipped. **As first listed:** The inbound email door (it reverses §3.18); the Google OAuth client; the person-facing
 word for the vessel (the decision's reading avoids the noun); which real decisions to rebuild by hand; whether *missed* is
 the word for a hold that moved; *timeline* now names both a dashboard piece (AP-4) and TC-2's object read; and each TC
 flag's switch.

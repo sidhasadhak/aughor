@@ -1,5 +1,5 @@
 """Arc TC, TC-2 — every change says what made it: the run and trace on edit history and on the action audit, read as an
-object's timeline (flag `actions.run_attribution`).
+object's changes (flag `actions.run_attribution`).
 
 Before: the edit layer recorded who, never which run (`actions/overlay.py` held no run or trace id), so an edit an
 automation made read "by automation:<id>" and could not be joined to the run that made it or to what that run spent.
@@ -9,7 +9,7 @@ What these hold, through the real executor, the real automation engine and the r
 - a person's edit outside any run records none and says "by a person, outside any run";
 - a row from before the stamp never reads as "outside any run";
 - the run is bound where runs start — the ask door, the kernel's job runner, `run_automation` — innermost wins;
-- an object's timeline reads edits and actions oldest first, each with its run and that run's cost, "not metered" said;
+- an object's changes read edits and actions oldest first, each with its run and that run's cost, "not metered" said;
 - with the flag off, every record and every read is the one written before this wave.
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ AUDIT_KEYS = {"seq", "at", "action", "risk", "decision", "scope", "actor", "org_
 
 @pytest.fixture(autouse=True)
 def ledger(tmp_path, monkeypatch):
-    """A ledger of this test's own: the action audit, the action entries and the session log a timeline reads are all
+    """A ledger of this test's own: the action audit, the action entries and the session log an object's changes read are all
     kept there, so one test's actions never appear on the next one's object."""
     from aughor.kernel.ledger import Ledger
     led = Ledger(tmp_path / "system.db")
@@ -211,7 +211,7 @@ def test_a_kernel_job_is_its_own_run(tmp_path, monkeypatch, job_kind, run_kind):
     assert seen == [(job_id, run_kind)]
 
 
-# ── one object's timeline ────────────────────────────────────────────────────────────
+# ── one object's changes ────────────────────────────────────────────────────────────
 
 def _price(monkeypatch):
     from aughor.obs import usage
@@ -219,7 +219,7 @@ def _price(monkeypatch):
     usage.price_for.cache_clear()
 
 
-def test_the_timeline_reads_every_change_oldest_first_with_its_run_and_cost(graph, db, client, monkeypatch, on):  # noqa: F811
+def test_an_objects_changes_read_every_change_oldest_first_with_its_run_and_cost(graph, db, client, monkeypatch, on):  # noqa: F811
     from aughor.obs import session_log
     _declare(graph, "mark", MARK)
     _price(monkeypatch)
@@ -236,41 +236,41 @@ def test_the_timeline_reads_every_change_oldest_first_with_its_run_and_cost(grap
         _press(graph, actor="automation:a1")
     other = str(db.execute("k", f"SELECT order_id FROM orders WHERE order_id <> '{ORDER}' LIMIT 1").rows[0][0])
     _press(graph, actor="ben", key=other)                                 # another order's change is not on this one
-    got = client.get("/actions/edits/timeline", params={"connection_id": CONN, "object_type": "order",
+    got = client.get("/actions/edits/changes", params={"connection_id": CONN, "object_type": "order",
                                                          "row_key": ORDER})
     assert got.status_code == 200, got.text
-    timeline = got.json()["timeline"]
+    changes = got.json()["changes"]
     # oldest first, to the microsecond — all five land inside one second here; an action's entry is booked once it ran,
     # so it follows the edit it made
-    assert [(e["what"], e.get("event") or e.get("status")) for e in timeline] == [
+    assert [(e["what"], e.get("event") or e.get("status")) for e in changes] == [
         ("edit", "set"), ("action", "executed"), ("edit", "withdrawn"), ("edit", "set"), ("action", "executed")]
-    assert [e["said"] for e in timeline] == [
+    assert [e["said"] for e in changes] == [
         "by a person, outside any run", "by a person, outside any run",
         f"by a person, through a question asked (run {trace[:8]})",
         "by automation:a1, through an automation (run lost-run)",
         "by automation:a1, through an automation (run lost-run)"]
-    cost = timeline[2]["run"]["cost"]
+    cost = changes[2]["run"]["cost"]
     assert (cost["metered"], cost["model_calls"], cost["tokens"], cost["usd"]) == (True, 2, 1_500_000, 2.0)
     assert cost["said"] == "$2.0000 over 2 model calls"
-    lost = timeline[3]["run"]["cost"]
+    lost = changes[3]["run"]["cost"]
     assert (lost["metered"], lost["usd"]) == (False, None)
     assert lost["said"] == "not metered: no trace was kept for this run"
 
 
-def test_the_timeline_is_read_as_the_edit_history_is(sql_door, graph, db, as_reader, monkeypatch, on):  # noqa: F811
+def test_an_objects_changes_are_read_as_the_edit_history_is(sql_door, graph, db, as_reader, monkeypatch, on):  # noqa: F811
     """Arc ED, ED-1 holds here too: an object outside the reader's rows has its edits AND its actions withheld, and the
-    count said — a timeline is not a way round the row policy the edit history keeps."""
+    count said — an object's changes are not a way round the row policy the edit history keeps."""
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))
     _declare(graph, "mark", MARK)
     refunded = str(db.execute("k", "SELECT order_id FROM orders WHERE status = 'refunded' LIMIT 1").rows[0][0])
     as_reader("ben")                                                        # support sees refunded orders
     assert _press(graph, actor="ben", key=refunded).status == "executed"
-    from aughor.routers.actions import get_object_timeline
-    seen = get_object_timeline(object_type="order", row_key=refunded, connection_id=CONN)
-    assert [e["what"] for e in seen["timeline"]] == ["edit", "action"] and "withheld" not in seen
+    from aughor.routers.actions import get_object_changes
+    seen = get_object_changes(object_type="order", row_key=refunded, connection_id=CONN)
+    assert [e["what"] for e in seen["changes"]] == ["edit", "action"] and "withheld" not in seen
     as_reader("ana")                                                        # fulfilment does not
-    held = get_object_timeline(object_type="order", row_key=refunded, connection_id=CONN)
-    assert held["timeline"] == []
+    held = get_object_changes(object_type="order", row_key=refunded, connection_id=CONN)
+    assert held["changes"] == []
     assert held["withheld"] == [{"object_type": "Order", "count": 2, "why": held["withheld"][0]["why"]}]
 
 
@@ -309,6 +309,6 @@ def test_off_every_record_and_read_is_the_one_written_before(graph, db, client, 
     assert not {"run_id", "run_kind", "trace_id"} & set(_entries()[0])
     history = client.get("/actions/edits/history", params={"connection_id": CONN, "row_key": ORDER}).json()
     assert [set(h) for h in history["history"]] == [HISTORY_KEYS, HISTORY_KEYS]
-    timeline = client.get("/actions/edits/timeline", params={"connection_id": CONN, "object_type": "order",
+    changes = client.get("/actions/edits/changes", params={"connection_id": CONN, "object_type": "order",
                                                               "row_key": ORDER})
-    assert timeline.status_code == 404 and timeline.json()["detail"] == "An object's timeline is off on this install."
+    assert changes.status_code == 404 and changes.json()["detail"] == "An object's changes are off on this install."

@@ -577,18 +577,18 @@ export const listMissionProposals = (missionId: string) =>
   read<{ mission: string; proposals: MissionProposal[]; objective: Record<string, unknown> }>(
     `/record/missions/${encodeURIComponent(missionId)}/proposals`);
 
-/** One step of a decision's thread: its why in three layers — a line, a sentence, and the receipt — composed by code. */
-export interface ThreadStep {
+/** One step of a decision's inquiry, as people read it: its why in three layers — a line, a sentence, and the receipt — composed by code. */
+export interface InquiryStep {
   kind: string; line: string; why: string; receipt: Record<string, unknown>; at: string; ref: string;
 }
-export interface ThreadLink { decision: string; question: string; chosen: string; decided_at: string; why: string }
+export interface InquiryLink { decision: string; question: string; chosen: string; decided_at: string; why: string }
 /** A decision read from where it arose to what was learned, forwards and backwards (the decision-framework study §3.1). */
-export interface DecisionThread {
+export interface InquiryView {
   decision: string; question: string; connection_id: string;
-  stages: { stage: string; words: string; steps: ThreadStep[] }[];
-  loops: ThreadStep[]; backwards: ThreadLink[]; forwards: ThreadLink[]; composed_by: string;
+  stages: { stage: string; words: string; steps: InquiryStep[] }[];
+  loops: InquiryStep[]; backwards: InquiryLink[]; forwards: InquiryLink[]; composed_by: string;
 }
-export const getThread = (ref: string) => read<DecisionThread>(`/record/thread/${encodeURIComponent(ref)}`);
+export const getInquiryView = (ref: string) => read<InquiryView>(`/record/inquiry-view/${encodeURIComponent(ref)}`);
 
 /** A decision the model proposed from a meeting's notes — a proposal, never a fact, until a person confirms it. */
 export interface MeetingCandidate {

@@ -440,7 +440,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         raise ValueError("a decision names what was chosen")
     revised = None
     if (revises or "").strip():
-        # a modifying decision names the decision it changes; the thread reads backwards to it (study §3.1)
+        # a modifying decision names the decision it changes; its inquiry reads backwards to it (study §3.1)
         revised = _dec.get_decision(revises.strip())
         if revised is None:
             raise ValueError(f"{revises!r} is not a decision in the Record; a decision revises one it can name")

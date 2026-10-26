@@ -22,10 +22,10 @@ import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
 import {
   amendDecision, bookOutcome, bookScenario, confirmMeetingCandidate, declareDecision, declareDecisionKind, decisionStands,
-  getCalibration, getDecision, getPastCases, getThread, listDecisionKinds, listDecisions, listMeetingCandidates, listScenarios,
+  getCalibration, getDecision, getPastCases, getInquiryView, listDecisionKinds, listDecisions, listMeetingCandidates, listScenarios,
   plainWho, proposeMeetingCandidates, refuseMeetingCandidate, verdictWords, whoLabel, type MeetingCandidate,
   type CalibrationRow, type Claim, type Decision, type DecisionDetail, type DecisionKind, type OutcomeVerdict, type Scenario,
-  type ThreadLink, type ThreadStep,
+  type InquiryLink, type InquiryStep,
   type ScenarioBody,
 } from "@/lib/record";
 import {
@@ -423,7 +423,7 @@ const num = (v: string): number | null => (v.trim() === "" || Number.isNaN(Numbe
 /** "We decided this elsewhere" — the question, what was chosen, and the expectation booked with it. */
 function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQuestion = "" }: {
   connectionId: string; onBooked: (d: DecisionDetail) => void; onCancel: () => void;
-  /** The decision this one changes — a modifying decision; its thread reads backwards to it (study §3.1). */
+  /** The decision this one changes — a modifying decision; its inquiry reads backwards to it (study §3.1). */
   revises?: string;
   initialQuestion?: string;
 }) {
@@ -769,22 +769,22 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
           </Absent>
         )}
       </Section>
-      <ThreadSection id={d.id} version={d.version} />
+      <InquirySection id={d.id} version={d.version} />
     </Page>
   );
 }
 
-// ── the thread: where it arose to what was learned (the decision-framework study §3.1, §3.3) ─────────────
+// ── the inquiry, as people read it: where it arose to what was learned (the decision-framework study §3.1, §3.3) ─────────────
 
-/** The decision read as one thread, stage by stage — each step a line, its why in a sentence, and its receipt
+/** The decision's inquiry, read stage by stage — each step a line, its why in a sentence, and its receipt
  *  behind a click — with its loops, what it revises and what revised it. Composed by code from the Record. */
-export function ThreadSection({ id, version }: { id: string; version: number }) {
-  const load = useLoad(() => getThread(id), [id, version]);
+export function InquirySection({ id, version }: { id: string; version: number }) {
+  const load = useLoad(() => getInquiryView(id), [id, version]);
   return (
-    <Section label="From where it arose to what was learned" meta="read forwards and backwards">
-      <Gate load={load} what="the thread">
+    <Section label="The inquiry" meta="from where it arose to what was learned, read forwards and backwards">
+      <Gate load={load} what="the inquiry">
         {t => (
-          <div data-testid="decision-thread">
+          <div data-testid="decision-inquiry">
             {t.backwards.map(l => <LinkRow key={`b:${l.decision}`} l={l} />)}
             {withUniqueKeys(t.stages, st => st.stage).map(([k, st]) => (
               <div key={k} style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
@@ -809,7 +809,7 @@ export function ThreadSection({ id, version }: { id: string; version: number }) 
   );
 }
 
-function StepRow({ s }: { s: ThreadStep }) {
+function StepRow({ s }: { s: InquiryStep }) {
   const [open, setOpen] = useState(false);
   const receipt = Object.entries(s.receipt);
   return (
@@ -823,7 +823,7 @@ function StepRow({ s }: { s: ThreadStep }) {
       </div>
       {s.why && <div className="aug-fs-sm" style={{ color: "var(--t2)", maxWidth: "78ch" }}>{plainWho(s.why)}</div>}
       {open && (
-        <div className="aug-fs-xs" data-testid="thread-receipt" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
+        <div className="aug-fs-xs" data-testid="inquiry-receipt" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
           {receipt.map(([k, v]) => <div key={k}>{`${k.replace(/_/g, " ")}: ${Array.isArray(v) ? v.join(", ") : String(v)}`}</div>)}
         </div>
       )}
@@ -831,7 +831,7 @@ function StepRow({ s }: { s: ThreadStep }) {
   );
 }
 
-function LinkRow({ l }: { l: ThreadLink }) {
+function LinkRow({ l }: { l: InquiryLink }) {
   return (
     <div className="aug-item-foot aug-fs-sm" style={{ padding: "6px 0" }}>
       <span style={{ color: "var(--t3)" }}>{l.why}:</span>

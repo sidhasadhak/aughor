@@ -252,7 +252,7 @@ class DeclareDecisionRequest(BaseModel):
     figure: Optional[FigureIn] = None
     # The declared kind of decision it is (`record/kinds.py`): its rules hold at the door.
     kind: str = ""
-    # The decision it changes — a modifying decision (study §3.1); the thread reads backwards to it.
+    # The decision it changes — a modifying decision (study §3.1); its inquiry reads backwards to it.
     revises: str = ""
 
 
@@ -377,14 +377,14 @@ def list_mission_proposals(mission_id: str) -> dict:
             "objective": {k: objective.get(k) for k in ("measurable", "window", "actual", "baseline", "note")}}
 
 
-@router.get("/record/thread/{ref}")
-def read_record_thread(ref: str) -> dict:
-    """The thread of a decision — where it arose, what it stood on, its options, who decided and approved, what ran
+@router.get("/record/inquiry-view/{ref}")
+def read_record_inquiry_view(ref: str) -> dict:
+    """The inquiry of a decision, as people read it — where it arose, what it stood on, its options, who decided and approved, what ran
     under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
     what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
     relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked."""
-    from aughor.record.thread import thread_of
-    t = thread_of(ref)
+    from aughor.record.inquiry_view import view_of
+    t = view_of(ref)
     if t is None or not _visible(t.get("connection_id") or ""):
         raise HTTPException(status_code=404, detail="No decision reads from that reference")
     return t

@@ -219,8 +219,8 @@ FLAG_ENV = {
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
     # Arc TC, TC-2 (ROADMAP §3.59). ON: every edit's history row, every action-audit row and every action's ledger entry
     # names the run it was made through (a question asked, an automation, a monitor, an agent's job) and its trace, and
-    # the object timeline door reads one object's changes oldest first with each run's metered cost. OFF: they record who
-    # made them, as before, and the timeline door answers 404.
+    # an object's changes door reads them oldest first with each run's metered cost. OFF: they record who
+    # made them, as before, and the changes door answers 404.
     "actions.run_attribution": "AUGHOR_ACTIONS_RUN_ATTRIBUTION",
     # Arc TC, TC-4 (ROADMAP §3.59). ON: the first check back within its limit after an alert writes one *recovered*
     # alert naming the alert it closes, when, and the value that came back; the alert lists and the Monitors page read
@@ -714,13 +714,13 @@ FLAG_META = {
     },
     "actions.run_attribution": {
         "label": "Which run made each change",
-        "summary": "Every edit and action on an object records the run that made it. An object's timeline reads who "
+        "summary": "Every edit and action on an object records the run that made it. An object's changes say who "
                    "changed it, through which run, at what cost.",
         "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "route", "text": "Adds a timeline per object"}],
+                  {"kind": "route", "text": "Adds an object's changes"}],
         "description": "An edit or action made inside a question asked, an automation, a monitor or an agent's work "
                        "keeps that run and its trace. One made by a person outside any run says so. An object's "
-                       "timeline lists every change on it, oldest first, with the run's model cost when it was "
+                       "changes list every edit and action on it, oldest first, with the run's model cost when it was "
                        "metered. Off: changes record who made them, as before.",
     },
     "monitors.recovery": {
@@ -1143,7 +1143,7 @@ EXPERIMENT: dict = {
     # Arc TC, TC-2, 2026-10-26. It adds to what every change records, so it is watched before it graduates.
     "actions.run_attribution": "does every change say what made it — of the edits and audited actions recorded in two "
                                "weeks with it on, does each one made inside a run name that run, and is an object's "
-                               "timeline opened? Falsifier (§3.59, TC-2): an edit made by an automation shows no run "
+                               "changes opened? Falsifier (§3.59, TC-2): an edit made by an automation shows no run "
                                "— stop",
     # Arc TC, TC-4 (ROADMAP §3.59), 2026-10-26. It changes what an open alert means and lets a recovery end the grace
     # period, so it is watched before it graduates.

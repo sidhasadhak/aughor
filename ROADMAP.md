@@ -14557,6 +14557,13 @@ the browser** · **measure the premise before building.**
     under a mission; the decision's reading forwards and backwards with the modifying decision; the evidence envelope's
     conversation and meeting kinds and the meeting door. Two words chosen in building, each the user's to overrule: a
     hold that moved outside its band is **missed** (a fifth verdict), and the reading's section avoids the vessel's noun.
+    **(f) ✅ The calls, 2026-10-27** (asked, answered): the branch stays local; people see a decision's whole story as
+    **the inquiry** (the stored object's name; "thread" and "case" stay retired); **missed** stays; TC-2's per-object
+    read is an object's **changes** (the dashboard piece keeps "timeline"); the four low-risk TC flags go on —
+    `agents.revision_on_answers`, `actions.run_attribution`, `hub.failure_rate`, `obs.log_search`; **email opens
+    inbound only** (reverses §3.18's "no email in either direction" for arrivals; the platform still never sends one);
+    the user creates the Google OAuth client, guided; a run's summary, spans, logs and trajectory are admin-only like
+    the trace; the coverage test (real decisions rebuilt by hand) is skipped for now.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
