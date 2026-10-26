@@ -731,8 +731,22 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     Briefing's default raised to 24 · gates refuse at approval.* **BUILT 2026-10-26** at the user's word (*"Go ahead
     and build entire arc mc"*), each wave behind its flag, off by default (the study's §9):
     - [~] MC-0 `metrics.figure_gates` — moves · sane range · binding types, refused at approval and at the adopt door.
+      *Live 2026-10-26 (all six flags ON at the user's word, "Turn on all six"): on LuxExperience the gates found a
+      THIRD broken approved metric nobody had named — Markdown Penetration reads 1 in every month (price_history's first
+      month is the 8,600-row price load at 0%, every later row is a markdown: the share of price CHANGES that are
+      markdowns). Not changed — the user's call. The approval door's refusal is unit-tested; a live refusal needs a
+      person's approve click.*
     - [~] MC-1 the map — `packs/*/areas.yaml`, area/kind/direction on 130 patterns, `semantic/metric_map.py`.
-    - [~] MC-2 `metrics.coverage_map` — placement with why, the matrix, the Metrics tab's Coverage card.
+    - [~] MC-2 `metrics.coverage_map` — placement with why, the matrix, the Metrics tab's Coverage card. *Live on
+      LuxExperience: 14 areas, 12 with data, 6 covered, 4 with no working metric (Fulfilment, Payments & risk, CRM &
+      consent, Service), 2 not checked (Marketing — ROAS's date only inside a filter; Inventory — 2 of 6 months have a
+      figure), 85 of the knowledge base's patterns no metric computes; every metric-read table placed; 6 reference
+      tables placed in no area, said. 14.5 s with figures read.*
     - [~] MC-3/MC-4 `metrics.coverage_proposals` — bound recipes gated; ontology on-time rates, conversions, shares.
+      *Live: LuxExperience's return_rate and cart_to_order recipes, bound as they were, refused by binding, moves and
+      sane range, each said (the NRF and Baymard bases quoted). theLook: Order Fulfilment's dispatch on-time rate
+      (67,597 kept of 81,082) and delivery (39,510 of 43,969), three stage conversions and the completed-orders share,
+      each counted as the ontology counts it.*
     - [~] MC-5 `metrics.coverage_writer` — one call per open area on profiling; area and pattern gates in code.
     - [~] MC-6 `metrics.blind_spot_proposals` + `briefing.metric_cap` — blind spots proposed; Briefing cap 24, by area.
+      *Live on theLook: two blind spots from the findings — one proposed, one refused for having no date.*

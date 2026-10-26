@@ -130,3 +130,20 @@ def test_the_binding_gate_names_an_id_bound_to_a_date_and_a_presence_test_on_a_c
     columns["order_items.returned_at"] = {"table": "order_items", "column": "returned_at", "dtype": "timestamp",
                                           "null_rate": 0.67}
     assert G.binding_problems(recipes["return_rate"].formula, pack.entities, right, columns) == []
+
+
+def test_a_metric_that_only_carries_a_recipes_alias_is_not_held_to_its_band(client, monkeypatch):  # noqa: F811
+    """Live 2026-10-26: LuxExperience's Item Return Rate (~31% a month, luxury fashion) met retail's return-rate recipe
+    through the alias "item return rate"; its 0–30% band would have refused a real figure. An alias names; it does not
+    make two metrics one."""
+    from aughor.business_profile import metric_kb
+    monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
+    conn = f"c{uuid.uuid4().hex[:6]}"
+    _proposed(conn, "item_return_rate", RETURNS, label="Item Return Rate")      # about 0.33, as return_rate above
+    with flag_overrides({G.FLAG: True}):
+        ok = _approve(client, conn, "item_return_rate")
+    assert ok.status_code == 200, ok.text
+    m = MetricDefinition(name="item_return_rate", label="Item Return Rate", sql=RETURNS, connection=conn)
+    assert G.band_of(m, conn) == (None, "")
+    made = m.model_copy(update={"name": "return_rate", "lineage": ["industry: retail"]})
+    assert G.band_of(made, conn)[1] == "Return rate"                           # made from it: held to it

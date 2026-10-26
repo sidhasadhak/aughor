@@ -205,8 +205,9 @@ def binding_problems(formula: str, roles: dict, bound: dict, columns: dict) -> l
 
 
 def binding(m: Any, connection_id: str, schema_name: Optional[str]) -> dict:
-    """The binding gate for a definition made from a recipe (its lineage names the package): its roles' columns."""
-    recipe = recipe_of(m, connection_id, schema_name)
+    """The binding gate for a definition made from a recipe (its lineage names the package): its roles' columns. A
+    metric that only shares a recipe's name was not written over the package's roles, so its binding says nothing."""
+    recipe = recipe_of(m, connection_id, schema_name, by_name=False)
     if recipe is None:
         return {"ok": None, "why": "it is not made from a recipe with roles"}
     pack_id, pm, pack = recipe
@@ -227,9 +228,14 @@ def binding(m: Any, connection_id: str, schema_name: Optional[str]) -> dict:
     return {"ok": True, "why": ""}
 
 
-def recipe_of(m: Any, connection_id: str, schema_name: Optional[str] = None) -> Optional[tuple]:
-    """``(pack_id, PackMetric, Pack)`` — the recipe a definition is made from or is, by its lineage's package and its
-    name, else by its name or an alias, word for word — or None."""
+def recipe_of(m: Any, connection_id: str, schema_name: Optional[str] = None, *,
+              by_name: bool = True) -> Optional[tuple]:
+    """``(pack_id, PackMetric, Pack)`` — the recipe a definition is made from (its lineage names the package and its
+    name is the recipe's) or, with ``by_name``, the recipe whose own name or title it carries word for word — or None.
+
+    Never by an ALIAS: an alias lets the platform recognise a name, it does not say two metrics are one. Measured live
+    2026-10-26: LuxExperience's Item Return Rate — an explorer metric, ~31% a month, plausible for luxury fashion — met
+    retail's return-rate recipe through its alias "item return rate", and its 0–30% band would have refused it."""
     from aughor.packs.loader import load_pack
     from aughor.semantic.metric_catalogue import industry_packages, normalize_name
 
@@ -243,8 +249,9 @@ def recipe_of(m: Any, connection_id: str, schema_name: Optional[str] = None) -> 
             tolerate(exc, f"package {pkg.pack_id} did not load; its recipes are not matched", counter="metric_gates.pack")
             continue
         for pm in pack.metrics:
-            names = {normalize_name(pm.name), normalize_name(pm.title)} | {normalize_name(a) for a in pm.aliases}
-            if (pkg.pack_id in lineage and normalize_name(pm.name) in named) or (named & names):
+            made_from = pkg.pack_id in lineage and normalize_name(pm.name) in named
+            same_name = by_name and bool(named & {normalize_name(pm.name), normalize_name(pm.title)})
+            if made_from or same_name:
                 return pkg.pack_id, pm, pack
     return None
 
