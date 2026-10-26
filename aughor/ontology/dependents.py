@@ -207,8 +207,11 @@ def refusal(kind: str, target_id: str, rows: list[dict]) -> str:
     """The sentence a refused withdrawal answers with: what would break, and what to do first."""
     named = "; ".join(f"{r['consumer']} '{r['name']}' ({r['how']})" for r in rows[:8])
     more = f"; and {len(rows) - 8} more" if len(rows) > 8 else ""
+    from aughor.ontology.retiring import withdrawal_hint
     return (f"{kind} '{target_id}' is not withdrawn — {len(rows)} thing{'s' if len(rows) != 1 else ''} depend"
-            f"{'' if len(rows) != 1 else 's'} on it: {named}{more}. Change or withdraw those first.")
+            f"{'' if len(rows) != 1 else 's'} on it: {named}{more}. Change or withdraw those first."
+            # Arc FA, FA-3 — while `ontology.retiring` is on, the way to take it out of use without breaking them
+            + withdrawal_hint(kind))
 
 
 def guard_withdrawal(graph: Optional[OntologyGraph], conn: str, kind: str, target_id: str) -> Any:

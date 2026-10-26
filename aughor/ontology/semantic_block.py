@@ -185,7 +185,12 @@ def render_semantic_layer(
                 f"  {label}.{cp.label} = {cp.formula_sql}{unit}"
             )
 
-    if not segment_lines and not computed_lines:
+    # Arc FA, FA-3 — what a person marked retiring among these entities' declarations, and what to use instead. [] while
+    # `ontology.retiring` is off, so the block is exactly what it was.
+    from aughor.ontology.retiring import semantic_lines
+    retiring_lines = semantic_lines(graph, wanted)
+
+    if not segment_lines and not computed_lines and not retiring_lines:
         return ""
 
     sections: list[str] = [
@@ -201,6 +206,10 @@ def render_semantic_layer(
     if computed_lines:
         sections.append("COMPUTED PROPERTIES (verified derived metrics):")
         sections.extend(computed_lines)
+    if retiring_lines:
+        sections.append("RETIRING (still served until withdrawn — prefer the successor, and say so when you use "
+                        "a retiring one):")
+        sections.extend(retiring_lines)
 
     return "\n".join(sections)
 

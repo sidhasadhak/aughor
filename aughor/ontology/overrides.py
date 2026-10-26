@@ -823,7 +823,15 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
     return touched
 
 
+def _marks_only(ov: OntologyOverride) -> bool:
+    """Arc FA, FA-3 — a declaration that holds a retiring mark and nothing else: a built element marked retiring. The
+    mark is read by `ontology.retiring`, never applied, so the element is served exactly as it was built."""
+    return set(ov.fields) == {"retiring"}
+
+
 def _apply_segment(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
+    if _marks_only(ov):
+        return ["retiring"]
     local = ov.local_id
     seg = ent.segments.get(local) or Segment(id=local, display_name=local, source="manual")
     touched: list[str] = []
@@ -846,6 +854,8 @@ def _apply_segment(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
 
 
 def _apply_computed_property(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
+    if _marks_only(ov):
+        return ["retiring"]
     local = ov.local_id
     existing = next((c for c in ent.computed_properties if c.id == local), None)
     cp = existing or ComputedProperty(id=local, label=local, formula_sql="")

@@ -94,9 +94,13 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # …and `dashboard.app_versions` (ED-4): an App's readers read the version last published, a later keep a draft.
     # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
     # …and `objects.completeness` (ED-6): every object read says how complete it is.
+    # Arc FA, FA-3 (ROADMAP §3.60), 2026-10-26: `ontology.put_back` (an earlier version back into the draft) and
+    # `ontology.retiring` (a declaration marked retiring with a successor and a day). Neither calls a model; each entry
+    # names its receipt and the falsifier.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
                                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
-                                     "ontology.impacts_only", "objects.completeness"}
+                                     "ontology.impacts_only", "objects.completeness",
+                                     "ontology.put_back", "ontology.retiring"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

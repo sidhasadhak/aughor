@@ -100,20 +100,24 @@ def _effective(rev) -> str:
     return (rev.published_at or rev.created_at) if rev.state == "published" else rev.created_at
 
 
-def _version_out(rev, before) -> dict:
+def _version_out(rev, before, *, said: bool = False) -> dict:
     from aughor.kernel import lifecycle
     changes = [c.describe() for c in lifecycle.changelog(before.body.get("fields", {}), rev.body.get("fields", {}))] \
         if before is not None else []
     state = {"archived": "withdrawn", "draft": "drafted"}.get(rev.state, "declared")
-    return {"version": rev.version, "state": state,
-            "in_force_from": _effective(rev), "recorded_at": rev.created_at, "by": rev.by, "note": rev.note,
-            "fields": rev.body.get("fields", {}), "source": rev.body.get("source", ""), "changes": changes}
+    out = {"version": rev.version, "state": state,
+           "in_force_from": _effective(rev), "recorded_at": rev.created_at, "by": rev.by, "note": rev.note,
+           "fields": rev.body.get("fields", {}), "source": rev.body.get("source", ""), "changes": changes}
+    if said:
+        out["declaration_note"] = rev.body.get("note", "")
+    return out
 
 
-def versions(conn: str, schema: str, kind: str, target_id: str) -> list[dict]:
+def versions(conn: str, schema: str, kind: str, target_id: str, *, said: bool = False) -> list[dict]:
     """Every version of one declaration, newest first, each with what changed from the one before. A declaration on
     the tree that has not changed since history was first kept reads as one unrecorded version, in force since its
-    last edit — so the history of something that never changed is not empty."""
+    last edit — so the history of something that never changed is not empty. ``said`` (Arc FA, FA-3) adds each
+    version's own note — "put back from version 2" — beside the history's; without it the rows are as they were."""
     from aughor.kernel import lifecycle
     revs = lifecycle.history(KIND, element_key(conn, schema, kind, target_id), limit=500)
     if not revs:
@@ -121,11 +125,12 @@ def versions(conn: str, schema: str, kind: str, target_id: str) -> list[dict]:
         current = find_override(conn, schema, kind, target_id)  # type: ignore[arg-type]
         if current is None:
             return []
-        return [{"version": None, "state": "declared", "in_force_from": current.edited_at or "", "recorded_at": "",
-                 "by": current.edited_by or "", "note": BASELINE_NOTE, "fields": dict(current.fields or {}),
-                 "source": current.source or "human", "changes": []}]
+        row = {"version": None, "state": "declared", "in_force_from": current.edited_at or "", "recorded_at": "",
+               "by": current.edited_by or "", "note": BASELINE_NOTE, "fields": dict(current.fields or {}),
+               "source": current.source or "human", "changes": []}
+        return [{**row, "declaration_note": current.note or ""} if said else row]
     oldest_first = list(reversed(revs))
-    out = [_version_out(rev, oldest_first[i - 1] if i else None) for i, rev in enumerate(oldest_first)]
+    out = [_version_out(rev, oldest_first[i - 1] if i else None, said=said) for i, rev in enumerate(oldest_first)]
     return list(reversed(out))
 
 

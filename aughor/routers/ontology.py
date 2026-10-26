@@ -501,18 +501,189 @@ def get_declaration_history(
     """Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal kept while `ontology.history`
     is on, newest first, each with what changed and who made it; with ``as_of``, what it said at that moment — or
     that what it said then is not known, never that nothing was declared."""
-    from aughor.ontology import history
+    from aughor.ontology import history, put_back
     kind = _history_kind(kind)
     effective = _served_scope(connection_id, schema_name)
     out: dict = {"element": history.element_key(connection_id, effective, kind, target_id),
                  "kept": history.enabled(),
-                 "versions": history.versions(connection_id, effective, kind, target_id)}
+                 "versions": history.versions(connection_id, effective, kind, target_id, said=put_back.enabled())}
     if as_of:
         try:
             out["as_of"] = {"at": as_of, **history.as_of(connection_id, effective, kind, target_id, as_of)}
         except ValueError:
             raise HTTPException(status_code=400, detail=f"'{as_of}' is not a date or a moment") from None
+    if put_back.enabled():
+        # Arc FA, FA-3 — whether an earlier version can go back into the draft here, and why not. Off: not said.
+        why = put_back.unavailable(connection_id)
+        out["put_back"] = {"enabled": not why, "said": why}
     return out
+
+
+class _PutBack(BaseModel):
+    """Arc FA, FA-3 — the version of one declaration to put back into the draft, as `GET /ontology/history` numbers it."""
+    kind: str
+    target_id: str
+    version: int = Field(ge=1)
+
+
+def _scope_db(connection_id: str, schema: str):
+    """``(open, explain, close)`` over ONE connection to the scope, opened on first use: a put back of a declaration
+    that counts nothing (a name, an action) opens nothing."""
+    from aughor.db.connection import open_connection_for_with_schema
+    held: list = []
+
+    def open_db():
+        if not held:
+            held.append(open_connection_for_with_schema(connection_id, schema))
+        return held[0]
+
+    def explain(sql: str) -> Optional[str]:
+        ok, msg = open_db().dry_run(sql)
+        return None if ok else (msg or "did not bind")
+
+    def close() -> None:
+        for db in held:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001 — closing is best-effort, the put back already stands or was refused
+                pass
+
+    return open_db, explain, close
+
+
+@router.post("/ontology/history/put-back", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def put_back_declaration_version(
+    body: _PutBack,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc FA, FA-3 — put an earlier version of one declaration back (ROADMAP §3.60). Its fields go through the normal
+    save path into the DRAFT, counted again by the kind's own measurement first and classed like any change, so readers
+    get it only when a person publishes. A withdrawn version puts back the fields it had; one that says what readers
+    read already takes the waiting change away. Refused with a sentence while `ontology.put_back` or releases are off
+    and for an organisation's ontology (409), for a version the history does not hold (404), and for one that no
+    longer counts on this ontology (400) — nothing is written then. No model call."""
+    from aughor import govern
+    from aughor.ontology import put_back as PB
+    from aughor.ontology import release as R
+    from aughor.ontology.overrides import save_override
+    from aughor.org.context import current_actor
+    kind = _history_kind(body.kind)
+    why = PB.unavailable(connection_id)
+    if why:
+        raise HTTPException(status_code=409, detail=why)
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    try:
+        plan = PB.plan(connection_id, effective, kind, body.target_id, body.version, by=current_actor() or "")
+    except PB.PutBackRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+    if plan.outcome == "discard":
+        R.discard(connection_id, effective, kind=kind, target_id=body.target_id)
+        return PB.landed(connection_id, effective, plan)
+    if kind == "action":
+        _checked_action(body.target_id, plan.override.fields, graph)   # refused as the declare door refuses it
+    open_db, explain, close = _scope_db(connection_id, graph.schema_name or effective)
+    try:
+        PB.measure(plan, graph, open_db, explain)
+    except PB.PutBackRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+    finally:
+        close()
+    save_override(connection_id, effective, plan.override)
+    _invalidate_schema_cache(connection_id)
+    return PB.landed(connection_id, effective, plan)
+
+
+class _Retiring(BaseModel):
+    """Arc FA, FA-3 — one declaration marked retiring: the element of the same kind to use instead, the day it is meant
+    to go (YYYY-MM-DD), and the person's own words."""
+    kind: str
+    target_id: str
+    successor: str
+    on: str
+    note: str = ""
+
+
+def _retiring_written(connection_id: str, effective: str, graph, kind: str, target_id: str) -> dict:
+    """What a mark door did: the mark as readers are told it, where it landed, and the change as the release classes it."""
+    from aughor.ontology import release as R
+    from aughor.ontology import retiring as RT
+    from aughor.ontology.overrides import drafts_enabled, find_override
+    current = find_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
+    mark = RT.mark_of(current.fields if current is not None else None)
+    change = next((c for c in R.changes(connection_id, effective) if c["kind"] == kind and c["target_id"] == target_id),
+                  None) if drafts_enabled() else None
+    return {"kind": kind, "target_id": target_id,
+            "retiring": RT.described(graph, kind, target_id, mark) if mark is not None else None,
+            "landed": "draft" if change is not None else "published", "change": change}
+
+
+@router.put("/ontology/retiring", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def mark_declaration_retiring(
+    body: _Retiring,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc FA, FA-3 — mark one declaration of any kind *retiring* (ROADMAP §3.60): it still serves, and every reader is
+    told "retiring on <date> — use <successor> instead". The successor must be another element of the same kind on this
+    ontology (400 otherwise, with the sentence; 404 for an element there is none of). Written through the normal save
+    path — with releases on it waits in the draft as a MEANING change. 409 while `ontology.retiring` is off."""
+    from aughor import govern
+    from aughor.ontology import retiring as RT
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    if not RT.enabled():
+        raise HTTPException(status_code=409, detail="marking a declaration retiring is off on this install")
+    kind = _history_kind(body.kind)
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    status, why = RT.problem(graph, kind, body.target_id, body.model_dump())
+    if status:
+        raise HTTPException(status_code=status, detail=why)
+    existing = find_override(connection_id, effective, kind, body.target_id)  # type: ignore[arg-type]
+    fields = {**(existing.fields if existing is not None else {}), RT.FIELD: RT.normalized(body.model_dump())}
+    ov = OntologyOverride(target_kind=kind, target_id=body.target_id, fields=fields,  # type: ignore[arg-type]
+                          source=(existing.source if existing is not None else "human"),
+                          note=(existing.note if existing is not None else ""),
+                          binding=dict(existing.binding) if existing is not None else {})
+    save_override(connection_id, effective, ov)
+    _invalidate_schema_cache(connection_id)
+    return _retiring_written(connection_id, effective, graph, kind, body.target_id)
+
+
+@router.delete("/ontology/retiring", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def unmark_declaration_retiring(
+    kind: str,
+    target_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc FA, FA-3 — take a retiring mark off: the element is no longer said to be going. A MEANING change like the mark
+    itself; the element's other declarations are untouched. 404 when it carries no mark; 409 while the setting is off."""
+    from aughor import govern
+    from aughor.ontology import retiring as RT
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    if not RT.enabled():
+        raise HTTPException(status_code=409, detail="marking a declaration retiring is off on this install")
+    kind = _history_kind(kind)
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    effective = _served_scope(connection_id, schema_name)
+    existing = find_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
+    if existing is None or RT.FIELD not in existing.fields:
+        raise HTTPException(status_code=404, detail=f"{RT.KIND_WORDS.get(kind, kind)} '{target_id}' is not marked retiring")
+    rest = {k: v for k, v in existing.fields.items() if k != RT.FIELD}
+    if rest:
+        save_override(connection_id, effective, existing.model_copy(update={"fields": rest}))
+    else:
+        delete_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type] — the mark was all it held
+    _invalidate_schema_cache(connection_id)
+    return _retiring_written(connection_id, effective, _get_ontology_graph(connection_id, effective), kind, target_id)
 
 
 @router.get("/ontology/dependents")
