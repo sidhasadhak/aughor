@@ -14459,6 +14459,19 @@ the browser** · **measure the premise before building.**
       - **(d)** ED-5, re-scoped on its measured premise — *"Impacts are the one store"*: no causal edge was ever
         confirmed on the live install, and the model's proposals name no promise, so nothing is folded. The declared
         impacts are the one store, the model is not asked for causes, and the alert summary words the impacts.
+      - **(e)** Arc FA, decided 2026-10-26 when the user asked for *"FA-1 till FA-7 in one go"* (each took the
+        recommended choice, after a survey re-measured every premise):
+        - FA-2 and FA-4, marked *mockup first* — *"Build straight, show after"*: the shapes are chosen in the build
+          and shown on live data as screenshots.
+        - FA-3's status word — *"Retiring"*: *retiring on <date> — use <successor> instead*. *Retired* already means
+          archived (dashboards, the graph's `RetiredNode`) and *withdraw* is removal, so the glossary keeps all three apart.
+        - FA-5's first check — *"Record them, fire for later arrivals"*: the objects already inside a rule when an
+          automation is switched on are recorded and said, never fired for (theLook would admit 25,051 at once).
+        - FA-5's row policy — *"The person who saved it"*: an automation lists objects under its owner's row policy,
+          so it can never see further than the person who built it.
+        - Re-measured, decided in the build: `ontology.usage` is folded into `ontology.entity_usage` (#627 built most
+          of it — one concept, one flag); FA-4 keeps a dashboard set as a condition **rule**, because an ontology
+          segment is raw SQL; FA-6's first dashboard template ships with retail.
     - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 
