@@ -74,7 +74,7 @@ describe("asking about what a reader chose", () => {
     const subject = askSubject();
     expect(subject).toMatchObject({ kind: "segment", connectionId: "thelook", entity: "order", segment: "overdue_dispatch",
       total: 1400, filters: [], narrowed: false });
-    expect(subject && "label" in subject && subject.label).toBeTruthy();
+    expect(subject && "label" in subject && subject.label).toBe("overdue dispatch");
     expect(went).toEqual([{ tab: "chat", params: { conn: "thelook" } }]);
   });
 

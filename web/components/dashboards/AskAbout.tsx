@@ -13,6 +13,7 @@ import { conditionsFor } from "@/lib/dashboards/objectView";
 import { useFlagOn } from "@/lib/flagOn";
 
 export const ASK_FLAG = "canvas.ask_about_chosen";
+const words = (id: string) => id.replace(/[_-]+/g, " ");
 
 /** The control a piece's foot holds: the ticked objects while any are ticked, else the set it reads, by name — a set
  *  of its dashboard or a segment the ontology names — or nothing, for a piece over every object of an entity, which
@@ -39,7 +40,7 @@ export function AskAboutPiece({ query, ticked, total, typeId }: {
     return (
       <Button size="xs" variant="ghost" data-testid="ask-about-set"
         onClick={() => askAbout({ kind: "segment", connectionId, noun, entity: query.entity, segment: query.segment,
-          label: query.label || query.segment, total, filters: query.conditions as unknown as Record<string, unknown>[],
+          label: query.label || words(query.segment), total, filters: query.conditions as unknown as Record<string, unknown>[],
           narrowed: mineOnly.length > 0 })}>
         Ask about this set
       </Button>
