@@ -14,7 +14,7 @@
 import {
   CHOOSERS, MAX_SET_DEPTH, TICKERS, type ActionButtonDef, type DashboardSetDef, type DashboardValueDef, type PieceName, type SetOp,
 } from "@/lib/dashboards/catalog";
-import { valuesRead } from "@/lib/dashboards/values";
+import { valueFits, valuesRead } from "@/lib/dashboards/values";
 
 type El = { type?: string; props?: Record<string, unknown>; children?: string[] };
 export interface WireSpec {
@@ -401,4 +401,27 @@ export function wiring(spec: WireSpec): {
         : from.by === "query" ? { by: "query", card: from.card, kind: v.kind } : { by: from.by };
   }
   return { sets, buttons, values };
+}
+
+/** Arc FA-2 — a set as a reader's page reads it, for the server's reading of "Ask about this set": with the values the
+ *  page holds now and the objects chosen there, as the page sends them. An author's value is the author's, whatever is
+ *  sent; the reader's own is theirs while it is one of its kind (else the author's, as on the page); a value the page
+ *  counts, sums, reads from a query or off a chosen object is the page's, and one it did not send is said. */
+export function readerSet(spec: WireSpec, name: string, sent: Record<string, unknown>, chosen: Record<string, string>):
+  { entity: string; segment: string; filters: DoorCondition[]; label: string } | Refused | { waiting: string } {
+  const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+  const r = readSet(spec, name, v => {
+    const def = spec.values?.[v];
+    if (!def) return { value: null };
+    const from = def.from;
+    if (!from || from.by === "author") return { value: def.value ?? null };
+    if (from.by === "reader") return { value: has(sent, v) && valueFits(def.kind, sent[v]) ? sent[v] : def.value ?? null };
+    if (!has(sent, v)) return from.by === "chosen" ? { waiting: from.choice } : { refused: `the page did not send what ${q(def.label)} holds now.` };
+    return valueFits(def.kind, sent[v]) ? { value: sent[v] } : { refused: `the page sent ${q(def.label)} a value that is not one of its kind.` };
+  });
+  if (isRefused(r)) return r;
+  const read = doorConditions(r, c => (has(chosen, c) ? chosen[c] : null));
+  if ("reading" in read) return { refused: `The set ${q(name)} reads a value the page had not read yet.` };
+  if ("waiting" in read) return read;
+  return { entity: r.entity, segment: r.segment, filters: read.filters, label: r.label };
 }

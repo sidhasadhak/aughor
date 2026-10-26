@@ -16,6 +16,8 @@
  *                                     NOT checked here; the caller sends it back as a "check".
  *   { "op": "wiring", "spec": … }  → { sets, buttons } — each set as the object door would read it, each
  *                                     button's parameters with their source's kind and entity (Arc AP-2/3)
+ *   { "op": "read_set", "spec": …, → { entity, segment, filters, label } | { refused } | { waiting } — one set as
+ *     "name", "values", "chosen" }    a reader's page reads it, for a question asked about it (Arc FA-2)
  *   { "op": "grammar",             → { text } — what the writer of a dashboard is told (CT-5); the
  *     "grid": bool }                   grid only while dashboards are built in place (Arc AP-1)
  *
@@ -25,13 +27,16 @@
 import { grammar } from "@/lib/dashboards/grammar";
 import { applyDashboardPatches } from "@/lib/dashboards/patch";
 import { checkDashboardSpec, vocabulary } from "@/lib/dashboards/rules";
-import { wiring, type WireSpec } from "@/lib/dashboards/sets";
+import { readerSet, wiring, type WireSpec } from "@/lib/dashboards/sets";
+
+const record = (x: unknown): Record<string, unknown> => (x && typeof x === "object" && !Array.isArray(x) ? x as Record<string, unknown> : {});
 
 async function main(): Promise<void> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
   const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as
-    { op?: string; spec?: unknown; patches?: unknown; grid?: boolean; structure?: boolean };
+    { op?: string; spec?: unknown; patches?: unknown; grid?: boolean; structure?: boolean; name?: string;
+      values?: unknown; chosen?: unknown };
   if (payload.op === "vocabulary") {
     process.stdout.write(JSON.stringify(vocabulary()));
     return;
@@ -46,6 +51,11 @@ async function main(): Promise<void> {
   }
   if (payload.op === "wiring") {
     process.stdout.write(JSON.stringify(wiring(payload.spec as WireSpec)));
+    return;
+  }
+  if (payload.op === "read_set") {
+    const chosen = Object.fromEntries(Object.entries(record(payload.chosen)).map(([k, v]) => [k, String(v)]));
+    process.stdout.write(JSON.stringify(readerSet(payload.spec as WireSpec, String(payload.name ?? ""), record(payload.values), chosen)));
     return;
   }
   if (payload.op === "grammar") {

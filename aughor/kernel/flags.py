@@ -157,6 +157,11 @@ FLAG_ENV = {
     # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
     # contract describes it. OFF: each door answers as before.
     "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
+    # Arc FA, FA-2 (ROADMAP §3.60). ON: a dashboard's ticked objects and a set a piece reads can be asked about in the
+    # Data Canvas — the question carries them as its subject, read again through the object door under the asker's row
+    # policy, at most 50 by key and title with the total, what is withheld from them said. OFF: no piece offers it, a
+    # subject of objects or a set contributes nothing, and every turn is asked as before.
+    "canvas.ask_about_chosen": "AUGHOR_CANVAS_ASK_ABOUT_CHOSEN",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -932,6 +937,16 @@ FLAG_META = {
                        "policy or a masked property is named. Outside programs read the same field, described in "
                        "their contract. Off: a cut read can look complete.",
     },
+    "canvas.ask_about_chosen": {
+        "label": "Ask about the objects you chose",
+        "summary": "A dashboard's ticked objects, or a set a piece shows, can be asked about in the Data Canvas. The "
+                   "question carries them as its subject.",
+        "facts": [{"kind": "free", "text": "No extra model calls"},
+                  {"kind": "private", "text": "Your row policy holds"}],
+        "description": "They are read again through the object door as you may see them: at most 50, by key and "
+                       "name, with how many there are. Objects withheld from you are counted and said, never listed. "
+                       "Nothing goes in the page's address. Off: no piece offers it, and questions are asked as before.",
+    },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
         "summary": "The impacts a person declared are the one record of what one promise does to another. "
@@ -1410,6 +1425,11 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc FA, FA-2 (ROADMAP §3.60), queued 2026-10-26. No model call of its own; the question asked is an ordinary turn.
+    "canvas.ask_about_chosen": "receipt: on theLook, twelve objects ticked on a dashboard and a set a table reads are each "
+                               "asked about in the Data Canvas; the turn names them by key, a reader under a row policy "
+                               "is told how many are withheld, and a set past fifty says how many it holds. Falsifier: "
+                               "a subject that lists an object its reader may not see stops it",
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "
