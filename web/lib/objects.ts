@@ -411,6 +411,47 @@ export async function getObjectTitles(
   return res.json();
 }
 
+/** Arc FA, FA-1 (flag `objects.find`) — one object whose name holds the words typed. `type` is the entity's api name,
+ *  what an object page's address takes. */
+export interface ObjectFindHit {
+  type: string;
+  type_id: string;
+  key: string;
+  title: string;
+  entity_label: string;
+}
+
+/** `POST /objects/find`: the objects found, and what the search read — `said` is "searched N of M entities", each
+ *  entity it did not search is in `skipped` with why, `more` names those with more matches than shown, `withheld` the
+ *  entities a row policy narrowed for this reader (`withheld_said` in its own words). */
+export interface ObjectFindAnswer {
+  path: "found";
+  connection_id: string;
+  schema_name: string;
+  q: string;
+  hits: ObjectFindHit[];
+  searched: number;
+  of: number;
+  said: string;
+  skipped: { entity: string; why: string }[];
+  more: string[];
+  withheld: string[];
+  withheld_said: string[];
+  masked: string[];
+}
+
+/** Find objects by the name they go by, across entities. A 404 means the flag is off — the caller shows nothing. */
+export async function findObjects(
+  q: string, connectionId?: string, schemaName?: string, signal?: AbortSignal,
+): Promise<ObjectFindAnswer | ObjectRefusal | null> {
+  const res = await fetch(`${getApiBase()}/objects/find${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q }), signal,
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
 
 // ── Arc OC-4 — a page of objects, and running a declared action from a dashboard ─────────────────
 
