@@ -228,20 +228,19 @@ def get_metric_coverage(conn_id: str, schema: Optional[str] = None, figures: boo
     return out
 
 
-@router.post("/metrics/coverage/{conn_id}/run", dependencies=[gate(Capability.METRICS_DEFINE)])
+@router.post("/metrics/coverage/{conn_id}/run", status_code=202, dependencies=[gate(Capability.METRICS_DEFINE)])
 def run_metric_coverage(conn_id: str, schema: Optional[str] = None):
     """Arc MC, MC-3/4/6 — propose by code for the areas the data covers, every proposal through the gates, kept beside
-    the profile. No model call: the writer runs when the connection is profiled, or on its own door."""
+    the profile, on a thread: the gates read each proposal's figures, which took four minutes on LuxExperience's 54
+    (2026-10-26). No model call — the writer's last proposals are kept and checked again; it writes only when the
+    connection is profiled, or on its own door."""
     from aughor.semantic import coverage_proposals as CP
-    if not (CP.any_on()):
+    if not CP.any_on():
         raise HTTPException(status_code=404, detail="no coverage proposer is on (metrics.coverage_proposals, "
                                                     "metrics.blind_spot_proposals)")
     schema = schema or _declared_schema(conn_id)
-    out = CP.run(conn_id, schema, write=False, why=f"run by {caller()}")
-    return {"run_at": out["run_at"], "proposals": len(out["proposals"]),
-            "adoptable": sum(1 for p in out["proposals"] if p.get("state") == CP.STATE_PROPOSED),
-            "failed": sum(1 for p in out["proposals"] if p.get("state") == CP.STATE_GATE_FAILED),
-            "said": out["said"]}
+    started = CP.run_in_background(conn_id, schema, write=False, why=f"run by {caller()}")
+    return {"started": started, "connection_id": conn_id, "schema": schema}
 
 
 @router.post("/metrics/coverage/{conn_id}/write", status_code=202, dependencies=[gate(Capability.METRICS_DEFINE)])

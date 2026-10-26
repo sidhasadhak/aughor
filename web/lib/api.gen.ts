@@ -10361,7 +10361,9 @@ export interface paths {
         /**
          * Run Metric Coverage
          * @description Arc MC, MC-3/4/6 — propose by code for the areas the data covers, every proposal through the gates, kept beside
-         *     the profile. No model call: the writer runs when the connection is profiled, or on its own door.
+         *     the profile, on a thread: the gates read each proposal's figures, which took four minutes on LuxExperience's 54
+         *     (2026-10-26). No model call — the writer's last proposals are kept and checked again; it writes only when the
+         *     connection is profiled, or on its own door.
          */
         post: operations["run_metric_coverage_metrics_coverage__conn_id__run_post"];
         delete?: never;
@@ -10381,7 +10383,7 @@ export interface paths {
         put?: never;
         /**
          * Write Metric Coverage
-         * @description Arc MC, MC-5 — the knowledge base's patterns written for this schema now, one model call per uncovered area, on
+         * @description Arc MC, MC-5 — the knowledge base's patterns written for this schema now, one model call per open area, on
          *     a thread; the coverage view says the calls when they are made. The same run starts by itself when the connection is
          *     profiled (the user's call, 2026-10-26).
          */
@@ -41733,7 +41735,7 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

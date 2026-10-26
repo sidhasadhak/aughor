@@ -104,8 +104,8 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
     setBusy("run"); setNote("");
     try {
       const out = await runMetricCoverage(connId, schema);
-      setNote(`${countNoun(out.proposals, "proposal")}: ${formatCount(out.adoptable)} passed every check, ${formatCount(out.failed)} failed one.`);
-      await load();
+      setNote(out.started ? "Proposing — each proposal's figures are read before it is listed. Read this again in a few minutes."
+        : "Nothing started: no proposer is on.");
     } catch (e) { setNote(e instanceof Error ? e.message : String(e)); } finally { setBusy(""); }
   }
   async function write() {

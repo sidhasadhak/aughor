@@ -1223,9 +1223,8 @@ export async function getMetricCoverage(connectionId: string, schema?: string, f
   return res.json();
 }
 
-/** Propose by code for the areas the data covers — no model call. */
-export async function runMetricCoverage(connectionId: string, schema?: string):
-    Promise<{ run_at: string; proposals: number; adoptable: number; failed: number; said: string[] }> {
+/** Propose by code for the areas the data covers, on a thread — no model call. */
+export async function runMetricCoverage(connectionId: string, schema?: string): Promise<{ started: boolean }> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
   const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/run${q}`, { method: "POST" });
   if (!res.ok) {
