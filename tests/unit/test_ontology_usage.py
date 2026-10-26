@@ -133,3 +133,16 @@ def test_off_both_doors_say_so(router, client):
     served = client.get("/object-types/uses", params={"connection_id": "usage-off-t", "window": 30})
     assert served.status_code == 200 and served.json() == off
     assert client.get("/object-types/uses", params={"connection_id": "usage-off-t", "window": 0}).status_code == 422
+
+
+def test_one_reading_of_each_statement_counts_every_entity_whose_table_it_names():
+    """The log is read once for every entity: a statement counts for each entity owning a table it names as a whole word,
+    whatever its case — a name inside a longer one is not a read of it, and one table two entities share counts both."""
+    conn = "usage-one-pass-t"
+    AuditLogger.log(connection_id=conn, sql="SELECT * FROM ORDERS o JOIN order_items i ON o.id = i.order_id")
+    AuditLogger.log(connection_id=conn, sql="SELECT * FROM order_items")
+    AuditLogger.log(connection_id=conn, sql="select * from Events")
+    AuditLogger.log(connection_id=conn, sql="SELECT * FROM orders_archive")
+    got = AuditLogger.reads_within(conn, {"Order": ["orders"], "OrderItem": ["order_items"], "Event": ["events"],
+                                         "User": ["users", "events"], "Unbound": []})
+    assert {k: v["reads"] for k, v in got.items()} == {"Order": 1, "OrderItem": 2, "Event": 1, "User": 1, "Unbound": 0}
