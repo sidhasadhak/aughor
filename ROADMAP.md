@@ -12178,7 +12178,7 @@ first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything t
 
 ---
 
-### 3.62 · Arc MC — metrics that cover the business (DRAFTED 2026-10-26 · `docs/METRICS_COVERAGE_STUDY_2026-10-26.md` · not adopted — six calls are the user's · nothing built; PENDING item 62)
+### 3.62 · Arc MC — metrics that cover the business (DRAFTED 2026-10-26 · `docs/METRICS_COVERAGE_STUDY_2026-10-26.md` · ✅ ADOPTED the same day — §6 item 55, the six calls taken · nothing built; PENDING item 62)
 
 **The ask** (the user, 2026-10-26, on LuxExperience): *"only 12 proposed metrics.. for an e-commerce organisation that
 is probably not even 50% of the matrix.. what are we missing?"*, then *"Missing in terms of approach or logic.."*, then
@@ -14614,6 +14614,23 @@ the browser** · **measure the premise before building.**
     inbound only** (reverses §3.18's "no email in either direction" for arrivals; the platform still never sends one);
     the user creates the Google OAuth client, guided; a run's summary, spans, logs and trajectory are admin-only like
     the trace; the coverage test (real decisions rebuilt by hand) is skipped for now.
+
+55. ✅ **DECIDED 2026-10-26 — Arc MC, metrics that cover the business, adopted** (§3.62;
+    `docs/METRICS_COVERAGE_STUDY_2026-10-26.md`; PENDING item 62).
+    - The path: *"only 12 proposed metrics.. not even 50% of the matrix"* → *"Missing in terms of approach or logic.."*
+      → *"Proceed with framework first"* → the user's catch, *"I think we already this list of metrics per industry as
+      knowledge base"* (the knowledge base's ~100 metric patterns, never read to propose) → the six calls.
+    - Decided by the user 2026-10-26, from options:
+      - **(a)** LuxExperience's two metrics that read 1 — *"Deprecate them now"*: `return_rate` and
+        `cart_to_order_conversion_rate` deprecated the same day (audited, actor the user's session).
+      - **(b)** The map — *"Knowledge base + generic layer"*: the packs' metric patterns with area, kind and direction
+        added, and a generic layer for a connection no pack fits.
+      - **(c)** MC-5's model spend — *"Automatically when profiled"* (**not** the recommended per-area click): when a
+        connection is profiled or rebuilt, every uncovered area is proposed for, one scoped call each; the spend is said
+        on the coverage view.
+      - **(d)** The new gates (moves · sane range · binding types) — *"Refuse at approval"*, as the window check does.
+      - **(e)** Proposals shown — *"All that pass, by area"*, adopted per area.
+      - **(f)** The Briefing's cap — *"Raise the default"*: 24 (the figure offered), read by area in the map's order.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

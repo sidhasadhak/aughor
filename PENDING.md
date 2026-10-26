@@ -716,7 +716,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
     user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Merged 2026-10-26 as #628 (`e25badee`); the coverage test skipped (owed).
 
-62. [ ] ⚑ **Metrics that cover the business — Arc MC** (the user, 2026-10-26, on LuxExperience: *"only 12 proposed
+62. [ ] **Metrics that cover the business — Arc MC** (the user, 2026-10-26, on LuxExperience: *"only 12 proposed
     metrics.. for an e-commerce organisation that is probably not even 50% of the matrix.. Missing in terms of approach
     or logic.."*, then *"Proceed with framework first"*) — **studied 2026-10-26**, nothing built:
     `docs/METRICS_COVERAGE_STUDY_2026-10-26.md`, ROADMAP §3.62. Measured: LuxExperience 33 tables, 12 metrics over 12
@@ -726,4 +726,6 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     to answer questions, never to propose (the user spotted it); the gates check the SQL, not the figure.
     Framework: a map of areas (generic + per-pack layer) → placement → coverage matrix → proposals per uncovered area
     (recipes, ontology-derived, a scoped model call) → gates (moves · sane range · binding types) → people adopt.
-    Waves MC-0…MC-6. **Six calls are the user's (study §7).**
+    Waves MC-0…MC-6. *✅ ADOPTED 2026-10-26 (ROADMAP §6 item 55): deprecate the two that read 1 (done the same day) ·
+    knowledge base + generic layer · MC-5 automatically when profiled · all proposals that pass, by area · the
+    Briefing's default raised to 24 · gates refuse at approval. Nothing built.*

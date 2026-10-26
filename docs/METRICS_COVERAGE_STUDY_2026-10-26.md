@@ -1,7 +1,7 @@
 # Metrics that cover the business — the framework (2026-10-26)
 
-*Drafted 2026-10-26 at the user's word. Nothing is built; the framework comes first (the user: "Proceed with framework
-first"). The calls in §7 are the user's. Proposed as Arc MC (ROADMAP §3.62, PENDING item 62).*
+*Drafted 2026-10-26 at the user's word; the framework came first (the user: "Proceed with framework first"). Adopted
+the same day as Arc MC with the six calls taken (§7; ROADMAP §3.62, §6 item 55; PENDING item 62). Nothing built yet.*
 
 ## 0. The ask
 
@@ -217,6 +217,10 @@ A receipt for each on LuxExperience, live: the matrix before and after, every pr
 count of adoptable proposals per area.
 
 ## 7. Calls for the user
+
+*Answered 2026-10-26 (ROADMAP §6 item 55): (1) deprecate — done the same day; (2) knowledge base + generic layer;
+(3) **automatically when profiled** (not the recommended click); (4) all that pass, by area; (5) **raise the default** —
+24; (6) refuse at approval.*
 
 1. **The two LuxExperience metrics that read 1** — deprecate them now (*recommended*: the map proposes correct ones in
    MC-3), or rebind them by hand now (return rate over `order_items` with `returns`; cart-to-order over `web_sessions`'
