@@ -17537,7 +17537,7 @@ export interface components {
          *     Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
          *     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
          *     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
-         *     own filters on it. Both are read again server-side through the object door under the asker's row policy
+         *     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
          *     (`agent.ask_subject`); off, they contribute nothing.
          */
         AskFocus: {
@@ -17550,6 +17550,11 @@ export interface components {
              * @default
              */
             dashboard: string;
+            /**
+             * Entity
+             * @default
+             */
+            entity: string;
             /** Filters */
             filters?: {
                 [key: string]: unknown;
@@ -17569,6 +17574,11 @@ export interface components {
              * @default
              */
             label: string;
+            /**
+             * Narrowed
+             * @default false
+             */
+            narrowed: boolean;
             /** Objects */
             objects?: string[];
             /**
@@ -17576,6 +17586,11 @@ export interface components {
              * @default
              */
             owner: string;
+            /**
+             * Segment
+             * @default
+             */
+            segment: string;
             /**
              * Set
              * @default

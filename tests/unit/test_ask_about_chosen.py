@@ -255,3 +255,28 @@ def test_a_set_that_cannot_be_read_says_why(desk):
     assert "holds no set named" in gone.refused
     theirs = ask_subject.resolve(AskFocus(kind="set", dashboard="other", set="by_status"), CONN, person="default")
     assert theirs.refused == "this dashboard is not one you can read, or it was retired"
+
+
+def test_a_segment_a_piece_reads_is_a_subject_read_from_the_ontology_not_the_page(served, db):  # noqa: F811
+    """A table over a segment the ontology names — the commonest piece — offers its set too: the server reads the
+    segment's own definition under the asker's policy, with the conditions the piece reads it under."""
+    focus = AskFocus(kind="set", entity="Order", segment="cancelled_orders", label="Cancelled Orders")
+    subject = ask_subject.resolve(focus, CONN)
+    [part] = subject.parts
+    held = _count(db, "status = 'cancelled'")
+    assert part.total == held and len(part.objects) == min(held, 50) and not subject.refused
+    assert subject.read == {"entity": "Order", "segment": "cancelled_orders", "filters": []}
+    assert subject.words().startswith("About Cancelled Orders · ")
+    narrowed = ask_subject.resolve(focus.model_copy(update={
+        "filters": [{"path": "payment_method", "op": "=", "value": "card"}], "narrowed": True}), CONN)
+    assert narrowed.parts[0].total == _count(db, "status = 'cancelled' AND payment_method = 'card'")
+    assert narrowed.words().endswith("narrowed by your filters")
+    # a segment the entity does not declare is refused by the door, never read as every object
+    nowhere = ask_subject.resolve(focus.model_copy(update={"segment": "no_such_segment"}), CONN)
+    assert nowhere.refused and not nowhere.parts
+
+
+def test_a_subject_set_names_its_dashboard_set_or_its_segment():
+    with pytest.raises(ValueError, match="entity and segment"):
+        AskFocus(kind="set", entity="Order")
+    assert AskFocus(kind="set", entity="Order", segment="cancelled_orders").segment == "cancelled_orders"

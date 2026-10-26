@@ -926,7 +926,7 @@ class AskFocus(BaseModel):
     Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
-    own filters on it. Both are read again server-side through the object door under the asker's row policy
+    own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
     (`agent.ask_subject`); off, they contribute nothing."""
     kind: Literal["departure", "automation", "metric", "objects", "set"]
     id: str = Field(default="", max_length=200)
@@ -935,6 +935,13 @@ class AskFocus(BaseModel):
     dashboard: str = Field(default="", max_length=64)
     owner: str = Field(default="", max_length=200)
     set: str = Field(default="", max_length=40)
+    #: Or a set the ontology names — a segment (or a rule read as one) on an entity — for a piece that reads one
+    #: directly rather than through a set of its dashboard.
+    entity: str = Field(default="", max_length=120)
+    segment: str = Field(default="", max_length=120)
+    #: For a segment: the page says the reader's own filters are among the conditions it sends. Words only — the
+    #: conditions themselves are read through the door either way.
+    narrowed: bool = False
     values: dict[str, Any] = Field(default_factory=dict)
     chosen: dict[str, str] = Field(default_factory=dict)
     filters: list[dict] = Field(default_factory=list, max_length=20)
@@ -946,8 +953,8 @@ class AskFocus(BaseModel):
             raise ValueError(f"a {self.kind} on screen is named by its id")
         if self.kind == "objects" and not self.objects:
             raise ValueError("a subject of objects names at least one, as <type>:<key>")
-        if self.kind == "set" and not (self.dashboard and self.set):
-            raise ValueError("a subject set is named by its dashboard and its name")
+        if self.kind == "set" and not ((self.dashboard and self.set) or (self.entity and self.segment)):
+            raise ValueError("a subject set is named by its dashboard and its name, or by its entity and segment")
         return self
 
 

@@ -24,6 +24,11 @@ describe("the subject a question carries", () => {
   it("is sent as references, or as a set by its name with the page's values — never what the set reads", () => {
     expect(focusOf(TICKED)).toEqual({ kind: "objects", objects: TICKED.kind === "objects" ? TICKED.refs : [], label: "Late dispatch" });
     expect(focusOf(SET)).toEqual({ kind: "set", dashboard: "desk-3f2a1c", set: "late", values: { window: 14 }, chosen: {}, filters: [] });
+    const segment: AskSubject = { kind: "segment", connectionId: "thelook", noun: nounOf("Order"), entity: "order",
+      segment: "overdue_dispatch", label: "overdue dispatch", total: 24934, filters: [], narrowed: false };
+    expect(focusOf(segment)).toEqual({ kind: "set", entity: "order", segment: "overdue_dispatch", label: "overdue dispatch",
+      filters: [], narrowed: false });
+    expect(subjectWords(segment)).toBe("Asking about overdue dispatch · 24,934 orders");
     const many = { ...TICKED, refs: Array.from({ length: 70 }, (_, i) => `order:${i}`) };
     expect((focusOf(many).objects as string[]).length).toBe(50);
   });

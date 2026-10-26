@@ -26,7 +26,10 @@ interface Common {
 export type AskSubject =
   | Common & { kind: "objects"; refs: string[]; label?: string }
   | Common & { kind: "set"; dashboard: string; owner?: string; set: string; label: string; total?: number | null;
-      values: Record<string, unknown>; chosen: Record<string, string>; filters: Record<string, unknown>[]; narrowed: boolean };
+      values: Record<string, unknown>; chosen: Record<string, string>; filters: Record<string, unknown>[]; narrowed: boolean }
+  // a segment the ontology names, read by a piece directly — sent with the conditions the piece reads it under
+  | Common & { kind: "segment"; entity: string; segment: string; label: string; total?: number | null;
+      filters: Record<string, unknown>[]; narrowed: boolean };
 
 let current: AskSubject | null = null;
 const listeners = new Set<() => void>();
@@ -75,6 +78,8 @@ export function subjectWords(s: AskSubject): string {
  *  objects chosen on the page and the reader's own filters — never what the set reads. */
 export function focusOf(s: AskSubject): Record<string, unknown> {
   if (s.kind === "objects") return { kind: "objects", objects: s.refs.slice(0, MAX_SUBJECT), ...(s.label ? { label: s.label.slice(0, 80) } : {}) };
+  if (s.kind === "segment") return { kind: "set", entity: s.entity, segment: s.segment, label: s.label.slice(0, 80),
+    filters: s.filters.slice(0, 20), narrowed: s.narrowed };
   return { kind: "set", dashboard: s.dashboard, ...(s.owner ? { owner: s.owner } : {}), set: s.set, values: s.values,
     chosen: s.chosen, filters: s.filters.slice(0, 20) };
 }

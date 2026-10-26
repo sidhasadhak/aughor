@@ -14,8 +14,9 @@ import { useFlagOn } from "@/lib/flagOn";
 
 export const ASK_FLAG = "canvas.ask_about_chosen";
 
-/** The control a piece's foot holds: the ticked objects while any are ticked, else the set it reads, by name — or
- *  nothing, for a piece over every object of an entity, which names no set to ask about. */
+/** The control a piece's foot holds: the ticked objects while any are ticked, else the set it reads, by name — a set
+ *  of its dashboard or a segment the ontology names — or nothing, for a piece over every object of an entity, which
+ *  names no set to ask about. */
 export function AskAboutPiece({ query, ticked, total, typeId }: {
   query: SetQuery; ticked: Picked[]; total: number | null | undefined; typeId: string;
 }) {
@@ -32,6 +33,18 @@ export function AskAboutPiece({ query, ticked, total, typeId }: {
       </Button>
     );
   }
+  const mineOnly = conditionsFor(filters, query.entity);
+  if (!query.set && query.segment) {
+    // a segment the ontology names, read directly: the server reads its definition, under these conditions
+    return (
+      <Button size="xs" variant="ghost" data-testid="ask-about-set"
+        onClick={() => askAbout({ kind: "segment", connectionId, noun, entity: query.entity, segment: query.segment,
+          label: query.label || query.segment, total, filters: query.conditions as unknown as Record<string, unknown>[],
+          narrowed: mineOnly.length > 0 })}>
+        Ask about this set
+      </Button>
+    );
+  }
   const where = query.set ? dashboardOf(dashboardId, connectionId) : null;
   if (!where) return null;
   // the values the set is read with on this page, and the objects chosen here — the server reads the set's own definition
@@ -40,7 +53,7 @@ export function AskAboutPiece({ query, ticked, total, typeId }: {
     return "value" in now ? [[n, now.value]] : [];
   }));
   const chosen = Object.fromEntries(Object.entries(picked).map(([choice, p]) => [choice, p.pk]));
-  const mine = conditionsFor(filters, query.entity);
+  const mine = mineOnly;
   return (
     <Button size="xs" variant="ghost" data-testid="ask-about-set"
       onClick={() => askAbout({ kind: "set", connectionId, noun, ...where, set: query.set, label: query.label || query.set,

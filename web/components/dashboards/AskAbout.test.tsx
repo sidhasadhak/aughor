@@ -29,6 +29,7 @@ const ELEMENTS = {
   table: { type: "ObjectTable", props: { set: "waiting", ticks: "ticked-orders", columns: ["status"] } },
   every: { type: "ObjectTable", props: { entity: "order", ticks: "ticked-all", columns: ["status"] } },
   list: { type: "ObjectList", props: { set: "waiting", ticks: "ticked-list", title: "status" } },
+  overdue: { type: "ObjectTable", props: { entity: "order", segment: "overdue_dispatch", columns: ["status"] } },
 };
 const page = () => ({
   path: "listed", object_type: "order", type_id: "Order", key: "id", title: "", segment_said: "",
@@ -64,6 +65,19 @@ function draw(piece: "table" | "every" | "list" = "table") {
 }
 
 describe("asking about what a reader chose", () => {
+  it("offers a segment the ontology names, read by a table directly, by its entity and segment", async () => {
+    render(
+      <PiecesProvider connectionId="thelook" elements={ELEMENTS} sets={SETS} values={VALUES} dashboardId="thelook:desk-3f2a1c">
+        <ObjectTablePiece elementKey="overdue" entity="order" segment="overdue_dispatch" columns={["status"]} tall={false} />
+      </PiecesProvider>);
+    fireEvent.click(await screen.findByTestId("ask-about-set"));
+    const subject = askSubject();
+    expect(subject).toMatchObject({ kind: "segment", connectionId: "thelook", entity: "order", segment: "overdue_dispatch",
+      total: 1400, filters: [], narrowed: false });
+    expect(subject && "label" in subject && subject.label).toBeTruthy();
+    expect(went).toEqual([{ tab: "chat", params: { conn: "thelook" } }]);
+  });
+
   it("offers the set a table reads, and carries it by name with the page's values — the address holds the connection only", async () => {
     draw();
     fireEvent.click(await screen.findByTestId("ask-about-set"));

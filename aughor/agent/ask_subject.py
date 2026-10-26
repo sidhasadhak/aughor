@@ -257,8 +257,9 @@ def _existing(connection_id: str, schema_name: Optional[str], entity: Any, key: 
 
 def _set(focus: Any, connection_id: str, schema_name: Optional[str], *, person: str) -> Subject:
     from aughor.dashboards import validate
-    from aughor.semantic.object_instances import key_of, title_column
-    from aughor.semantic.object_query import ObjectFilter, ObjectQueryRefused, find_object_type
+    from aughor.semantic.object_query import ObjectFilter
+    if not focus.dashboard and focus.entity and focus.segment:
+        return _segment(focus, connection_id, schema_name)
     out = Subject(kind="set")
     spec, why = _dashboard_spec(connection_id, str(focus.dashboard or ""), str(focus.owner or ""), person)
     if spec is None:
@@ -281,22 +282,46 @@ def _set(focus: Any, connection_id: str, schema_name: Optional[str], *, person: 
     except ValueError as exc:
         out.refused = f"your filters on the set could not be read: {exc}"[:300]
         return out
+    out.narrowed = bool(mine)
+    return _listed(out, connection_id, schema_name, str(read.get("entity") or ""), str(read.get("segment") or ""),
+                   list(read.get("filters") or []), mine)
+
+
+def _segment(focus: Any, connection_id: str, schema_name: Optional[str]) -> Subject:
+    """A set the ontology names — a segment, or a rule read as one — that a piece reads directly, under the conditions
+    the piece reads it with (the reader's filters among them). No dashboard is consulted: the segment's own definition
+    is the server's, and the conditions are read through the same door, so nothing the page sends can widen it."""
+    from aughor.semantic.object_query import ObjectFilter
+    out = Subject(kind="set", label=str(focus.label or focus.segment))
+    try:
+        filters = [ObjectFilter.model_validate(f).model_dump(exclude_defaults=True)
+                   for f in list(focus.filters or [])[:MAX_READER_FILTERS]]
+    except ValueError as exc:
+        out.refused = f"the piece's filters on the set could not be read: {exc}"[:300]
+        return out
+    out.narrowed = bool(filters) and bool(focus.narrowed)
+    return _listed(out, connection_id, schema_name, str(focus.entity), str(focus.segment), filters, [])
+
+
+def _listed(out: Subject, connection_id: str, schema_name: Optional[str], entity_name: str, segment: str,
+            filters: list[dict], mine: list[dict]) -> Subject:
+    """The set read for the asker through the object listing door: at most `MAX_CHOSEN` named, with the total."""
+    from aughor.semantic.object_instances import key_of, title_column
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
     graph = _graph(connection_id, schema_name)
     if graph is None:
         out.refused = "no ontology is built for this connection, so it has no objects to name"
         return out
     try:
-        entity = find_object_type(graph, str(read.get("entity") or ""))
+        entity = find_object_type(graph, entity_name)
         key = key_of(entity)
     except ObjectQueryRefused as exc:
         out.refused = exc.reason
         return out
     noun, one = _naming(entity)
-    out.read = {"entity": entity.id, "segment": read.get("segment") or "", "filters": list(read.get("filters") or [])}
-    out.narrowed = bool(mine)
+    out.read = {"entity": entity.id, "segment": segment, "filters": filters}
     title = title_column(entity) or ""
-    page = _list(connection_id, schema_name, {"entity": entity.id, "segment": out.read["segment"],
-                                              "filters": out.read["filters"] + mine,
+    page = _list(connection_id, schema_name, {"entity": entity.id, "segment": segment, "filters": filters + mine,
                                               "columns": [title or key], "limit": MAX_CHOSEN})
     part = Part(entity=entity.id, noun=noun, one=one, key=key)
     if page.get("path") == "refused" or page.get("error"):
