@@ -13,6 +13,8 @@ const stubs = {
   bots: [] as SlackBotSummary[],
   automations: [] as Automation[],
   reject: false,
+  // Arc FA, FA-7 — the API lists the grounding door only while its flag is on.
+  grounding: null as null | { state: string; url: string; tool: string; how: string },
 };
 
 const doors = () => ({
@@ -22,6 +24,7 @@ const doors = () => ({
   webhook: { state: "needs the HTTP key", url: "/doors/agents/ua_1/webhook" },
   a2a: { state: "needs the HTTP key", card: "/.well-known/agent.json", url: "/doors/a2a/ua_1" },
   teams: { state: "no bot", bots: [] },
+  ...(stubs.grounding ? { grounding: stubs.grounding } : {}),
 });
 
 vi.mock("@/lib/api", async importOriginal => {
@@ -81,6 +84,21 @@ describe("the Doors tab", () => {
     expect(screen.getByText("not listening")).toBeInTheDocument();
     expect(screen.getByText(/npm run dev/)).toBeInTheDocument();
     expect(screen.getByText("No automation runs as this agent")).toBeInTheDocument();
+  });
+
+  it("lists the grounding read only while the API does, with its door and its tool", async () => {
+    stubs.bots = [bot({})];
+    stubs.automations = [];
+    render(<AgentDoors agent={agent} />);
+    await screen.findByText("salesbot");
+    expect(screen.queryByText(/^Grounding/)).toBeNull();
+
+    stubs.grounding = { state: "open", url: "/doors/agents/ua_1/grounding", tool: "ground_agent", how: "no model" };
+    render(<AgentDoors agent={agent} />);
+    expect(await screen.findByText("Grounding — what this agent would read, with no model asked")).toBeInTheDocument();
+    expect(screen.getByText(/POST \/doors\/agents\/ua_1\/grounding with the key/)).toBeInTheDocument();
+    expect(screen.getByText(/MCP tool ground_agent/)).toBeInTheDocument();
+    stubs.grounding = null;
   });
 
   it("a rejected read is said, never rendered as 'no doors'", async () => {
