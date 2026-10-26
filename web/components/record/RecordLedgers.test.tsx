@@ -5,7 +5,7 @@
  * a group's heading; a row carries a chip only where it differs. The full text stays on the hover and in Copy · CSV.
  */
 import { Theme } from "@radix-ui/themes";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Connection } from "@/lib/api";
@@ -18,6 +18,7 @@ import { InquiriesPanel } from "@/components/inquiries/InquiriesPanel";
 
 const record = vi.hoisted(() => ({
   listInquiries: vi.fn(), listDecisions: vi.fn(), listClaims: vi.fn(), getCorrections: vi.fn(), getOnboarding: vi.fn(),
+  listDecisionKinds: vi.fn(), listMeetingCandidates: vi.fn(), confirmMeetingCandidate: vi.fn(), refuseMeetingCandidate: vi.fn(),
 }));
 vi.mock("@/lib/record", async (original) => ({ ...(await original<typeof import("@/lib/record")>()), ...record }));
 
@@ -47,6 +48,8 @@ const mount = (el: React.ReactElement) => render(<Theme>{el}</Theme>);
 
 beforeEach(() => {
   for (const f of Object.values(record)) f.mockReset();
+  record.listDecisionKinds.mockResolvedValue({ kinds: [] });
+  record.listMeetingCandidates.mockResolvedValue({ candidates: [] });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
 });
@@ -105,6 +108,56 @@ describe("Decisions", () => {
     expect(list.textContent).not.toMatch(/OC-8|2026-12-08/);
     expect(within(screen.getByTestId("fig-dec-expect")).getByText("1 cannot be scored")).toBeInTheDocument();
     expect(within(screen.getByTestId("decision-needs")).getByText("Nothing needs you")).toBeInTheDocument();
+  });
+
+  it("lists the kinds of decision people declared, with the rules each keeps", async () => {
+    record.listDecisions.mockResolvedValue([]);
+    record.listDecisionKinds.mockResolvedValueOnce({ kinds: [{
+      id: "k1", key: "decision_kind:a_price_change", version: 1, name: "a price change", description: "",
+      approvers: ["person:ana"], expectation_required: true, review_days: 14, authority_ceiling: null, metrics: ["gmv"],
+      state: "active", declared_by: "user:amit", recorded_at: "",
+    }] });
+    mount(<DecisionsPanel connections={CONNECTIONS} selectedConn="shop" openId={null} onOpen={noop} onOpenClaim={noop} />);
+    const kinds = await screen.findByTestId("decision-kinds");
+    expect(kinds).toHaveTextContent("a price change");
+    expect(kinds).toHaveTextContent("moves gmv");
+    expect(kinds).toHaveTextContent("reviewed after 14 days");
+    expect(kinds).toHaveTextContent("must say what it expects");
+  });
+
+  it("lists a meeting's proposed decisions; confirming one books it and opens it", async () => {
+    record.listDecisions.mockResolvedValue([]);
+    record.listMeetingCandidates.mockResolvedValue({ candidates: [{
+      id: "cand-1", meeting: "meeting:weekly_trading:2026-07-29", title: "Weekly trading", held_on: "2026-07-29",
+      connection_id: "shop", question: "Do we cap markdown depth?", chosen: "cap it at 30%", options: ["cap it at 30%"],
+      said_by: "Ana", quote: "", quote_found: true, notes_hash: "x", status: "proposed", brought_by: "user:amit",
+      decided_as: "", answered_by: "", why: "",
+    }] });
+    record.confirmMeetingCandidate.mockResolvedValue({ candidate: {}, decision: { id: "dec-5" } });
+    const opened: (string | null)[] = [];
+    mount(<DecisionsPanel connections={CONNECTIONS} selectedConn="shop" openId={null} onOpen={id => opened.push(id)} onOpenClaim={noop} />);
+    const list = await screen.findByTestId("meeting-candidates");
+    expect(list).toHaveTextContent("Do we cap markdown depth?");
+    expect(list).toHaveTextContent("proposed by the model");
+    fireEvent.click(within(list).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(record.confirmMeetingCandidate).toHaveBeenCalledWith("cand-1", { chosen: "cap it at 30%" }));
+    await waitFor(() => expect(opened).toEqual(["dec-5"]));
+  });
+
+  it("says how many reviews reached a verdict, never that each can be scored", async () => {
+    // The decision-framework run: every review said cannot tell while the card read "each can be scored".
+    const row = (id: string, verdict: string) => ({
+      id, key: id, version: 2, question: `Decision ${id}`, owner: "", approvers: [], options: [], chosen: "go",
+      dissent: [], relied_on: [], objective: "", decided_at: "2026-08-01T09:00:00Z", decided_by: "ana",
+      review_on: "2026-09-01", expectation_claim: `p-${id}`, actions: [], outcome: `o-${id}`, reopened_by: "",
+      source: { kind: "declared", ref: id, detail: "" }, connection_id: "shop", extra: {}, recorded_at: "",
+      superseded_by: "", outcome_verdict: verdict,
+    } as unknown as Decision);
+    record.listDecisions.mockResolvedValue([row("d1", "cannot_tell"), row("d2", "missed")]);
+    mount(<DecisionsPanel connections={CONNECTIONS} selectedConn="shop" openId={null} onOpen={noop} onOpenClaim={noop} />);
+    const card = await screen.findByTestId("fig-dec-expect");
+    expect(within(card).getByText("1 of 2 reviewed reached a verdict")).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/each can be scored/);
   });
 });
 

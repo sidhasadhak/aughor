@@ -14,9 +14,11 @@ import type { Adapter } from "chat";
 
 import type { Author, EmojiValue } from "chat";
 
-import type { AnswerEnvelope, AskOptions, TurnArtifacts, VerdictBody } from "./aughor.js";
+import type {
+  AnswerEnvelope, ApprovalBody, AskOptions, DecisionBody, DecisionResult, TurnArtifacts, VerdictBody,
+} from "./aughor.js";
 import type { Grid, TableRendering } from "./artifacts.js";
-import { buildBot, CORRECTION, stripMention, withoutTables } from "./bot.js";
+import { buildBot, CORRECTION, parseDecision, stripMention, withoutTables } from "./bot.js";
 
 /** CP-5 — the platform's table door as the bot sees it. The bot formats nothing, so this
  *  stands in for `POST /exhibits/table`: it returns what the door would, and records the
@@ -745,5 +747,92 @@ describe("buildBot — a correction said in the thread", () => {
                       "thanks", "that's right", "correctional facilities by state"]) {
       expect(CORRECTION.test(no), no).toBe(false);
     }
+  });
+});
+
+// ── the decide verb and its card (the decision-framework study §3.2) ────────────────────
+
+describe("the decide verb", () => {
+  const author = (userId: string, fullName: string) =>
+    ({ author: { userId, userName: fullName.toLowerCase(), fullName, isBot: false } as unknown as Author });
+  const reaction = (adapter: Adapter, rawEmoji: string, messageId: string, userId: string, userName: string) => ({
+    adapter, added: true, emoji: rawEmoji as unknown as EmojiValue, messageId, raw: {}, rawEmoji, threadId: THREAD,
+    user: { userId, userName, fullName: userName, isBot: false } as unknown as Author,
+  });
+  async function settle() { await new Promise(r => setTimeout(r, 10)); }
+
+  async function decided(extra: { approvalOk?: boolean } = {}) {
+    const adapter = mockAughorAdapter();
+    const decisions: DecisionBody[] = [];
+    const approvals: ApprovalBody[] = [];
+    const verdicts: VerdictBody[] = [];
+    const postDecision = async (b: DecisionBody): Promise<DecisionResult> => {
+      decisions.push(b);
+      return { ok: true, status: 200, detail: "", decisionId: "dec-7", reviewOn: "2026-11-25", cited: 1 };
+    };
+    const postApproval = async (b: ApprovalBody) => {
+      approvals.push(b);
+      return { ok: extra.approvalOk ?? true, status: extra.approvalOk === false ? 404 : 200, detail: "no decision dec-7" };
+    };
+    const postVerdict = async (b: VerdictBody) => { verdicts.push(b); return { ok: true, status: 200, detail: "recorded" }; };
+    const { ask } = askYielding(["Paid social brought 132 of 923 orders."], { investigationId: "inv-3", question: "what did paid social bring?" });
+    const bot = buildBot({ ask, postDecision, postApproval, postVerdict, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor what did paid social bring?", author("U9", "Amit")));
+    (adapter.postMessage as unknown as Mock).mockResolvedValueOnce({ id: "card-1", threadId: THREAD, raw: {} });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2",
+      "@aughor decide: pause paid social on Mytheresa for September — approvers <@U2> <@U3>", author("U9", "Amit")));
+    return { adapter, bot, decisions, approvals, verdicts };
+  }
+
+  it("reads what was decided and the approvers named after the verb", () => {
+    expect(parseDecision("<@UBOT> decide: pause paid social — approvers <@U2> <@U3|ben>")).toEqual(
+      { decided: "pause paid social", approverIds: ["U2", "U3"] });
+    expect(parseDecision("@aughor decide: raise the threshold to 49 EUR")).toEqual(
+      { decided: "raise the threshold to 49 EUR", approverIds: [] });
+    expect(parseDecision("@aughor decide:")).toEqual({ decided: "", approverIds: [] });
+  });
+
+  it("books the decision citing the thread's answer, and posts the card its approvers react on", async () => {
+    const { adapter, decisions } = await decided();
+    expect(decisions).toEqual([{
+      channel: "C1", threadTs: "1712.001", decided: "pause paid social on Mytheresa for September",
+      question: "what did paid social bring?", investigationId: "inv-3", author: "Amit", authorRef: "slack:U9",
+      approverRefs: ["slack:U2", "slack:U3"],
+    }]);
+    expect(adapter).toHavePosted(THREAD, /Booked as a decision: “pause paid social on Mytheresa for September”\. Review 2026-11-25\. It cites the answer above\./);
+    expect(adapter).toHavePosted(THREAD, /Approvers <@U2> <@U3>: react ✅ on this message to approve, ❌ to dissent\./);
+  });
+
+  it("a named approver's ✅ on the card is an approval, never a verdict on the answer", async () => {
+    const { adapter, bot, approvals, verdicts } = await decided();
+    bot.processReaction(reaction(adapter, "white_check_mark", "card-1", "U2", "ana"));
+    await settle();
+    expect(approvals).toEqual([{ decisionId: "dec-7", verdict: "approve", author: "ana", authorRef: "slack:U2" }]);
+    expect(verdicts).toHaveLength(0);
+    expect(adapter).toHavePosted(THREAD, /Approved by ana — booked on the decision\./);
+  });
+
+  it("someone not named cannot approve, and a ❌ is kept as a dissent", async () => {
+    const { adapter, bot, approvals } = await decided();
+    bot.processReaction(reaction(adapter, "white_check_mark", "card-1", "U5", "eve"));
+    await settle();
+    expect(approvals).toHaveLength(0);
+    expect(adapter).toHavePosted(THREAD, /Only the approvers named on this decision approve it — <@U2>, <@U3>\./);
+    bot.processReaction(reaction(adapter, "x", "card-1", "U5", "eve"));
+    await settle();
+    expect(approvals).toEqual([{ decisionId: "dec-7", verdict: "dissent", author: "eve", authorRef: "slack:U5" }]);
+  });
+
+  it("a refused approval is said, and with no door the verb is asked like any text", async () => {
+    const { adapter, bot } = await decided({ approvalOk: false });
+    bot.processReaction(reaction(adapter, "white_check_mark", "card-1", "U2", "ana"));
+    await settle();
+    expect(adapter).toHavePosted(THREAD, /Not booked: no decision dec-7/);
+
+    const plain = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["Answer."]);
+    const bot2 = buildBot({ ask, adapters: { slack: plain }, state: createMockState() });
+    await bot2.handleIncomingMessage(plain, THREAD, createTestMessage("m3", "@aughor decide: something"));
+    expect(calls).toHaveLength(1);
   });
 });

@@ -88,12 +88,13 @@ def list_connections(user_id: str = "") -> list[Connection]:
 # ── pending authorizations (state → flow context) ────────────────────────────────
 
 def put_pending(state: str, *, provider: str, user_id: str, verifier: str,
-                redirect_uri: str) -> None:
+                redirect_uri: str, scopes: str = "") -> None:
     # `redirect_uri` rides WITH the flow: the token exchange must present the value
     # byte-identical to the authorize request's, and re-deriving it at callback time
     # from proxy headers is a second derivation that can disagree with the first.
+    # `scopes` rides with it too: what was ASKED, so the callback can say what the provider did not grant.
     _PENDING.upsert({"id": state, "provider": provider, "user_id": user_id,
-                     "verifier": verifier, "redirect_uri": redirect_uri,
+                     "verifier": verifier, "redirect_uri": redirect_uri, "scopes": scopes,
                      "at": time.time()})
 
 

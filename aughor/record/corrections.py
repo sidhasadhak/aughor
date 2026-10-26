@@ -5,8 +5,10 @@ The system must remember what it was wrong about, and show it under one heading 
 bury it in history. Five records, each already in the ledger, read here through one door:
 
 1. **Restatements** — a number it gave that later changed: a claim with a newer version under its
-   key (`record/claims.restate`, written by the daily re-check and the review), shown with what was
-   first said and what replaced it.
+   key (`record/claims.restate`, written by the daily re-check and the review) whose statement differs
+   from the one it replaced, shown with what was first said and what replaced it. A new version that
+   only scores, refutes or annotates the same statement is not a changed number (the decision-framework
+   run, defect 3: every scored expectation was counted here).
 2. **Refuted hypotheses** — what it thought the cause was and tested false: a hypothesis claim in
    state ``refuted``, with the evidence the run recorded. Memory the next inquiry reads.
 3. **Missed moves** — something a person found by asking that nothing had flagged: the review of a
@@ -48,12 +50,20 @@ def _conn_of(c: _claims.Claim) -> str:
     return c.about.key if c.about.kind == "connection" else ""
 
 
+def _said_the_same(a: _claims.Statement, b: _claims.Statement) -> bool:
+    """Two versions of a claim say the same thing: the same words, the same number in the same unit, of the same
+    metric. A version that only scores or refutes it, or adds a note, keeps its statement."""
+    return (a.text, a.value, a.unit, a.metric) == (b.text, b.value, b.unit, b.metric)
+
+
 def restatements(*, conn_id: Optional[str] = None, limit: int = 200) -> list[dict]:
     out = []
     for c in _claims.list_claims(conn_id=conn_id, limit=max(limit * 4, 400)):
         if not c.supersedes:
             continue
         prior = _claims.get(c.supersedes)
+        if prior is not None and _said_the_same(prior.statement, c.statement):
+            continue
         out.append({"kind": "restatement", "at": c.recorded_at, "connection_id": _conn_of(c), "ref": c.id,
                     "claim_kind": c.kind, "believed": prior.statement.text if prior else "(the earlier version could not be read)",
                     "replaced_by": c.statement.text, "believed_as_of": prior.as_of if prior else "",

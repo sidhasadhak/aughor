@@ -75,9 +75,23 @@ def _edit_history(c: sqlite3.Connection) -> None:
     c.execute("CREATE INDEX IF NOT EXISTS ix_overlay_history_conn ON overlay_edit_history (connection_id, object_type)")
 
 
-#: Forward-only; append the next Migration when the schema evolves.
+def _run_attribution(c: sqlite3.Connection) -> None:
+    """Arc TC, TC-2 — a history row names the run it was made through and that run's trace (`actions/attribution.py`).
+    Empty on every row written before, and on every row written with `actions.run_attribution` off; ``run_kind``
+    ``none`` is a change recorded outside any run."""
+    for column in ("run_id", "run_kind", "trace_id"):
+        add_column_if_missing(c, "overlay_edit_history", column, "TEXT NOT NULL DEFAULT ''")
+
+
+#: The columns TC-2 added, which a read with `actions.run_attribution` off does not return.
+RUN_COLUMNS = ("run_id", "run_kind", "trace_id")
+
+#: Forward-only; append the next Migration when the schema evolves. Version 4 is numbered by construction, not off a
+#: live `PRAGMA user_version` (the live store was not opened): 3 is the highest version this file has listed, and
+#: versions come only from this file.
 _MIGRATIONS: list = [Migration(2, "object edits: object_type, note, actor, origin", _object_edits),
-                     Migration(3, "the edit layer's history and versions", _edit_history)]
+                     Migration(3, "the edit layer's history and versions", _edit_history),
+                     Migration(4, "the run and trace each change was made through", _run_attribution)]
 
 
 class EditConflict(Exception):
@@ -175,15 +189,24 @@ def _history_version(c: sqlite3.Connection, edit_id: str) -> int:
     return int(row["v"] or 0) if row is not None else 0
 
 
-def _record(c: sqlite3.Connection, edit: OverlayEdit, event: str, previous: str, version: int) -> None:
+def _record(c: sqlite3.Connection, edit: OverlayEdit, event: str, previous: str, version: int,
+            run: Optional[dict] = None) -> None:
+    """One history row. ``run`` (TC-2 — `attribution.stamp`, empty with `actions.run_attribution` off) adds the run and
+    the trace the change was made through, and its moment to the microsecond; without it the row is written as it always
+    was."""
     import uuid
-    c.execute("""
-        INSERT INTO overlay_edit_history (id, edit_id, org_id, connection_id, object_type, "table", column, row_key,
-                                          event, body, previous, note, actor, origin, source, version, at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (uuid.uuid4().hex, edit.id, edit.org_id, edit.connection_id, edit.object_type, edit.table, edit.column,
-          edit.row_key, event, edit.body if event == "set" else "", previous, edit.note, edit.actor, edit.origin,
-          edit.source, version, _now()))
+    columns = ["id", "edit_id", "org_id", "connection_id", "object_type", '"table"', "column", "row_key", "event",
+               "body", "previous", "note", "actor", "origin", "source", "version", "at"]
+    values = [uuid.uuid4().hex, edit.id, edit.org_id, edit.connection_id, edit.object_type, edit.table, edit.column,
+              edit.row_key, event, edit.body if event == "set" else "", previous, edit.note, edit.actor, edit.origin,
+              edit.source, version, _now()]
+    if run:
+        columns += list(RUN_COLUMNS)
+        values += [str(run.get(k) or "") for k in RUN_COLUMNS]
+        # to the microsecond, as the action ledger's entries are: an object's timeline interleaves the two, and an
+        # automation makes several changes inside one second
+        values[columns.index("at")] = datetime.now(timezone.utc).isoformat()
+    c.execute(f"INSERT INTO overlay_edit_history ({', '.join(columns)}) VALUES ({','.join('?' * len(values))})", values)
 
 
 def save_edit(edit: OverlayEdit, *, expected_version: Optional[int] = None) -> OverlayEdit:
@@ -203,6 +226,8 @@ def save_edit(edit: OverlayEdit, *, expected_version: Optional[int] = None) -> O
         edit.org_id = current_org_id()
     edit.id = edit.id or edit.natural_key()   # natural_key hashes org_id — stamp it FIRST
     edit.created_at = edit.created_at or _now()
+    from aughor.actions.attribution import stamp
+    run = stamp()                             # TC-2 — the run in force, read outside the lock; {} with the flag off
     with _LOCK:
         c = _conn()
         try:
@@ -233,7 +258,7 @@ def save_edit(edit: OverlayEdit, *, expected_version: Optional[int] = None) -> O
                   edit.row_key, edit.key_column, edit.kind, edit.body, edit.source,
                   edit.created_at, edit.last_used_at, edit.use_count,
                   edit.object_type, edit.note, edit.actor, edit.origin, edit.version))
-            _record(c, edit, "set", str(existing["body"]) if existing is not None else "", edit.version)
+            _record(c, edit, "set", str(existing["body"]) if existing is not None else "", edit.version, run)
             c.commit()
             return edit
         finally:
@@ -294,6 +319,8 @@ def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] =
     """
     if not edit_id:
         return None
+    from aughor.actions.attribution import stamp
+    run = stamp()                             # TC-2 — a withdrawal names its run too; {} with the flag off
     with _LOCK:
         c = _conn()
         try:
@@ -311,7 +338,7 @@ def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] =
             edit = _row_to_edit(row)
             c.execute("DELETE FROM overlay_edits WHERE id = ?", (edit.id,))
             withdrawn = edit.model_copy(update={"actor": actor or edit.actor, "note": ""})
-            _record(c, withdrawn, "withdrawn", edit.body, int(edit.version or 0) + 1)
+            _record(c, withdrawn, "withdrawn", edit.body, int(edit.version or 0) + 1, run)
             c.commit()
             return edit
         finally:
@@ -344,7 +371,8 @@ def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -
 def edit_history(connection_id: str, *, object_type: str = "", row_key: str = "", column: str = "",
                  org_id: Optional[str] = None, limit: int = 200) -> list[dict]:
     """Arc OC-6 — every version of the edits on a connection's objects, newest first: who set what, what it replaced,
-    who withdrew it — narrowed to one entity, one object, one property."""
+    who withdrew it — narrowed to one entity, one object, one property. TC-2 — with `actions.run_attribution` on, each
+    also says through which run (`attribution.describe`)."""
     sql, args = "SELECT * FROM overlay_edit_history WHERE connection_id = ?", [connection_id]
     if org_id is not None:
         sql += " AND org_id = ?"
@@ -360,7 +388,12 @@ def edit_history(connection_id: str, *, object_type: str = "", row_key: str = ""
             c.close()
     out = [r for r in rows if (not object_type or word(r["object_type"]) == word(object_type))
            and (not row_key or str(r["row_key"]) == str(row_key)) and (not column or r["column"].lower() == column.lower())]
-    return out[:limit]
+    # Arc TC, TC-2 — with `actions.run_attribution` on, each version says which run made it; off, a row reads exactly as
+    # it did before the columns existed.
+    from aughor.actions.attribution import describe, enabled
+    if enabled():
+        return [{**r, **describe(r)} for r in out[:limit]]
+    return [{k: v for k, v in r.items() if k not in RUN_COLUMNS} for r in out[:limit]]
 
 
 # ── read-time merge ─────────────────────────────────────────────────────────────

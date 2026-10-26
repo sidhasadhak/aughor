@@ -95,6 +95,12 @@ FLAG_ENV = {
     "agents.testing_centre": "AUGHOR_AGENTS_TESTING_CENTRE",
     # AO-7 (2026-10-03): one closed learning loop per custom agent.
     "agents.learning_loop": "AUGHOR_AGENTS_LEARNING_LOOP",
+    # Arc TC-1 (ROADMAP §3.59, the incorporation study of 2026-10-24). ON: every receipt a custom agent produced
+    # and every chat turn it answered carry the agent's `config_rev` as `rev` beside its id and name — the revision of the
+    # configuration the answer ran under — and the doors that change an agent's configuration (PATCH and restore) refuse
+    # with 409, naming both revisions, when the caller sends the `expected_rev` it read and the agent has moved since.
+    # OFF: a receipt names the agent by id and name, a turn carries no stamp, and `expected_rev` is ignored, as before.
+    "agents.revision_on_answers": "AUGHOR_AGENTS_REVISION_ON_ANSWERS",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     # "framing.choice_confidence" (AUGHOR_FRAMING_CHOICE_CONFIDENCE) was DELETED 2026-10-04 —
     # kill 6 of the 2027 study (ROADMAP §4.9): its grid was blocked on a corpus that never
@@ -211,6 +217,45 @@ FLAG_ENV = {
     # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
     # misses one way). OFF: decisions are booked, reviewed and scored as before.
     "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # The decision-framework study §3.2 (the user's call, 2026-10-27: email reopened for ARRIVALS only). ON: each
+    # decision has an address on the install's inbound domain; a mail a provider posts to `POST /doors/email` with the
+    # inbound secret becomes an approval (a named approver, verified), a dissent, or evidence. OFF: the door answers 404
+    # and a decision shows no address. The platform never sends a mail either way.
+    "arrivals.email": "AUGHOR_ARRIVALS_EMAIL",
+    # The decision-framework study §3.2 (the user's call, 2026-10-27). ON: a person names one Google file on a decision
+    # and its comments are read onto it as later evidence through their own Google grant. OFF: the door answers 404.
+    "arrivals.google_comments": "AUGHOR_ARRIVALS_GOOGLE_COMMENTS",
+    # Arc TC, TC-2 (ROADMAP §3.59). ON: every edit's history row, every action-audit row and every action's ledger entry
+    # names the run it was made through (a question asked, an automation, a monitor, an agent's job) and its trace, and
+    # an object's changes door reads them oldest first with each run's metered cost. OFF: they record who
+    # made them, as before, and the changes door answers 404.
+    "actions.run_attribution": "AUGHOR_ACTIONS_RUN_ATTRIBUTION",
+    # Arc TC, TC-4 (ROADMAP §3.59). ON: the first check back within its limit after an alert writes one *recovered*
+    # alert naming the alert it closes, when, and the value that came back; the alert lists and the Monitors page read
+    # that alert as closed; a check says "within its limit" apart from "suppressed by its grace period"; and a recovery
+    # ends the grace period, so the next alert opens a new one. A recovery is recorded and listed in alert summaries,
+    # never sent as an alert. OFF: an alert stays open until a person acknowledges it, and a quiet check says "no alert"
+    # whichever it was.
+    "monitors.recovery": "AUGHOR_MONITORS_RECOVERY",
+    # Arc TC, TC-3 (ROADMAP §3.59, 2026-10-26). ON: every save of an automation or a monitor keeps the definition it
+    # replaces as a numbered version in the ledger (superseded, never deleted) with who saved it and when; every
+    # recorded run keeps beside its row the version it ran under and its trigger as received (the payload capped at
+    # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
+    # replaces the definition, runs keep neither, and the version and replay doors answer 404.
+    "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
+    # Arc TC, TC-5 (ROADMAP §3.59). ON: each automation and monitor on the hub map says how often its runs failed over a
+    # window (seven days unless asked), counted at the run store: "no runs" where none ran, never 0%, and "not permitted"
+    # where the reader may not see its runs, never left off. OFF: the map carries no failure rate.
+    "hub.failure_rate": "AUGHOR_HUB_FAILURE_RATE",
+    # Arc TC, TC-5. ON: GET /obs/logs searches the lines the journal kept for every run over the last thirty days — words,
+    # level, the kind of run — newest first from a cursor, saying how many runs it searched and how old its oldest line is.
+    # OFF: the route answers 404 and a run's lines are read one trace at a time (`/traces/{id}/logs`).
+    "obs.log_search": "AUGHOR_OBS_LOG_SEARCH",
+    # Arc TC, TC-5 (§6 item 4, "a reason recorded"). ON: the governance feed takes since, until and an opaque cursor and
+    # exports as CSV or JSON lines; reading a run's payload and exporting the ledger need a reason, refused by name without
+    # one, and each such read is journaled once as `access.justified`. OFF: the feed reads its newest thousand, and a
+    # payload read records who read it but not why.
+    "govern.justifications": "AUGHOR_GOVERN_JUSTIFICATIONS",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -523,6 +568,17 @@ FLAG_META = {
                        "learned and its pass rate before and after. Off: reviews are recorded and the "
                        "agent does not change.",
     },
+    "agents.revision_on_answers": {
+        "label": "Name the agent's revision on its answers",
+        "summary": "Each answer a custom agent gives names the revision of its setup that gave it. "
+                   "A save made against an older revision is refused.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only custom agents"}],
+        "description": "A revision changes when the agent's instructions, data, documents, packs or allowed actions "
+                       "change; a rename does not. It is kept on the answer's receipt and on its chat turn. A save "
+                       "that says which revision it read is refused if the agent changed since. Off: answers name "
+                       "the agent only, and every save is taken.",
+    },
     "slack.managed_supervisor": {
         "label": "Start the Slack bot automatically",
         "summary": "Aughor starts the Slack bot when it boots and restarts it if it stops. "
@@ -652,6 +708,28 @@ FLAG_META = {
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
+    "arrivals.google_comments": {
+        "label": "Comments on a Google file, read onto a decision",
+        "summary": "A person names one Sheet, Slides deck or Doc on a decision, and its comments are kept there as "
+                   "evidence.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Reads only the file named"},
+                  {"kind": "route", "text": "Needs the Google Drive comments card"}],
+        "description": "Each comment is kept in its author's name, with the cell, slide or text it points at. "
+                       "Reading the file again adds only what is new. No other file is listed or read. Off: the "
+                       "door is closed.",
+    },
+    "arrivals.email": {
+        "label": "Decisions by email, inbound only",
+        "summary": "Each decision has an address. A mail to it is kept as evidence, a named approver's approval, or "
+                   "a dissent.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Never sends a mail"},
+                  {"kind": "route", "text": "Needs an inbound domain and secret"}],
+        "description": "A mail provider posts each mail sent to a decision's address. An approval counts only from an "
+                       "approver the decision names, with the sender verified; anything else is kept as evidence and "
+                       "says why. Nothing reads a mailbox. Off: decisions have no address.",
+    },
     "record.decision_loop": {
         "label": "Decisions reviewed honestly",
         "summary": "A decision keeps its evidence, options and expectation, and is reviewed on its date against what "
@@ -663,6 +741,69 @@ FLAG_META = {
                        "not to act. On its review date a decision is measured over the thirty days after it, against "
                        "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
                        "decisions are kept and reviewed as before.",
+    },
+    "actions.run_attribution": {
+        "label": "Which run made each change",
+        "summary": "Every edit and action on an object records the run that made it. An object's changes say who "
+                   "changed it, through which run, at what cost.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "route", "text": "Adds an object's changes"}],
+        "description": "An edit or action made inside a question asked, an automation, a monitor or an agent's work "
+                       "keeps that run and its trace. One made by a person outside any run says so. An object's "
+                       "changes list every edit and action on it, oldest first, with the run's model cost when it was "
+                       "metered. Off: changes record who made them, as before.",
+    },
+    "monitors.recovery": {
+        "label": "Alerts that close when a metric recovers",
+        "summary": "The first check back within its limit after an alert closes that alert. A check also says "
+                   "whether its grace period held an alert back.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "A recovery is never sent alone"}],
+        "description": "The recovery names the alert it closes, when it fired and the value that came back. A second "
+                       "quiet check writes nothing more, and the next alert after a recovery opens a new one. A "
+                       "recovery is shown here and in alert summaries, never sent as an alert. Off: an alert stays "
+                       "open until someone acknowledges it.",
+    },
+    "automations.versions": {
+        "label": "Versions and replays for automations",
+        "summary": "Each save of an automation or a monitor keeps the one before it as a version. Each run "
+                   "names its version and keeps what started it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Nothing is deleted"}],
+        "description": "A version says who saved it and when. A run keeps what started it, up to 16 KB, and says "
+                       "when it kept less. A past run can be replayed: its own version walks what started it, and "
+                       "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
+                       "keeps neither.",
+    },
+    "hub.failure_rate": {
+        "label": "Failure rate on the hub map",
+        "summary": "Each automation and monitor says how often its runs failed over the last week. One that did not "
+                   "run says no runs.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Says when you may not see"}],
+        "description": "A run failed when it broke, or when one of its steps failed. A node with no runs in the window "
+                       "says no runs, never 0%. One whose runs you may not see says not permitted. Off: the map "
+                       "shows no failure rate.",
+    },
+    "obs.log_search": {
+        "label": "Search logs across runs",
+        "summary": "Search the lines every run wrote over the last thirty days. It says how many runs it searched.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "For people who manage the organisation"}],
+        "description": "Words match a line as it was kept. You may narrow by level, error, warning or info, and by the "
+                       "kind of run. The newest lines come first, a page at a time. It says how old the oldest line "
+                       "searched is, since the log may keep fewer days. Off: a run's lines are read one run at a time.",
+    },
+    "govern.justifications": {
+        "label": "A reason to read a run's payload",
+        "summary": "Reading what a run was sent and said, or exporting the ledger, asks for a reason. The governance "
+                   "feed pages back by date.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Refusals say why"}],
+        "description": "Without a reason the read is refused, and says what is missing. Each read is recorded once with "
+                       "who read it, whose run it was and the reason. The governance feed takes a first and last date, "
+                       "pages past its newest thousand and exports as a file. Off: a payload read records who read it, "
+                       "not why.",
     },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
@@ -1026,9 +1167,45 @@ EXPERIMENT: dict = {
     "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
+    "arrivals.google_comments": "do people bring a file's discussion to the decision — of the decisions argued in a "
+                                "Google file over six weeks, is one in five or more read here? Falsifier: a file no "
+                                "person named is read, or a comment is booked as an approval — stop",
+    # The decision-framework study §3.2, 2026-10-27. It lets mail from outside book an approval, so it is watched.
+    "arrivals.email": "do approvals arrive where people give them — of the decisions with a named approver over six "
+                      "weeks, is one in five or more approved by email? Falsifier: an approval is booked from a "
+                      "sender the provider did not verify, or from someone the decision does not name — stop",
     "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
                             "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
                             "study §5): a do-nothing decision is credited its metric's trend — stop",
+    # Arc TC, TC-2, 2026-10-26. It adds to what every change records, so it is watched before it graduates.
+    "actions.run_attribution": "does every change say what made it — of the edits and audited actions recorded in two "
+                               "weeks with it on, does each one made inside a run name that run, and is an object's "
+                               "changes opened? Falsifier (§3.59, TC-2): an edit made by an automation shows no run "
+                               "— stop",
+    # Arc TC, TC-4 (ROADMAP §3.59), 2026-10-26. It changes what an open alert means and lets a recovery end the grace
+    # period, so it is watched before it graduates.
+    "monitors.recovery": "do alerts close on their own — over two weeks on live monitors, is every alert that came back "
+                         "within its limit closed by exactly one recovery, and does the open count fall to the alerts "
+                         "still out of limit? Falsifiers (set with the wave; §3.59 named none): a monitor writes two "
+                         "recoveries for one alert, or a "
+                         "monitor flapping across its line writes more than two alerts a day that its grace period used "
+                         "to fold — either stops it",
+    # Arc TC, TC-3 (ROADMAP §3.59), 2026-10-26. It keeps more of every save and every run, so it is watched before it
+    # graduates.
+    "automations.versions": "is a past run replayed or an earlier version read — within four weeks, is one in three or "
+                            "more of the automations changed in that time opened at a version or a replay? Falsifier "
+                            "(§3.59, TC-3): a replay sends a message, runs an action, calls a model or writes a run — "
+                            "stop",
+    # Arc TC, TC-5 (ROADMAP §3.59), 2026-10-26. No model call; each changes what an operator reads, so each is watched.
+    "hub.failure_rate": "does a failure rate change what is fixed — of the automations shown failing over a week, is one in "
+                        "three or more edited, paused or turned off within two weeks? Falsifier (§3.59, TC-5): a node with "
+                        "no runs, or one the reader may not see, reads as 0% — stop",
+    "obs.log_search": "do people find a failure across runs — of the searches made in two weeks, does one in three or more "
+                      "open a run from its results? Falsifier (§3.59, TC-5): a search that says it read further back than "
+                      "the oldest line it read — stop",
+    "govern.justifications": "are reasons written and read — within four weeks, is the reason readable as a reason in nine "
+                             "of ten payload reads, and is the feed exported at least once? Falsifier (§3.59, TC-5): a "
+                             "payload read or ledger export with no reason recorded beside it — stop",
     "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
                            "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
                            "answers go unread while their runs are paid for — stop",
@@ -1086,6 +1263,13 @@ EXPERIMENT: dict = {
                             "agent? Falsifier (§3.52): two weeks of real use with the loop on and no "
                             "movement on any agent's suite → the 'corrected before' block is removed, "
                             "not kept; candidates from use stay only if a person certified one",
+    # Arc TC-1 (ROADMAP §3.59), 2026-10-26. It changes what a receipt and a stored turn carry, and adds a refusal to two
+    # doors, so it is watched before it graduates. No model calls.
+    "agents.revision_on_answers": "can a person tell which configuration of an agent gave an answer — for an agent "
+                                  "edited while it was answering, does each receipt and stored turn name the revision "
+                                  "it ran under, and is a save sent with a stale revision refused? Falsifier (§3.59): "
+                                  "an answer names a revision other than the one it ran under, or a save is taken over "
+                                  "a revision newer than the one its caller read — stop",
     # PENDING item 19 (ROADMAP §3.38) — the ML review's point 5, its first level: the warehouse's
     # measured data in the SQL writer's context. The context it adds is measured model-free
     # (evals/linker_recall_eval.py reports the recall it rides on; the block's size is pinned);
@@ -1475,6 +1659,13 @@ def flag_enabled(name: str) -> bool:
     if ov is not None:
         return bool(ov)
     return _env_resolved(name)
+
+
+def env_enabled(name: str) -> bool:
+    """What the environment alone says of a flag, with its default — the answer `flag_enabled`
+    falls back to when no override is set. For a caller whose override store could not be read
+    (Arc TC, TC-5: `govern/justifications.required`), so it degrades exactly as an unset override does."""
+    return _env_resolved(_canonical(name))
 
 
 def flag_state(name: str) -> str:

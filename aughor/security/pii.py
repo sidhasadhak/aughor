@@ -2,11 +2,19 @@
 
 Detects and redacts:
   - Email addresses
-  - Phone numbers (US/international)
-  - Credit card numbers (Visa, MC, Amex, Discover)
+  - Phone numbers — US-style, and international ones written with a country code (`+49 151 2345 6789`,
+    `0044 20 7946 0958`), 9 to 15 digits
+  - Card numbers — written whole or in groups (`4111 1111 1111 1111`, `5500-0000-0000-0004`), a known card prefix
+    and a passing Luhn check, so an ordinary long number is not taken for one
+  - IBANs — written whole or in groups of four, kept only when their mod-97 check passes
   - Social Security Numbers
   - IPv4 addresses
-  - Columns whose *names* suggest PII (email, phone, ssn, password, token…)
+  - Columns whose *names* suggest PII (email, phone, ssn, iban, password, token…)
+
+The second, validated, set (2026-10-27): the redactor caught emails and US phones but let international numbers, grouped
+card numbers and IBANs through — measured when mail and Google comments began arriving into the Record. Each new pattern
+is checked (Luhn, mod 97, a digit count) before it redacts, because the same patterns scan query result cells, where a
+false positive mangles real data.
 
 Usage:
     result = PiiScanner.scan_and_redact(columns, rows)
@@ -23,8 +31,9 @@ from dataclasses import dataclass, field
 _RE_EMAIL = re.compile(
     r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b'
 )
+# A US-style number; an area code in brackets is part of the match, so "(555) 123-4567" leaves no "(" behind.
 _RE_PHONE = re.compile(
-    r'\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
+    r'(?<![\w(])(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}\b'
 )
 _RE_CC = re.compile(
     r'\b(?:'
@@ -42,11 +51,59 @@ _RE_IPv4 = re.compile(
     r'\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b'
 )
 
-# (pattern, replacement_label)
-_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+# A card written in groups: 13–19 digits with single spaces or dashes between them. Kept only with a known card prefix
+# and a passing Luhn check (`_card_or_keep`).
+_RE_CC_GROUPED = re.compile(r'\b\d{4}(?:[ -]\d{3,6}){2,4}\b')
+_CARD_PREFIX = re.compile(r'^(?:4|5[1-5]|2(?:2[2-9]|[3-6]\d|7[01]|720)|3[47]|3(?:0[0-5]|[68])|35|6(?:011|5|4[4-9]))')
+# An international phone: `+` or `00`, a 1–3 digit country code, then groups — 9 to 15 digits in all (`_phone_or_keep`).
+_RE_PHONE_INTL = re.compile(r'(?<![\w+])(?:\+|00)\d{1,3}(?:[ .\-]?\(?\d{1,5}\)?){2,6}(?!\d)')
+# An IBAN: two letters, two check digits, 11–30 letters or digits, written whole or in groups of four (`_iban_or_keep`).
+_RE_IBAN = re.compile(r'\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b')
+
+
+def _luhn(digits: str) -> bool:
+    total, odd = 0, False
+    for ch in reversed(digits):
+        d = int(ch)
+        if odd:
+            d = d * 2 - 9 if d > 4 else d * 2
+        total += d
+        odd = not odd
+    return total % 10 == 0
+
+
+def _card_or_keep(m: re.Match) -> str:
+    digits = re.sub(r'\D', '', m.group(0))
+    if 13 <= len(digits) <= 19 and _CARD_PREFIX.match(digits) and _luhn(digits):
+        return "[CARD]"
+    return m.group(0)
+
+
+def _phone_or_keep(m: re.Match) -> str:
+    digits = re.sub(r'\D', '', m.group(0))
+    if m.group(0).startswith("00"):
+        digits = digits[2:]
+    return "[PHONE]" if 9 <= len(digits) <= 15 else m.group(0)
+
+
+def _iban_or_keep(m: re.Match) -> str:
+    raw = m.group(0).replace(" ", "")
+    if not 15 <= len(raw) <= 34:
+        return m.group(0)
+    moved = raw[4:] + raw[:4]
+    number = "".join(str(int(ch, 36)) for ch in moved)
+    return "[IBAN]" if int(number) % 97 == 1 else m.group(0)
+
+
+# (pattern, replacement) — a label, or a function that redacts only what its check confirms. IBANs before cards and
+# phones, whose digit runs they contain; validated grouped cards before the international phone pattern.
+_PATTERNS: list[tuple[re.Pattern[str], object]] = [
     (_RE_EMAIL,  "[EMAIL]"),
+    (_RE_IBAN,   _iban_or_keep),
     (_RE_CC,     "[CARD]"),
+    (_RE_CC_GROUPED, _card_or_keep),
     (_RE_SSN,    "[SSN]"),
+    (_RE_PHONE_INTL, _phone_or_keep),
     (_RE_PHONE,  "[PHONE]"),
     (_RE_IPv4,   "[IP]"),
 ]
@@ -71,7 +128,7 @@ def _is_decimal_number(val: str) -> bool:
 # Column name patterns whose values should always be redacted
 _PII_COL_RE = re.compile(
     r'\b(?:email|phone|mobile|cell_?phone|ssn|sin|'
-    r'credit_?card|card_?number|card_?no|cvv|'
+    r'credit_?card|card_?number|card_?no|cvv|iban|'
     r'ip_?addr(?:ess)?|password|passwd|pwd|'
     r'api_?(?:key|token|secret)|auth_?token|'
     r'secret|private_?key)\b',

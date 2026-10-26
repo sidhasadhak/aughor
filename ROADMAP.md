@@ -12093,7 +12093,7 @@ dashboard piece says a cut read beside its caveats (`answerSays`).
   completeness to the model.
 - Platform-owned types' doors carry the field without a test of their own.
 
-### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
+### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · ✅ TC-1…TC-5 BUILT 2026-10-26/27, each behind its flag, off; PENDING lists each wave's premise corrections)
 
 **The premise, measured.** Provenance is Aughor's first law, and these places do not yet keep it:
 
@@ -14531,6 +14531,39 @@ the browser** · **measure the premise before building.**
       on the scratch pair's demo ontology with `ontology.entity_usage` on, Customer's Overview read the door — no
       dependent (said), twelve months of reads with one in October 2026 after one audited statement through the SQL
       editor; the builder's own schema reads are not audited and do not count, which the count says by its source.
+
+54. ✅ **DECIDED 2026-10-25 — Aughor as the centre piece of an organisation's decision intelligence: the
+    framework before the build; B + C + A** (the user: *"how making Aughor truly a center piece of an organisation's
+    decision intelligence"* · *"an advanced decision flow — forwards & backwards with loops where every decision and
+    their 'why' is readable if the user wishes to"* · *"let's not haste into building something.. invest much time
+    into what could be a framework.. the target should be to cover all"*). The study is
+    `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`; PENDING item 61.
+    **(a) ✅ The three readings of "centre piece" — A the place a decision is booked, B the place it is proposed, C the
+    place it is reviewed and learned from — taken as B + C + A** (the user: *"I like B + C + A"*); recommended: C as the
+    moat and the opening claim, A as its intake, B last and only through missions.
+    **(b) ✅ The framework first, covering every point** — the thread as a view over the Inquiry (no new store), invited
+    capture (never a crawl), the evidence envelope with conversation and meeting kinds, decision kinds declared by the
+    organisation, three layers of why composed by code; nothing of it built.
+    **(c) ✅ Slack is the first door; contract terms land in the warehouse** (the example organisation), so constraints
+    are measured, not declared. **Open:** an inbound-only email door (reverses §3.18's "no email in either direction");
+    the Google OAuth client for Sheets, Slides and Docs comments; the person-facing word for the vessel.
+    **(d) ✅ Run it live** — six decisions from arising to learned on LuxExperience (study §5), the user approving the
+    GMV metric, the live ledger and one Analyst run. Found and fixed on `claude/decision-review-segment-cut`: a
+    whole-SELECT metric could not be cut by a segment (`212fa3d1`), and a statement whose date table sits on the optional
+    side of an outer join read the whole history as a window. Six open defects in the study §6.
+    **(e) ✅ Continue as the study says, fully** (the user, 2026-10-26: *"Lets continue as per the decision framework
+    study fully, back to back"*). Built in §8's order and beyond it, on the same branch: the six defects; Arc TC; the
+    intake doors (a Question's answer, a Briefing figure, `@bot decide:` and its card); decision kinds and the proposal
+    under a mission; the decision's reading forwards and backwards with the modifying decision; the evidence envelope's
+    conversation and meeting kinds and the meeting door. Two words chosen in building, each the user's to overrule: a
+    hold that moved outside its band is **missed** (a fifth verdict), and the reading's section avoids the vessel's noun.
+    **(f) ✅ The calls, 2026-10-27** (asked, answered): the branch stays local; people see a decision's whole story as
+    **the inquiry** (the stored object's name; "thread" and "case" stay retired); **missed** stays; TC-2's per-object
+    read is an object's **changes** (the dashboard piece keeps "timeline"); the four low-risk TC flags go on —
+    `agents.revision_on_answers`, `actions.run_attribution`, `hub.failure_rate`, `obs.log_search`; **email opens
+    inbound only** (reverses §3.18's "no email in either direction" for arrivals; the platform still never sends one);
+    the user creates the Google OAuth client, guided; a run's summary, spans, logs and trajectory are admin-only like
+    the trace; the coverage test (real decisions rebuilt by hand) is skipped for now.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

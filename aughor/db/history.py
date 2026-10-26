@@ -404,7 +404,18 @@ def save_chat_turn(
         _a = current_agent()
         agent_id = _a.id if _a is not None else ""
     except Exception:
+        _a = None
         agent_id = ""
+    # Arc TC-1 — with `agents.revision_on_answers` on, the turn names the agent that answered it as its receipt
+    # does, revision included, so "which revision said this" is answerable from the turn. Off: no key, and the
+    # report is what it always was.
+    _agent_stamp = None
+    if _a is not None:
+        try:
+            from aughor.custom_agents.context import answer_stamp, revision_on_answers
+            _agent_stamp = answer_stamp(_a) if revision_on_answers() else None
+        except Exception:                   # noqa: BLE001 — a turn is never lost for want of its stamp
+            _agent_stamp = None
     # ``inv_id`` (CP-4) — the caller's id when the turn already has one elsewhere (the
     # receipt a converse tool minted), so the row and the receipt share the key.
     inv_id = inv_id or uuid.uuid4().hex[:8]
@@ -424,6 +435,8 @@ def save_chat_turn(
         "insight":     insight or None,
         "overview_report": overview_report or None,   # the interesting-facts tour, when this was one
     }
+    if _agent_stamp:
+        report["agent"] = _agent_stamp
     c.execute(
         """INSERT INTO investigations
            (id, question, connection_id, canvas_id, started_at, completed_at,
@@ -917,6 +930,10 @@ def get_session_turns(session_id: str) -> list[dict]:
             rechecks = [r for r in report.get("rechecks") or [] if r.get("status") in ("changed", "unchanged")]
             if rechecks and rechecks[-1].get("status") == "changed":
                 d["latest_recheck"] = rechecks[-1]
+            # Arc TC-1 — the agent that answered, with the revision it ran under, when the turn was stamped with
+            # one. Absent otherwise, so an unstamped turn projects exactly as before.
+            if report.get("agent"):
+                d["agent"] = report["agent"]
         else:
             # FL-6 — report_json IS the deep report here. Quick fields stay
             # present-and-empty so every existing consumer is type-stable.

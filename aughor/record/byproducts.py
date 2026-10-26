@@ -150,6 +150,13 @@ def overridden(decision: _dec.Decision) -> Optional[bool]:
 _ANSWER_VERDICT = {"verified": "as_expected", "rejected": "worse", "implemented": "cannot_tell"}
 
 
+def band_of(pred) -> Optional[tuple]:
+    """An expectation claim's own band, ``(low, high, unit)``; None without one."""
+    if pred is None:
+        return None
+    return (pred.extra.get("low"), pred.extra.get("high"), pred.statement.unit or "")
+
+
 def against_expectation(decision, actual: Optional[float], before: Optional[float]) -> tuple[str, Optional[_claims.Claim]]:
     """Where the actual fell against the decision's expectation: inside · above · below · cannot
     tell (a relative band with no before value) · no expectation."""
@@ -165,12 +172,14 @@ def against_expectation(decision, actual: Optional[float], before: Optional[floa
 
 def verdict_against_baseline(*, actual: Optional[float], baseline: Optional[float], low: Optional[float],
                              high: Optional[float], direction: str, against: str, history_note: str,
-                             drift: str = "", method: str = "history") -> tuple[str, str, _dec.Effect]:
+                             drift: str = "", method: str = "history",
+                             band: Optional[tuple] = None) -> tuple[str, str, _dec.Effect]:
     """``drift`` (PENDING 57, D-3): why this baseline cannot be trusted to stand for "what would have happened
     anyway" — the metric's own history band has missed one way; the effect is still measured and said, the verdict
-    is cannot tell. ``method`` names the baseline the effect was measured against."""
+    is cannot tell. ``method`` names the baseline the effect was measured against. ``band`` is the expectation's own
+    ``(low, high, unit)`` — what a *hold* allowed; ``low``/``high`` are the baseline's band."""
     verdict, why, e = _verdict_core(actual=actual, baseline=baseline, low=low, high=high, direction=direction,
-                                    against=against, history_note=history_note)
+                                    against=against, history_note=history_note, band=band)
     if method != "history":
         e.method = method
         why = why.replace("against its own history", f"against its {_BASELINE_WORDS.get(method, method)}") \
@@ -186,10 +195,12 @@ _BASELINE_WORDS = {"comparison": "comparison group (the rest of its group, at it
 
 
 def _verdict_core(*, actual: Optional[float], baseline: Optional[float], low: Optional[float],
-                  high: Optional[float], direction: str, against: str, history_note: str) -> tuple[str, str, _dec.Effect]:
+                  high: Optional[float], direction: str, against: str, history_note: str,
+                  band: Optional[tuple] = None) -> tuple[str, str, _dec.Effect]:
     """Both verdicts' meeting point (the study §K rule 2; `IDEAS.md` 13 and 22): the effect is the
     actual against what the metric's own history predicted, with history's band; the verdict is
-    code over that effect and the expected direction, and ``cannot tell`` says why."""
+    code over that effect and the expected direction, and ``cannot tell`` says why. A *hold* is
+    judged by :func:`_hold_verdict` (the decision-framework run, defect 5)."""
     if actual is None:
         return "cannot_tell", "the review could not measure the metric", _dec.Effect(method="history")
     if baseline is None:
@@ -199,6 +210,9 @@ def _verdict_core(*, actual: Optional[float], baseline: Optional[float], low: Op
     eff_high = (actual - low) if low is not None else None
     e = _dec.Effect(value=round(effect, 6), low=round(eff_low, 6) if eff_low is not None else None,
                     high=round(eff_high, 6) if eff_high is not None else None, method="history")
+    if direction == "hold":
+        return _hold_verdict(actual=actual, baseline=baseline, effect=effect, eff_low=eff_low, eff_high=eff_high,
+                             band=band, e=e)
     if eff_low is not None and eff_high is not None and eff_low <= 0 <= eff_high:
         return ("cannot_tell", f"inside the baseline's own noise: history predicted {low:,.4g} to {high:,.4g} and the "
                                f"metric read {actual:,.4g}", e)
@@ -215,6 +229,58 @@ def _verdict_core(*, actual: Optional[float], baseline: Optional[float], low: Op
     return "worse", f"the metric moved {effect:+,.4g} the wanted way but short of the expected band", e
 
 
+def allowed_effect(band: Optional[tuple], baseline: float) -> Optional[tuple[Optional[float], Optional[float]]]:
+    """The effect an expectation's band allows, against the baseline: a relative band (unit %) is a share of the
+    baseline, a band in the metric's own unit is where the level may land. None when the expectation named no band."""
+    if not band:
+        return None
+    lo, hi, unit = (list(band) + [None, None, ""])[:3]
+    if lo is None and hi is None:
+        return None
+    if unit == "%":
+        return (baseline * lo / 100.0 if lo is not None else None, baseline * hi / 100.0 if hi is not None else None)
+    return (lo - baseline if lo is not None else None, hi - baseline if hi is not None else None)
+
+
+def _band_words(band: tuple) -> str:
+    lo, hi, unit = (list(band) + [None, None, ""])[:3]
+    if unit == "%":
+        if lo is not None and hi is not None and abs(lo + hi) < 1e-9:
+            return f"the ±{abs(hi):g}% its hold allowed"
+        return f"the {lo if lo is not None else '…'}% to {hi if hi is not None else '…'}% its hold allowed"
+    return f"the {lo if lo is not None else '…'} to {hi if hi is not None else '…'} its hold allowed"
+
+
+def _hold_verdict(*, actual: float, baseline: float, effect: float, eff_low: Optional[float],
+                  eff_high: Optional[float], band: Optional[tuple], e) -> tuple[str, str, _dec.Effect]:
+    """A *hold* expects no move beyond its band; it names no wanted side, so a move outside the band is ``missed``
+    — never better or worse, which would need a side the metric does not declare (the Lux run, scenario 3: Mytheresa
+    moved +10% against the other shops under a "hold within 3%" and the review said cannot tell). Inside the
+    baseline's noise, the hold is read as held only when the whole of that noise fits inside what the hold allowed —
+    a noise wider than the band cannot tell a hold from a move."""
+    rel = f" ({effect / abs(baseline) * 100:+.1f}%)" if baseline else ""
+    allowed = allowed_effect(band, baseline)
+    if allowed is None:
+        return ("cannot_tell", f"the metric moved {effect:+,.4g}{rel} against its own history, but the hold named no "
+                               "band to read it against", e)
+    a_lo, a_hi = allowed
+    words = _band_words(band)
+    noisy = eff_low is not None and eff_high is not None and eff_low <= 0 <= eff_high
+    if not noisy:
+        if a_hi is not None and effect > a_hi or a_lo is not None and effect < a_lo:
+            side = "above" if a_hi is not None and effect > a_hi else "below"
+            return ("missed", f"the metric moved {effect:+,.4g}{rel} against its own history, {side} {words} — a hold "
+                              "names no wanted side, so the move is neither better nor worse", e)
+        return "as_expected", f"the metric moved {effect:+,.4g}{rel} against its own history, inside {words}", e
+    fits = (eff_low is not None and eff_high is not None and (a_lo is None or a_lo <= eff_low)
+            and (a_hi is None or eff_high <= a_hi))
+    if fits:
+        return ("as_expected", f"held: the metric read {actual:,.4g}, inside the baseline's noise, and the whole of "
+                               f"that noise lies inside {words}", e)
+    return ("cannot_tell", f"inside the baseline's own noise (an effect of {eff_low:+,.4g} to {eff_high:+,.4g}), which "
+                           f"is wider than {words} — whether it held cannot be told", e)
+
+
 def outcome_from_review(outcome) -> Optional[str]:
     """The REVIEW books the Outcome (phase 3): the actual measured on the review date against the
     expectation and against the metric's own history (method 3, measured by the review), the
@@ -228,7 +294,9 @@ def outcome_from_review(outcome) -> Optional[str]:
         return decision.outcome
     actual = outcome.review_value
     before = outcome.baseline_value if outcome.baseline_value is not None else outcome.metric_before
-    against, pred = against_expectation(decision, actual, before)
+    # a relative band is read against the baseline the verdict is read against, never the window before (defect 8)
+    against, pred = against_expectation(decision, actual, outcome.history_value if outcome.history_value is not None
+                                        else before)
     direction = str(pred.extra.get("direction") or "") if pred is not None else ""
     drift = ""
     if _dec.loop_on():
@@ -237,7 +305,8 @@ def outcome_from_review(outcome) -> Optional[str]:
                             or str(getattr(outcome, "metric_name", "") or ""))
     verdict, why, effect = verdict_against_baseline(
         actual=actual, baseline=outcome.history_value, low=outcome.history_low, high=outcome.history_high,
-        direction=direction, against=against, history_note=outcome.history_note, drift=drift)
+        direction=direction, against=against, history_note=outcome.history_note, drift=drift,
+        band=band_of(pred))
     # Phase 5: the measured verdict writes back to the confirmed-cause graph BEFORE the outcome is booked,
     # so the one outcome version the review books says what it wrote back.
     writes_back = (["prediction scored"] if pred is not None else []) + \
@@ -357,13 +426,32 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                      dissent: Optional[list[dict]] = None, relied_on: Optional[list[str]] = None,
                      objective: str = "", connection_id: str = "", decided_at: str = "",
                      decided_by: str = "", review_on: str = "", expectation: Optional[dict] = None,
-                     note: str = "", finding_id: str = "", schema_name: str = "") -> str:
+                     note: str = "", finding_id: str = "", schema_name: str = "", run_id: str = "",
+                     figure: Optional[dict] = None, kind: str = "", revises: str = "",
+                     evidence: Optional[list[dict]] = None) -> str:
     """A decision taken elsewhere, declared in its own words. Refuses a relied-on id that is not a
-    claim (a decision cites what the Record holds, never a loose string)."""
+    claim (a decision cites what the Record holds, never a loose string). With the decision loop on, the server cites
+    what the decision was taken on: an Explorer finding's claim (``finding_id``), the claims a run's receipt booked
+    (``run_id`` — a dashboard Question's answer, a chat answer), or a Briefing figure measured for its days and booked
+    as a reading (``figure``: metric, start, end) — the decision-framework study §3.2 and §8 step 3."""
     if not (question or "").strip():
         raise ValueError("a decision states what was being decided")
     if not (chosen or "").strip():
         raise ValueError("a decision names what was chosen")
+    revised = None
+    if (revises or "").strip():
+        # a modifying decision names the decision it changes; its inquiry reads backwards to it (study §3.1)
+        revised = _dec.get_decision(revises.strip())
+        if revised is None:
+            raise ValueError(f"{revises!r} is not a decision in the Record; a decision revises one it can name")
+    declared_kind = None
+    if (kind or "").strip():
+        # a decision of a declared kind keeps its kind's rules at the door (the decision-framework study §3.1)
+        from aughor.record.kinds import rules_for
+        declared_kind, approvers = rules_for(kind, expectation=expectation, approvers=approvers)
+        if not review_on:
+            when = _claims._as_dt(decided_at) if decided_at else None
+            review_on, _why = _dec.propose_review_on(connection_id, when, default_days=declared_kind.review_days)
     cited: list[str] = []
     for cid in relied_on or []:
         if _claims.get(cid) is None:
@@ -377,6 +465,20 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         claim, finding_note = explorer_finding_claim(connection_id, finding_id, schema_name)
         if claim is not None and claim.id not in cited:
             cited.append(claim.id)
+    notes = [finding_note] if finding_note else []
+    if run_id and _dec.loop_on():
+        ids = relied_on_claims(connection_id, run_id)
+        cited += [c for c in ids if c not in cited]
+        if not ids:
+            notes.append(f"run {run_id} booked no claim — what it answered is not in the Record to cite")
+    if figure and _dec.loop_on():
+        cid, why = reading_claim(connection_id, str(figure.get("metric") or ""), str(figure.get("start") or ""),
+                                 str(figure.get("end") or ""))
+        if cid and cid not in cited:
+            cited.append(cid)
+        if why:
+            notes.append(why)
+    finding_note = "; ".join(notes)
     opts = [_dec.Option(id=o, description=o) for o in (options or [])]
     if chosen not in {o.id for o in opts}:
         opts.append(_dec.Option(id=chosen, description=chosen))
@@ -387,13 +489,85 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         relied_on=cited, objective=objective or "", decided_at=decided_at or "",
         decided_by=decided_by or "unidentified", review_on=review_on or "",
         source=_dec.Source(kind="declared", ref=uuid.uuid4().hex[:12], detail=(note or "")[:400]),
-        connection_id=connection_id or "",
+        connection_id=connection_id or "", kind=declared_kind.key if declared_kind is not None else "",
         extra={**({"note": note} if note else {}),
                **({} if expectation else {"expectation_note": "none declared — nothing to score"}),
                **({"finding_id": finding_id} if finding_id and _dec.loop_on() else {}),
+               **({"run_id": run_id} if run_id and _dec.loop_on() else {}),
+               **({"figure": dict(figure)} if figure and _dec.loop_on() else {}),
+               **({"revises": revised.id} if revised is not None else {}),
+               # where it was taken — a conversation or a meeting, as a reference and a hash (study §3.2)
+               **({"evidence": list(evidence)} if evidence else {}),
                **({"relied_on_note": finding_note} if finding_note else {})},
     )
     return _dec.book_decision(decision, expectation=expectation_from(expectation), author=decided_by)
+
+
+def reading_claim(connection_id: str, metric: str, start: str, end: str, *, runner=None,
+                  today: Optional[_dt.date] = None) -> tuple[Optional[str], str]:
+    """A figure a person decided on, measured for its days by the metric's own compiler and booked as a *reading*
+    with its own receipt — ``(claim id, "")``, or ``(None, why not)``. The page's number is never taken on trust: the
+    decision relies on what the warehouse held for those days when it was decided (the decision-framework run: a
+    query's figure could not be cited, so a decision taken on a Briefing figure cited nothing). ``end`` is exclusive."""
+    from aughor.semantic import metric_time as mt
+    from aughor.semantic.metrics import get_metric
+    name = (metric or "").strip()
+    if not (connection_id and name):
+        return None, "no figure was named, so none was booked"
+    m = get_metric(name, connection_id=connection_id)
+    if m is None:
+        return None, f"{name} is not a metric on this connection, so the figure was not booked"
+    label = getattr(m, "label", None) or m.name
+    ok, why = mt.measurable(m)
+    if not ok:
+        return None, f"{label} cannot be measured for a period ({why}), so the figure was not booked"
+    try:
+        s, e = _dt.date.fromisoformat(start[:10]), _dt.date.fromisoformat(end[:10])
+    except ValueError:
+        return None, f"the figure's days ({start} to {end}) are not dates, so it was not booked"
+    if e <= s:
+        return None, f"the figure's days end ({end}) before they start ({start}), so it was not booked"
+    window = mt.Window("current", s, e)
+    if runner is None:
+        from aughor.knowledge.period_brief import connection_runner as runner
+    with runner(connection_id) as (run_sql, dialect):
+        sql, why = mt.measure_sql(m, [window], dialect=dialect)
+        rows, why = mt.run_measure(m, [window], run_sql, dialect=dialect) if sql else ([], why)
+    span = f"{s.isoformat()} to {window.last_day.isoformat()}"
+    if why:
+        return None, f"{label} could not be measured for {span}: {why}"
+    got = rows[0] if rows else None
+    if got is None or not got["n"] or got["value"] is None:
+        return None, f"{span} holds no rows of {label}, so there was no figure to book"
+    value = float(got["value"])
+    from aughor.routers.investigations import write_answer_receipt
+    written = write_answer_receipt(
+        kind="chat_answer", natural_key=f"chat:{connection_id}:reading:{m.name}:{s.isoformat()}:{e.isoformat()}",
+        question=f"{label}, {span}", sqls=[sql or ""], headline="", schema="", connection_id=connection_id,
+        payload_extra={"reading": {"metric": m.name, "start": s.isoformat(), "end": e.isoformat(), "value": value},
+                       "body": "decide.figure"})
+    receipt = (written or {}).get("receipt_id")
+    if not receipt:
+        return None, f"{label} read {value:,.6g} for {span}, but its receipt could not be written, so it was not booked"
+    lag = 0
+    try:
+        from aughor.settling.store import learned_lag_days
+        lag = int(learned_lag_days(connection_id) or 0)
+    except Exception:  # noqa: BLE001 — an unknown lag reads as provisional below, never as final
+        lag = 0
+    status = mt.figure_status(m, window, as_of=today or _dt.datetime.now(_dt.timezone.utc).date(), lag_days=lag)
+    unit = getattr(m, "unit", None) or ""
+    claim = _claims.Claim(
+        kind="reading", tier="measured", about=_claims.About(kind="connection", key=connection_id),
+        statement=_claims.Statement(text=f"{label} read {value:,.6g}{unit if unit == '%' else ''} for {span}",
+                                    metric=m.name, value=value, unit=unit, range_start=s.isoformat(),
+                                    range_end=e.isoformat()),
+        status={"final": "Final", "to_date": "To date"}.get(status, "Provisional"), as_of=window.last_day.isoformat(),
+        warrants=[_claims.Warrant(kind="run", ref=receipt, detail=(sql or "")[:400])],
+        author="system", author_kind="system",
+        extra={"rows": int(got["n"]), "booked_for": "a decision taken on this figure"})
+    key = _claims.claim_key("reading", connection_id, m.name, s.isoformat(), e.isoformat())
+    return _claims.book(claim, key=key, conn_id=connection_id), ""
 
 
 # ── the decision not to act (PENDING 57, D-1) ───────────────────────────────────────────────

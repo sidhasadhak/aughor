@@ -252,9 +252,14 @@ export interface Decision {
   recorded_at: string;
   /** The version that replaced this one — "" on the current version. */
   superseded_by: string;
+  /** The verdict of its outcome, on a list's rows; "" before its review. */
+  outcome_verdict?: OutcomeVerdict | "";
+  /** The declared kind of decision it is (`decision_kind:<slug>`); "" when none was named. */
+  kind?: string;
 }
 
-export type OutcomeVerdict = "as_expected" | "better" | "worse" | "cannot_tell";
+/** ``missed`` — a hold that moved outside its band: it named no wanted side, so neither better nor worse. */
+export type OutcomeVerdict = "as_expected" | "better" | "worse" | "missed" | "cannot_tell";
 
 export interface Outcome {
   id: string;
@@ -277,6 +282,10 @@ export interface DecisionDetail extends Decision {
   outcome_record: Outcome | null;
   /** What replaced the claim it stood on, while the decision is reopened and unanswered. */
   reopened_by_claim: Claim | null;
+  /** Its address for mail, inbound only — "" with a note saying why when it has none. */
+  email?: { address: string; note: string };
+  /** Whether a Google file's comments may be read onto it, and the files read so far. */
+  google?: { on: boolean; files: string[] };
 }
 
 export interface ExpectationIn {
@@ -304,6 +313,14 @@ export interface DeclareDecisionBody {
   /** The Explorer finding it was decided on: the server cites the finding's claim (PENDING 57, decision loop on). */
   finding_id?: string;
   schema_name?: string;
+  /** The run whose answer it was decided on (a dashboard Question's, a chat answer): the server cites its claims. */
+  run_id?: string;
+  /** The Briefing figure it was decided on: the server measures it for these days and books that reading to cite. */
+  figure?: { metric: string; start: string; end: string };
+  /** The declared kind of decision it is: its rules hold at the door. */
+  kind?: string;
+  /** Who approves it: `email:<address>` (who can approve by mail) or `person:<name>`. */
+  approvers?: string[];
 }
 
 export interface OutcomeBody {
@@ -535,6 +552,72 @@ export const getPastMissionReport = (id: string, reportId: string) =>
 export const reportMissionNow = (id: string, deliver: boolean) =>
   send<{ report_id: string; report: MissionReport; delivery: { door?: string; status?: string; note?: string }; mission: Mission }>(
     `/record/missions/${encodeURIComponent(id)}/report?deliver=${deliver ? "true" : "false"}`);
+/** A kind of decision the organisation declared (the decision-framework study §3.1): who approves one, whether it
+ *  must say what it expects, when it is reviewed, and the metrics it usually moves. Declared by people only. */
+export interface DecisionKind {
+  id: string; key: string; version: number; name: string; description: string; approvers: string[];
+  expectation_required: boolean; review_days: number; authority_ceiling: number | null; metrics: string[];
+  state: "active" | "retired"; declared_by: string; recorded_at: string;
+}
+export interface DecisionKindBody {
+  name: string; description?: string; approvers?: string[]; expectation_required?: boolean; review_days?: number;
+  authority_ceiling?: number | null; metrics?: string[]; state?: "active" | "retired";
+}
+/** What one option of a proposal is predicted to do — from the Record only, or why not. */
+export interface ProposalPrediction {
+  method: "intervention" | "history"; says: string;
+  effect?: number | null; effect_low?: number | null; effect_high?: number | null;
+  value?: number | null; low?: number | null; high?: number | null;
+}
+/** A decision of a declared kind the platform proposes under a mission — composed by code, booked by nobody. */
+export interface MissionProposal {
+  kind: string; kind_name: string; mission: string; question: string;
+  options: { option: string; predicted: ProposalPrediction }[];
+  approvers: string[]; expectation_required: boolean; expectation: { metric: string; direction: string };
+  review_days: number; connection_id: string; composed_by: string;
+}
+export const listDecisionKinds = (state?: "active" | "retired") =>
+  read<{ kinds: DecisionKind[] }>(`/record/decision-kinds${qs({ state })}`);
+export const declareDecisionKind = (body: DecisionKindBody) => send<DecisionKind>("/record/decision-kinds", body);
+export const listMissionProposals = (missionId: string) =>
+  read<{ mission: string; proposals: MissionProposal[]; objective: Record<string, unknown> }>(
+    `/record/missions/${encodeURIComponent(missionId)}/proposals`);
+
+/** One step of a decision's inquiry, as people read it: its why in three layers — a line, a sentence, and the receipt — composed by code. */
+export interface InquiryStep {
+  kind: string; line: string; why: string; receipt: Record<string, unknown>; at: string; ref: string;
+}
+export interface InquiryLink { decision: string; question: string; chosen: string; decided_at: string; why: string }
+/** A decision read from where it arose to what was learned, forwards and backwards (the decision-framework study §3.1). */
+export interface InquiryView {
+  decision: string; question: string; connection_id: string;
+  stages: { stage: string; words: string; steps: InquiryStep[] }[];
+  loops: InquiryStep[]; backwards: InquiryLink[]; forwards: InquiryLink[]; composed_by: string;
+}
+export const getInquiryView = (ref: string) => read<InquiryView>(`/record/inquiry-view/${encodeURIComponent(ref)}`);
+
+/** A decision the model proposed from a meeting's notes — a proposal, never a fact, until a person confirms it. */
+export interface MeetingCandidate {
+  id: string; meeting: string; title: string; held_on: string; connection_id: string; question: string; chosen: string;
+  options: string[]; said_by: string; quote: string; quote_found: boolean; notes_hash: string;
+  status: "proposed" | "confirmed" | "refused"; brought_by: string; decided_as: string; answered_by: string; why: string;
+}
+export interface MeetingNotesBody { connection_id?: string; title: string; held_on: string; text: string; share_quotes?: boolean }
+export const proposeMeetingCandidates = (body: MeetingNotesBody) =>
+  send<{ meeting: string; candidates: MeetingCandidate[]; notes_hash: string; cut: string; dropped: number; beyond_cap: number }>(
+    "/record/meetings/candidates", body);
+export const listMeetingCandidates = (f: { meeting?: string; status?: string; connection_id?: string } = {}) =>
+  read<{ candidates: MeetingCandidate[] }>(`/record/meetings/candidates${qs({ ...f })}`);
+export const confirmMeetingCandidate = (id: string, body: { chosen?: string; question?: string } = {}) =>
+  send<{ candidate: MeetingCandidate; decision: DecisionDetail }>(`/record/meetings/candidates/${encodeURIComponent(id)}/confirm`, body);
+export const refuseMeetingCandidate = (id: string, why: string) =>
+  send<MeetingCandidate>(`/record/meetings/candidates/${encodeURIComponent(id)}/refuse`, { why });
+
+/** Read the comments of ONE named Google file onto a decision, as later evidence. */
+export const readGoogleFileOntoDecision = (decisionId: string, link: string) =>
+  send<{ decision: string; file: string; read: number; new: number; already_held: number; more: string }>(
+    `/record/decisions/${encodeURIComponent(decisionId)}/google-file`, { link });
+
 export const getMissionTemplates = (connectionId?: string) =>
   read<{ templates: MissionTemplate[]; packs: string[]; note: string }>(
     `/record/missions/templates${qs({ connection_id: connectionId })}`);
@@ -810,6 +893,7 @@ export const VERDICT_WORDS: Record<string, string> = {
   as_expected: "as expected",
   better: "better than expected",
   worse: "worse than expected",
+  missed: "moved outside its hold",
   cannot_tell: "cannot tell",
 };
 

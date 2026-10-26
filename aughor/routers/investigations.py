@@ -375,11 +375,12 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # receipted (chat / deep-analysis / monitor), so stamping here attributes all three by
         # construction. Absent when nobody asked as an agent — an unbound answer says so by
         # omission rather than carrying an empty agent that reads like a real one.
+        # Arc TC-1 — with `agents.revision_on_answers` on, the stamp also names the revision of the
+        # agent's configuration this answer ran under (`rev`); off, it is `{id, name}` as before.
         _agent = None
         try:
-            from aughor.custom_agents.context import current_agent
-            _a = current_agent()
-            _agent = {"id": _a.id, "name": _a.name} if _a is not None else None
+            from aughor.custom_agents.context import answer_stamp, current_agent
+            _agent = answer_stamp(current_agent())
         except Exception:
             _agent = None
         _receipt_id = Ledger.default().artifact_write(
@@ -449,6 +450,10 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
 #: (agent/converse_tools.py) writes a receipt for a primitive answer the same way the
 #: core writes one for its own — one writer, two callers, one receipt shape.
 write_answer_receipt = _write_answer_receipt
+#: The executed SQL of a deep report and the subject its frame gave it — read by the Analyst's own receipt
+#: (`agent/analyst._write_report_receipt`), the same two the graph path's receipt reads.
+deep_report_sqls = _ada_sqls
+frame_about_of = _frame_about_of
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
@@ -6178,7 +6183,8 @@ async def stream_with_session_log(
     headline: str = ""
     receipt_id: str | None = None
     t0 = _t.monotonic()
-    with _tel.bind_trace(run_id):
+    # Arc TC, TC-2 — the turn is a run too, named by the same id as its trace: an edit or an action it makes says so
+    with _tel.bind_trace(run_id), _tel.bind_run(run_id, "chat"):
         session_log.emit(
             session_log.USER_REQUEST, name=door, trace_id=run_id, conn_id=conn_id,
             payload={"question": question, "depth": depth, "canvas_id": canvas_id,

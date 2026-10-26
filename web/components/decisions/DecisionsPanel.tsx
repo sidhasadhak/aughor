@@ -18,10 +18,15 @@ import { useMemo, useState } from "react";
 import type { Connection } from "@/lib/api";
 import { countNoun, formatCount, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
+import { withUniqueKeys } from "@/lib/listKeys";
+import { requestTab } from "@/lib/navigate";
 import {
-  amendDecision, bookOutcome, bookScenario, declareDecision, decisionStands, getCalibration, getDecision,
-  getPastCases, listDecisions, listScenarios, plainWho, verdictWords, whoLabel,
-  type CalibrationRow, type Claim, type Decision, type DecisionDetail, type OutcomeVerdict, type Scenario,
+  amendDecision, bookOutcome, bookScenario, confirmMeetingCandidate, declareDecision, declareDecisionKind, decisionStands,
+  getCalibration, getDecision, getPastCases, getInquiryView, listDecisionKinds, listDecisions, listMeetingCandidates, listScenarios,
+  plainWho, proposeMeetingCandidates, readGoogleFileOntoDecision, refuseMeetingCandidate, verdictWords, whoLabel,
+  type MeetingCandidate,
+  type CalibrationRow, type Claim, type Decision, type DecisionDetail, type DecisionKind, type OutcomeVerdict, type Scenario,
+  type InquiryLink, type InquiryStep,
   type ScenarioBody,
 } from "@/lib/record";
 import {
@@ -35,7 +40,10 @@ import {
 import { chosenWords, countBy, dateWords, distanceWords, shortLabel, whenWords } from "@/components/record/words";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Segmented } from "@/components/ui/segmented";
 import { Callout } from "@/components/ui/callout";
 
@@ -57,7 +65,7 @@ export function reviewState(d: Pick<Decision, "outcome" | "review_on">): "review
 
 const REVIEW_HUE: Record<string, ChipHue> = { reviewed: "muted", due: "caution", waiting: "info" };
 const REVIEW_WORDS: Record<string, string> = { reviewed: "reviewed", due: "review due", waiting: "awaiting its date" };
-const VERDICT_HUE: Record<string, ChipHue> = { as_expected: "positive", better: "positive", worse: "negative", cannot_tell: "muted" };
+const VERDICT_HUE: Record<string, ChipHue> = { as_expected: "positive", better: "positive", worse: "negative", missed: "caution", cannot_tell: "muted" };
 
 const SOURCE_WORDS: Record<string, string> = {
   declared: "declared in a sentence",
@@ -97,7 +105,191 @@ function DecisionLedger({ connections, selectedConn, onOpen }: {
         {all => <DecisionOverview all={all} connections={connections} onOpen={onOpen} form={form}
           declaring={declaring} onDeclare={() => setDeclaring(v => !v)} />}
       </Gate>
+      <KindsSection />
+      <MeetingSection connectionId={selectedConn} onOpen={onOpen} />
     </ClarityPage>
+  );
+}
+
+/** The words a kind's key reads as — `decision_kind:a_price_change` → "a price change". */
+export function kindWords(key: string | undefined): string {
+  return (key ?? "").replace(/^decision_kind:/, "").replace(/_/g, " ");
+}
+
+/** The kinds of decision the organisation declared (the decision-framework study §3.1): who approves one, whether it
+ *  must say what it expects, when it is reviewed, the metrics it usually moves. People declare them; a model never does.
+ *  A decision of a kind keeps its kind's rules, and past decisions of the same kind are the next one's base rate. */
+function KindsSection() {
+  const load = useLoad(() => listDecisionKinds(), []);
+  const [open, setOpen] = useState(false);
+  return (
+    <Section label="Kinds of decision" meta={load.data ? countNoun(load.data.kinds.filter(k => k.state === "active").length, "kind") : undefined}
+      action={<Button size="xs" variant="secondary" onClick={() => setOpen(v => !v)}>{open ? "Close" : "Declare a kind"}</Button>}>
+      {open && <KindForm onDeclared={() => { setOpen(false); load.reload(); }} />}
+      <Gate load={load} what="the kinds of decision">
+        {r => r.kinds.length === 0 ? (
+          <Absent>None declared. A kind says who approves a decision of it, whether it must say what it expects, and when it is
+            reviewed — and past decisions of the same kind become what the next one is projected from.</Absent>
+        ) : (
+          <div data-testid="decision-kinds">
+            {r.kinds.map(k => (
+              <div className="aug-item" key={k.key}>
+                <div className="aug-fs-ui" style={{ color: k.state === "active" ? "var(--t1)" : "var(--t3)" }}>
+                  {k.name}{k.state === "retired" ? " · retired" : ""}
+                </div>
+                <div className="aug-item-foot aug-fs-sm">
+                  <span>{k.metrics.length ? `moves ${k.metrics.join(", ")}` : "names no metric"}</span>
+                  <span>{`reviewed after ${k.review_days} days`}</span>
+                  {k.expectation_required && <span>must say what it expects</span>}
+                  {k.approvers.length > 0 && <span>{`approved by ${k.approvers.map(a => whoLabel(a)).join(", ")}`}</span>}
+                  <span>{`declared by ${whoLabel(k.declared_by)}`}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+/** Decisions taken in a meeting (the decision-framework study §3.2): a person brings the notes, the model reads them
+ *  once and proposes the decisions it finds, and each is confirmed — booked as the person's decision, dated the
+ *  meeting's day — or refused and kept with why. Nothing is booked before a person confirms. */
+function MeetingSection({ connectionId, onOpen }: { connectionId: string; onOpen: (id: string) => void }) {
+  const load = useLoad(() => listMeetingCandidates({ status: "proposed" }), []);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [heldOn, setHeldOn] = useState("");
+  const [notes, setNotes] = useState("");
+  const [share, setShare] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  const read = async () => {
+    setBusy(true); setSaid("");
+    try {
+      const out = await proposeMeetingCandidates({ connection_id: connectionId, title: title.trim(), held_on: heldOn, text: notes,
+                                                   share_quotes: share });
+      setSaid([`${countNoun(out.candidates.length, "decision")} proposed from “${title.trim()}”`, out.cut,
+               out.dropped ? `${out.dropped} with no question left out` : ""].filter(Boolean).join(" · "));
+      setOpen(false); setNotes(""); load.reload();
+    } catch (e) { setSaid(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Section label="Decisions from a meeting" meta={load.data ? countNoun(load.data.candidates.length, "to confirm", "to confirm") : undefined}
+      action={<Button size="xs" variant="secondary" onClick={() => setOpen(v => !v)}>{open ? "Close" : "Bring a meeting's notes"}</Button>}>
+      {open && (
+        <div className="aug-form-grid" data-testid="meeting-form" style={{ marginBottom: 12 }}>
+          <label className="aug-fs-sm" htmlFor="mt-t">The meeting</label>
+          <Input id="mt-t" value={title} onChange={e => setTitle(e.target.value)} placeholder="Weekly trading" />
+          <label className="aug-fs-sm" htmlFor="mt-d">Held on</label>
+          <Input id="mt-d" type="date" value={heldOn} onChange={e => setHeldOn(e.target.value)} style={{ width: 170 }} />
+          <label className="aug-fs-sm" htmlFor="mt-n">Its notes</label>
+          <Textarea id="mt-n" value={notes} onChange={e => setNotes(e.target.value)} rows={8}
+            placeholder="Paste the notes or the transcript — nothing is fetched from a mailbox, a calendar or a drive" />
+          <span />
+          <label className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Checkbox checked={share} onChange={e => setShare(e.target.checked)} aria-label="Keep the quoted lines" />
+            Keep the lines each decision was read from — otherwise only a hash of the notes is kept
+          </label>
+          <span />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Button size="xs" disabled={busy || !title.trim() || !heldOn || !notes.trim()} onClick={() => void read()}>Find the decisions</Button>
+            <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>One model call reads the notes. It proposes; nothing is booked until you confirm.</span>
+          </div>
+        </div>
+      )}
+      {said && <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 8 }}>{said}</div>}
+      <Gate load={load} what="the meeting's proposals">
+        {r => r.candidates.length === 0 ? (
+          <Absent>Nothing waits to be confirmed. Bring a meeting&apos;s notes and the decisions in them are proposed here, each for a
+            person to confirm or refuse.</Absent>
+        ) : (
+          <div data-testid="meeting-candidates">
+            {r.candidates.map(c => <CandidateRow key={c.id} c={c} onAnswered={load.reload} onOpen={onOpen} />)}
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+function CandidateRow({ c, onAnswered, onOpen }: { c: MeetingCandidate; onAnswered: () => void; onOpen: (id: string) => void }) {
+  const [chosen, setChosen] = useState(c.chosen);
+  const [error, setError] = useState("");
+  const confirm = async () => {
+    setError("");
+    try { const out = await confirmMeetingCandidate(c.id, { chosen: chosen.trim() }); onAnswered(); onOpen(out.decision.id); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const refuse = async () => {
+    setError("");
+    try { await refuseMeetingCandidate(c.id, "not a decision the meeting took"); onAnswered(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  return (
+    <div className="aug-item">
+      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{c.question}</div>
+      <div className="aug-item-foot aug-fs-sm" style={{ alignItems: "center" }}>
+        <Input aria-label="What was chosen" value={chosen} onChange={e => setChosen(e.target.value)} placeholder="the meeting did not say — name it"
+          style={{ flex: "1 1 220px" }} />
+        <Button size="xs" disabled={!chosen.trim()} onClick={() => void confirm()}>Confirm</Button>
+        <Button size="xs" variant="ghost" onClick={() => void refuse()}>Not a decision</Button>
+      </div>
+      <div className="aug-item-foot aug-fs-xs" style={{ color: "var(--t3)" }}>
+        <span>{`“${c.title}”, ${day(c.held_on)}`}</span>
+        {c.said_by && <span>{`said by ${c.said_by}`}</span>}
+        <span>{c.quote_found ? "its line is in the notes" : "its line was not found in the notes — read it before confirming"}</span>
+        <span>proposed by the model</span>
+      </div>
+      {c.quote && <div className="aug-fs-sm" style={{ color: "var(--t2)", fontStyle: "italic" }}>{`“${c.quote}”`}</div>}
+      {error && <div className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</div>}
+    </div>
+  );
+}
+
+function KindForm({ onDeclared }: { onDeclared: (k: DecisionKind) => void }) {
+  const [name, setName] = useState("");
+  const [metrics, setMetrics] = useState("");
+  const [approvers, setApprovers] = useState("");
+  const [days, setDays] = useState("30");
+  const [required, setRequired] = useState(false);
+  const [error, setError] = useState("");
+  const list = (v: string) => v.split(",").map(x => x.trim()).filter(Boolean);
+  const submit = async () => {
+    setError("");
+    try {
+      onDeclared(await declareDecisionKind({
+        name: name.trim(), metrics: list(metrics), approvers: list(approvers).map(a => (a.includes(":") ? a : `person:${a}`)),
+        review_days: Number(days) || 30, expectation_required: required,
+      }));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  return (
+    <div className="aug-form-grid" data-testid="kind-form" style={{ marginBottom: 12 }}>
+      <label className="aug-fs-sm" htmlFor="kind-n">The kind</label>
+      <Input id="kind-n" value={name} onChange={e => setName(e.target.value)} placeholder="a price change" />
+      <label className="aug-fs-sm" htmlFor="kind-m">The metrics it moves</label>
+      <Input id="kind-m" value={metrics} onChange={e => setMetrics(e.target.value)} placeholder="gmv, gross_margin" />
+      <label className="aug-fs-sm" htmlFor="kind-a">Who approves one</label>
+      <Input id="kind-a" value={approvers} onChange={e => setApprovers(e.target.value)} placeholder="ana, ben" />
+      <label className="aug-fs-sm" htmlFor="kind-d">Reviewed after</label>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <Input id="kind-d" value={days} onChange={e => setDays(e.target.value)} inputMode="numeric" style={{ width: 80 }} />
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>days, plus how long this connection&apos;s days take to settle</span>
+      </div>
+      <span />
+      <label className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Checkbox checked={required} onChange={e => setRequired(e.target.checked)} aria-label="Must say what it expects" />
+        A decision of this kind must say what it expects
+      </label>
+      <span />
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <Button size="xs" disabled={!name.trim()} onClick={() => void submit()}>Declare it</Button>
+        {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -121,6 +313,8 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
   const next = all.filter(d => reviewState(d) === "waiting" && d.review_on).map(d => d.review_on).sort()[0] ?? "";
   const oldestDue = due.map(d => d.review_on).sort()[0] ?? "";
   const withExpectation = all.filter(d => d.expectation_claim).length;
+  const scored = all.filter(d => d.expectation_claim && d.outcome);
+  const told = scored.filter(d => d.outcome_verdict && d.outcome_verdict !== "cannot_tell").length;
   const notes = [...new Set(all.filter(d => !d.expectation_claim)
     .map(d => (typeof d.extra.expectation_note === "string" ? d.extra.expectation_note.replace(/^none:\s*/, "") : ""))
     .filter(Boolean))];
@@ -160,7 +354,9 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
         <Figure label="With an expectation" value={`${formatCount(withExpectation)} of ${formatCount(all.length)}`}
           testId="fig-dec-expect"
           title={notes.length ? notes.join(" · ") : undefined}
-          sub={withExpectation === all.length ? "each can be scored against what was expected"
+          sub={withExpectation === all.length
+            ? (scored.length ? `${formatCount(told)} of ${formatCount(scored.length)} reviewed reached a verdict`
+              : "each is scored on its review date")
             : <Chip title={notes.join(" · ") || undefined}>{`${formatCount(all.length - withExpectation)} cannot be scored`}</Chip>} />
       </Figures>
 
@@ -226,10 +422,19 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
 const num = (v: string): number | null => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
 /** "We decided this elsewhere" — the question, what was chosen, and the expectation booked with it. */
-function DeclareForm({ connectionId, onBooked, onCancel }: {
+/** Approvers as the Record names them: an address is `email:<address>`, a name is `person:<name>`. */
+export function approverRefs(text: string): string[] {
+  return text.split(",").map(x => x.trim()).filter(Boolean)
+    .map(x => (x.includes(":") ? x : x.includes("@") ? `email:${x.toLowerCase()}` : `person:${x}`));
+}
+
+function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQuestion = "" }: {
   connectionId: string; onBooked: (d: DecisionDetail) => void; onCancel: () => void;
+  /** The decision this one changes — a modifying decision; its inquiry reads backwards to it (study §3.1). */
+  revises?: string;
+  initialQuestion?: string;
 }) {
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion);
   const [chosen, setChosen] = useState("");
   const [others, setOthers] = useState("");
   const [metric, setMetric] = useState("");
@@ -238,6 +443,10 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
   const [unit, setUnit] = useState("");
   const [reviewOn, setReviewOn] = useState("");
   const [decidedOn, setDecidedOn] = useState("");
+  const [kind, setKind] = useState("");
+  const [approvers, setApprovers] = useState("");
+  const kinds = useLoad(() => listDecisionKinds("active"), []);
+  const declared = kinds.data?.kinds ?? [];
   const actor = useActor();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -249,7 +458,9 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
       const options = [chosen, ...others.split("\n")].map(o => o.trim()).filter(Boolean);
       const d = await declareDecision({
         question: question.trim(), chosen: chosen.trim(), options, connection_id: connectionId, review_on: reviewOn,
-        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined,
+        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined, ...(kind ? { kind } : {}),
+        ...(revises ? { revises } : {}),
+        ...(approverRefs(approvers).length ? { approvers: approverRefs(approvers) } : {}),
         expectation: metric.trim()
           ? { metric: metric.trim(), low: lo, high: hi, mid: lo !== null && hi !== null ? (lo + hi) / 2 : null, unit: unit.trim(), settles_on: reviewOn }
           : null,
@@ -262,7 +473,7 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
     }
   };
   return (
-    <Section label="Record a decision">
+    <Section label={revises ? "Revise this decision" : "Record a decision"}>
       <div className="aug-form-grid">
         <label className="aug-fs-sm" htmlFor="dec-q">What was being decided</label>
         <Input id="dec-q" value={question} onChange={e => setQuestion(e.target.value)} placeholder="Do we extend the promotion by two weeks?" />
@@ -270,6 +481,30 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
         <Input id="dec-c" value={chosen} onChange={e => setChosen(e.target.value)} placeholder="Extend it to 15 September" />
         <label className="aug-fs-sm" htmlFor="dec-o">The options not taken</label>
         <Input id="dec-o" value={others} onChange={e => setOthers(e.target.value)} placeholder="End it on schedule" />
+        {declared.length > 0 && (
+          <>
+            <label className="aug-fs-sm" htmlFor="dec-k">Kind</label>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <SelectField id="dec-k" aria-label="The kind of decision" value={kind} style={{ maxWidth: 260 }} onChange={e => setKind(e.target.value)}>
+                <option value="">none named</option>
+                {declared.map(k => <option key={k.key} value={k.key}>{k.name}</option>)}
+              </SelectField>
+              {(() => {
+                const k = declared.find(x => x.key === kind);
+                return k ? <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                  {[k.expectation_required ? "it must say what it expects" : "", `reviewed after ${k.review_days} days`,
+                    k.approvers.length ? `approved by ${k.approvers.map(a => whoLabel(a)).join(", ")}` : ""].filter(Boolean).join(" · ")}
+                </span> : null;
+              })()}
+            </div>
+          </>
+        )}
+        <label className="aug-fs-sm" htmlFor="dec-a">Who approves it</label>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Input id="dec-a" value={approvers} onChange={e => setApprovers(e.target.value)} placeholder="ana@company.com, ben"
+            style={{ flex: "1 1 220px" }} />
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>an approver named by email can approve by replying to the decision</span>
+        </div>
         <label className="aug-fs-sm" htmlFor="dec-m">Expected to move</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Input id="dec-m" value={metric} onChange={e => setMetric(e.target.value)} placeholder="new customers" style={{ flex: "2 1 160px" }} />
@@ -341,6 +576,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   const [option, setOption] = useState("");
   const [dissentWho, setDissentWho] = useState("");
   const [dissentWhy, setDissentWhy] = useState("");
+  const [revising, setRevising] = useState(false);
   const [standsWhy, setStandsWhy] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -364,20 +600,43 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   const reopenings = (Array.isArray(d.extra.reopened) ? d.extra.reopened : []) as
     { at: string; why?: string; settled_at?: string; settled_by?: string; settled_why?: string }[];
   const answered = reopenings.filter(r => r.settled_at);
+  // Approvals given where the approver works — a ✅ on the decision card in Slack — each dated and named.
+  const approvals = (Array.isArray(d.extra.approvals) ? d.extra.approvals : []) as
+    { by: string; where?: string; at: string; named?: boolean }[];
   const rail = (
     <>
       <div className="aug-rail-head"><span className="aug-label">This decision</span></div>
       <Fact label="Answerable">{whoLabel(d.owner || d.decided_by)}</Fact>
       {d.approvers.length > 0 && <Fact label="Approvers">{d.approvers.map(a => whoLabel(a, actor.name)).join(", ")}</Fact>}
+      {approvals.length > 0 && (
+        <Fact label="Approved">{approvals.map(a => `${whoLabel(a.by, actor.name)}${a.where ? ` in ${a.where}` : ""}, ${day(a.at)}`
+          + (d.approvers.length && !a.named ? " (not a named approver)" : "")).join(" · ")}</Fact>
+      )}
       <Fact label="Decided">{day(d.decided_at)} by {whoLabel(d.decided_by, actor.name)}</Fact>
       <Fact label="Booked">{SOURCE_WORDS[d.source.kind] ?? d.source.kind}</Fact>
+      {d.kind && <Fact label="Kind">{kindWords(d.kind)}</Fact>}
       <Fact label="Review date">{d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"}</Fact>
       {d.objective && <Fact label="Toward">{d.objective}</Fact>}
       <Fact label="Connection">{d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection"}</Fact>
+      <Fact label="By email">
+        {d.email?.address
+          ? <span title="A mail here is kept as evidence; a named approver's 'approve', with the sender verified, is their approval">
+              {d.email.address}</span>
+          : <span style={{ color: "var(--t3)" }}>{d.email?.note || "no address"}</span>}
+      </Fact>
+      {d.google?.on && <GoogleFileFact decisionId={d.id} files={d.google.files} onRead={next => onMoved(next)} />}
     </>
   );
   return (
     <Page rail={rail}>
+      {revising ? (
+        <DeclareForm connectionId={d.connection_id} revises={d.id} initialQuestion={d.question}
+          onCancel={() => setRevising(false)} onBooked={next => { setRevising(false); requestTab("decisions", { id: next.id }); }} />
+      ) : current && (
+        <div style={{ marginBottom: 12 }}>
+          <Button size="xs" variant="secondary" onClick={() => setRevising(true)}>Revise this decision</Button>
+        </div>
+      )}
       {d.superseded_by && (
         <Callout tone="amber" style={{ marginBottom: 16 }}>
           <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is the decision as first booked; it has been restated since. </span>
@@ -532,7 +791,104 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
           </Absent>
         )}
       </Section>
+      <InquirySection id={d.id} version={d.version} />
     </Page>
+  );
+}
+
+/** Name one Google file on a decision and its comments are read onto it as later evidence (study §3.2). */
+function GoogleFileFact({ decisionId, files, onRead }: { decisionId: string; files: string[]; onRead: (id: string) => void }) {
+  const [link, setLink] = useState("");
+  const [said, setSaid] = useState("");
+  const [busy, setBusy] = useState(false);
+  const read = async () => {
+    setBusy(true); setSaid("");
+    try {
+      const out = await readGoogleFileOntoDecision(decisionId, link.trim());
+      setSaid(`${countNoun(out.read, "comment")} read · ${formatCount(out.new)} new${out.more ? ` · ${out.more}` : ""}`);
+      setLink("");
+      if (out.new) onRead(out.decision);
+    } catch (e) { setSaid(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Fact label="From Google">
+      <div data-testid="google-file" style={{ display: "grid", gap: 6 }}>
+        {files.length > 0 && <span style={{ color: "var(--t3)" }}>{`${countNoun(files.length, "file")} read here`}</span>}
+        <Input aria-label="A Google file's link" value={link} onChange={e => setLink(e.target.value)}
+          placeholder="a Sheets, Slides or Docs link" />
+        <Button size="xs" variant="secondary" disabled={busy || !link.trim()} onClick={() => void read()}>Read its comments</Button>
+        {said && <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>{said}</span>}
+      </div>
+    </Fact>
+  );
+}
+
+// ── the inquiry, as people read it: where it arose to what was learned (the decision-framework study §3.1, §3.3) ─────────────
+
+/** The decision's inquiry, read stage by stage — each step a line, its why in a sentence, and its receipt
+ *  behind a click — with its loops, what it revises and what revised it. Composed by code from the Record. */
+export function InquirySection({ id, version }: { id: string; version: number }) {
+  const load = useLoad(() => getInquiryView(id), [id, version]);
+  return (
+    <Section label="The inquiry" meta="from where it arose to what was learned, read forwards and backwards">
+      <Gate load={load} what="the inquiry">
+        {t => (
+          <div data-testid="decision-inquiry">
+            {t.backwards.map(l => <LinkRow key={`b:${l.decision}`} l={l} />)}
+            {withUniqueKeys(t.stages, st => st.stage).map(([k, st]) => (
+              <div key={k} style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
+                borderTop: "1px solid var(--b1)" }}>
+                <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{st.words}</span>
+                <div>{st.steps.map((s, i) => <StepRow key={`${st.stage}:${s.ref || s.kind}:${i}`} s={s} />)}</div>
+              </div>
+            ))}
+            {t.loops.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "150px minmax(0, 1fr)", gap: 12, padding: "8px 0",
+                borderTop: "1px solid var(--b1)" }}>
+                <span className="aug-fs-sm" style={{ color: "var(--amb4)" }}>Loops</span>
+                <div>{t.loops.map((s, i) => <StepRow key={`loop:${i}`} s={s} />)}</div>
+              </div>
+            )}
+            {t.forwards.map(l => <LinkRow key={`f:${l.decision}`} l={l} />)}
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6 }}>Composed by {t.composed_by}.</div>
+          </div>
+        )}
+      </Gate>
+    </Section>
+  );
+}
+
+function StepRow({ s }: { s: InquiryStep }) {
+  const [open, setOpen] = useState(false);
+  const receipt = Object.entries(s.receipt);
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div className="aug-fs-ui" style={{ color: "var(--t1)", display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span>{plainWho(s.line)}</span>
+        {s.at && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{day(s.at)}</span>}
+        {receipt.length > 0 && (
+          <Button size="xs" variant="ghost" onClick={() => setOpen(v => !v)}>{open ? "Hide the receipt" : "Receipt"}</Button>
+        )}
+      </div>
+      {s.why && <div className="aug-fs-sm" style={{ color: "var(--t2)", maxWidth: "78ch" }}>{plainWho(s.why)}</div>}
+      {open && (
+        <div className="aug-fs-xs" data-testid="inquiry-receipt" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
+          {receipt.map(([k, v]) => <div key={k}>{`${k.replace(/_/g, " ")}: ${Array.isArray(v) ? v.join(", ") : String(v)}`}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinkRow({ l }: { l: InquiryLink }) {
+  return (
+    <div className="aug-item-foot aug-fs-sm" style={{ padding: "6px 0" }}>
+      <span style={{ color: "var(--t3)" }}>{l.why}:</span>
+      <span style={{ color: "var(--t1)" }}>{`${l.question} → ${l.chosen}`}</span>
+      <span>{day(l.decided_at)}</span>
+      <Button size="xs" variant="link" onClick={() => requestTab("decisions", { id: l.decision })}>Open it →</Button>
+    </div>
   );
 }
 
@@ -752,7 +1108,7 @@ function ProjectForm({ decision, actor, onBooked, onCancel }: {
   );
 }
 
-const VERDICTS: OutcomeVerdict[] = ["as_expected", "better", "worse", "cannot_tell"];
+const VERDICTS: OutcomeVerdict[] = ["as_expected", "better", "worse", "missed", "cannot_tell"];
 
 /** The review date has come: what was measured, against the expectation and the baseline. */
 function OutcomeForm({ decisionId, actor, onBooked }: {

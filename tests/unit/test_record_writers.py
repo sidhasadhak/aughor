@@ -340,7 +340,8 @@ def test_the_hub_writer_books_one_said_claim_per_reply_never_per_object():
     assert ca.kind == cb.kind == "said" and ca.tier == cb.tier == "said" and ca.about.kind == "object" and ca.about.key == obj
     assert ca.state == "supported" and ca.statement.metric == "breached" and ca.statement.value == 187 and ca.author == "slack:U1" and ca.author_kind == "person"
     assert cb.state == "refuted" and cb.extra["question_to"] == "user:ops@corp" and cb.version == 1 and ca.version == 1 and ca.key != cb.key
-    assert [w.kind for w in ca.warrants] == ["document"] and ca.warrants[0].ref == "thread:C9:1712.009" and "breached=187" in ca.warrants[0].detail
+    assert [w.kind for w in ca.warrants] == ["conversation", "document"] and ca.warrants[1].ref == "thread:C9:1712.009" and "breached=187" in ca.warrants[1].detail
+    assert ca.warrants[0].ref.startswith("slack:C9:1712.009:") and len(ca.warrants[0].content_hash) == 64 and ca.warrants[0].excerpt == ""
     assert ca.as_of == "2026-09-23"
     said = [c for c in C.list_claims(kind="said", conn_id=conn) if c.extra.get("writer") == "hub"]
     assert len(said) == 2
@@ -349,5 +350,5 @@ def test_the_hub_writer_books_one_said_claim_per_reply_never_per_object():
     assert C.get(again).version == 2 and C.get(again).supersedes == b
     u = C.get(W.book_said_claim(text="looks fine to me", object_ref=obj, connection_id="", reply_id="r3", check={"verification": "unchecked", "note": "no number is stated"},
                                 author="Cy"))
-    assert u.state == "open" and u.warrants == [] and u.author == "person:Cy" and u.status == "Provisional"
+    assert u.state == "open" and [w.kind for w in u.warrants] == ["conversation"] and u.author == "person:Cy" and u.status == "Provisional"
     assert W.book_said_claim(text="", object_ref=obj, connection_id=conn, reply_id="r4", check={}, author="x") is None

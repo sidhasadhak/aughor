@@ -254,6 +254,8 @@ class AuditLogger:
         label: str | None = None,
         org_id: str | None = None,
         trace_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent records, newest first. Optional filters by connection/verdict/label
         (``label`` matches the ``hypothesis_id`` column — the surface that issued the SQL,
@@ -266,12 +268,21 @@ class AuditLogger:
         connection is deleted (8,558 such rows exist in one local log), and a read whose
         scope depends on the registry's present state would re-expose them. ``None`` means
         no tenant filter — localhost/identity-off, where a single tenant owns everything.
+
+        ``since``/``until`` bound ``ts`` half-open (Arc TC, TC-5: the governance feed's
+        window); both ``None`` adds no clause.
         """
         c = _connect()
         try:
             ensure_once(c, _ensure_schema)
             clauses: list[str] = []
             params: list[Any] = []
+            if since is not None:
+                clauses.append("ts >= ?")
+                params.append(since)
+            if until is not None:
+                clauses.append("ts < ?")
+                params.append(until)
             if org_id is not None:
                 clauses.append("org_id = ?")
                 params.append(org_id)

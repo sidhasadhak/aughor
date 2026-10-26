@@ -89,3 +89,28 @@ def test_a_claim_about_a_segment_is_one_a_release_touches(ledger, monkeypatch):
     monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
     cid = _book({"kind": "segment", "key": "completed_orders"})
     assert [c["id"] for c in _touches("c", {"completed_orders"}, [])["claims"]] == [cid]
+
+
+
+def test_a_deep_report_s_claims_reach_the_run_s_inquiry():
+    """The run lands on its inquiry at completion and its receipt — which books the claims — is written after, so the
+    inquiry read none: 23 inquiries with runs on the live install held 0 claims (2026-10-26). The receipt writer now
+    hands what it booked to the run's inquiry."""
+    import uuid
+
+    from aughor.kernel.ledger import DEEP_REPORT_KIND
+    from aughor.record import inquiry as I
+    from aughor.record.writers import book_from_receipt
+    conn, run = "c-" + uuid.uuid4().hex[:6], "inv-" + uuid.uuid4().hex[:6]
+    q = I.attach_run_result(run_id=run, connection_id=conn, question="Why did margin fall?",
+                            report={"headline": "Margin fell on one shop", "data_gaps": []}, hypotheses=[])
+    assert q.claims == []
+    out = book_from_receipt(kind=DEEP_REPORT_KIND, natural_key=f"ada:{conn}:{run}", receipt_id="rcpt-" + run,
+                            connection_id=conn, question="Why did margin fall?", headline="Margin fell on one shop",
+                            sql="SELECT 1", payload_extra={"investigation_id": run})
+    assert out["observation"]
+    after = I.for_run(run, conn_id=conn)
+    assert after.claims == [out["observation"]] and after.id != q.id
+    # booked again (a re-run of the receipt), nothing is added twice and no version is written
+    I.attach_run_claims(run, conn, [out["observation"]])
+    assert I.for_run(run, conn_id=conn).id == after.id

@@ -1235,6 +1235,8 @@ app.include_router(charts.router)  # RC-2 — the chart door for surfaces that c
 app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)
 app.include_router(mcpservers_router.router)  # VA-9d — the MCP allowlist (an empty one reaches nothing)
 app.include_router(hooks.router)        # DS-17 — the inbound webhook door (own token; see _AUTH_EXEMPT)
+from aughor.routers import email_door as email_door_router  # noqa: E402 — under /doors/, its own secret
+app.include_router(email_door_router.router)  # decisions by email, inbound only (the user's call, 2026-10-27)
 from aughor.routers import doors as doors_router  # noqa: E402 — AO-5, beside the other door
 app.include_router(doors_router.router)  # AO-5 — HTTP, webhook, A2A and Teams doors to a custom agent (own keys; see _AUTH_EXEMPT)
 app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log

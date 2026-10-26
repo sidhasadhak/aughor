@@ -427,6 +427,95 @@ export function createArrivalPoster(
   };
 }
 
+/** The decision-framework study §3.2 — "@bot decide: <what was decided>" books a decision in the Record from the
+ *  thread, citing the answer the bot gave there; the people named after the verb are its approvers. The Python door
+ *  does the customs and the booking; this is transport only. */
+export interface DecisionBody {
+  channel: string;
+  threadTs: string;
+  /** What was decided, as the person wrote it after `decide:`, mentions removed. */
+  decided: string;
+  /** What was being decided: the question the thread's answer was to, when the bot answered one. */
+  question: string;
+  /** The answer's run, when the bot answered in this thread — the door cites what it booked. */
+  investigationId?: string;
+  author?: string;
+  authorRef?: string;
+  /** The people named as approvers, as `slack:<id>`. */
+  approverRefs?: string[];
+}
+export interface DecisionResult {
+  ok: boolean;
+  status: number;
+  detail: string;
+  decisionId?: string;
+  reviewOn?: string;
+  /** How many claims the decision cites. */
+  cited?: number;
+}
+export type DecisionPoster = (body: DecisionBody) => Promise<DecisionResult>;
+
+/** A ✅ (approve) or ❌ (dissent) on a decision card, by the person who reacted. */
+export interface ApprovalBody { decisionId: string; verdict: "approve" | "dissent"; author?: string; authorRef?: string }
+export interface ApprovalResult { ok: boolean; status: number; detail: string }
+export type ApprovalPoster = (body: ApprovalBody) => Promise<ApprovalResult>;
+
+export function createDecisionPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): DecisionPoster {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  return async function postDecision(body: DecisionBody): Promise<DecisionResult> {
+    try {
+      const res = await fetchImpl(`${base}/arrivals/slack/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          channel: body.channel, thread_ts: body.threadTs, text: body.decided, question: body.question,
+          investigation_id: body.investigationId ?? "", connection_id: env.AUGHOR_CONNECTION_ID ?? "",
+          author: body.author ?? "", author_ref: body.authorRef ?? "", approver_refs: body.approverRefs ?? [],
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        return { ok: false, status: res.status, detail: asText(payload.detail) || `the decision door said ${res.status}` };
+      }
+      return {
+        ok: true, status: res.status, detail: asText(payload.why),
+        decisionId: asText(payload.decision_id), reviewOn: asText(payload.review_on),
+        cited: typeof payload.cited === "number" ? payload.cited : 0,
+      };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the decision door: ${String(err)}` };
+    }
+  };
+}
+
+export function createApprovalPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): ApprovalPoster {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  return async function postApproval(body: ApprovalBody): Promise<ApprovalResult> {
+    try {
+      const res = await fetchImpl(`${base}/arrivals/slack/decision/${encodeURIComponent(body.decisionId)}/approval`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ verdict: body.verdict, author: body.author ?? "", author_ref: body.authorRef ?? "" }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const detail = asText(payload.why) || asText(payload.detail) || (res.ok ? "recorded" : `the decision door said ${res.status}`);
+      return { ok: res.ok, status: res.status, detail };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the decision door: ${String(err)}` };
+    }
+  };
+}
+
 /** Idea 7 — "@bot check: <memo>": every number in the text checked against the data.
  *  The door returns an answer envelope (Arc CP), so the thread renders it the way it
  *  renders any answer: the headline and body as prose, the verdict grid as the exhibit. */

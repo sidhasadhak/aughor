@@ -79,7 +79,7 @@ def test_method_4_reads_outcome_entries_and_nothing_else_and_says_its_count():
     assert len(cases) == 3 and {c["matched_on"] for c in cases} == {"action"} and unreviewed not in {c["decision"] for c in cases}
     p = S.intervention(metric="gross margin", connection_id=conn, action_id="pause_promo", unit="%")
     assert p.method == "intervention" and p.value == pytest.approx(4 / 3, abs=1e-6) and p.low < p.value < p.high
-    assert p.coverage == 0.8 and p.backtest == {"n": 3, "held": 2, "worse": 1, "cannot_tell": 0}
+    assert p.coverage == 0.8 and p.backtest == {"n": 3, "held": 2, "worse": 1, "missed": 0, "cannot_tell": 0}
     assert p.must_say[0].startswith("3 past decisions of this kind on this install, each measured against the metric's own history")
     assert p.must_say[1] == "2 of 3 went the wanted way; read from Outcome entries and nothing else"
     assert len(p.inputs["cases"]) == 3 and p.inputs["matched_on"] == ["action"]

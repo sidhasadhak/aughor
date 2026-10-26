@@ -151,7 +151,11 @@ export function rangeNumbers(stored: BriefingRangeBlock): PaperNumber[] {
 
 /** The numbers box: one row per figure, its change against the comparison beside it; a figure the
  *  platform could not measure says so in the de-emphasis hatch, never as a zero. */
-export function PaperNumbers({ title, rows, note }: { title: string; rows: PaperNumber[]; note?: string }) {
+export function PaperNumbers({ title, rows, note, after }: {
+  title: string; rows: PaperNumber[]; note?: string;
+  /** Under the box: the Decide door on the edition's figures, when a decision can be booked here. */
+  after?: ReactNode;
+}) {
   return (
     <div data-testid="paper-numbers">
       <h3 style={{ fontFamily: SERIF, fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>{title}</h3>
@@ -174,6 +178,7 @@ export function PaperNumbers({ title, rows, note }: { title: string; rows: Paper
           </div>
         ))}
       {note && <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 10 }}>{note}</div>}
+      {after}
     </div>
   );
 }

@@ -90,6 +90,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/actions/edits/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Changes
+         * @description Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
+         *     what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
+         *     cost when it was metered — "not metered" said, never zero. Read as the edit history is: with object security on, a
+         *     masked property's values are emptied and an object outside the reader's rows is withheld and counted.
+         */
+        get: operations["get_object_changes_actions_edits_changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/edits/history": {
         parameters: {
             query?: never;
@@ -782,6 +805,9 @@ export interface paths {
          *     chip becomes ``current`` again on its own — the revision is a digest of the
          *     configuration, not a counter, so returning to a measured state returns the measurement
          *     with it.
+         *
+         *     Arc TC-1 — ``expected_rev`` (the revision the caller read), with ``agents.revision_on_answers`` on: a restore
+         *     sent against an agent that has moved since is refused with 409, as a save is.
          */
         post: operations["restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post"];
         delete?: never;
@@ -1189,6 +1215,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/arrivals/slack/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Decision
+         * @description The decide verb (the decision-framework study §3.2): a decision said in a Slack thread is booked in the Record —
+         *     decided by the person who said it, citing the answer the bot gave in that thread (its run's claims), the people
+         *     named after the verb as its approvers, the thread as where it was taken. Through the same customs as a note: capped,
+         *     control-stripped, PII redacted; what was said is the decision's words, never an instruction.
+         */
+        post: operations["slack_decision_arrivals_slack_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/arrivals/slack/decision/{decision_id}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Decision Approval
+         * @description A ✅ on a decision card is the reacting person's approval; a ❌ is their dissent, kept on the decision with the
+         *     rest — never a verdict on an answer (TJ-4 reads the answer's ✅). 404 for a decision the Record does not hold.
+         */
+        post: operations["slack_decision_approval_arrivals_slack_decision__decision_id__approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ask": {
         parameters: {
             query?: never;
@@ -1380,8 +1450,34 @@ export interface paths {
          *     Five sinks record governance-relevant events and none knows about the others; this
          *     reads them under one category vocabulary. An unknown category is a 400 rather than an
          *     empty list — "no events" and "that category does not exist" are different answers.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): `since`/`until` bound the window
+         *     and `cursor` pages past the newest thousand — a position in the feed's own order, so a
+         *     page never shifts as events arrive. Off, those three are read by nothing.
          */
         get: operations["get_audit_feed_audit_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/feed/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Audit Feed
+         * @description Arc TC, TC-5 (`govern.justifications`) — the feed's whole window as a file, streamed
+         *     page by page through the same cursor, with the same filters as the feed. Off: the answer
+         *     of a route that does not exist.
+         */
+        get: operations["export_audit_feed_audit_feed_export_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1775,6 +1871,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/runs/{run_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Run
+         * @description Walk a past run again as a dry run: its own version against its kept trigger.
+         *
+         *     Nothing is sent, no action runs, no model is called and nothing is written — the B2 dry-run
+         *     seam, handed the run's version and trigger. Refused with 409, by name, when the run's version
+         *     or its trigger payload was not kept. Returns the same ``{run, graph}`` a dry run returns.
+         */
+        post: operations["replay_run_automations_runs__run_id__replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/runs/{run_id}/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Version
+         * @description The version this run ran under and the trigger that started it, as kept — the tick, who
+         *     asked, each condition's verdict and the payload a trigger handed the chain (capped, and the
+         *     cap said). A run that kept neither says so, and says whether it can be replayed and why not.
+         */
+        get: operations["run_version_automations_runs__run_id__version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/tools": {
         parameters: {
             query?: never;
@@ -2074,6 +2216,28 @@ export interface paths {
         };
         /** Runs */
         get: operations["runs_automations__automation_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Automation Versions
+         * @description TC-3 — every kept version of this automation, newest first, each with who saved it, when,
+         *     and how it came to be kept; and which one is current. Superseded, never deleted: an automation
+         *     that was deleted still answers with its versions.
+         */
+        get: operations["automation_versions_automations__automation_id__versions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5303,6 +5467,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/doors/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Email
+         * @description One mail sent to a decision's address: an approval, a dissent or evidence, decided by code — said which.
+         */
+        post: operations["receive_email_doors_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/doors/teams/{bot_id}/messages": {
         parameters: {
             query?: never;
@@ -7258,6 +7442,10 @@ export interface paths {
          *     carries `unpriced_calls`/`calls_without_usage` so an unknown price never renders as
          *     free. `probation.precision` is null until anything is marked — "not measured", never
          *     0%.
+         *
+         *     Arc TC, TC-5 (`hub.failure_rate`, off by default): each row's `failure_rate` over
+         *     `window_days` — measured, "no runs" (never 0%), or "not permitted" (no count, the node
+         *     kept). Off, `window_days` is read by nothing.
          */
         get: operations["get_hub_map_hub_map_get"];
         put?: never;
@@ -9080,6 +9268,9 @@ export interface paths {
          * Export Ledger
          * @description The ledger as JSON lines — every current entry of the kinds asked (default: every kind the
          *     Record writes), so adopting the platform is not a trap.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): an export needs a `reason`, refused
+         *     by name without one, and is recorded with it (`access.justified`) before the first line.
          */
         get: operations["export_ledger_ledger_v1_export_get"];
         put?: never;
@@ -10635,6 +10826,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/monitors/{monitor_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Monitor Versions
+         * @description TC-3 — every kept version of this monitor, newest first, each with who saved it, when and
+         *     how it came to be kept; and which one is current. 404 while ``automations.versions`` is off.
+         *     Superseded, never deleted: a deleted monitor still answers with its versions.
+         */
+        get: operations["monitor_versions_monitors__monitor_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/callback": {
         parameters: {
             query?: never;
@@ -11044,6 +11257,34 @@ export interface paths {
          *     population it saw" is the answer somebody debugging a rule actually needs.
          */
         post: operations["test_agent_alert_rule_obs_agent_alerts_rules__rule_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/obs/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Run Logs
+         * @description Arc TC, TC-5 (`obs.log_search`, off by default) — the lines `/traces/{id}/logs` reads
+         *     for one run, searched across every run of the last thirty days: words, a level (``error`` ·
+         *     ``warning`` · ``info``) and the kind of run, newest first, a page at a time from an opaque
+         *     cursor. No copy of the lines: the journal's own rows, read in place.
+         *
+         *     The answer says what it searched — the runs and lines in the window and the oldest line
+         *     kept there — because the journal sweeps some kinds within days, and a search that read two
+         *     days must not read as thirty. Off: the answer of a route that does not exist, byte for byte,
+         *     and a run's lines are read one trace at a time.
+         */
+        get: operations["search_run_logs_obs_logs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14728,6 +14969,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/decision-kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Decision Kinds
+         * @description The kinds of decision the organisation declared, as they stand now.
+         */
+        get: operations["list_decision_kinds_record_decision_kinds_get"];
+        put?: never;
+        /**
+         * Declare Decision Kind
+         * @description A person declares a kind of decision (or edits one: a new version, the old kept). The author is the person
+         *     signed in; a model never declares one.
+         */
+        post: operations["declare_decision_kind_record_decision_kinds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/decisions": {
         parameters: {
             query?: never;
@@ -14809,6 +15075,28 @@ export interface paths {
         get: operations["list_record_decision_cases_record_decisions__decision_id__cases_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/decisions/{decision_id}/google-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Google File Onto Decision
+         * @description Read the comments of ONE Google file a person names onto a decision, as later evidence, through that person's
+         *     own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 404 while
+         *     ``arrivals.google_comments`` is off.
+         */
+        post: operations["read_google_file_onto_decision_record_decisions__decision_id__google_file_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15085,6 +15373,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/inquiry-view/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Record Inquiry View
+         * @description The inquiry of a decision, as people read it — where it arose, what it stood on, its options, who decided and approved, what ran
+         *     under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
+         *     what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
+         *     relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked.
+         */
+        get: operations["read_record_inquiry_view_record_inquiry_view__ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/meetings/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Meeting Candidates */
+        get: operations["list_meeting_candidates_record_meetings_candidates_get"];
+        put?: never;
+        /**
+         * Propose Meeting Candidates
+         * @description A meeting's notes, brought by a person: the model reads them once and proposes the decisions it finds, each
+         *     kept as a candidate a person confirms or refuses. One model call. Nothing is booked as a decision here.
+         */
+        post: operations["propose_meeting_candidates_record_meetings_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/meetings/candidates/{candidate_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Meeting Candidate
+         * @description A person confirms a candidate: booked as a decision they declared, dated the day of the meeting, the meeting
+         *     as its evidence.
+         */
+        post: operations["confirm_meeting_candidate_record_meetings_candidates__candidate_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/meetings/candidates/{candidate_id}/refuse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refuse Meeting Candidate */
+        post: operations["refuse_meeting_candidate_record_meetings_candidates__candidate_id__refuse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/missions": {
         parameters: {
             query?: never;
@@ -15167,6 +15538,28 @@ export interface paths {
          *     choose by the measured effect on the objective and run one — or say why none was chosen.
          */
         post: operations["act_record_mission_record_missions__mission_id__act_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/missions/{mission_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mission Proposals
+         * @description What the platform proposes under a mission: a decision of each declared kind that usually moves its objective,
+         *     each option with what it is predicted to do — composed by code from the kind, the mission and the Record; nothing
+         *     is booked here, and no model is called. A person decides through the declare door.
+         */
+        get: operations["list_mission_proposals_record_missions__mission_id__proposals_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -16219,6 +16612,9 @@ export interface paths {
          *     nest by `parent_span_id`; events with no span id (`llm_call`,
          *     `user_request`, `final_response`, `execution_error`) are TRACE-LEVEL, kept
          *     in `events` seq order and never given invented parents.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): this hands over the run's
+         *     payloads, so it needs a `reason` — refused by name without one, and recorded with it.
          */
         get: operations["get_trace_traces__trace_id__get"];
         put?: never;
@@ -16316,6 +16712,9 @@ export interface paths {
          *     This is the "never load whole" half of the roadmap's own risk note: an agent that
          *     has found the slow step from the summary pays for that step alone, instead of pulling
          *     every payload in the run to read one.
+         *
+         *     Arc TC, TC-5 (`govern.justifications`, off by default): a span's input and output are
+         *     payloads, so this needs a `reason`, as the whole run does.
          */
         get: operations["get_trace_span_traces__trace_id__spans__span_id__get"];
         put?: never;
@@ -17664,6 +18063,19 @@ export interface components {
              */
             kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created";
         };
+        /** ConfirmCandidateRequest */
+        ConfirmCandidateRequest: {
+            /**
+             * Chosen
+             * @default
+             */
+            chosen: string;
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+        };
         /** ConstraintIn */
         ConstraintIn: {
             /**
@@ -17918,6 +18330,37 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** DecisionKindRequest */
+        DecisionKindRequest: {
+            /** Approvers */
+            approvers?: string[];
+            /** Authority Ceiling */
+            authority_ceiling?: number | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Expectation Required
+             * @default false
+             */
+            expectation_required: boolean;
+            /** Metrics */
+            metrics?: string[];
+            /** Name */
+            name: string;
+            /**
+             * Review Days
+             * @default 30
+             */
+            review_days: number;
+            /**
+             * State
+             * @default active
+             */
+            state: string;
+        };
         /** DeclareDecisionRequest */
         DeclareDecisionRequest: {
             /** Approvers */
@@ -17942,11 +18385,17 @@ export interface components {
             /** Dissent */
             dissent?: components["schemas"]["DissentIn"][];
             expectation?: components["schemas"]["ExpectationIn"] | null;
+            figure?: components["schemas"]["FigureIn"] | null;
             /**
              * Finding Id
              * @default
              */
             finding_id: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
             /**
              * Note
              * @default
@@ -17973,6 +18422,16 @@ export interface components {
              * @default
              */
             review_on: string;
+            /**
+             * Revises
+             * @default
+             */
+            revises: string;
+            /**
+             * Run Id
+             * @default
+             */
+            run_id: string;
             /**
              * Schema Name
              * @default
@@ -18390,6 +18849,15 @@ export interface components {
             /** Keep Subquestions */
             keep_subquestions?: number[] | null;
         };
+        /** FigureIn */
+        FigureIn: {
+            /** End */
+            end: string;
+            /** Metric */
+            metric: string;
+            /** Start */
+            start: string;
+        };
         /** FileLinkBody */
         FileLinkBody: {
             /** Kind */
@@ -18607,6 +19075,11 @@ export interface components {
             question: string;
             /** Reference Sql */
             reference_sql: string;
+        };
+        /** GoogleFileRequest */
+        GoogleFileRequest: {
+            /** Link */
+            link: string;
         };
         /** GraduateBody */
         GraduateBody: {
@@ -19082,6 +19555,25 @@ export interface components {
             path: string;
             /** Where */
             where?: components["schemas"]["ObjectFilter"][];
+        };
+        /** MeetingNotesRequest */
+        MeetingNotesRequest: {
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Held On */
+            held_on: string;
+            /**
+             * Share Quotes
+             * @default false
+             */
+            share_quotes: boolean;
+            /** Text */
+            text: string;
+            /** Title */
+            title: string;
         };
         /** MemberRequest */
         MemberRequest: {
@@ -20142,6 +20634,14 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** RefuseCandidateRequest */
+        RefuseCandidateRequest: {
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+        };
         /**
          * ReindexIn
          * @description `dry_run` defaults TRUE. Everything this endpoint can do is destructive.
@@ -20613,6 +21113,24 @@ export interface components {
              */
             name: string;
         };
+        /** SlackApproval */
+        SlackApproval: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Author Ref
+             * @default
+             */
+            author_ref: string;
+            /**
+             * Verdict
+             * @default approve
+             */
+            verdict: string;
+        };
         /** SlackArrival */
         SlackArrival: {
             /**
@@ -20689,6 +21207,42 @@ export interface components {
              * @default
              */
             signing_secret: string;
+        };
+        /** SlackDecision */
+        SlackDecision: {
+            /** Approver Refs */
+            approver_refs?: string[];
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Author Ref
+             * @default
+             */
+            author_ref: string;
+            /** Channel */
+            channel: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Investigation Id
+             * @default
+             */
+            investigation_id: string;
+            /**
+             * Question
+             * @default
+             */
+            question: string;
+            /** Text */
+            text: string;
+            /** Thread Ts */
+            thread_ts: string;
         };
         /** SlotsBody */
         SlotsBody: {
@@ -21373,6 +21927,8 @@ export interface components {
             doc_ids?: string[] | null;
             /** Enabled */
             enabled?: boolean | null;
+            /** Expected Rev */
+            expected_rev?: string | null;
             /** Instructions */
             instructions?: string | null;
             /** Name */
@@ -23431,6 +23987,39 @@ export interface operations {
             };
         };
     };
+    get_object_changes_actions_edits_changes_get: {
+        parameters: {
+            query: {
+                object_type: string;
+                row_key: string;
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_edit_history_actions_edits_history_get: {
         parameters: {
             query?: {
@@ -24642,7 +25231,9 @@ export interface operations {
     };
     restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_rev?: string | null;
+            };
             header?: never;
             path: {
                 agent_id: string;
@@ -25295,6 +25886,74 @@ export interface operations {
             };
         };
     };
+    slack_decision_arrivals_slack_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_decision_approval_arrivals_slack_decision__decision_id__approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackApproval"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ask_endpoint_ask_post: {
         parameters: {
             query?: never;
@@ -25560,6 +26219,47 @@ export interface operations {
                 /** @description data_access | governance_change | action_decision | model_call | human_verdict | enforcement */
                 category?: string | null;
                 limit?: number;
+                /** @description govern.justifications: from this date or moment (ISO-8601), inclusive */
+                since?: string | null;
+                /** @description govern.justifications: before this date or moment, exclusive */
+                until?: string | null;
+                /** @description govern.justifications: the `next_cursor` of the page before */
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_audit_feed_audit_feed_export_get: {
+        parameters: {
+            query?: {
+                /** @description csv | jsonl */
+                format?: string;
+                category?: string | null;
+                since?: string | null;
+                until?: string | null;
             };
             header?: never;
             path?: never;
@@ -26200,6 +26900,68 @@ export interface operations {
             };
         };
     };
+    replay_run_automations_runs__run_id__replay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_version_automations_runs__run_id__version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     exposed_tools_automations_tools_get: {
         parameters: {
             query?: {
@@ -26679,6 +27441,39 @@ export interface operations {
         };
     };
     runs_automations__automation_id__runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    automation_versions_automations__automation_id__versions_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -32145,6 +32940,28 @@ export interface operations {
             };
         };
     };
+    receive_email_doors_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     teams_messages_doors_teams__bot_id__messages_post: {
         parameters: {
             query?: never;
@@ -35481,6 +36298,8 @@ export interface operations {
         parameters: {
             query?: {
                 conn_id?: string;
+                /** @description hub.failure_rate: the failure rate's window, in days counting today */
+                window_days?: number;
             };
             header?: never;
             path?: never;
@@ -38289,6 +39108,7 @@ export interface operations {
                 kinds?: string | null;
                 connection_id?: string | null;
                 limit?: number;
+                reason?: string | null;
             };
             header?: never;
             path?: never;
@@ -41271,6 +42091,41 @@ export interface operations {
             };
         };
     };
+    monitor_versions_monitors__monitor_id__versions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     oauth_callback_oauth_callback_get: {
         parameters: {
             query?: {
@@ -41962,6 +42817,41 @@ export interface operations {
             path: {
                 rule_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_run_logs_obs_logs_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                level?: string | null;
+                run_kind?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -48121,6 +49011,74 @@ export interface operations {
             };
         };
     };
+    list_decision_kinds_record_decision_kinds_get: {
+        parameters: {
+            query?: {
+                state?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_decision_kind_record_decision_kinds_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionKindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_record_decisions_record_decisions_get: {
         parameters: {
             query?: {
@@ -48273,6 +49231,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_google_file_onto_decision_record_decisions__decision_id__google_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleFileRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -48757,6 +49752,183 @@ export interface operations {
             };
         };
     };
+    read_record_inquiry_view_record_inquiry_view__ref__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_meeting_candidates_record_meetings_candidates_get: {
+        parameters: {
+            query?: {
+                meeting?: string;
+                status?: string;
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_meeting_candidates_record_meetings_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingNotesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_meeting_candidate_record_meetings_candidates__candidate_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refuse_meeting_candidate_record_meetings_candidates__candidate_id__refuse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefuseCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_record_missions_record_missions_get: {
         parameters: {
             query?: {
@@ -48909,6 +50081,39 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mission_proposals_record_missions__mission_id__proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -51007,7 +52212,9 @@ export interface operations {
     };
     get_trace_traces__trace_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header?: never;
             path: {
                 trace_id: string;
@@ -51139,7 +52346,9 @@ export interface operations {
     };
     get_trace_span_traces__trace_id__spans__span_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header?: never;
             path: {
                 trace_id: string;

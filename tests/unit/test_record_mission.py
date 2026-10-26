@@ -269,7 +269,8 @@ def test_the_heartbeat_reports_the_missions_whose_date_has_come(monkeypatch):
     due = M.write_mission(_mission(conn, review=M.Review(cadence="weekly", next_report_on="2026-10-01")), by="user:ana")
     M.write_mission(_mission(conn, name="Later " + uuid.uuid4().hex[:4],
                              review=M.Review(cadence="weekly", next_report_on="2099-01-01")), by="user:ana")
-    assert [x.id for x in M.due_reports(NOW)] == [due.id]
+    # the ledger is shared across the suite: the missions due are read on this test's own connection
+    assert [x.id for x in M.due_reports(NOW) if conn in x.scope.connections] == [due.id]
     import aughor.rbac.routing as routing
     monkeypatch.setattr(routing, "route", lambda securable, **kw: [])
     import aughor.db.measure as measure
@@ -295,3 +296,47 @@ def test_a_governed_metric_resolves_to_the_report_s_measurable_definition(monkey
     conn = _conn()
     m = M.write_mission(_mission(conn, objective=M.Objective(metric="gross_margin", direction="up", spec=None)), by="user:ana")
     assert m.objective.spec["metric_table"] == "shop.orders"
+
+
+def test_a_whole_statement_whose_date_is_on_its_subquery_s_table_is_reported(monkeypatch):
+    """The decision-framework run (defect 2): Lux's repeat-purchase rate reads orders inside a subquery, its first
+    table is customers, and the report said "the date column orders.order_date is not on customers". A governed
+    metric the period compiler can measure is measured by it — the path the Briefing and a review read."""
+    import duckdb
+
+    import aughor.semantic.metrics as SM
+    from aughor.semantic.metrics import MetricDefinition
+    con = duckdb.connect()
+    con.execute("CREATE TABLE customers (customer_id INT)")
+    con.execute("CREATE TABLE orders (order_id INT, customer_id INT, order_date DATE)")
+    end = NOW.date() - timedelta(days=1)
+    oid = 0
+    for k in range(7 * 30):                      # one order a day; every third day the customer comes back
+        day = end - timedelta(days=k)
+        oid += 1
+        con.execute("INSERT INTO orders VALUES (?, ?, ?)", [oid, oid if k % 3 else oid - 1, day])
+    rpr = MetricDefinition(
+        name="repeat_purchase_rate", label="Repeat purchase rate", connection="c-lux", status="approved",
+        sql="SELECT SUM(CASE WHEN n > 1 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS repeat_purchase_rate "
+            "FROM (SELECT customer_id, COUNT(DISTINCT order_id) AS n FROM orders GROUP BY customer_id) t",
+        tables=["customers", "orders"], time_column="orders.order_date", time_kind="flow")
+    monkeypatch.setattr(SM, "get_metric", lambda name, path=None, connection_id=None: rpr if name == rpr.name else None)
+    monkeypatch.setattr(SM, "list_metrics", lambda *a, **k: [rpr])
+    spec = M.spec_for_metric("repeat_purchase_rate", "c-lux")
+    assert spec["metric_table"] == "customers"                      # the one-table path would read the wrong table
+
+    def run_sql_for(connection_id, **kw):
+        def run_sql(sql):
+            try:
+                cur = con.execute(sql)
+                return [d[0] for d in cur.description], cur.fetchall(), None
+            except Exception as exc:  # noqa: BLE001
+                return [], [], str(exc)
+        return run_sql
+    m = M.write_mission(_mission("c-lux", objective=M.Objective(metric="repeat_purchase_rate", direction="up", spec=spec),
+                                 constraints=[], review=M.Review(cadence="monthly", next_report_on="2099-01-01")),
+                        by="user:ana")
+    obj = M.compose_report(m, run_sql_for=run_sql_for, now=NOW)["objective"]
+    assert obj["measurable"] and obj["note"] == "", obj
+    assert obj["actual"] is not None and 0.0 < obj["actual"] < 1.0, obj
+    assert obj["baseline"] is not None and obj["window"].endswith("(30 days)")

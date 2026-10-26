@@ -79,6 +79,28 @@ class Provider(BaseModel):
     #: The products this provider's one app reaches, each connected from its own card.
     #: Empty = the provider is connected as a whole, from its own card.
     products: list[Product] = []
+    #: The shape a client id of this provider has, when it has a fixed one, and an example to say beside it.
+    #:
+    #: Found 2026-10-27: a placeholder left in the store from an earlier session ("demo-client-id…") was offered as a
+    #: configured Google app, the card said Connect, and Google answered `Error 401: invalid_client` — a client it
+    #: has never heard of. A save of something that cannot be a client id is refused, a stored one is said on its card,
+    #: and Connect never sends a person to the provider with it.
+    client_id_pattern: str = ""
+    client_id_example: str = ""
+
+    def products_needing(self, scopes: str) -> list["Product"]:
+        """The products of this provider whose scopes are among ``scopes`` — what a withheld grant leaves unconnected."""
+        missing = set((scopes or "").split())
+        return [p for p in self.products if set(p.scopes.split()) & missing]
+
+    def client_id_problem(self, client_id: str) -> str:
+        """Why ``client_id`` cannot be this provider's client id, in words; "" when it can (or no shape is known)."""
+        import re
+        cid = (client_id or "").strip()
+        if not self.client_id_pattern or not cid or re.fullmatch(self.client_id_pattern, cid):
+            return ""
+        return (f"“{cid[:60]}” is not a {self.name} client id — one looks like {self.client_id_example}. Copy the "
+                f"Client ID from the OAuth client you created, not its name or secret")
 
     def product(self, product_id: str) -> "Product | None":
         return next((p for p in self.products if p.id == product_id), None)
@@ -104,6 +126,8 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in [
         default_scopes="openid email",
         pkce=True,
         console_url="https://console.cloud.google.com/apis/credentials",
+        client_id_pattern=r"[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com",
+        client_id_example="123456789012-abc123def456ghi789.apps.googleusercontent.com",
         # Without the first two, Google omits the refresh token on every consent after the
         # first — a grant that silently cannot outlive its first hour. The third keeps every
         # product already granted when one more is added, so the token covers them all.
@@ -122,6 +146,12 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in [
                     scopes=_GOOGLE_AUTH + "drive.metadata.readonly"),
             Product(id="calendar", name="Google Calendar", blurb="Read the events on your calendar.",
                     scopes=_GOOGLE_AUTH + "calendar.readonly"),
+            # The decision-framework study §3.2 (the user's call, 2026-10-27): comments on one file a person names on
+            # a decision. Drive offers no narrower scope that reads comments without a file picker; the door reads
+            # only the file a person names, never lists or searches.
+            Product(id="comments", name="Google Drive comments",
+                    blurb="Read the comments on a Sheet, Slides deck or Doc a person names on a decision — never other files.",
+                    scopes=_GOOGLE_AUTH + "drive.readonly"),
         ],
     ),
     Provider(

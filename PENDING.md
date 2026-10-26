@@ -175,11 +175,11 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] ED-6 · every object read says how complete it is — ✅ BUILT 2026-10-25 behind `objects.completeness` (§3.58 "ED-6, built") — measured first: a read cut at the connection's 500 rows said complete (the door compared with 1,000), and the linked page showed masked properties (fixed under OC-7's flag); one typed `completeness` on every object door and in the contract
 
 ### Every change says what made it — Arc TC (§3.59; drafted and adopted 2026-10-24, §6 item 52; second of three)
-- [ ] TC-1 · the agent's `config_rev` on every turn and receipt (`agents.revision_on_answers`)
-- [ ] TC-2 · the run and trace id on edit history and the action audit — an object's timeline (`actions.run_attribution`)
-- [ ] TC-3 · versions for automations and monitors; each run names its version and keeps its trigger payload (`automations.versions`)
-- [ ] TC-4 · alerts that close — a *recovered* alert (`monitors.recovery`), after ED-0
-- [ ] TC-5 · operations read across runs — hub-map failure rate, log search, audit window and export, reasons on payload reads (`hub.failure_rate`, `obs.log_search`, `govern.justifications`)
+- [x] TC-1 · the agent's `config_rev` on every turn and receipt (`agents.revision_on_answers`) — ✅ BUILT 2026-10-26, off (`ab9514d6`): `rev` beside the agent on receipts and chat turns, from the record activated when the question began; a stale `expected_rev` on a save or restore is refused 409 naming both revisions; deep-analysis rows not stamped (their row is overwritten on completion)
+- [x] TC-2 · the run and trace id on edit history and the action audit — an object's timeline (`actions.run_attribution`) — ✅ BUILT 2026-10-26, off (`3019114a`); the falsifier HELD in tests (an edit inside an automation run names that run); one run contextvar bound at the ask door, `run_automation` and the job runner; `GET /actions/edits/timeline` with each run's metered cost ("not metered", never zero); the overlay store's migration 4 (checked against the live `user_version` at deploy). The L5 autonomy agent acts outside any run and says so. *Timeline* also names a dashboard piece (AP-4) — a naming call for the user
+- [x] TC-3 · versions for automations and monitors; each run names its version and keeps its trigger payload (`automations.versions`) — ✅ BUILT 2026-10-26, off (`5f067653`): versions as ledger artifacts (lifecycle switches are not versions); a run stamp beside each run (what the chain received, 16 KB cap said — a webhook's body stays thrown away, DS-17); replay is the engine's existing dry run given the kept trigger, refused by name when the version or payload was not kept; a monitor's run is its automation stand-in's, so it names the monitor's version
+- [x] TC-4 · alerts that close — a *recovered* alert (`monitors.recovery`), after ED-0 — ✅ BUILT 2026-10-26, off (`61fab143`): one recovery per closed alert (its id derived from the alert, so a race writes one), a check says *within its limit* · *fired* · *suppressed by its grace period* (the glossary's words, not "in limit"/"breached"); a recovery ends the grace period; recorded, never sent (no send log names its alert); no schema change
+- [x] TC-5 · operations read across runs — hub-map failure rate, log search, audit window and export, reasons on payload reads (`hub.failure_rate`, `obs.log_search`, `govern.justifications`) — ✅ BUILT 2026-10-26/27, all three off (`a556fb5b`…`05f88608`): the hub map holds automations and monitors only (no agents, no syncs), each with a rate, *no runs* (never 0%) or *not permitted*; `GET /obs/logs` searches the journal's run lines over 30 days and says how far it reached (`job.state`/`automation.run` are swept after 2 days); the audit feed takes since/until/cursor and exports CSV or JSON lines; reading a run's payload or exporting the ledger needs a reason, written once as `access.justified` to the journal (no sixth sink). **With `govern.justifications` on, the web trace viewer and the MCP `read_run_span` tool get a 422 — they cannot pass a reason yet.** Adjacent, not fixed: `/traces/{id}/summary|spans|logs|trajectory` are open reads while `/traces/{id}` is admin-only; `/activity` serves session payloads unaudited
 
 ### The ontology people can find and act on — Arc FA (§3.60; drafted and adopted 2026-10-24, §6 item 52; third of three)
 - [ ] FA-1 · the ontology can be searched — declarations in graph search, ⌘K finds objects across entities, hybrid document search (`graph.declarations`, `objects.find`, `knowledge.hybrid_documents`)
@@ -694,3 +694,24 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     pair's demo ontology.* *Night: the last two closed — the dense table's row 36 → 30 px (one variable, measured; nav rows
     and buttons were already under 30), and the entity-uses door proven live on the scratch's demo ontology (one audited
     read counted in October 2026; no dependents, said).* Nothing owed from the look study.
+61. [~] **Aughor as the centre piece of an organisation's decision intelligence — the framework, and a run** (the
+    user, 2026-10-25: *"how making Aughor truly a center piece of an organisation's decision intelligence"*, then
+    *"let's not haste into building something.. a framework that.. will take care of.. all of the points"*, then *"run
+    several scenarios from arising to learned loops.. run it for me"*) — `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`.
+    Decided (ROADMAP §6 item 54): the three readings taken as **B + C + A**; the framework before any build; Slack the
+    first door. *Run 2026-10-25/26 on LuxExperience, live: six decisions through the real doors, backdated so the hourly
+    review fell due; the reopen loop proven; every first review said cannot tell — a whole-SELECT metric could not be cut
+    by a segment, so the comparison review never ran on a metric defined today — **fixed** (`212fa3d1`); gross margin read
+    the all-time figure in every period (its date table on the optional side of a LEFT JOIN) — **fixed** on the same
+    branch; six more defects named in the study §6, open.* **Built 2026-10-26/27, the study's §8 in order** (study §8–§9):
+    every open defect fixed (`216196c6`); Arc TC-1…TC-5 (each behind its flag, off); the intake doors — Decide on a
+    dashboard Question's answer and on a Briefing figure (booked as a measured *reading*), `@bot decide:` in Slack with
+    a decision card its approvers ✅ (`fbbdb495`); decision kinds declared by people and the platform's proposal of a
+    declared kind under a mission (`9f4da21b`); beyond §8, the decision's reading from where it arose to what was learned
+    with the modifying decision (`493ec8bd`), and the evidence envelope's conversation and meeting kinds with the meeting
+    door (`afcabccc`). **The calls, 2026-10-27 (ROADMAP §6.54(f)), carried out:** people's word is *the inquiry*
+    (`a35cc4c0`); TC-2's read is an object's *changes*; a run's content pages are admin-only; the four low-risk TC flags
+    are ON live; the email door, inbound only, is BUILT and ON (`7f11ae04`) — it receives nothing until the install sets
+    `AUGHOR_INBOUND_EMAIL_DOMAIN` and `AUGHOR_INBOUND_EMAIL_SECRET` and a mail provider posts to a PUBLIC address
+    (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
+    user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Branch kept local; the coverage test skipped.

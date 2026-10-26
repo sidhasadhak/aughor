@@ -283,19 +283,21 @@ def _same_question(a: str, b: str) -> bool:
 
 
 def intervention_cases(*, metric: str, connection_id: str = "", action_id: str = "", like: str = "",
-                       min_cases: int = INTERVENTION_MIN_CASES) -> list[dict]:
-    """The past cases method 4 reads: every Outcome on this install whose decision ran ``action_id``
-    or asked the same question as ``like``, on ``metric``, with a measured effect against the
-    metric's own history. Each case is the outcome's id, the decision's, the effect and the verdict."""
+                       min_cases: int = INTERVENTION_MIN_CASES, kind: str = "") -> list[dict]:
+    """The past cases method 4 reads: every Outcome on this install whose decision was of the declared ``kind``
+    (`record/kinds.py` — the organisation's own word for "the same kind of decision"), ran ``action_id``, or
+    asked the same question as ``like``, on ``metric``, with a measured effect against the metric's own history.
+    Each case is the outcome's id, the decision's, the effect and the verdict."""
     from aughor.record import decisions as D
     want = (metric or "").strip().lower()
     cases: list[dict] = []
     for d in D.list_decisions(conn_id=connection_id or None, limit=2000):
         if not d.outcome:
             continue
+        same_kind = bool(kind) and d.kind == kind
         same_action = bool(action_id) and action_id in (d.actions or [])
         same_q = bool(like) and _same_question(like, d.question)
-        if not (same_action or same_q):
+        if not (same_kind or same_action or same_q):
             continue
         o = D.outcome_by_id(d.outcome)
         if o is None or o.effect.value is None:
@@ -306,19 +308,21 @@ def intervention_cases(*, metric: str, connection_id: str = "", action_id: str =
             continue
         cases.append({"outcome": o.id, "decision": d.id, "effect": float(o.effect.value), "verdict": o.verdict,
                       "measured_on": o.measured_on, "method": o.effect.method, "question": d.question[:160],
-                      "matched_on": "action" if same_action else "question"})
+                      "matched_on": "kind" if same_kind else "action" if same_action else "question"})
     return cases
 
 
 def intervention(*, metric: str, connection_id: str = "", action_id: str = "", like: str = "", unit: str = "",
-                 min_cases: int = INTERVENTION_MIN_CASES, coverage: float = HISTORY_COVERAGE) -> Projection:
+                 min_cases: int = INTERVENTION_MIN_CASES, coverage: float = HISTORY_COVERAGE, kind: str = "") -> Projection:
     """Method 4 — the effect decisions of this kind had before, on this install, read from Outcome
     entries and nothing else: the mean measured effect, a band at the stated coverage, the count of
     cases and how many went the wanted way. Projects nothing below ``min_cases`` and says so."""
-    if not (action_id or like):
-        return Projection(method="intervention", note="method 4 needs the kind of decision: the declared action it ran, "
-                                                      "or the question it asked", must_say=["no decision kind named"])
-    cases = intervention_cases(metric=metric, connection_id=connection_id, action_id=action_id, like=like, min_cases=min_cases)
+    if not (kind or action_id or like):
+        return Projection(method="intervention", note="method 4 needs the kind of decision: its declared kind, the "
+                                                      "declared action it ran, or the question it asked",
+                          must_say=["no decision kind named"])
+    cases = intervention_cases(metric=metric, connection_id=connection_id, action_id=action_id, like=like,
+                               min_cases=min_cases, kind=kind)
     n = len(cases)
     if n < min_cases:
         return Projection(method="intervention", backtest={"n": n},
@@ -332,6 +336,7 @@ def intervention(*, metric: str, connection_id: str = "", action_id: str = "", l
     low, high = mu - _Z80 * sd, mu + _Z80 * sd
     return Projection(method="intervention", value=round(mu, 6), low=round(low, 6), high=round(high, 6), coverage=coverage, unit=unit,
                       backtest={"n": n, "held": held, "worse": sum(1 for c in cases if c["verdict"] == "worse"),
+                                "missed": sum(1 for c in cases if c["verdict"] == "missed"),
                                 "cannot_tell": sum(1 for c in cases if c["verdict"] == "cannot_tell")},
                       inputs={"cases": [c["outcome"] for c in cases], "matched_on": sorted({c["matched_on"] for c in cases})},
                       must_say=[f"{n} past decision{'s' if n != 1 else ''} of this kind on this install, each measured against the "
@@ -351,7 +356,7 @@ def project(method: str, **kw) -> Projection:
         return history(kw["spec"], kw["run_sql"], end_day=kw.get("end_day"), windows=kw.get("windows", HISTORY_WINDOWS))
     if method == "intervention":
         return intervention(metric=kw.get("metric", ""), connection_id=kw.get("connection_id", ""), action_id=kw.get("action_id", ""),
-                            like=kw.get("like", ""), unit=kw.get("unit", ""))
+                            like=kw.get("like", ""), unit=kw.get("unit", ""), kind=kw.get("kind", ""))
     # Phase 7 — a registered method (a forecaster, estimator or simulator with its backtest, run as a
     # foreign tool through the one door); an unknown name is still refused by name.
     from aughor.record import methods as _methods

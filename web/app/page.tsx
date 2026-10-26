@@ -1925,6 +1925,10 @@ export default function Home() {
             {tab === "record" && (
               <ErrorBoundary label="The Record hit an error.">
                 <RecordWorkspace
+                  // Remounted on a workspace switch: its ledgers load once on mount, under the workspace the transport
+                  // stamps on the request, and kept the old workspace's decisions until a reload (the decision-framework
+                  // run, defect 4). The layout effect above has set the new workspace before the panels' loads run.
+                  key={selectedWorkspace || "none"}
                   layer={recordLayer}
                   onLayerChange={l => { setOpenId(null); setRecordLayer(l); }}
                   openId={openId}

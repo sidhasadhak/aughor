@@ -108,14 +108,15 @@ def begin(provider_id: str, *, user_id: str, redirect_uri: str,
 
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(48) if provider.pkce else ""
+    asked = scopes or provider.default_scopes
     put_pending(state, provider=provider_id, user_id=user_id, verifier=verifier,
-                redirect_uri=redirect_uri)
+                redirect_uri=redirect_uri, scopes=asked)
 
     params = {
         "client_id": app.client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": scopes or provider.default_scopes,
+        "scope": asked,
         "state": state,
         **provider.authorize_extra,
     }
@@ -190,11 +191,26 @@ def complete(state: str, code: str) -> Connection:
         token_type=str(body.get("token_type", "Bearer") or "Bearer"),
         expires_at=_expires_at(body.get("expires_in")),
         status="active",
+        withheld=withheld_scopes(str(pending.get("scopes", "") or ""), str(body.get("scope", "") or "")),
     )
     conn = prior.model_copy(update=fields) if prior else Connection(**fields)
     saved = save_connection(conn)
     _audit("integration.connect", saved)
     return saved
+
+
+#: The short names a provider may answer with for a scope asked in full, and the reverse.
+_SAME_SCOPE = {"email": "https://www.googleapis.com/auth/userinfo.email",
+               "profile": "https://www.googleapis.com/auth/userinfo.profile"}
+
+
+def withheld_scopes(asked: str, granted: str) -> str:
+    """What was asked and not granted — space-separated, "" when everything was. A scope the provider answers under its
+    other spelling (Google's `email` for `.../userinfo.email`) counts as granted."""
+    got = set((granted or "").split())
+    got |= {_SAME_SCOPE[s] for s in list(got) if s in _SAME_SCOPE}
+    got |= {short for short, full in _SAME_SCOPE.items() if full in got}
+    return " ".join(sorted(s for s in set((asked or "").split()) if s not in got))
 
 
 def _account_label(provider: Provider, body: dict) -> str:

@@ -93,3 +93,40 @@ it("opens on the figures, asks about the half-set-up provider, and keeps the cli
   expect(details.textContent).toContain("stored, encrypted — never shown");
   expect(details.textContent).not.toContain("abcd");
 });
+
+it("a stored client id the provider will refuse is said, and Connect is held until the app is fixed", async () => {
+  // Found 2026-10-27: a placeholder left in the store was offered as configured, and Google answered invalid_client.
+  const problem = "“demo-client-id.apps.googleusercontent.com” is not a Google client id — one looks like 1-a.apps.googleusercontent.com";
+  api.getIntegrationsCatalog.mockResolvedValue({ providers: [{ ...GOOGLE, client_id_problem: problem, oauth_ready: false }],
+    redirect_uri: "http://localhost:8000/oauth/callback" });
+  api.getSlackBots.mockResolvedValue([]);
+  api.listUserAgents.mockResolvedValue([]);
+  api.getConnections.mockResolvedValue([]);
+  api.getManagedSupervisor.mockResolvedValue({ flag: false, managed: false, state: "stopped", pid: null, started_at: "",
+    restarts: 0, last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: [], log_path: "", heartbeat: null });
+  api.getSupervisorKeyStatus.mockResolvedValue({ issued: false, issued_at: "", previous_valid_until: "", grace_s: 600 });
+  api.listMcpServers.mockResolvedValue({ servers: [] });
+  render(<Theme><IntegrationsPanel /></Theme>);
+  const row = await screen.findByTestId("needs-client-problem");
+  expect(row.textContent).toContain("Google's stored client id is wrong");
+  expect(within(row).getByRole("button", { name: "Edit app" })).toBeTruthy();
+  expect(screen.queryByTestId("needs-half-set-up")).toBeNull();
+  const card = screen.getByTestId("integration-card-google");
+  expect(within(card).getByTestId("integration-client-problem-google").textContent).toContain("Connect is held until then");
+  for (const b of within(card).getAllByRole("button", { name: "Connect" })) expect(b).toBeDisabled();
+});
+
+it("a card the provider did not grant on the last connect is named, so a sign-in alone never reads as connected", async () => {
+  api.getIntegrationsCatalog.mockResolvedValue({ providers: [{ ...GOOGLE, withheld_products: ["Google Drive comments"] }],
+    redirect_uri: "http://localhost:8000/oauth/callback" });
+  api.getSlackBots.mockResolvedValue([]);
+  api.listUserAgents.mockResolvedValue([]);
+  api.getConnections.mockResolvedValue([]);
+  api.getManagedSupervisor.mockResolvedValue({ flag: false, managed: false, state: "stopped", pid: null, started_at: "",
+    restarts: 0, last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: [], log_path: "", heartbeat: null });
+  api.getSupervisorKeyStatus.mockResolvedValue({ issued: false, issued_at: "", previous_valid_until: "", grace_s: 600 });
+  api.listMcpServers.mockResolvedValue({ servers: [] });
+  render(<Theme><IntegrationsPanel /></Theme>);
+  const line = await screen.findByTestId("integration-withheld-google");
+  expect(line.textContent).toContain("Google did not grant Google Drive comments on the last connect");
+});

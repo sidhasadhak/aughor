@@ -100,6 +100,10 @@ class Connection(BaseModel):
     #: ISO-8601 UTC when the access token dies. The broker refreshes BEFORE this.
     expires_at: Optional[str] = None
     status: str = "active"            # active | needs_reconnect | revoked
+    #: What the last consent ASKED for and the provider did not grant, space-separated — "" when all of it was.
+    #: Found 2026-10-27: Google lists each permission with its own box, a person left one unticked, and the grant
+    #: read as connected while holding only their sign-in. The page and the card name what is missing.
+    withheld: str = ""
     created_at: str = Field(default_factory=now_iso_z)
     updated_at: str = Field(default_factory=now_iso_z)
 

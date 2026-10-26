@@ -75,6 +75,8 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
+    # Arc TC, TC-5 — the feed's window as a file carries what the feed does, so it sits beside it.
+    ("GET", "/audit/feed/export"): P.ADMIN_MANAGE_ORG,
     # VA-10 — the admin view across users. Metadata only (§6.4: counts, costs, roles);
     # it names users, so it sits with org administration, never the open-read floor.
     ("GET", "/admin/users"): P.ADMIN_MANAGE_ORG,
@@ -89,8 +91,17 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # The control-room AGGREGATES (/control-room/*) stay at the floor like /jobs.
     ("GET", "/traces"): P.ADMIN_MANAGE_ORG,
     ("GET", "/traces/{trace_id}"): P.ADMIN_MANAGE_ORG,
+    # The same run's summary, spans, logs and trajectory carry the same query text and figures as the trace itself, so
+    # they sit beside it — they were open reads while the trace was admin-only (found by TC-5; the user's call,
+    # 2026-10-27). A run's feedback stays open: it holds judgements, not the run's content.
+    ("GET", "/traces/{trace_id}/summary"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/spans/{span_id}"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/logs"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/trajectory"): P.ADMIN_MANAGE_ORG,
     ("GET", "/activity"): P.ADMIN_MANAGE_ORG,
     ("GET", "/activity/stream"): P.ADMIN_MANAGE_ORG,
+    # Arc TC, TC-5 — searching every run's lines at once sits with the other cross-run reads.
+    ("GET", "/obs/logs"): P.ADMIN_MANAGE_ORG,
     # Prompt capture writes model-call CONTENT for a bounded window — opening one is an
     # org-administration act, and reading its status says whether content is being stored.
     ("GET", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,

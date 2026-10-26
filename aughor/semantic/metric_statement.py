@@ -95,6 +95,37 @@ def statement_tables(sql: str, dialect: str = "duckdb") -> list[str]:
     return out
 
 
+def optional_side(tree, grain_table: str) -> str:
+    """The outer join that leaves ``grain_table`` optional, said — or ``""`` when every join the
+    statement makes keeps that table's rows. Filtering a table on the optional side of a join
+    filters nothing: the other side's rows stay, joined to nothing. LuxExperience's gross margin
+    (2026-10-26) read ``order_items LEFT JOIN orders`` and was dated on ``orders``; the window
+    filtered orders, 273,214 unmatched items stayed in the sum, and the metric read the same
+    all-time figure in every window. A LEFT JOIN leaves its joined table optional, a RIGHT JOIN
+    every table before it, a FULL JOIN both sides."""
+    from sqlglot import exp
+    want = bare(grain_table)
+    for sel in tree.find_all(exp.Select):
+        joins = sel.args.get("joins") or []
+        if not joins:
+            continue
+        parties: list[str] = []                       # the tables joined so far, FROM first
+        frm = sel.args.get("from") or sel.args.get("from_")
+        if frm is not None and isinstance(frm.this, exp.Table):
+            parties.append(frm.this.name)
+        for j in joins:
+            side = str(j.side or "").upper()
+            joined = j.this.name if isinstance(j.this, exp.Table) else ""
+            if side == "LEFT" and bare(joined) == want:
+                return f"its date table {grain_table} sits on the optional side of a LEFT JOIN"
+            if side == "RIGHT" and any(bare(p) == want for p in parties):
+                return f"its date table {grain_table} sits on the optional side of a RIGHT JOIN"
+            if side == "FULL" and (bare(joined) == want or any(bare(p) == want for p in parties)):
+                return f"its date table {grain_table} sits on one side of a FULL JOIN"
+            parties.append(joined)
+    return ""
+
+
 def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "duckdb",
                      rewrite=None) -> tuple[Optional[str], str, int]:
     """``sql`` with every reference to ``grain_table`` replaced by that table filtered to
@@ -102,7 +133,9 @@ def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "d
     arithmetic runs unchanged over the rows of one window. ``rewrite``, when given, is applied
     to the whole tree first (a cohort's outcome bound). Returns ``(sql, "", n)`` with ``n`` the
     references substituted, or ``(None, why, 0)``; ``n == 0`` is said, never silently run as the
-    whole history."""
+    whole history. A grain table on the optional side of an outer join is refused by name
+    (:func:`optional_side`): a filter there bounds nothing, and the figure would be the whole
+    history dressed as a window."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -115,6 +148,10 @@ def scoped_statement(sql: str, grain_table: str, predicate, *, dialect: str = "d
         tree, why = rewrite(tree)
         if tree is None:
             return None, why, 0
+    optional = optional_side(tree, grain_table)
+    if optional:
+        return None, (f"{optional}, so a window cannot bound the statement's rows — read from that table, "
+                      "or join it inner"), 0
     ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
     want = bare(grain_table)
     n = 0

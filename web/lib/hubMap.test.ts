@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { HubCost, HubProbation } from "@/lib/api";
 import {
-  costCaveat, costText, destinationText, probationText, stateColor, tokensText,
+  costCaveat, costText, destinationText, failureColor, failureDetail, failureText, probationText,
+  stateColor, tokensText,
 } from "@/lib/hubMap";
 
 const COST: HubCost = {
@@ -56,6 +57,24 @@ describe("probationText", () => {
   it("says graduated once probation lifts with marks behind it", () => {
     expect(probationText({ ...P, on: false, marked: 6, precision: 1 })).toBe("graduated");
     expect(probationText({ ...P, on: false })).toBe("—");
+  });
+});
+
+describe("failure rate (TC-5)", () => {
+  it("says no runs and not permitted in words, never 0%", () => {
+    expect(failureText({ state: "no_runs", window_days: 7, label: "no runs", ran: 0, failed: 0, rate: null }))
+      .toBe("no runs · 7d");
+    expect(failureText({ state: "not_permitted", window_days: 7, label: "not permitted" }))
+      .toBe("not permitted · 7d");
+    expect(failureDetail({ state: "not_permitted", window_days: 7, label: "not permitted" }))
+      .toBe("You may not see these runs.");
+  });
+  it("puts the counts behind a measured label, and reds it only when something failed", () => {
+    const f = { state: "measured" as const, window_days: 7, label: "33% failed", ran: 6, failed: 2, rate: 0.3333, gated: 1 };
+    expect(failureText(f)).toBe("33% failed · 7d");
+    expect(failureDetail(f)).toBe("2 of 6 runs failed in the last 7 days · 1 never started");
+    expect(failureColor(f)).toBe("var(--red3)");
+    expect(failureColor({ ...f, failed: 0, label: "0% failed" })).toBe("var(--t3)");
   });
 });
 

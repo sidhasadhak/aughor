@@ -860,6 +860,10 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-section { padding: 0 0 24px; }
 .aug-section + .aug-section { border-top: 1px solid var(--b0); padding-top: 20px; }
 .aug-section-head { display: flex; align-items: baseline; gap: 10px; min-height: 28px; margin-bottom: 8px; }
+/* A section's name never shrinks or breaks: a long note beside it takes the room left and wraps there instead
+   ("The inquiry" broke onto two lines in a narrow pane, 2026-10-27). */
+.aug-section-head > .aug-label { flex-shrink: 0; white-space: nowrap; }
+.aug-section-head > .aug-fs-sm { min-width: 0; }
 .aug-absent { margin: 0; padding: 6px 0; color: var(--t3); line-height: 1.55; max-width: 68ch; }
 .aug-claim-line { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--b0); }
 .aug-claim-line:last-child { border-bottom: none; }

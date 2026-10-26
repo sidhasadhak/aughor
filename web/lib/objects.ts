@@ -366,6 +366,9 @@ export interface EditHistoryRow {
   at: string;
   /** Arc ED, ED-1 — why the property's values are not shown to this reader (they arrive empty). */
   masked?: string;
+  /** Arc TC, TC-2 — with run attribution on, the run this version was made through, as a phrase: "outside any run",
+   *  "through an automation (run 3f2a1b9c)", or "which run made it was not recorded". Absent with it off. */
+  run_said?: string;
 }
 
 /** Arc OC-6 — every version of the edits on one object (and one property), newest first. */

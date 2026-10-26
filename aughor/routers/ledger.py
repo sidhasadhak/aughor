@@ -297,12 +297,21 @@ def export_lines(kinds: list[str], connection_id: Optional[str], limit: int):
 
 
 @router.get("/export")
-def export_ledger(kinds: Optional[str] = None, connection_id: Optional[str] = None, limit: int = 20000):
+def export_ledger(kinds: Optional[str] = None, connection_id: Optional[str] = None, limit: int = 20000,
+                  reason: Optional[str] = None):
     """The ledger as JSON lines — every current entry of the kinds asked (default: every kind the
-    Record writes), so adopting the platform is not a trap."""
+    Record writes), so adopting the platform is not a trap.
+
+    Arc TC, TC-5 (`govern.justifications`, off by default): an export needs a `reason`, refused
+    by name without one, and is recorded with it (`access.justified`) before the first line."""
+    from aughor.govern import justifications
+    why = justifications.require_reason(reason, "ledger_export") if justifications.required() else None
     if connection_id and not _visible(connection_id):
         raise HTTPException(status_code=404, detail="No such connection")
     wanted = [k.strip() for k in (kinds or "").split(",") if k.strip()] or list(EXPORT_KINDS)
+    if why is not None:
+        justifications.record("ledger_export", why, kinds=",".join(wanted),
+                              connection_id=connection_id or "")
     return StreamingResponse(export_lines(wanted, connection_id, max(1, min(int(limit), 200000))),
                              media_type="application/x-ndjson",
                              headers={"Content-Disposition": "attachment; filename=aughor-ledger.jsonl"})

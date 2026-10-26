@@ -14,13 +14,12 @@
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
+import { ExpectRow, NOT_ACT } from "@/components/decisions/DecideDoor";
 import { ActorField, useActor } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { SelectField } from "@/components/ui/select";
 import { getMetrics, getSystemFlags, type Metric } from "@/lib/api";
-import { withUniqueKeys } from "@/lib/listKeys";
 import {
   ANSWERS, ASKED, bookSaid, byDay, dayMonth, dayWords, daysBehind, dismissFinding, domainFindings, leadDetail, metricWords,
   pickLead, pickQuestion, pickWorthALook, rangeText, readYou, recheckFinding, standingQuestions, weekAhead,
@@ -274,48 +273,6 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
       )}
       {error && <div className="aug-fs-xs" style={{ color: "var(--red4)", marginTop: 8 }}>{error}</div>}
     </section>
-  );
-}
-
-/** What a decision expects, as Home asks it: an approved metric that knows its dates, the way it should move, and —
- *  for a metric with dimensions — one part of it, read against the rest of its group at review (PENDING 57, D-1/D-3). */
-const NOT_ACT = "not act";
-const DIRECTIONS = [{ value: "up", label: "go up" }, { value: "down", label: "go down" }, { value: "hold", label: "hold" }];
-
-function ExpectRow({ metrics, value, onChange }: {
-  metrics: Metric[];
-  value: { metric: string; direction: string; dimension: string; part: string };
-  onChange: (v: { metric: string; direction: string; dimension: string; part: string }) => void;
-}) {
-  const m = metrics.find(x => x.name === value.metric);
-  return (
-    <div style={{ ...row, marginTop: 6 }} data-testid="home-expect">
-      <span className="aug-fs-xs" style={muted}>Expect</span>
-      <SelectField aria-label="The metric it should move" value={value.metric} style={{ maxWidth: 220 }}
-        onChange={e => onChange({ ...value, metric: e.target.value, dimension: "", part: "" })}>
-        <option value="">nothing named — it cannot be scored</option>
-        {withUniqueKeys(metrics, x => x.name).map(([k, x]) => <option key={k} value={x.name}>{x.label || x.name}</option>)}
-      </SelectField>
-      {value.metric && (
-        <SelectField aria-label="The way it should move" value={value.direction} style={{ maxWidth: 120 }}
-          onChange={e => onChange({ ...value, direction: e.target.value })}>
-          {DIRECTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-        </SelectField>
-      )}
-      {m && (m.dimensions ?? []).length > 0 && (
-        <>
-          <SelectField aria-label="One part of it" value={value.dimension} style={{ maxWidth: 160 }}
-            onChange={e => onChange({ ...value, dimension: e.target.value, part: "" })}>
-            <option value="">all of it</option>
-            {(m.dimensions ?? []).map(d => <option key={d} value={d}>{`for one ${d.replace(/_/g, " ")}`}</option>)}
-          </SelectField>
-          {value.dimension && (
-            <Input aria-label="Which one" value={value.part} placeholder="e.g. Jeans" style={{ maxWidth: 140 }}
-              onChange={e => onChange({ ...value, part: e.target.value })} />
-          )}
-        </>
-      )}
-    </div>
   );
 }
 

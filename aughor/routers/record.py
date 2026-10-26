@@ -55,8 +55,15 @@ def _claim_view(c: C.Claim) -> dict:
     return view
 
 
-def _decision_view(d: D.Decision) -> dict:
-    return d.model_dump()
+def _decision_view(d: D.Decision, *, verdict: bool = False) -> dict:
+    """A decision as the API returns it; ``verdict`` adds its outcome's verdict, so a list can say how many reviews
+    reached one rather than claiming that each can (the decision-framework run: every review said cannot tell while
+    the card read "each can be scored")."""
+    view = d.model_dump()
+    if verdict:
+        o = D.outcome_by_id(d.outcome) if d.outcome else None
+        view["outcome_verdict"] = o.verdict if o is not None else ""
+    return view
 
 
 def _who(principal) -> str:
@@ -213,6 +220,12 @@ class DissentIn(BaseModel):
     why: str
 
 
+class FigureIn(BaseModel):
+    metric: str
+    start: str                     # ISO date, inclusive
+    end: str                       # ISO date, exclusive — the day after the edition's last day
+
+
 class DeclareDecisionRequest(BaseModel):
     question: str
     chosen: str
@@ -232,6 +245,15 @@ class DeclareDecisionRequest(BaseModel):
     # server, with the decision loop on (PENDING 57, D-1). The schema, when the page knows it.
     finding_id: str = ""
     schema_name: str = ""
+    # The run whose answer it was taken on (a dashboard Question's, a chat answer): the server cites the claims the
+    # run's receipt booked. The Briefing figure it was taken on: the server measures it for those days and books the
+    # reading to cite (the decision-framework study §3.2). Both with the decision loop on.
+    run_id: str = ""
+    figure: Optional[FigureIn] = None
+    # The declared kind of decision it is (`record/kinds.py`): its rules hold at the door.
+    kind: str = ""
+    # The decision it changes — a modifying decision (study §3.1); its inquiry reads backwards to it.
+    revises: str = ""
 
 
 class OutcomeIn(BaseModel):
@@ -259,7 +281,7 @@ def list_record_decisions(connection_id: Optional[str] = None, due: bool = False
     if due and connection_id:
         rows = [d for d in rows if d.connection_id == connection_id]
     ok = _gate()
-    return [_decision_view(d) for d in rows if ok(d.connection_id)][:limit]
+    return [_decision_view(d, verdict=True) for d in rows if ok(d.connection_id)][:limit]
 
 
 @router.get("/record/decisions/{decision_id}")
@@ -275,6 +297,11 @@ def get_record_decision(decision_id: str) -> dict:
     # what replaced the claim it stood on, when its ground moved and nobody has answered yet
     moved = C.get(d.reopened_by) if d.reopened_by else None
     view["reopened_by_claim"] = moved.model_dump() if moved is not None else None
+    # the decision's address for mail, inbound only — or why it has none (the user's call, 2026-10-27)
+    from aughor.record import email_door as E
+    view["email"] = {"address": E.address_for(d.id), "note": E.address_note()}
+    from aughor.record import google_comments as G
+    view["google"] = {"on": G.door_on(), "files": list(d.extra.get("google_files") or [])}
     return view
 
 
@@ -296,10 +323,163 @@ def declare_record_decision(req: DeclareDecisionRequest, principal=Depends(get_p
             objective=req.objective, connection_id=req.connection_id, decided_at=req.decided_at,
             decided_by=who, review_on=req.review_on,
             expectation=req.expectation.model_dump() if req.expectation else None, note=req.note,
-            finding_id=req.finding_id, schema_name=req.schema_name)
+            finding_id=req.finding_id, schema_name=req.schema_name, run_id=req.run_id,
+            figure=req.figure.model_dump() if req.figure else None, kind=req.kind, revises=req.revises)
     except (ValueError, C.ClaimRefused) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return get_record_decision(did)
+
+
+# ── decision kinds (the decision-framework study §3.1, §8 step 4) ───────────────────────────
+
+class DecisionKindRequest(BaseModel):
+    name: str
+    description: str = ""
+    approvers: list[str] = Field(default_factory=list)
+    expectation_required: bool = False
+    review_days: int = 30
+    authority_ceiling: Optional[int] = None
+    metrics: list[str] = Field(default_factory=list)
+    state: str = "active"
+
+
+@router.get("/record/decision-kinds")
+def list_decision_kinds(state: Optional[str] = None) -> dict:
+    """The kinds of decision the organisation declared, as they stand now."""
+    from aughor.record.kinds import list_kinds
+    return {"kinds": [k.model_dump() for k in list_kinds(state=state)]}
+
+
+@router.post("/record/decision-kinds", status_code=201)
+def declare_decision_kind(req: DecisionKindRequest, principal=Depends(get_principal)) -> dict:
+    """A person declares a kind of decision (or edits one: a new version, the old kept). The author is the person
+    signed in; a model never declares one."""
+    from aughor.record.kinds import DecisionKind, KindRefused, write_kind
+    who = _who(principal)
+    try:
+        k = write_kind(DecisionKind(**req.model_dump()), by=who,
+                       by_kind="person" if who and not who.startswith(("agent:", "system")) else "system")
+    except (KindRefused, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return k.model_dump()
+
+
+@router.get("/record/missions/{mission_id}/proposals")
+def list_mission_proposals(mission_id: str) -> dict:
+    """What the platform proposes under a mission: a decision of each declared kind that usually moves its objective,
+    each option with what it is predicted to do — composed by code from the kind, the mission and the Record; nothing
+    is booked here, and no model is called. A person decides through the declare door."""
+    from aughor.record import mission as M
+    from aughor.record.kinds import proposals_for
+    m = M.get_mission(mission_id)
+    if m is None or not all(_visible(c) for c in (m.scope.connections or [])):
+        raise HTTPException(status_code=404, detail="No such mission")
+    m = M.latest(m.key) or m
+    from aughor.db.measure import run_sql_for
+    # not acting is predicted from the objective as it measures now — never from a report booked under older code
+    objective = M.measure_objective(m, run_sql_for=run_sql_for)
+    return {"mission": m.id, "proposals": proposals_for(m, report={"objective": objective}),
+            "objective": {k: objective.get(k) for k in ("measurable", "window", "actual", "baseline", "note")}}
+
+
+@router.get("/record/inquiry-view/{ref}")
+def read_record_inquiry_view(ref: str) -> dict:
+    """The inquiry of a decision, as people read it — where it arose, what it stood on, its options, who decided and approved, what ran
+    under it, its review and what was learned, with its loops, read backwards to what it revises and forwards to
+    what revised it (the decision-framework study §3.1 and §3.3). ``ref`` is a decision (any version), a claim it
+    relied on, or the inquiry it came out of. Composed by code from the Record; nothing is booked."""
+    from aughor.record.inquiry_view import view_of
+    t = view_of(ref)
+    if t is None or not _visible(t.get("connection_id") or ""):
+        raise HTTPException(status_code=404, detail="No decision reads from that reference")
+    return t
+
+
+# ── decisions taken in meetings (the decision-framework study §3.2) ───────────────────────────
+
+class MeetingNotesRequest(BaseModel):
+    connection_id: str = ""
+    title: str
+    held_on: str                     # ISO date the meeting was held
+    text: str = Field(min_length=1, max_length=200_000)
+    share_quotes: bool = False       # keep the quoted lines, not only their hash
+
+
+class ConfirmCandidateRequest(BaseModel):
+    chosen: str = ""                 # what was chosen, when the notes did not say or said it otherwise
+    question: str = ""
+
+
+class RefuseCandidateRequest(BaseModel):
+    why: str = ""
+
+
+@router.post("/record/meetings/candidates", status_code=201)
+def propose_meeting_candidates(req: MeetingNotesRequest, principal=Depends(get_principal)) -> dict:
+    """A meeting's notes, brought by a person: the model reads them once and proposes the decisions it finds, each
+    kept as a candidate a person confirms or refuses. One model call. Nothing is booked as a decision here."""
+    from aughor.record import meetings as MT
+    if req.connection_id and not _visible(req.connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    try:
+        return MT.propose(req.text, title=req.title, held_on=req.held_on, connection_id=req.connection_id,
+                          by=_who(principal), share_quotes=req.share_quotes)
+    except MT.MeetingRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 — the model's failure is said, never a silent empty list
+        raise HTTPException(status_code=502, detail=f"the notes could not be read by the model: {str(exc)[:200]}")
+
+
+@router.get("/record/meetings/candidates")
+def list_meeting_candidates(meeting: str = "", status: str = "", connection_id: str = "") -> dict:
+    from aughor.record import meetings as MT
+    rows = [c for c in MT.list_candidates(meeting=meeting, status=status, connection_id=connection_id)
+            if _visible(c.connection_id)]
+    return {"candidates": [c.model_dump() for c in rows]}
+
+
+@router.post("/record/meetings/candidates/{candidate_id}/confirm")
+def confirm_meeting_candidate(candidate_id: str, req: ConfirmCandidateRequest, principal=Depends(get_principal)) -> dict:
+    """A person confirms a candidate: booked as a decision they declared, dated the day of the meeting, the meeting
+    as its evidence."""
+    from aughor.record import meetings as MT
+    try:
+        c, did = MT.confirm(candidate_id, by=_who(principal), chosen=req.chosen, question=req.question)
+    except (MT.MeetingRefused, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"candidate": c.model_dump(), "decision": get_record_decision(did)}
+
+
+@router.post("/record/meetings/candidates/{candidate_id}/refuse")
+def refuse_meeting_candidate(candidate_id: str, req: RefuseCandidateRequest, principal=Depends(get_principal)) -> dict:
+    from aughor.record import meetings as MT
+    try:
+        return MT.refuse(candidate_id, by=_who(principal), why=req.why).model_dump()
+    except MT.MeetingRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class GoogleFileRequest(BaseModel):
+    link: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/record/decisions/{decision_id}/google-file")
+def read_google_file_onto_decision(decision_id: str, req: GoogleFileRequest, principal=Depends(get_principal)) -> dict:
+    """Read the comments of ONE Google file a person names onto a decision, as later evidence, through that person's
+    own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 404 while
+    ``arrivals.google_comments`` is off."""
+    from aughor.org.context import current_user_id
+    from aughor.record import google_comments as G
+    if not G.door_on():
+        raise HTTPException(status_code=404, detail="Not Found")
+    d = D.get_decision(decision_id)
+    if d is None or not _visible(d.connection_id):
+        raise HTTPException(status_code=404, detail="No such decision")
+    try:
+        out = G.read_onto(decision_id, req.link, user_id=current_user_id() or "")
+    except G.CommentsRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    return {**out, "by": _who(principal)}
 
 
 class AmendDecisionRequest(BaseModel):
@@ -559,7 +739,7 @@ def book_record_scenario(decision_id: str, req: ScenarioRequest, principal=Depen
             req.spec = spec
         elif req.method == "intervention":
             proj = S.intervention(metric=req.metric, connection_id=d.connection_id, action_id=req.action_id,
-                                  like=req.like or d.question, unit=req.unit)
+                                  like=req.like or d.question, unit=req.unit, kind=d.kind)
         else:
             raise HTTPException(status_code=422, detail=f"no method named {req.method!r}; the ladder has {', '.join(S.METHODS)}")
         settles_on = req.settles_on or d.review_on
@@ -590,7 +770,7 @@ def list_record_decision_cases(decision_id: str, metric: str = "") -> dict:
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")
-    cases = [c for c in S.intervention_cases(metric=metric, connection_id=d.connection_id, like=d.question)
+    cases = [c for c in S.intervention_cases(metric=metric, connection_id=d.connection_id, like=d.question, kind=d.kind)
              if c["decision"] != d.id]
     return {"cases": cases, "needed": S.INTERVENTION_MIN_CASES,
             "measurable": bool(_metric_spec(metric, d.connection_id)) if metric else None}
@@ -926,8 +1106,8 @@ def book_record_outcome(decision_id: str, req: OutcomeIn, principal=Depends(get_
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")
-    if req.verdict not in ("as_expected", "better", "worse", "cannot_tell"):
-        raise HTTPException(status_code=422, detail="verdict is one of as_expected · better · worse · cannot_tell")
+    if req.verdict not in ("as_expected", "better", "worse", "missed", "cannot_tell"):
+        raise HTTPException(status_code=422, detail="verdict is one of as_expected · better · worse · missed · cannot_tell")
     try:
         oid = D.book_outcome(D.Outcome(
             of=decision_id, measured_on=req.measured_on, actual=req.actual, baseline=req.baseline,

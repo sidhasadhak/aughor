@@ -45,6 +45,23 @@ def test_a_restated_claim_is_a_correction_with_what_was_first_said():
     assert rows[0]["why"] == "late_rows" and rows[0]["claim_kind"] == "observation"
 
 
+def test_a_scored_prediction_or_a_refuted_hypothesis_is_not_a_restatement():
+    """The decision-framework run (defect 3): scoring an expectation restates its claim with the same statement, and
+    the view counted 85 such scorings as numbers that changed. Only a changed statement is a restatement."""
+    conn = _conn()
+    key = C.claim_key("observation", "answer", conn, "inv2")
+    _said(conn, "Orders were 1,200 last week", key)
+    latest = C.latest(key)
+    latest.state = "scored"
+    latest.extra = {**latest.extra, "scored_against": "inside", "actual": 1200}
+    C.restate(key, latest, conn_id=conn)
+    assert X.restatements(conn_id=conn) == []
+    changed = C.latest(key)
+    changed.statement = C.Statement(text="Orders were 1,310 last week", metric="orders", value=1310)
+    cid = C.restate(key, changed, conn_id=conn)
+    assert [r["ref"] for r in X.restatements(conn_id=conn)] == [cid]
+
+
 def test_a_refuted_hypothesis_is_a_correction_with_its_evidence():
     conn = _conn()
     claim = C.Claim(kind="hypothesis", tier="said", about=C.About(kind="connection", key=conn),

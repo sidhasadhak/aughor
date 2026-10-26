@@ -46,7 +46,7 @@ def _products(client) -> dict:
 
 
 def test_each_card_asks_only_for_its_product_and_grows_one_grant(client, monkeypatch):
-    client.put("/integrations/google/app", json={"client_id": "cid-1", "client_secret": "cs-1"})
+    client.put("/integrations/google/app", json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "cs-1"})
     assert not any(p["connected"] for p in _products(client).values())
 
     asked = _consent(client, monkeypatch, "gmail", f"openid email {GMAIL}", 1)
