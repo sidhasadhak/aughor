@@ -12317,7 +12317,7 @@ graduation queue — receipt: a week of the live install's backups read and one 
   edit layer's v4 → v5 migration was copied first (`backups/overlay_ledger.db.2026-10-26.v4-before-v5.bak`) and `/health`
   named it. Graduation still wants its week of hourly backups read and one restore proven on a copy.
 
-### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below · **SH-3 BUILT 2026-10-27** behind `sheets.views`, off, with the built screens brought to the mockup — "SH-3, built" below)
+### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below · **SH-3 BUILT 2026-10-27** behind `sheets.views`, off, with the built screens brought to the mockup — "SH-3, built" below · **SH-8 BUILT 2026-10-28** behind `sheets.sharing`, off — "SH-8, built" below)
 
 **What the user asked for.** *"within our platform users should be able to work with spreadsheets the way screenshots
 suggest"*:
@@ -12601,6 +12601,49 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
+
+**SH-8, built 2026-10-28 — a sheet shared with chosen people, and a stale write that says who** (branch
+`claude/sheets-sharing` off main `1abf194f`, local, not pushed; the user: *"Build SH-8: share a sheet with chosen people
+or groups as readers or editors, and when a stale write is refused, say who changed the cell."*). Behind
+`sheets.sharing`, off.
+- **Where who-may is kept.** In the sheet's definition (`sharing`, `shared_with`), versioned like every other change to
+  it, as a dashboard keeps who it is published to — no new store. The words are HB-1's ladder (`view`, `edit`; the
+  maker `own`), and a group reaches a person as a published dashboard does (`dashboards/sharing.audience_of`: an
+  organisation's group they are in, a role they hold). A sheet never shared stores neither field: its definition is
+  byte for byte what it was.
+- **Every door asks it** (`aughor/sheets/sharing.py`): every sheet route, at the level it needs — read, change, or the
+  maker's reshare and remove — refused with a 403 that says the sheet exists and who to ask; the chat's tools (the rows
+  a question asks for, the grounding, a link or a total applied from a proposal); combining (the other sheet must be
+  readable); the Sheets connection's door, so the SQL Editor, dashboards and every answer refuse a statement naming a
+  sheet not shared with the person before it runs; and the schema a model is handed, which carries no sample values
+  of a chosen sheet for anyone, because it is cached per connection. The flag decides whether a sheet can be shared,
+  never whether one already shared stays closed.
+- **Found on the way, and fixed.** The result cache (`db/matcache.py`) sits in front of the door: on a scratch API one
+  reader's cached rows of a sheet were served to a person it was not shared with (`cached: true`). The Sheets
+  connection's results are now never kept or served there — a sheet is live, and every read of it goes to its door
+  (SH-6's "caches read it fresh", taken here because the leak needed it).
+- **A stale write says who.** The edit layer's conflict carries who changed the cell, when, and which cell; the refusal
+  reads *"cy changed order_status in row 1 at 18:24 UTC, after you read it, so your change was not made. The grid now
+  shows cy's value; change it again if you still mean to."* The grid and the board read the page again, so the cell
+  shows that value at its new version. Before, a refused cell kept showing the old value at the old version, and every
+  retry was refused again.
+- **The screens.** The Share pop-up chooses everyone in Workspace or only the people chosen — each person, group or
+  built-in group able to read or to edit — and saves a version (*"shared with bo (can read), cy (can edit), Finance
+  (can read)"*). Anyone else sees the list, what they may do themselves, and that only the maker changes it. A reader's
+  sheet opens as though editing were off: *Can read* in its bar, and nothing on it offers a change. The home lists a
+  sheet not shared with the reader by its name and maker with the sentence, nothing else; opened by its link it says so,
+  with the way back.
+- **Proven.** 19 tests (`tests/unit/test_sheets_sharing.py`), 6 in the web; 28 mutants of the guards, every one
+  killed. On a scratch API over the Olist files, in a browser as three people: ana shared Olist orders with bo to read,
+  cy to edit and the Finance group to read; cy changed a cell ana had on screen, ana's change was refused naming cy,
+  the grid then showed cy's value, and ana's retry was kept; dee saw the sheet listed and said, its link said, and the
+  SQL route refused it — again after bo's run, once the cache was fixed; bo read the same rows (96,477 delivered) and
+  was offered nothing to change. Not on the live install.
+- **Not built, and said.** Sharing closes the sheet — its rows and everyone's changes — not the Workspace file it was
+  made from, which stays the workspace's: dee could make a sheet of their own from it. Who else is on a sheet at the
+  same moment. A maker who leaves leaves their sheets with no one to reshare them; there is no administrator's override.
+  A chosen sheet's columns stay in the schema for everyone (its values are withheld). Profiles or an ontology built
+  over the Sheets connection were not checked for a chosen sheet's values.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

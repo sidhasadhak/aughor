@@ -1163,8 +1163,13 @@ function CellBar({ sheet, selected, column, value, set, editable, error, said, r
       flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "0 12px", minWidth: 0,
       borderBottom: "1px solid var(--b0)", background: "var(--bg-1)", color: "var(--t3)" }}>
       {!selected || !column ? (
-        <span style={ELLIPSIS}>Select a cell to see where its value came from · double-click, Enter or type to change it ·
-          drag or Shift selects a range · paste with Cmd or Ctrl+V</span>
+        editable ? (
+          <span style={ELLIPSIS}>Select a cell to see where its value came from · double-click, Enter or type to change it ·
+            drag or Shift selects a range · paste with Cmd or Ctrl+V</span>
+        ) : (
+          <span style={ELLIPSIS}>Select a cell to see where its value came from · drag or Shift selects a range · copy with
+            Cmd or Ctrl+C</span>
+        )
       ) : selected.row === -1 && !range ? (
         // a key reached a row not read yet: said while it is read, never as a row number it does not have
         <span style={ELLIPSIS}>{column.name} · reading the row…</span>

@@ -72,6 +72,11 @@ def _sheet_and_view(ref: str) -> tuple[Sheet, Optional[View]]:
     sheet = model.get(sheet_id)
     if sheet is None:
         raise RowsRefused(f"no sheet {sheet_id!r} is kept here")
+    from aughor.sheets.sharing import NotShared, readable
+    try:
+        readable(sheet)
+    except NotShared as exc:
+        raise RowsRefused(str(exc)) from None
     return sheet, next((v for v in sheet.views if v.id == view_id), None)
 
 

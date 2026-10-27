@@ -114,9 +114,15 @@ _MIGRATIONS: list = [Migration(2, "object edits: object_type, note, actor, origi
 class EditConflict(Exception):
     """Arc OC-6 — an edit made against a version that is no longer the current one: someone changed it since."""
 
-    def __init__(self, message: str, current: int):
+    def __init__(self, message: str, current: int, *, by: str = "", at: str = "", row: Optional[int] = None,
+                 column: str = ""):
         super().__init__(message)
         self.current = current
+        #: who made the change it would have gone over, and when — and, for a sheet's cell, which cell (SH-8)
+        self.by = by
+        self.at = at
+        self.row = row
+        self.column = column
 
 
 class OverlayEdit(BaseModel):
@@ -446,7 +452,9 @@ def save_sheet_change(sheet_id: str, edits: list[SheetEdit], *, change_id: str, 
                                      "LIMIT 1", (edit.id,)).fetchone()
                     who = f" by {last['actor'] or 'someone'} at {str(last['at'])[:16].replace('T', ' ')}" if last else ""
                     raise EditConflict(f"this was changed{who} since you read it — read at version {e.expected_version}, "
-                                       f"it is at version {current} now; it was not changed again", current)
+                                       f"it is at version {current} now; it was not changed again", current,
+                                       by=str(last["actor"] or "") if last else "",
+                                       at=str(last["at"] or "") if last else "", row=int(e.row), column=edit.column)
                 previous = str(existing["body"]) if existing is not None else ""
                 version = current + 1
                 if e.withdraw:

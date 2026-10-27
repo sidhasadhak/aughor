@@ -17055,6 +17055,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sheets/{sheet_id}/sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Sharing
+         * @description Who a sheet is shared with — everyone in the workspace, or each person and group chosen with what they may do —
+         *     what the person asking may do, whether they may change it, and the people and groups they may choose from.
+         */
+        get: operations["read_sharing_sheets__sheet_id__sharing_get"];
+        /**
+         * Change Sharing
+         * @description Share a sheet with everyone in the workspace or with the people and groups chosen, kept as a version of its
+         *     definition. Only its maker may.
+         */
+        put: operations["change_sharing_sheets__sheet_id__sharing_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/totals": {
         parameters: {
             query?: never;
@@ -22307,6 +22333,15 @@ export interface components {
             until: string;
             /** Why */
             why: string;
+        };
+        /** SharingRequest */
+        SharingRequest: {
+            /** Shared With */
+            shared_with?: {
+                [key: string]: unknown;
+            }[];
+            /** Sharing */
+            sharing: string;
         };
         /** SheetIn */
         SheetIn: {
@@ -54668,6 +54703,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_sharing_sheets__sheet_id__sharing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_sharing_sheets__sheet_id__sharing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharingRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

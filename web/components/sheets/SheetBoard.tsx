@@ -18,7 +18,8 @@ import { Icon } from "@/components/ui/icon";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount } from "@/lib/format";
 import {
-  readBoard, rowsWord, setCells, showValue, valueWords, type BoardPage, type RowsQuery, type Sheet, type SheetColumn,
+  isStale, readBoard, rowsWord, setCells, showValue, valueWords, type BoardPage, type RowsQuery, type Sheet,
+  type SheetColumn,
 } from "@/lib/sheets";
 
 const LANE_WIDTH = 272;
@@ -84,7 +85,11 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
     if (keepFocus) landed.current = row;
     setCells(sheet.id, [{ row, column, value, version }])
       .then(() => onMoved(`Row ${row} moved to ${valueWords(value, lane)}`))
-      .catch(err => { landed.current = null; setRefused(err instanceof Error ? err.message : String(err)); });
+      .catch(err => {
+        landed.current = null;
+        setRefused(err instanceof Error ? err.message : String(err));
+        if (isStale(err)) read();                       // moved by someone since: show where they put it
+      });
   };
 
   const drop = (e: DragEvent, value: unknown) => {

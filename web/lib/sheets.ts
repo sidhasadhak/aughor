@@ -90,7 +90,44 @@ export interface SheetSummary {
   created_by: string;
   created_at: string;
   version: number;
+  /** "workspace" — everyone in it reads and edits — or, with SH-8, "chosen": only the people and groups chosen. */
   shared_with: string;
+  /** SH-8 — what the reader may do (said with `sheets.sharing` on, or for a sheet shared with chosen people). */
+  access?: SheetAccess;
+  /** How many people and groups a sheet is shared with, when it is shared with chosen ones. */
+  shares?: number;
+}
+
+/** What a person may do to a sheet: its maker owns it; the rest read or edit it. "" — it was not shared with them. */
+export type SheetAccess = "own" | "edit" | "view" | "";
+
+/** A sheet the home lists that was not shared with the reader: its name and maker, and why — nothing else (SH-8). */
+export interface WithheldSheet {
+  id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+  shared_with: string;
+  access: "";
+  withheld: string;
+}
+
+export const isWithheld = (s: SheetSummary | WithheldSheet): s is WithheldSheet => "withheld" in s && !!s.withheld;
+
+/** One person or group a sheet is shared with, and what they may do. */
+export interface SheetShare { kind: "person" | "group" | "role"; id: string; level: "view" | "edit"; name?: string }
+
+/** Who a sheet is shared with, as the person asking sees it. */
+export interface SheetSharing {
+  sharing: "workspace" | "chosen";
+  shared_with: Required<SheetShare>[];
+  maker: string;
+  access: SheetAccess;
+  why: string;
+  may_change: boolean;
+  /** The people this organisation knows by name, and its groups — what may be chosen. */
+  people: string[];
+  groups: { kind: "group" | "role"; id: string; name: string }[];
 }
 
 export interface Sheet extends Omit<SheetSummary, "columns"> {
@@ -251,7 +288,8 @@ async function call<T>(path: string, init: RequestInit | undefined, what: string
   const res = await fetch(`${getApiBase()}/sheets${path}`, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(body, `${what} failed (${res.status})`));
+    // the status rides along: a 409 is a cell someone changed since it was read, and the page reads it again
+    throw Object.assign(new Error(fastApiError(body, `${what} failed (${res.status})`)), { status: res.status });
   }
   return res.json() as Promise<T>;
 }
@@ -261,10 +299,26 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const listSheets = () =>
-  call<{ sheets: SheetSummary[]; uploads: UploadedFile[]; shared_with: string; me: string }>("", undefined,
+  call<{ sheets: (SheetSummary | WithheldSheet)[]; uploads: UploadedFile[]; shared_with: string; me: string }>("", undefined,
     "Reading the sheets");
 
 export const readSheet = (id: string) => call<Sheet>(`/${id}`, undefined, "Reading the sheet");
+
+export const readSharing = (id: string) => call<SheetSharing>(`/${id}/sharing`, undefined, "Reading who it is shared with");
+
+export const saveSharing = (id: string, sharing: "workspace" | "chosen", shared_with: SheetShare[]) =>
+  call<SheetSharing>(`/${id}/sharing`, json("PUT", { sharing, shared_with: shared_with.map(({ kind, id: who, level }) =>
+    ({ kind, id: who, level })) }), "Sharing the sheet");
+
+/** Whether an error is a change refused because the cell was changed after it was read (a 409). */
+export const isStale = (e: unknown) => (e as { status?: number } | null)?.status === 409;
+
+/** Who a sheet is shared with, in its button's and the home's words: "Workspace", or how many were chosen. */
+export function sharedWords(s: Pick<SheetSummary, "shared_with" | "shares">): string {
+  if (s.shared_with !== "chosen") return "Workspace";
+  const n = s.shares ?? 0;
+  return `${n} chosen`;
+}
 
 export function stageFile(file: File): Promise<StagedFile> {
   const form = new FormData();

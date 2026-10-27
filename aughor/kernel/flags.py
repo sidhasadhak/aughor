@@ -157,6 +157,7 @@ FLAG_ENV = {
     "sheets.combine": "AUGHOR_SHEETS_COMBINE",
     "sheets.views": "AUGHOR_SHEETS_VIEWS",
     "sheets.everywhere": "AUGHOR_SHEETS_EVERYWHERE",
+    "sheets.sharing": "AUGHOR_SHEETS_SHARING",
     # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
@@ -1199,6 +1200,16 @@ FLAG_META = {
         "description": "The cards offered are counted on the sheet first, and you keep the ones you tick. It needs "
                        "dashboards and their own queries on. Off: a sheet has no Make a dashboard.",
     },
+    "sheets.sharing": {
+        "label": "Share sheets with chosen people",
+        "summary": "Share a sheet with the people and groups you choose, each able to read it or to edit it. "
+                   "Its maker decides.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Others see its name, not rows"}],
+        "description": "A sheet not shared with you says so and who made it; its rows are refused everywhere, the "
+                       "SQL Editor and the chat included. Off: every sheet is the workspace's, and a sheet already "
+                       "shared with chosen people stays shared only with them.",
+    },
     "packs.installed_versions": {
         "label": "Record each pack's installed version",
         "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
@@ -1849,6 +1860,10 @@ GRADUATION_QUEUE: dict = {
                          "shows, and a cell edited in the sheet moves the card that reads it on the next read. "
                          "Falsifier: a card that differs from the grid's own total of the same rows, or that still "
                          "shows the value before an edit, stops it",
+    # Arc SH, SH-8 (ROADMAP §3.64), queued 2026-10-27. No model call.
+    "sheets.sharing": "receipt: on the live install, a sheet is shared with one chosen person to read and one to edit; "
+                      "a third person is told it exists and refused its rows in the grid, the SQL Editor and the chat. "
+                      "Falsifier: a row of a sheet not shared with someone reaching them through any door stops it",
     # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
     "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
                                 "what was added, changed and removed, marks a declined term with the version it was "

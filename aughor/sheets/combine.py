@@ -28,10 +28,12 @@ SHOWN = 50
 
 
 def _other(sheet_id: str) -> Sheet:
+    """The sheet combined with — one the person may read (SH-8): a link or a total brings its values in."""
+    from aughor.sheets.sharing import readable
     other = model.get(sheet_id)
     if other is None:
         raise Refused("that sheet is not there to combine with")
-    return other
+    return readable(other)
 
 
 def _stored_of(sheet: Sheet, ref: str, what: str) -> Column:

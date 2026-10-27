@@ -257,7 +257,7 @@ def set_cells(sheet: Sheet, cells: list[dict], *, by: str, origin: str = "", not
     try:
         written = overlay.save_sheet_change(sheet.id, edits, change_id=cid, actor=by, origin=origin, note=note)
     except EditConflict as exc:
-        raise Conflict(str(exc), exc.current) from None
+        raise Conflict(stale_words(sheet, exc, by), exc.current) from None
     if choices_added:
         for column_id, values in choices_added.items():
             col = sheet.column(column_id)
@@ -274,6 +274,29 @@ class Conflict(Refused):
     def __init__(self, message: str, current: int):
         super().__init__(message)
         self.current = current
+
+
+def stale_words(sheet: Sheet, exc: EditConflict, by: str, *, undoing: bool = False) -> str:
+    """A change refused because a cell was changed after it was read, as a person says it — who changed which cell, and
+    when (SH-8): "ana changed order_status in row 12 at 18:01 UTC, after you read it, so your change was not made." A
+    change of the asker's own since this page read the cell — another window, an undo — is said as theirs."""
+    from aughor.sheets.sharing import person_name
+    col = sheet.column(exc.column) if exc.column else None
+    cell = f"{col.name if col else 'a value'} in row {exc.row}" if exc.row is not None else "a value"
+    when = ""
+    if exc.at:
+        day, _, clock = exc.at.replace("T", " ").partition(" ")
+        when = f" at {clock[:5]} UTC" + ("" if day == model.now()[:10] else f" on {day}")
+    if undoing:
+        who = "You" if exc.by and exc.by == by else (person_name(exc.by) if exc.by else "Someone")
+        return f"{who} changed {cell}{when} since, so this cannot be undone over it; change the cell instead."
+    if exc.by and exc.by == by:
+        return (f"You changed {cell}{when}, after this page read it, so this change was not made. The grid now shows "
+                "that value; change it again if you still mean to.")
+    who = person_name(exc.by) if exc.by else "Someone"
+    theirs = f"{who}'s" if exc.by else "their"
+    return (f"{who} changed {cell}{when}, after you read it, so your change was not made. The grid now shows "
+            f"{theirs} value; change it again if you still mean to.")
 
 
 def _cells_after(sheet: Sheet, written: list[dict]) -> list[dict]:
@@ -710,7 +733,7 @@ def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> 
     try:
         overlay.save_sheet_change(sheet.id, edits, change_id=cid, actor=by, origin=origin, note=what[:200])
     except EditConflict as exc:
-        raise Refused(f"a value this change set was changed since — {exc}") from None
+        raise Refused(stale_words(sheet, exc, by, undoing=True)) from None
     if definition is not None:
         restored = Sheet(**definition.model_dump(exclude={"version", "state", "change"}))
         restored = model.save(restored, what=what, by=by, origin=origin, change_id=cid)

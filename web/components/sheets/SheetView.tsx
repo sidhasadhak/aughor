@@ -21,7 +21,7 @@ import { SheetDashboard } from "@/components/sheets/SheetDashboard";
 import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type ColumnAction, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
-import { SharePop } from "@/components/sheets/SheetsHome";
+import { SharePop } from "@/components/sheets/SheetSharing";
 import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
 import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { useRowBlocks } from "@/components/sheets/useRowBlocks";
@@ -35,9 +35,9 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import type { SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
-  KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, opWords, opsFor, readChanges,
-  readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, showValue,
-  undo,
+  KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, isStale, opWords, opsFor, readChanges,
+  readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, sharedWords,
+  showValue, undo, who,
   updateColumn, type Condition, type Kind, type RowsQuery, type RuleTone, type Sheet, type SheetColumn, type SheetView as View,
   type ViewKind,
 } from "@/lib/sheets";
@@ -130,12 +130,18 @@ function useNarrow(): [boolean, (el: HTMLDivElement | null) => void] {
   return [narrow, setEl];
 }
 
-export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
+export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
   sheetId: string; waves: SheetsWaves; onBack: () => void; onOpen: (id: string) => void;
   onAsk?: (question: string) => void;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  // a sheet shared with the reader to read (SH-8) is open as though editing were off: nothing on it offers a change
+  const reader = sheet?.access === "view";
+  const waves = useMemo(() => (reader ? { ...given, grid: false, combine: false } : given), [given, reader]);
   const [failed, setFailed] = useState<string | null>(null);
+  // the read was refused because the sheet was not shared with the reader (a 403): said, with the way back — not a
+  // failure to retry (SH-8)
+  const [closed, setClosed] = useState(false);
   const [query, setQuery] = useState<Query | null>(null);
   // nothing opens beside the sheet until the person opens it — the chat too (the user, 2026-10-27: "Chat window shall
   // remain collapsed by default")
@@ -155,7 +161,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
     setFailed(null);
     setQuery(q => q ?? fromView(s, s.views[0]?.id ?? ""));
     return s;
-  }).catch(e => { setFailed(e instanceof Error ? e.message : String(e)); return null; }), [sheetId]);
+  }).catch(e => {
+    setFailed(e instanceof Error ? e.message : String(e));
+    setClosed((e as { status?: number } | null)?.status === 403);
+    return null;
+  }), [sheetId]);
 
   useEffect(() => { void readDefinition(); }, [readDefinition]);
 
@@ -198,6 +208,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       setSaid({ text: words, tone: "ok", offer: "undo" });
       return { ok: true };
     } catch (e) {
+      // changed by someone after this page read it: read it again, so the grid shows what they set (SH-8)
+      if (isStale(e)) setTick(t => t + 1);
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }, [sheet]);
@@ -244,12 +256,23 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       setSaid({ text: `${c.name} of row ${row} changed`, tone: "ok", offer: "undo" });
       return { ok: true };
     } catch (e) {
+      if (isStale(e)) setTick(t => t + 1);
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }, [sheet]);
 
   const hidden = useMemo(() => new Set(query?.hidden ?? []), [query]);
 
+  if (failed && closed) {
+    return (
+      <div style={{ padding: "24px 22px", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
+        <span className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--t1)" }}>
+          <Icon name="lock" size={14} /> {failed}
+        </span>
+        <Button variant="outline" size="sm" onClick={onBack}>Back to Spreadsheets</Button>
+      </div>
+    );
+  }
   if (failed) return <ReadFailed what="the sheet" error={failed} onRetry={() => void readDefinition()} />;
   if (!sheet || !query) return <Loading what="the sheet" />;
 
@@ -439,6 +462,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           </span>
           <span className="aug-fs-xs" title={counted} style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", flex: "0 4 auto", minWidth: 0,
             overflow: "hidden", textOverflow: "ellipsis" }}>{counted}</span>
+          {reader && (
+            <Chip title={`${who(sheet.created_by, sheet.me)} shared it with you to read: nothing on it can be changed from here`}>
+              Can read
+            </Chip>
+          )}
           </span>
           <span style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6,
             position: "relative", flex: "0 1 auto" }}>
@@ -448,10 +476,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
                 <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
               </Button>
             )}
-            <Button variant="outline" size="sm" aria-expanded={pop === "share"} title={narrow ? "Share · the workspace" : undefined}
-              onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : "Share · Workspace"}</Button>
+            <Button variant="outline" size="sm" aria-expanded={pop === "share"}
+              title={narrow ? `Share · ${sharedWords(sheet)}` : undefined}
+              onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : `Share · ${sharedWords(sheet)}`}</Button>
             {pop === "share" && <SharePop name={sheet.name} sheetId={sheet.id} views={sheet.views} me={sheet.me}
-              onDone={() => setPop("")} />}
+              sharing={!!waves.sharing} onDone={() => setPop("")} onChanged={() => void readDefinition()} />}
             {waves.combine && (
               <Button variant={panel === "combine" ? "secondary" : "outline"} size="sm"
                 onClick={() => setPanel(panel === "combine" ? "" : "combine")}><Icon name="link" /> Combine</Button>
@@ -594,7 +623,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
             <CardPop sheet={sheet} card={query.card} onApply={c => setQ({ card: c })} onClose={() => setPop("")} />
           )}
           {pop === "rules" && (
-            <RulesPop sheet={sheet} run={run} onClose={() => setPop("")}
+            <RulesPop sheet={sheet} run={run} onClose={() => setPop("")} editable={!reader}
               onShow={id => { setQ({ filter: [{ column: "", op: "marked", value: id }] }); setPop(""); }} />
           )}
         </div>
@@ -783,9 +812,11 @@ function ViewPop({ sheet, views, initial, onKeep, onClose }: {
 }
 
 /** The rules: each with the rows it marks, shown on its own or taken off; and a new one, made of conditions. */
-function RulesPop({ sheet, run, onShow, onClose }: {
+function RulesPop({ sheet, run, onShow, onClose, editable = true }: {
   sheet: Sheet; run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>; onShow: (id: string) => void;
   onClose: () => void;
+  /** false for a reader (SH-8): the rules are shown and their rows found, never kept or taken off */
+  editable?: boolean;
 }) {
   const [name, setName] = useState("");
   const [tone, setTone] = useState<RuleTone>("amber");
@@ -803,12 +834,14 @@ function RulesPop({ sheet, run, onShow, onClose }: {
             title={filterWords(r.conditions, sheet.columns)}>{filterWords(r.conditions, sheet.columns)}</span>
           <span className="aug-fs-xs" style={NUM}>{formatCount(sheet.rule_rows?.[r.id] ?? 0)} rows</span>
           <Button variant="ghost" size="xs" onClick={() => onShow(r.id)}>Show these</Button>
-          <Button variant="ghost" size="xs" onClick={() => void run(() => removeRule(sheet.id, r.id), `Rule ${r.name} taken off`)}>
-            Take off
-          </Button>
+          {editable && (
+            <Button variant="ghost" size="xs" onClick={() => void run(() => removeRule(sheet.id, r.id), `Rule ${r.name} taken off`)}>
+              Take off
+            </Button>
+          )}
         </div>
       ))}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
+      {editable && <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
         <div style={{ display: "flex", gap: 6 }}>
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="A new rule — e.g. Late and still open"
             aria-label="The rule's name" style={{ flex: 1 }} />
@@ -825,7 +858,7 @@ function RulesPop({ sheet, run, onShow, onClose }: {
             .then(ok => { if (ok) { setName(""); setRows([{ column: sheet.columns[0]?.id ?? "", op: "is", value: "" }]); } })}>
           Keep the rule
         </Button>
-      </div>
+      </div>}
     </Popover>
   );
 }

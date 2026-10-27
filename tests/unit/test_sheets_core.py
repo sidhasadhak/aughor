@@ -214,7 +214,9 @@ def test_a_stale_edit_is_refused_and_names_who_changed_it(env):
     first = service.set_cells(sheet, [{"row": 1, "column": "order_status", "value": "shipped", "version": 0}],
                               by="user:ana")
     assert first["cells"][0]["version"] == 1
-    with pytest.raises(service.Conflict, match="user:ana"):
+    # SH-8: who changed which cell, by the name they sign in with — and that the change asked for was not made
+    with pytest.raises(service.Conflict, match=r"^ana changed order_status in row 1 at \d\d:\d\d UTC, after you read it, "
+                                               r"so your change was not made\. The grid now shows ana's value"):
         service.set_cells(sheet, [{"row": 1, "column": "order_status", "value": "canceled", "version": 0}],
                           by="user:bo")
     assert _cell(sheet, 1, "order_status") == "shipped"
@@ -237,7 +239,7 @@ def test_undo_never_takes_back_someone_elses_change_over_yours(env):
     sheet = _orders(env)
     service.set_cells(sheet, [{"row": 1, "column": "order_status", "value": "shipped"}], by="user:ana")
     service.set_cells(sheet, [{"row": 1, "column": "order_status", "value": "canceled"}], by="user:bo")
-    with pytest.raises(service.Refused, match="changed since"):
+    with pytest.raises(service.Refused, match=r"^bo changed order_status in row 1 .*since, so this cannot be undone"):
         service.undo(sheet, by="user:ana")
     assert _cell(sheet, 1, "order_status") == "canceled"
 
@@ -353,7 +355,7 @@ def test_a_cell_an_undo_put_back_is_changed_again_at_the_version_its_page_reads(
     page = TestClient(app).get(f"/sheets/{sheet.id}/rows").json()
     assert "3" not in page["changed"]                                  # the source's value stands again
     assert page["versions"]["3"][status] == 2                          # set, then put back
-    with pytest.raises(service.Conflict, match="read at version 0"):
+    with pytest.raises(service.Conflict, match="^You changed order_status in row 3 .*after this page read it"):
         service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 0}],
                           by="user:ana")
     service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 2}],
