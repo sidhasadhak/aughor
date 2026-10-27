@@ -151,7 +151,7 @@ export function SheetChat({ sheet, viewId, viewRows, onClose, onApplied, onOpenS
                 return (
                   <div key={en.id}>
                     {t ? (
-                      <PartsMessage turn={t.turn} message={t.assistantMsg} connectionId="sheets"
+                      <PartsMessage turn={t.turn} message={t.assistantMsg} connectionId="sheets" lean
                         onFollowUp={(q: string) => ask(q)} onDeeper={(q: string) => onAsk?.(q)} />
                     ) : <div className="aug-fs-sm">{en.words}</div>}
                     {t?.turn.sheetRows.filter(r => r.sheet === sheet.id).map((r, i) => (
