@@ -875,3 +875,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     1440×900 — call 7's fallback is a Catalog tab); the chat's model path proven only with the scripted model; SH-3,
     SH-5, SH-6, SH-8 not built. **LIVE 2026-10-27**: `sheets.core`, `.grid`, `.combine` on (chat off); the four Olist
     sheets made live, orders linked to customers and *Paid* totalled — oracle same, *Paid* = SQL on all 99,441 (§3.64).
+    ✅ **SH-3 BUILT 2026-10-27, and the built screens brought to the mockup** (the user: *"Fix the gaps on the built screens
+    first, then build SH-3"*): one scroll over every row, the cell's story under its cell, a plainer home, a counted
+    dialog, Combine's kept cards, the record as one page; grouped grids with group totals, boards, calendars, rules and
+    views kept to their maker, behind `sheets.views` (off). Every group, lane, day and rule count equals the grid's on
+    the Olist orders; a new view from the grid was refused (no id) and is fixed. Not live yet; SH-5, SH-6, SH-8 not built.

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  asksForAChange, filterWords, opsFor, rowsQuery, showDate, showValue, totalWords, typedValue, viewCount,
-  type SheetColumn,
+  asksForAChange, filterWords, lastChangeWords, monthWeeks, monthWords, opsFor, rowNoun, rowsQuery, rowsWord, shiftMonth,
+  showDate, showValue, totalWords, typedValue, valueCondition, viewCount, whenWords, type SheetColumn,
 } from "./sheets";
 
 const col = (over: Partial<SheetColumn>): SheetColumn => ({
@@ -79,5 +79,52 @@ describe("a question or a change", () => {
     expect(asksForAChange("How many orders arrived late?")).toBe(false);
     expect(asksForAChange("Which states order the most")).toBe(false);
     expect(asksForAChange("add up the payments?")).toBe(false);   // a question mark asks
+  });
+});
+
+describe("a sheet's rows in its own words", () => {
+  it("calls the rows by the sheet's name, the way its first view does", () => {
+    expect(rowNoun("Olist orders")).toBe("orders");
+    expect(rowNoun("Budget")).toBe("rows");
+    expect(rowsWord(96478, "Olist orders")).toBe("96,478 orders");
+    expect(rowsWord(1, "Olist orders")).toBe("1 order");
+  });
+
+  it("says a last change plainly: the making by who and when, anything else by what", () => {
+    const now = new Date("2026-10-27T12:00:00");
+    const made = { id: "a", what: "made from olist_orders_dataset.csv", by: "user:ana", at: "2026-10-27T09:35:00", origin: "" };
+    expect(lastChangeWords(made, "user:ana", now)).toBe("made by you · today");
+    expect(lastChangeWords(made, "user:bo", now)).toBe("made by ana · today");
+    const paid = { ...made, what: "Paid: sum of Olist payments per order_id", at: "2026-10-26T09:00:00" };
+    expect(lastChangeWords(paid, "user:bo", now)).toBe("Paid: sum of Olist payments per order_id · ana · yesterday");
+    expect(whenWords("2025-03-04T10:00:00", now)).toBe("Mar 4, 2025");
+    expect(whenWords("2026-03-04T10:00:00", now)).toBe("Mar 4");
+  });
+});
+
+describe("a view's layouts", () => {
+  it("lays a month out Monday first, with the days outside it blank", () => {
+    const weeks = monthWeeks("2018-09");
+    expect(weeks[0]).toEqual(["", "", "", "", "", "2018-09-01", "2018-09-02"]);   // the 1st was a Saturday
+    expect(weeks.flat().filter(Boolean)).toHaveLength(30);
+    expect(weeks.every(w => w.length === 7)).toBe(true);
+    expect(shiftMonth("2018-12", 1)).toBe("2019-01");
+    expect(shiftMonth("2018-01", -1)).toBe("2017-12");
+    expect(monthWords("2018-09")).toBe("September 2018");
+  });
+
+  it("narrows to a group's value as the server counted it — empty as empty, never as the text 'null'", () => {
+    const status = col({ id: "c3", kind: "choice" });
+    expect(valueCondition(status, "shipped")).toEqual({ column: "c3", op: "is", value: "shipped" });
+    expect(valueCondition(status, null)).toEqual({ column: "c3", op: "empty" });
+  });
+
+  it("says a rule's marks and a day in words, and offers a date and time by its day", () => {
+    const est = col({ id: "c5", name: "order_estimated_delivery_date", kind: "date" });
+    const rule = { id: "r1", name: "Late", conditions: [], tone: "amber" as const, made_by: "" };
+    expect(filterWords([{ column: "", op: "marked", value: "r1" }], [est], [rule])).toBe("marked Late");
+    expect(filterWords([{ column: "", op: "marked", value: "gone" }], [est], [rule])).toBe("marked by a rule that was taken off");
+    expect(filterWords([{ column: "c5", op: "on", value: "2018-09-04" }], [est])).toBe("order_estimated_delivery_date on Sep 4, 2018");
+    expect(opsFor("datetime")[0]).toBe("on");
   });
 });

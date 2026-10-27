@@ -133,6 +133,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
                                      "ontology.set_segments", "ontology.put_back", "ontology.retiring",
                                      "metrics.figure_gates", "metrics.coverage_map", "metrics.coverage_proposals",
                                      "metrics.coverage_writer", "metrics.blind_spot_proposals", "briefing.metric_cap",
-                                     "state.backups", "sheets.core", "sheets.grid", "sheets.combine"}
+                                     "state.backups", "sheets.core", "sheets.grid", "sheets.combine",
+                                     "sheets.views"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

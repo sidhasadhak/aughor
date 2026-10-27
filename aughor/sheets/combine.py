@@ -166,8 +166,9 @@ def total_keep(sheet: Sheet, by_column: str, other_id: str, other_key: str, how:
                  description=(f"the {how} of {val.name} in {other.name} for this row's {sheet.column(by_column).name}"
                               if val else f"how many rows of {other.name} have this row's "
                               f"{sheet.column(by_column).name}")
-                 + (f"; {seen['rows_without']:,} rows have none and show "
-                    f"{'0' if how == 'count' else 'empty, never zero'}" if seen["rows_without"] else ""))
+                 + (f"; {seen['rows_without']:,} row{'s have' if seen['rows_without'] != 1 else ' has'} none and "
+                    f"show{'s' if seen['rows_without'] == 1 else ''} {'0' if how == 'count' else 'empty, never zero'}"
+                    if seen["rows_without"] else ""))
     sheet.columns.append(col)
     what = f"{col.name}: {how} of {other.name} per {sheet.column(by_column).name}"
     model.save(sheet, what=what, by=by, origin=origin, change_id=cid or service.change_id())

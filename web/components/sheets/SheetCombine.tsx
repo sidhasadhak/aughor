@@ -36,6 +36,20 @@ function Pick({ value, onChange, items, label }: {
   );
 }
 
+/** What a step has kept, as the card it folds into: the thing kept, and its counts. */
+function Kept({ title, lines }: { title: ReactNode; lines: ReactNode[] }) {
+  return (
+    <div className="aug-fs-sm" style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 8px",
+      border: "1px solid var(--b0)", borderRadius: "var(--r2)", background: "var(--bg-1)" }}>
+      <span>{title}</span>
+      {lines.map((l, i) => (
+        // the lines of one kept item, in their order
+        <span key={i} className="aug-fs-xs" style={MUTED}>{l}</span>
+      ))}
+    </div>
+  );
+}
+
 function Step({ n, title, done, children }: { n: number; title: string; done?: string; children: ReactNode }) {
   return (
     <section style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-2)", padding: "10px 12px",
@@ -99,14 +113,25 @@ function LinkStep({ sheet, stored, others, onFail, onKept }: {
   const other = useOther(otherId);
   useEffect(() => { setSeen(null); }, [column, otherId, otherCol]);
   const links = sheet.columns.filter(c => c.kind === "link" && c.link);
+  const [adding, setAdding] = useState(false);
+  const form = links.length === 0 || adding;
   return (
     <Step n={1} title="Link a column to another sheet" done={links.length ? `${links.length} kept` : undefined}>
-      {links.map(l => (
-        <span key={l.id} className="aug-fs-xs" style={MUTED}>
-          {l.name} → {others.find(o => o.id === l.link!.sheet)?.name ?? "a removed sheet"} · {formatCount(l.link!.matched)} matched,
-          {" "}{formatCount(l.link!.missed)} missed
-        </span>
-      ))}
+      {links.map(l => {
+        const brought = sheet.columns.filter(c => c.role === "lookup" && c.via === l.id).map(c => c.name);
+        return (
+          <Kept key={l.id} title={<><b>{l.name}</b> → {others.find(o => o.id === l.link!.sheet)?.name ?? "a removed sheet"}</>}
+            lines={[`${formatCount(l.link!.matched)} of ${formatCount(l.link!.matched + l.link!.missed)} rows matched · `
+              + `${formatCount(l.link!.missed)} ${l.link!.missed === 1 ? "miss" : "misses"}`,
+            ...(brought.length ? [`Brings in ${brought.join(", ")}`] : [])]} />
+        );
+      })}
+      {!form && (
+        <Button variant="ghost" size="xs" onClick={() => setAdding(true)} style={{ alignSelf: "flex-start" }}>
+          <Icon name="plus" size={12} /> Link another column
+        </Button>
+      )}
+      {form && <>
       <Pick value={column} onChange={setColumn} items={stored} label="This sheet's column" />
       <div style={{ display: "flex", gap: 6 }}>
         <div style={{ flex: 1 }}><Pick value={otherId} onChange={v => { setOtherId(v); setOtherCol(""); }} items={others} label="The other sheet" /></div>
@@ -140,11 +165,12 @@ function LinkStep({ sheet, stored, others, onFail, onKept }: {
           )}
           <Button size="xs" style={{ alignSelf: "flex-start" }}
             onClick={() => keepLink(sheet.id, column, otherId, otherCol, seen.other_repeats ? [] : [...bring])
-              .then(() => { setSeen(null); setBring(new Set()); onKept("Link kept"); }).catch(onFail)}>
+              .then(() => { setSeen(null); setBring(new Set()); setAdding(false); onKept("Link kept"); }).catch(onFail)}>
             Keep the link{bring.size && !seen.other_repeats ? ` and ${bring.size} column${bring.size === 1 ? "" : "s"}` : ""}
           </Button>
         </div>
       )}
+      </>}
     </Step>
   );
 }
@@ -163,9 +189,21 @@ function TotalStep({ sheet, stored, others, onFail, onKept }: {
   useEffect(() => { setSeen(null); }, [by, otherId, key, how, of]);
   const totals = sheet.columns.filter(c => c.role === "total");
   const ofCol = other?.columns.find(c => c.id === of);
+  const [adding, setAdding] = useState(false);
+  const form = totals.length === 0 || adding;
   return (
     <Step n={2} title="Total another sheet's rows per key" done={totals.length ? `${totals.length} kept` : undefined}>
-      {totals.map(t => <span key={t.id} className="aug-fs-xs" style={MUTED}>{t.name} — {t.description}</span>)}
+      {totals.map(t => (
+        <Kept key={t.id} title={<><b>{t.name}</b> · {t.how} of {others.find(o => o.id === t.sheet)?.name ?? "a removed sheet"}{" "}
+          per {sheet.columns.find(c => c.id === t.by)?.name ?? t.by}</>}
+          lines={t.description ? [t.description.charAt(0).toUpperCase() + t.description.slice(1)] : []} />
+      ))}
+      {!form && (
+        <Button variant="ghost" size="xs" onClick={() => setAdding(true)} style={{ alignSelf: "flex-start" }}>
+          <Icon name="plus" size={12} /> Another total
+        </Button>
+      )}
+      {form && <>
       <div style={{ display: "flex", gap: 6 }}>
         <div style={{ flex: 1 }}><Pick value={otherId} onChange={v => { setOtherId(v); setKey(""); setOf(""); }} items={others} label="The other sheet" /></div>
         <div style={{ flex: 1 }}><Pick value={key} onChange={setKey} items={(other?.columns ?? []).filter(c => c.role === "stored")} label="Its key" /></div>
@@ -191,9 +229,10 @@ function TotalStep({ sheet, stored, others, onFail, onKept }: {
             aria-label="The total's name" />
           <Button size="xs" style={{ alignSelf: "flex-start" }}
             onClick={() => keepTotal(sheet.id, { by_column: by, other: otherId, other_key: key, how, of: how === "count" ? "" : of, name })
-              .then(() => { setSeen(null); setName(""); onKept("Total kept"); }).catch(onFail)}>Keep the total</Button>
+              .then(() => { setSeen(null); setName(""); setAdding(false); onKept("Total kept"); }).catch(onFail)}>Keep the total</Button>
         </div>
       )}
+      </>}
     </Step>
   );
 }

@@ -48,6 +48,8 @@ export interface SheetColumn {
 
 export interface Condition { column: string; op: string; value?: unknown }
 
+export type ViewKind = "grid" | "board" | "calendar";
+
 export interface SheetView {
   id: string;
   name: string;
@@ -56,7 +58,22 @@ export interface SheetView {
   hidden: string[];
   search: string;
   made_by: string;
+  /** SH-3: a grid (grouped by `group`, or not), a board with lanes by `group`, a calendar by `date`. */
+  kind: ViewKind;
+  group: string;
+  date: string;
+  /** The columns a board's or a calendar's card shows under its title. */
+  card: string[];
+  /** Shared with everyone who reads the sheet, or its owner's alone. */
+  shared: boolean;
+  owner: string;
 }
+
+/** A declared rule marking the rows meeting its conditions (SH-3). */
+export interface SheetRule { id: string; name: string; conditions: Condition[]; tone: RuleTone; made_by: string }
+
+export type RuleTone = "amber" | "red" | "green" | "blue" | "violet";
+export const RULE_TONES: RuleTone[] = ["amber", "red", "green", "blue", "violet"];
 
 export interface SheetChange { id: string; what: string; by: string; at: string; origin: string }
 
@@ -78,8 +95,15 @@ export interface SheetSummary {
 
 export interface Sheet extends Omit<SheetSummary, "columns"> {
   columns: SheetColumn[];
+  /** The views the reader sees: every shared one, and the ones they keep to themselves. */
   views: SheetView[];
   key: string;
+  rules: SheetRule[];
+  /** How many rows each view shows — null for a view whose filter no longer reads. */
+  view_rows: Record<string, number | null>;
+  rule_rows: Record<string, number | null>;
+  /** The person reading, as the server names them. */
+  me: string;
 }
 
 export interface UploadedFile { schema: string; file: string; size: number }
@@ -111,15 +135,56 @@ export interface ColumnTotals {
   earliest?: string | null; latest?: string | null; yes?: number; distinct?: number;
 }
 
+export type Changed = Record<string, Record<string, { by: string; at: string; version: number }>>;
+
 export interface RowsPage {
   rows: unknown[][];
   total: number;
   offset: number;
   totals: Record<string, ColumnTotals>;
   groups: { value: unknown; rows: number }[];
-  changed: Record<string, Record<string, { by: string; at: string; version: number }>>;
+  changed: Changed;
   columns: string[];
   source_rows: number;
+  /** With `sheets.views`: row → the rules marking it. */
+  marks?: Record<string, string[]>;
+}
+
+export interface GroupsPage {
+  group: string;
+  total: number;
+  /** Over every row the view shows, as the grid's foot. */
+  totals: Record<string, ColumnTotals>;
+  groups: { value: unknown; rows: number; totals: Record<string, ColumnTotals>; shown: unknown[][] }[];
+  groups_total: number;
+  groups_not_listed: number;
+  columns: string[];
+  changed: Changed;
+  marks?: Record<string, string[]>;
+}
+
+export interface BoardPage {
+  column: string;
+  total: number;
+  lanes: { value: unknown; rows: number; cards: unknown[][] }[];
+  not_shown: { value: unknown; rows: number }[];
+  columns: string[];
+  movable: boolean;
+  changed: Changed;
+  marks: Record<string, string[]>;
+}
+
+export interface CalendarPage {
+  column: string;
+  month: string;
+  /** The month a calendar opens on: the latest holding at least one in a hundred of the view's dated rows. */
+  where_rows_end: string;
+  total: number;
+  undated: number;
+  earliest: string | null;
+  latest: string | null;
+  days: { day: string; rows: number }[];
+  month_rows: number;
 }
 
 export interface CellStory {
@@ -138,10 +203,13 @@ export interface RecordField {
 
 export interface SheetRecord {
   row: number;
+  /** The row's key, or its first text column's value. */
+  title: string;
   came_from: string;
   fields: RecordField[];
   linked: { sheet: string; name: string; through: string; direction: "to" | "from"; columns: string[];
-    rows: { row: number; values: unknown[] }[]; count: number }[];
+    kinds: { kind: Kind; currency: string }[]; rows: { row: number; values: unknown[] }[]; count: number }[];
+  marks: { id: string; name: string; tone: RuleTone }[];
   history: { event: string; column: string; value: unknown; previous: unknown; by: string; at: string;
     origin: string }[];
   comments: { id: string; text: string; by: string; at: string }[];
@@ -197,7 +265,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const listSheets = () =>
-  call<{ sheets: SheetSummary[]; uploads: UploadedFile[]; shared_with: string }>("", undefined, "Reading the sheets");
+  call<{ sheets: SheetSummary[]; uploads: UploadedFile[]; shared_with: string; me: string }>("", undefined,
+    "Reading the sheets");
 
 export const readSheet = (id: string) => call<Sheet>(`/${id}`, undefined, "Reading the sheet");
 
@@ -246,6 +315,31 @@ export function rowsQuery(q: RowsQuery): string {
 
 export const readRows = (id: string, q: RowsQuery) =>
   call<RowsPage>(`/${id}/rows${rowsQuery(q)}`, undefined, "Reading the rows");
+
+const extra = (q: RowsQuery, more: Record<string, string | number>) => {
+  const base = rowsQuery(q);
+  const p = new URLSearchParams(base.slice(1));
+  for (const [k, v] of Object.entries(more)) p.set(k, String(v));
+  return `?${p.toString()}`;
+};
+
+export const readGroups = (id: string, q: RowsQuery, group: string, perGroup = 3) =>
+  call<GroupsPage>(`/${id}/groups${extra({ ...q, group: undefined }, { group, per_group: perGroup })}`, undefined,
+    "Reading the groups");
+
+export const readBoard = (id: string, q: RowsQuery, column: string, perLane = 20) =>
+  call<BoardPage>(`/${id}/board${extra({ ...q, group: undefined }, { column, per_lane: perLane })}`, undefined,
+    "Reading the board");
+
+export const readCalendar = (id: string, q: RowsQuery, column: string, month = "") =>
+  call<CalendarPage>(`/${id}/calendar${extra({ ...q, group: undefined, sort: undefined },
+    month ? { column, month } : { column })}`, undefined, "Reading the calendar");
+
+export const saveRule = (id: string, rule: Partial<SheetRule>) =>
+  call<Sheet>(`/${id}/rules`, json("PUT", { rule }), "Keeping the rule");
+
+export const removeRule = (id: string, ruleId: string) =>
+  call<Sheet>(`/${id}/rules/${ruleId}`, { method: "DELETE" }, "Taking the rule off");
 
 export const csvUrl = (id: string, q: RowsQuery) => `${getApiBase()}/sheets/${id}/csv${rowsQuery(q)}`;
 
@@ -419,12 +513,14 @@ function round2(n: number): number { return Math.round(n * 100) / 100; }
 const OP_WORDS: Record<string, string> = {
   is: "is", is_not: "is not", in: "is one of", not_in: "is none of", contains: "contains", not_contains: "lacks",
   gt: ">", gte: "≥", lt: "<", lte: "≤", before: "before", after: "after", empty: "is empty", not_empty: "is filled",
+  on: "on", marked: "marked", not_marked: "not marked",
 };
 
 /** The filter ops a column's kind offers, in the order a person reaches for them. */
 export function opsFor(kind: Kind): string[] {
   if (kind === "number" || kind === "money") return ["is", "is_not", "gt", "gte", "lt", "lte", "empty", "not_empty"];
-  if (kind === "date" || kind === "datetime") return ["is", "before", "after", "empty", "not_empty"];
+  if (kind === "date") return ["is", "before", "after", "empty", "not_empty"];
+  if (kind === "datetime") return ["on", "before", "after", "empty", "not_empty"];
   if (kind === "yesno") return ["is", "empty", "not_empty"];
   if (kind === "choice") return ["is", "is_not", "in", "not_in", "empty", "not_empty"];
   return ["contains", "not_contains", "is", "is_not", "empty", "not_empty"];
@@ -433,8 +529,16 @@ export function opsFor(kind: Kind): string[] {
 export const opWords = (op: string) => OP_WORDS[op] ?? op;
 
 /** A filter said in words: "order_status is none of delivered, canceled · estimate before Oct 17, 2018". */
-export function filterWords(conditions: Condition[], columns: SheetColumn[]): string {
+export function filterWords(conditions: Condition[], columns: SheetColumn[], rules: SheetRule[] = []): string {
   return conditions.map(c => {
+    if (c.op === "marked" || c.op === "not_marked") {
+      const rule = rules.find(r => r.id === c.value);
+      return `${opWords(c.op)} ${rule ? rule.name : "by a rule that was taken off"}`;
+    }
+    if (c.op === "on") {
+      const col = columns.find(x => x.id === c.column);
+      return `${col?.name ?? c.column} on ${showDate(String(c.value ?? ""), false)}`;
+    }
     const col = columns.find(x => x.id === c.column);
     const name = col?.name ?? c.column;
     if (c.op === "empty" || c.op === "not_empty") return `${name} ${opWords(c.op)}`;
@@ -467,4 +571,79 @@ export function who(by: string, me?: string): string {
   if (!by) return "someone";
   if (me && by === me) return "you";
   return by.replace(/^user:/, "");
+}
+
+/** What a sheet's rows are called, from its name: "Olist orders" → "orders"; anything else → "rows". The same reading
+ *  the server's first view takes ("All orders"). */
+export function rowNoun(sheetName: string): string {
+  const last = (sheetName.trim().split(/\s+/).pop() ?? "").toLowerCase();
+  return last.length > 2 && last.endsWith("s") ? last : "rows";
+}
+
+/** A count of a sheet's rows in its own words: "1 order", "96,478 orders", "3 rows". */
+export function rowsWord(n: number, sheetName: string): string {
+  const noun = rowNoun(sheetName);
+  return `${formatCount(n)} ${n === 1 ? noun.replace(/s$/, "") : noun}`;
+}
+
+/** When something happened, as a list says it: "today", "yesterday", or "Oct 27" (with the year when not this one). */
+export function whenWords(at: string, now: Date = new Date()): string {
+  const d = new Date(at);
+  if (isNaN(d.getTime())) return "";
+  const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  if (day(d) === day(now)) return "today";
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (day(d) === day(y)) return "yesterday";
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}${d.getFullYear() === now.getFullYear() ? "" : `, ${d.getFullYear()}`}`;
+}
+
+/** A sheet's last change as its home lists it: "made by you · today", or "Paid: sum of … · ana · Oct 26". The making
+ *  of a sheet says who made it — where it came from is the column beside. */
+export function lastChangeWords(change: SheetChange, me = "", now?: Date): string {
+  const when = change.at ? whenWords(change.at, now) : "";
+  const by = who(change.by, me);
+  if (/^made\b/.test(change.what)) return `made by ${by}${when ? ` · ${when}` : ""}`;
+  return [change.what, by, when].filter(Boolean).join(" · ");
+}
+
+/** A value a board's lane or a group's head holds, in words: "Yes", "No", "empty", or the value as its column shows it. */
+export function valueWords(value: unknown, column: Pick<SheetColumn, "kind" | "currency"> | undefined): string {
+  if (value === null || value === undefined || value === "") return "empty";
+  return column ? showValue(value, column) || String(value) : String(value);
+}
+
+/** The condition that narrows a view to one group's, lane's or day's rows — the same reading the server counted it by. */
+export function valueCondition(column: SheetColumn, value: unknown): Condition {
+  if (value === null || value === undefined || value === "") return { column: column.id, op: "empty" };
+  return { column: column.id, op: "is", value };
+}
+
+/** A month's weeks, Monday first: each week seven days as "YYYY-MM-DD", or "" outside the month. */
+export function monthWeeks(month: string): string[][] {
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!m) return [];
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const lead = (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7;
+  const cells = [...Array(lead).fill(""), ...Array.from({ length: days }, (_, i) =>
+    `${m[1]}-${m[2]}-${String(i + 1).padStart(2, "0")}`)];
+  while (cells.length % 7) cells.push("");
+  return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+}
+
+/** The month before or after: shiftMonth("2018-12", 1) → "2019-01". */
+export function shiftMonth(month: string, by: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const at = y * 12 + (m - 1) + by;
+  return `${Math.floor(at / 12)}-${String((at % 12) + 1).padStart(2, "0")}`;
+}
+
+/** "September 2018". */
+export function monthWords(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  const NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+    "November", "December"];
+  return NAMES[m - 1] ? `${NAMES[m - 1]} ${y}` : month;
 }

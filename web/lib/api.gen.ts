@@ -16454,7 +16454,8 @@ export interface paths {
         };
         /**
          * List Sheets
-         * @description The organisation's sheets, newest change first, and the Workspace files a sheet can be made from.
+         * @description The organisation's sheets, newest change first, and the Workspace files a sheet can be made from — with who is
+         *     asking, so a change of theirs reads as theirs.
          */
         get: operations["list_sheets_sheets_get"];
         put?: never;
@@ -16589,6 +16590,47 @@ export interface paths {
         head?: never;
         /** Rename */
         patch: operations["rename_sheets__sheet_id__patch"];
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Board
+         * @description The view's rows as a board: a lane per value of a choice or yes/no column, each with its rows and first cards;
+         *     the values the view's filter leaves out, listed with their rows.
+         */
+        get: operations["board_sheets__sheet_id__board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calendar
+         * @description The view's rows placed by a date column, a month at a time; the rows with no date are counted.
+         */
+        get: operations["calendar_sheets__sheet_id__calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/sheets/{sheet_id}/cells": {
@@ -16741,6 +16783,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sheets/{sheet_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Groups
+         * @description The view's rows grouped by a column, the largest group first, each with its first rows — and, with
+         *     ``sheets.views`` on, each group's totals over its own rows.
+         */
+        get: operations["groups_sheets__sheet_id__groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/links": {
         parameters: {
             query?: never;
@@ -16845,7 +16908,8 @@ export interface paths {
         };
         /**
          * Record
-         * @description A row as a record: every field and where it came from, its linked rows, its history, its comments.
+         * @description A row as a record: every field and where it came from, its linked rows, its history, its comments — and, with
+         *     ``sheets.views`` on, the rules that mark it.
          */
         get: operations["record_sheets__sheet_id__records__row__get"];
         put?: never;
@@ -16903,7 +16967,8 @@ export interface paths {
         /**
          * Rows
          * @description One page of a view of a sheet — its rows, how many the view holds, its totals over those rows, its groups when
-         *     grouped — and, for the cells on the page people have set, who set them, when, and at which version.
+         *     grouped — and, for the cells on the page people have set, who set them, when, and at which version; with
+         *     ``sheets.views`` on, the rules marking each row on it.
          */
         get: operations["rows_sheets__sheet_id__rows_get"];
         put?: never;
@@ -16927,6 +16992,43 @@ export interface paths {
         /** Remove Rows */
         post: operations["remove_rows_sheets__sheet_id__rows_remove_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Rule
+         * @description Keep a rule that marks the rows meeting its conditions — counted as a view with those conditions counts.
+         */
+        put: operations["save_rule_sheets__sheet_id__rules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Rule */
+        delete: operations["remove_rule_sheets__sheet_id__rules__rule_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -16997,7 +17099,8 @@ export interface paths {
         get?: never;
         /**
          * Save View
-         * @description Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet.
+         * @description Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet. With
+         *     ``sheets.views`` (SH-3) a view may also be grouped with its totals, a board or a calendar, and kept to its maker.
          */
         put: operations["save_view_sheets__sheet_id__views_put"];
         post?: never;
@@ -21919,6 +22022,13 @@ export interface components {
         RowRequest: {
             /** Values */
             values?: {
+                [key: string]: unknown;
+            };
+        };
+        /** RuleRequest */
+        RuleRequest: {
+            /** Rule */
+            rule: {
                 [key: string]: unknown;
             };
         };
@@ -53610,6 +53720,85 @@ export interface operations {
             };
         };
     };
+    board_sheets__sheet_id__board_get: {
+        parameters: {
+            query: {
+                column: string;
+                view?: string;
+                filter?: string;
+                sort?: string;
+                search?: string;
+                per_lane?: number;
+            };
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_sheets__sheet_id__calendar_get: {
+        parameters: {
+            query: {
+                column: string;
+                month?: string;
+                view?: string;
+                filter?: string;
+                search?: string;
+            };
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_cells_sheets__sheet_id__cells_patch: {
         parameters: {
             query?: never;
@@ -53897,6 +54086,46 @@ export interface operations {
         parameters: {
             query?: {
                 view?: string;
+            };
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    groups_sheets__sheet_id__groups_get: {
+        parameters: {
+            query: {
+                group: string;
+                view?: string;
+                filter?: string;
+                sort?: string;
+                search?: string;
+                per_group?: number;
             };
             header?: never;
             path: {
@@ -54310,6 +54539,77 @@ export interface operations {
                 "application/json": components["schemas"]["RemoveRowsRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_rule_sheets__sheet_id__rules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_rule_sheets__sheet_id__rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

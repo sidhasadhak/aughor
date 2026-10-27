@@ -166,3 +166,14 @@ def test_a_removed_sheet_leaves_what_read_it_empty_not_wrong(env):
     assert _col(orders, 2, "customer_state") == "RJ"
     service.remove(model.get(customers.id), by="user:ana")
     assert _col(orders, 2, "customer_state") is None
+
+
+def test_a_records_total_says_how_many_rows_it_adds_up(env):
+    from aughor.sheets import combine, model, record
+    orders = _make(env, "orders", ORDERS)
+    payments = _make(env, "payments", PAYMENTS)
+    combine.total_keep(orders, "order_id", payments.id, "order_id", "sum", "payment_value", name="Paid", by="user:ana")
+    fields = {f["name"]: f for f in record.record(model.get(orders.id), 1)["fields"]}
+    assert fields["Paid"]["source"] == "sum of payment_value over 2 rows of payments"
+    fields = {f["name"]: f for f in record.record(model.get(orders.id), 3)["fields"]}
+    assert fields["Paid"]["source"] == "no row of payments has this row's key, so it is empty"

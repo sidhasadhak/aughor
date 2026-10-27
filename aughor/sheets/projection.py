@@ -438,6 +438,17 @@ def where_sql(sheet: Sheet, conditions: list[Condition], search: str = "") -> tu
     parts: list[str] = []
     params: list = []
     for cond in conditions or []:
+        if cond.op in ("marked", "not_marked"):
+            # the rows a declared rule marks (SH-3): the rule's own conditions, read the same way
+            rule = next((r for r in sheet.rules if r.id == cond.value), None)
+            if rule is None:
+                raise FilterRefused(f"the filter names a rule {cond.value!r} that {sheet.name} does not have")
+            if any(x.op in ("marked", "not_marked") for x in rule.conditions):
+                raise FilterRefused("a rule is made of conditions on columns, not of other rules")
+            sub, sub_params = where_sql(sheet, rule.conditions)
+            parts.append(f"{'' if cond.op == 'marked' else 'NOT '}COALESCE(({sub}), FALSE)")
+            params.extend(sub_params)
+            continue
         c = sheet.column(cond.column)
         if c is None:
             raise FilterRefused(f"the filter names {cond.column!r}, which is not a column of {sheet.name}")
@@ -462,6 +473,17 @@ def where_sql(sheet: Sheet, conditions: list[Condition], search: str = "") -> tu
             parts.append(f"{col} {'NOT ' if op == 'not_in' else ''}IN ({', '.join('?' for _ in typed)})"
                          + (f" OR {col} IS NULL" if op == "not_in" else ""))
             params.extend(typed)
+            continue
+        if op == "on":
+            # one calendar day, for a date or a date and time alike — a calendar's day holds these rows
+            if c.kind not in (kinds.DATE, kinds.DATETIME):
+                raise FilterRefused(f"{c.name} is not a date, so it has no day to be on")
+            try:
+                day = kinds.parse(kinds.DATE, cond.value, column=c.name)
+            except kinds.ValueRefused as exc:
+                raise FilterRefused(str(exc)) from None
+            parts.append(f"CAST({col} AS DATE) = ?")
+            params.append(date.fromisoformat(day) if day else None)
             continue
         sql_op = _OPS.get(op)
         if sql_op is None:

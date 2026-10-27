@@ -17,8 +17,9 @@ To the rest of Aughor the sheets are one connection, *Sheets* (``connection.py``
 and the Briefing read them as they read any table.
 
 Each wave is behind its own flag, off by default: ``sheets.core`` (SH-1: the sheets and their home), ``sheets.grid``
-(SH-2: editing), ``sheets.chat`` (SH-4: the chat beside a sheet) and ``sheets.combine`` (SH-7: links, totals, a newer
-file, a query's rows kept). Off, no route answers, the Sheets connection is not listed and nothing is written.
+(SH-2: editing), ``sheets.chat`` (SH-4: the chat beside a sheet), ``sheets.combine`` (SH-7: links, totals, a newer
+file, a query's rows kept) and ``sheets.views`` (SH-3: groups with their totals, boards, calendars, rules, views
+kept to oneself). Off, no route answers, the Sheets connection is not listed and nothing is written.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ CORE = "sheets.core"
 GRID = "sheets.grid"
 CHAT = "sheets.chat"
 COMBINE = "sheets.combine"
+VIEWS = "sheets.views"
 
 
 def on(flag: str = CORE) -> bool:

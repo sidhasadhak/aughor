@@ -16,7 +16,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount, formatTimestamp } from "@/lib/format";
-import { listSheets, who, type SheetSummary, type UploadedFile } from "@/lib/sheets";
+import { lastChangeWords, listSheets, type SheetSummary, type SheetView, type UploadedFile } from "@/lib/sheets";
 
 const BAR: CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, padding: "10px 22px", borderBottom: "1px solid var(--b1)",
@@ -30,7 +30,7 @@ function size(bytes: number): string {
 }
 
 export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id: string) => void }) {
-  const [data, setData] = useState<{ sheets: SheetSummary[]; uploads: UploadedFile[] } | null>(null);
+  const [data, setData] = useState<{ sheets: SheetSummary[]; uploads: UploadedFile[]; me: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [start, setStart] = useState<NewSheetStart | null>(null);
   const [chatting, setChatting] = useState(false);
@@ -62,7 +62,15 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
     { icon: "spark", title: "In the chat", detail: "Drop a file and say what it is for", start: "chat",
       off: waves.chat ? undefined : "The chat beside a sheet is off on this install." },
   ];
-  const files = moreFiles ? data.uploads : data.uploads.slice(0, 6);
+  // the largest first — a workspace's own data before its odds and ends — each marked when a sheet was made from it
+  const byFile = new Map<string, SheetSummary[]>();
+  for (const s of data.sheets) {
+    const from = s.source.upload?.file || s.source.file;
+    if (from) byFile.set(from, [...(byFile.get(from) ?? []), s]);
+  }
+  const ordered = [...data.uploads].sort((a, b) => b.size - a.size || a.file.localeCompare(b.file));
+  const files = moreFiles ? ordered : ordered.slice(0, 6);
+  const schemas = new Set(data.uploads.map(f => f.schema));
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
@@ -132,8 +140,8 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
                       </td>
                       <td style={{ padding: "4px 8px", ...MUTED, ...ONE_LINE, maxWidth: 320 }} title={s.came_from}>{s.came_from}</td>
                       <td style={{ padding: "4px 8px", ...MUTED, ...ONE_LINE, maxWidth: 320 }}
-                        title={s.last_change.what}>
-                        {s.last_change.what} · {who(s.last_change.by)} · {formatTimestamp(s.last_change.at, "short")}
+                        title={`${s.last_change.what} · ${formatTimestamp(s.last_change.at, "short")}`}>
+                        {lastChangeWords(s.last_change, data.me)}
                       </td>
                       <td style={{ padding: "4px 8px", position: "relative" }}>
                         <Button variant="ghost" size="xs" onClick={() => setSharing(sharing === s.id ? "" : s.id)}
@@ -161,7 +169,15 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
                   <div key={`${f.schema}/${f.file}`} style={{ display: "flex", alignItems: "center", gap: 10,
                     padding: "5px 0", borderTop: "1px solid var(--b0)" }}>
                     <span className="aug-mono aug-fs-sm" style={{ color: "var(--t1)", ...ONE_LINE }}>{f.file}</span>
-                    <span className="aug-fs-xs" style={MUTED}>{f.schema} · {size(f.size)}</span>
+                    <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>
+                      {schemas.size > 1 ? `${f.schema} · ` : ""}{size(f.size)}
+                    </span>
+                    {(byFile.get(f.file) ?? []).slice(0, 2).map(made => (
+                      <Button key={made.id} variant="ghost" size="xs" onClick={() => onOpen(made.id)}
+                        title={`The sheet ${made.name} was made from this file`} style={MUTED}>
+                        <Icon name="table" size={11} /> {made.name}
+                      </Button>
+                    ))}
                     <Button variant="outline" size="xs" style={{ marginLeft: "auto" }}
                       onClick={() => setStart({ source: "file", upload: { schema: f.schema, file: f.file } })}>
                       Make a sheet
@@ -189,8 +205,13 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
   );
 }
 
-/** What sharing is, said exactly: in this first version a sheet is its workspace's (the arc's call 8). */
-export function SharePop({ name, sheetId, onDone }: { name: string; sheetId: string; onDone: () => void }) {
+/** What sharing is, said exactly: in this first version a sheet is its workspace's (the arc's call 8) — and, opened on
+ *  a sheet, how many of its views everyone sees and how many are the reader's alone. */
+export function SharePop({ name, sheetId, views, me, onDone }: {
+  name: string; sheetId: string; views?: SheetView[]; me?: string; onDone: () => void;
+}) {
+  const shared = views?.filter(v => v.shared).length ?? 0;
+  const mine = views?.filter(v => !v.shared && v.owner === me).length ?? 0;
   return (
     <div role="dialog" aria-label={`Share · ${name}`} className="aug-fs-sm" style={{ position: "absolute", right: 0,
       top: "100%", zIndex: 20, width: 300, background: "var(--bg-2)", border: "1px solid var(--b1)",
@@ -198,6 +219,9 @@ export function SharePop({ name, sheetId, onDone }: { name: string; sheetId: str
       <span className="aug-fs-xs" style={MUTED}>Share · {name}</span>
       <span><b>Everyone in Workspace</b> can read and edit this sheet.</span>
       <span className="aug-fs-xs" style={MUTED}>Choosing people, as readers or editors, comes in a later step.</span>
+      {views && (
+        <span className="aug-fs-xs">Views: <b>{shared} shared</b>{mine ? <> · <b>{mine} your own</b> (only you see {mine === 1 ? "it" : "them"})</> : ""}</span>
+      )}
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
         <Button variant="outline" size="xs" onClick={() => {
           const url = new URL(window.location.href);

@@ -18,7 +18,7 @@ from typing import Any, Optional
 from aughor.actions import overlay
 from aughor.actions.overlay import SHEET_CELL, SHEET_ROW, EditConflict, SheetEdit
 from aughor.sheets import files, imports, kinds, model, projection
-from aughor.sheets.model import Column, Sheet, Source, View
+from aughor.sheets.model import Column, Rule, Sheet, Source, View
 
 
 class Refused(ValueError):
@@ -421,41 +421,126 @@ def remove_column(sheet: Sheet, ref: str, *, by: str, cid: str = "") -> Sheet:
     for v in sheet.views:
         v.filter = [f for f in v.filter if f.column != c.id]
         v.sort = [s for s in v.sort if s.get("column") != c.id]
-    model.save(sheet, what=f"column {c.name} taken off", by=by, change_id=cid or change_id())
+        v.card = [x for x in v.card if x != c.id]
+        if v.group == c.id:
+            v.group = ""
+            if v.kind == "board":    # a board without its lanes is the grid it was read from
+                v.kind = "grid"
+        if v.date == c.id:
+            v.date, v.kind = "", "grid"
+    said = ""
+    for r in sheet.rules:
+        r.conditions = [x for x in r.conditions if x.column != c.id]
+    emptied = [r.name for r in sheet.rules if not r.conditions]
+    if emptied:
+        # a rule left with no condition would mark every row; it goes with the column it read, and undo brings it back
+        sheet.rules = [r for r in sheet.rules if r.conditions]
+        said = f"; rule{'s' if len(emptied) != 1 else ''} {', '.join(emptied)} went with it"
+    model.save(sheet, what=f"column {c.name} taken off{said}", by=by, change_id=cid or change_id())
     projection.rebuild(sheet)
     return sheet
 
 
+def _view_words(view: View) -> str:
+    """How a view is named in the sheet's history, which everyone who reads the sheet sees: the name of a view its maker
+    its maker's, so the history says only that one was kept."""
+    return f"view {view.name}" if view.shared else "a view of their own"
+
+
 def save_view(sheet: Sheet, view: View, *, by: str, origin: str = "", cid: str = "") -> Sheet:
-    """Keep a view — a new one, or the next version of one that stands (by id). Its filter is read before it is kept, so
-    a view that names no column or holds a value its column cannot is refused."""
-    projection.where_sql(sheet, view.filter, view.search)
+    """Keep a view — a new one, or the next version of one that stands (by id). Its filter and its layout are read
+    before it is kept, so a view that names no column, holds a value its column cannot, or lays its rows out by a
+    column of the wrong kind is refused. A view kept to oneself is its maker's: no one else sees it or changes it, and a
+    shared view is kept to its maker only in its maker's hands, while one other shared view stands."""
+    from aughor.sheets.views import ViewRefused, check_view
+    try:
+        check_view(sheet, view)
+    except ViewRefused as exc:
+        raise Refused(str(exc)) from None
     view.name = " ".join((view.name or "").split())[:80] or "View"
     view.id = view.id or uuid.uuid4().hex[:8]
     known = {c.id for c in sheet.columns}
     view.hidden = [h for h in view.hidden if h in known]
     replaced = next((i for i, v in enumerate(sheet.views) if v.id == view.id), None)
     if replaced is None:
-        taken = {v.name.lower() for v in sheet.views}
+        view.owner = by
+        taken = {v.name.lower() for v in sheet.views_for(by)}
         base, n = view.name, 2
         while view.name.lower() in taken:
             view.name, n = f"{base} {n}", n + 1
         sheet.views.append(view)
     else:
+        standing = sheet.views[replaced]
+        if not standing.shared and standing.owner != by:
+            raise Refused(f"{sheet.name} has no view {view.id!r}")
+        view.owner = standing.owner
+        if standing.shared and not view.shared:
+            if standing.owner != by:
+                raise Refused(f"only the person who made {standing.name} can keep it to themselves; keep a copy of "
+                              "your own instead")
+            if not any(v.shared for v in sheet.views if v.id != view.id):
+                raise Refused("a sheet keeps at least one shared view")
         sheet.views[replaced] = view
-    model.save(sheet, what=f"view {view.name} {'kept' if replaced is None else 'changed'}", by=by, origin=origin,
+    model.save(sheet, what=f"{_view_words(view)} {'kept' if replaced is None else 'changed'}", by=by, origin=origin,
                change_id=cid or change_id())
     return sheet
 
 
 def remove_view(sheet: Sheet, view_id: str, *, by: str, cid: str = "") -> Sheet:
-    view = next((v for v in sheet.views if v.id == view_id), None)
+    view = next((v for v in sheet.views_for(by) if v.id == view_id), None)
     if view is None:
         raise Refused(f"{sheet.name} has no view {view_id!r}")
-    if len(sheet.views) == 1:
-        raise Refused("a sheet keeps at least one view")
+    if view.shared and not any(v.shared for v in sheet.views if v.id != view_id):
+        raise Refused("a sheet keeps at least one shared view")
     sheet.views = [v for v in sheet.views if v.id != view_id]
-    model.save(sheet, what=f"view {view.name} taken off", by=by, change_id=cid or change_id())
+    model.save(sheet, what=f"{_view_words(view)} taken off", by=by, change_id=cid or change_id())
+    return sheet
+
+
+def save_rule(sheet: Sheet, rule: Rule, *, by: str, origin: str = "", cid: str = "") -> Sheet:
+    """Keep a rule — new, or the next version of one that stands — after reading its conditions as a view's filter is
+    read, so a rule marks exactly the rows a view with those conditions shows."""
+    from aughor.sheets.views import TONES, ViewRefused, check_rule
+    try:
+        check_rule(sheet, rule.conditions)
+    except (ViewRefused, projection.FilterRefused) as exc:
+        raise Refused(str(exc)) from None
+    rule.name = " ".join((rule.name or "").split())[:80]
+    if not rule.name:
+        raise Refused("a rule needs a name — what the rows it marks have in common")
+    if rule.tone not in TONES:
+        raise Refused(f"{rule.tone!r} is not a mark's colour; it is one of {', '.join(TONES)}")
+    rule.id = rule.id or uuid.uuid4().hex[:8]
+    if any(r.name.lower() == rule.name.lower() and r.id != rule.id for r in sheet.rules):
+        raise Refused(f"{sheet.name} already has a rule called {rule.name}")
+    replaced = next((i for i, r in enumerate(sheet.rules) if r.id == rule.id), None)
+    if replaced is None:
+        sheet.rules.append(rule)
+    else:
+        sheet.rules[replaced] = rule
+    model.save(sheet, what=f"rule {rule.name} {'kept' if replaced is None else 'changed'}", by=by, origin=origin,
+               change_id=cid or change_id())
+    return sheet
+
+
+def remove_rule(sheet: Sheet, rule_id: str, *, by: str, cid: str = "") -> Sheet:
+    rule = next((r for r in sheet.rules if r.id == rule_id), None)
+    if rule is None:
+        raise Refused(f"{sheet.name} has no rule {rule_id!r}")
+    def reads(v: View) -> bool:
+        return any(f.op in ("marked", "not_marked") and f.value == rule_id for f in v.filter)
+
+    users = [v.name for v in sheet.views if v.shared and reads(v)]
+    if users:
+        raise Refused(f"the view{'s' if len(users) != 1 else ''} {', '.join(users)} show{'' if len(users) != 1 else 's'} "
+                      f"the rows {rule.name} marks; change {'them' if len(users) != 1 else 'it'} first")
+    # a view kept to its maker is theirs to change, so the condition on the rule leaves it, said in the history
+    own = [v for v in sheet.views if not v.shared and reads(v)]
+    for v in own:
+        v.filter = [f for f in v.filter if not (f.op in ("marked", "not_marked") and f.value == rule_id)]
+    sheet.rules = [r for r in sheet.rules if r.id != rule_id]
+    said = f"; {len(own)} view{'s' if len(own) != 1 else ''} of people's own no longer filter by it" if own else ""
+    model.save(sheet, what=f"rule {rule.name} taken off{said}", by=by, change_id=cid or change_id())
     return sheet
 
 

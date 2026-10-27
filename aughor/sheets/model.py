@@ -74,15 +74,39 @@ class Condition(BaseModel):
     value: Any = None
 
 
+ViewKind = Literal["grid", "board", "calendar"]
+
+
 class View(BaseModel):
-    """A saved grid: its filter, sort and hidden columns. Shared — everyone who reads the sheet sees it (SH-3 brings
-    views only their maker sees, boards and calendars)."""
-    id: str
+    """A saved way of reading a sheet: its filter, sort and hidden columns, and (SH-3) how it is laid out — a grid,
+    grouped or not; a board by a choice column, where moving a card is an edit; a calendar by a date column. A view is
+    shared — everyone who reads the sheet sees it — or kept to the person who made it, seen by them only."""
+    id: str = ""                  # "" for a view not kept yet: keeping it gives it one
     name: str
     filter: list[Condition] = Field(default_factory=list)
     sort: list[dict] = Field(default_factory=list)        # [{"column": id, "desc": bool}]
     hidden: list[str] = Field(default_factory=list)
     search: str = ""
+    made_by: str = ""
+    kind: ViewKind = "grid"
+    #: grid: the column its rows are grouped by, each group with its totals · board: the column its lanes are
+    group: str = ""
+    #: calendar: the date column its rows are placed by
+    date: str = ""
+    #: board and calendar: the columns a card shows under its title
+    card: list[str] = Field(default_factory=list)
+    shared: bool = True
+    #: the person who made it — the only reader of a view not shared, and the only one who may change it
+    owner: str = ""
+
+
+class Rule(BaseModel):
+    """A declared rule that marks the rows meeting its conditions (SH-3) — counted by the same reading of a filter a
+    view uses, so a rule marks exactly the rows a view with its conditions shows."""
+    id: str = ""
+    name: str
+    conditions: list[Condition] = Field(default_factory=list)
+    tone: str = "amber"
     made_by: str = ""
 
 
@@ -119,6 +143,7 @@ class Sheet(BaseModel):
     source: Source = Field(default_factory=Source)
     columns: list[Column] = Field(default_factory=list)
     views: list[View] = Field(default_factory=list)
+    rules: list[Rule] = Field(default_factory=list)
     #: The column whose values identify a row, for a newer file's keyed merge (SH-7); "" when none is declared.
     key: str = ""
     next_column: int = 1
@@ -139,6 +164,10 @@ class Sheet(BaseModel):
 
     def stored(self) -> list[Column]:
         return [c for c in self.columns if c.role == "stored"]
+
+    def views_for(self, reader: str) -> list[View]:
+        """The views a person sees: every shared view, and the ones they keep to themselves."""
+        return [v for v in self.views if v.shared or (reader and v.owner == reader)]
 
     def new_column_id(self) -> str:
         cid = f"c{self.next_column}"

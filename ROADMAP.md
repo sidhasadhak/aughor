@@ -12317,7 +12317,7 @@ graduation queue — receipt: a week of the live install's backups read and one 
   edit layer's v4 → v5 migration was copied first (`backups/overlay_ledger.db.2026-10-26.v4-before-v5.bak`) and `/health`
   named it. Graduation still wants its week of hourly backups read and one restore proven on a copy.
 
-### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below)
+### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below · **SH-3 BUILT 2026-10-27** behind `sheets.views`, off, with the built screens brought to the mockup — "SH-3, built" below)
 
 **What the user asked for.** *"within our platform users should be able to work with spreadsheets the way screenshots
 suggest"*:
@@ -12421,9 +12421,44 @@ nothing is written.
   99,224 — about 3 s each; orders linked to customers by `customer_id` (99,441 matched, 0 missed, city and state
   brought) and payments totalled as *Paid* (R$16,008,872.12, the one order with none empty). On the live install the
   orders table equals its rebuild, and *Paid* differs from SQL over the two sheets on 0 of 99,441 orders.
-- **Not built, and said.** SH-3, SH-5, SH-6, SH-8. Excel's binary `.xls` (DuckDB reads `.xlsx` only — the import says
-  "save it as .xlsx"). A sheet's files are local: they do not ride object-store mirroring as uploads do. The grid pages
-  500 rows at a time rather than scrolling the whole sheet.
+- **Not built, and said.** SH-5, SH-6, SH-8 (SH-3 is built below). Excel's binary `.xls` (DuckDB reads `.xlsx` only —
+  the import says "save it as .xlsx"). A sheet's files are local: they do not ride object-store mirroring as uploads do.
+
+**SH-3, built 2026-10-27 — and the built screens brought to the mockup** (same branch, local, not pushed; the user,
+after a screen-by-screen comparison put the live Sheets at about half the mockup: *"Fix the gaps on the built screens
+first, then build SH-3 (grouped totals, board, calendar)."*).
+- **The built screens, against the mockup.** The grid scrolls every row of a view as one list, read 200 rows at a time
+  as they come into sight (`useRowBlocks`) — no more pages of 500 with Previous and Next; a long value ends in "…" (a
+  flex cell never drew one); a cell's story opens under the cell, not in a corner; the sheet's bar no longer wraps beside
+  a panel, and the toolbar shows icons only where the sheet is narrow; a filtered view's tab says its rows; a change made
+  is said with *Undo* beside it (*Redo* after an undo) instead of a "last:" chip; a derived column's ⓘ says what it is.
+  The home says a last change plainly ("made by you · today"), lists the uploaded files largest first, each marked with
+  the sheet made from it. The new-sheet dialog shows a first value as its kind will, colours the choices as the grid
+  does and counts what fell back to Text. Combine folds a kept link or total into a card. The record is titled by the
+  row's key, reads as one page with the tabs going to each part, shows linked rows as cards, and a total says how many
+  rows it adds up ("sum of payment_value over 2 rows of Olist payments"). **A defect found on the way:** keeping a new view
+  from the grid was refused — the view model required an id the grid does not send.
+- **SH-3** (`aughor/sheets/views.py`, flag `sheets.views`, off, in the graduation queue with the arc's falsifier as its
+  receipt). A view is a grid — grouped or not — a board by a choice or yes/no column, or a calendar by a date column, and
+  shared or kept to its maker (seen and changed by them only; the history says only "a view of their own kept"; a shared
+  view is kept to its maker only in its maker's hands, while one other shared view stands). A grouping lists the largest
+  group first, each head with its rows and — with the flag on — its totals over its own rows, the first rows shown and
+  more on asking; more than 50 groups says how many it did not list. A board's lane is a value; moving a card is an edit
+  of that column, kept with who and when; a value the view's filter leaves out is said under the board with its rows. A
+  calendar opens where the rows end — the latest month holding at least one in a hundred of them, never a straggler (one
+  Olist order estimated for November 2018) — and counts the rows with no date. A **rule** (the glossary's word: a named
+  condition admitting rows) marks the rows meeting its conditions, read as a filter reads them, so a row its condition
+  cannot read (no date) is not marked and is counted among the not marked; a view can show a rule's rows.
+- **Proven.** 21 SH-3 tests, every count read twice — through the view and through the grid's own filter — and they
+  agree; 21 guards mutation-tested, all killed, two after their tests were sharpened (a rule over an empty value; a
+  grouping under a filter). Live on the scratch API over the Olist orders: 8 groups, 0 differing from the grid
+  (delivered R$15.42M, avg R$159.86, as the mockup says); the open-orders board's 5 lanes, 0 differing, with delivered,
+  canceled and unavailable said as left out; September 2018's 19 days, 0 differing — 280, 262, 254, 216 … 2,001 orders,
+  the mockup's figures to the order; the rule *Late and still open* marks 1,728 rows, the grid's count of its
+  conditions. In the browser a card dragged from *created* to *approved* moved the lanes 5 → 4 and 2 → 3, read back as
+  an edit by the person, and *Undo* put it back.
+- **Not built, and said.** *Make a dashboard from this sheet* is SH-6's. The chat's proposals do not yet include a rule.
+  A board moves cards by dragging only (no keyboard move yet).
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

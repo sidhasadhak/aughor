@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Chip, MUTED, NUM } from "@/components/clarity/kit";
+import { choiceTone } from "@/components/sheets/SheetGrid";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
@@ -20,8 +21,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { getConnections, type Connection } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 import {
-  KIND_LABEL, NEW_COLUMN_KINDS, createBlank, createFromFile, createFromRows, stageFile, stageUploaded, type Kind,
-  type StagedFile,
+  KIND_LABEL, NEW_COLUMN_KINDS, createBlank, createFromFile, createFromRows, showValue, stageFile, stageUploaded,
+  type ColumnReading, type Kind, type StagedFile,
 } from "@/lib/sheets";
 
 export type NewSheetStart =
@@ -31,9 +32,28 @@ export type NewSheetStart =
 
 type Source = "file" | "blank" | "rows";
 
+/** A file's first value as the sheet will show it once it is of the kind chosen — a date as a date, money as money. */
+function firstAs(c: ColumnReading, kind: Kind): string {
+  if (c.first === null || c.first === undefined || c.first === "") return "—";
+  if (kind === "money") return c.first;           // the sheet's currency is the workspace's, set when it is made
+  return showValue(c.first, { kind, currency: "" }) || c.first;
+}
+
+/** What the import's lossless rule did with this file, counted: which columns stayed Text because a few values would
+ *  not read back as another kind — or that none did. */
+export function fellBack(columns: ColumnReading[], rows: number): string {
+  const kept = columns.filter(c => c.suggested === "text" && c.note);
+  if (kept.length === 0) {
+    return `No column fell back to Text: every value of these ${formatCount(rows)} rows reads back as its kind.`;
+  }
+  return `${kept.length} column${kept.length === 1 ? "" : "s"} stay${kept.length === 1 ? "s" : ""} Text because a few values `
+    + `do not fit another kind: ${kept.map(c => c.name).join(", ")}.`;
+}
+
 function prettyName(file: string, tab: string): string {
   const stem = file.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+dataset$/i, "").trim();
-  const base = stem.replace(/\b\w/g, c => c.toUpperCase());
+  // sentence case, as the sheets read in a list: "Olist orders", never "Olist Orders"
+  const base = stem.charAt(0).toUpperCase() + stem.slice(1);
   return tab ? `${base} · ${tab}` : base;
 }
 
@@ -175,12 +195,16 @@ export function NewSheetDialog({ start, onClose, onMade }: {
                             {c.note && <div className="aug-fs-xs" style={{ ...MUTED, marginTop: 4 }}>{c.note}</div>}
                             {(kinds[t.tab]?.[c.name] ?? c.suggested) === "choice" && c.values.length > 0 && (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-                                {c.values.map(([v, n]) => <Chip key={v}>{v} · {formatCount(n)}</Chip>)}
+                                {c.values.map(([v, n]) => (
+                                  <Chip key={v} tone={choiceTone({ choices: c.values.map(x => x[0]) }, v)}>{v} · {formatCount(n)}</Chip>
+                                ))}
                               </div>
                             )}
                           </td>
-                          <td className="aug-mono aug-fs-xs" style={{ padding: "5px 8px", ...MUTED, maxWidth: 220,
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.first ?? "—"}</td>
+                          <td className="aug-fs-xs" style={{ padding: "5px 8px", ...MUTED, maxWidth: 220,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.first ?? undefined}>
+                            {firstAs(c, kinds[t.tab]?.[c.name] ?? c.suggested)}
+                          </td>
                           <td style={{ padding: "5px 8px", textAlign: "right", ...NUM }}>{c.empty ? formatCount(c.empty) : "—"}</td>
                         </tr>
                       ))}
@@ -191,8 +215,8 @@ export function NewSheetDialog({ start, onClose, onMade }: {
             ))}
             {staged && (
               <div className="aug-fs-xs" style={{ ...MUTED, display: "flex", flexDirection: "column", gap: 4 }}>
-                <span><b style={{ color: "var(--t2)" }}>A kind is offered only where every value reads back as written.</b> A
-                  value that does not fit leaves its column Text, and is counted.</span>
+                <span><b style={{ color: "var(--t2)" }}>A kind is offered only where every value reads back as written.</b>{" "}
+                  {staged.tabs.map(t => fellBack(t.columns, t.rows)).join(" ")}</span>
                 <span><b style={{ color: "var(--t2)" }}>Every value keeps its source:</b> this file and its row. Changes made
                   later keep who and when.</span>
               </div>

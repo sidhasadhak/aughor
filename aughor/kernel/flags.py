@@ -155,6 +155,7 @@ FLAG_ENV = {
     "sheets.grid": "AUGHOR_SHEETS_GRID",
     "sheets.chat": "AUGHOR_SHEETS_CHAT",
     "sheets.combine": "AUGHOR_SHEETS_COMBINE",
+    "sheets.views": "AUGHOR_SHEETS_VIEWS",
     # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
@@ -1179,6 +1180,15 @@ FLAG_META = {
         "description": "A linked column follows the sheet it reads when that sheet changes. A newer file is "
                        "matched on a key and applied as one change you can undo. Off: each sheet stands alone.",
     },
+    "sheets.views": {
+        "label": "Boards, calendars and rules on sheets",
+        "summary": "Keep a sheet's rows as a grouped grid with totals, a board or a calendar. Mark rows with a rule "
+                   "you declare.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "A view can be yours alone"}],
+        "description": "Moving a card on a board is an edit, kept with who and when. A view you keep to yourself "
+                       "is seen by you only. Off: views are grids, shared with everyone.",
+    },
     "packs.installed_versions": {
         "label": "Record each pack's installed version",
         "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
@@ -1819,6 +1829,11 @@ GRADUATION_QUEUE: dict = {
     "sheets.combine": "receipt: on the live install, a sheet is linked to another by a key and a third one's rows "
                       "totalled per key; every miss is counted before it is kept. Falsifier: a linked total differs from "
                       "the same total computed by SQL over the two sheets stops it",
+    # Arc SH, SH-3 (ROADMAP §3.64), queued 2026-10-27. No model call.
+    "sheets.views": "receipt: on the live install, a sheet is grouped with its group totals, shown as a board and a "
+                    "calendar, and marked by a rule; a card moved on the board reads back as an edit. Falsifier: a "
+                    "group's, a lane's, a day's or a rule's count differs from the grid's count of the same rows "
+                    "stops it",
     # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
     "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
                                 "what was added, changed and removed, marks a declined term with the version it was "

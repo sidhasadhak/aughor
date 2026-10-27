@@ -23,7 +23,21 @@ def row_ref(sheet_id: str, row: int) -> str:
     return f"sheet:{sheet_id}/row:{int(row)}"
 
 
-def _source_line(sheet: Sheet, column: model.Column, row: int, edits: dict) -> str:
+def _parts(sheet: Sheet, column: model.Column, values: dict, other: Sheet) -> Optional[int]:
+    """How many of the other sheet's rows a total adds up for this row — None when it cannot be read."""
+    mine = sheet.column(column.by)
+    okey = other.column(column.key)
+    if not mine or not okey or values.get(mine.id) is None:
+        return 0 if mine and okey else None
+    cur = projection.cursor()
+    try:
+        return int(cur.execute(f"SELECT COUNT(*) FROM {ident(other.table)} WHERE CAST({ident(okey.name)} AS VARCHAR) = ?",
+                               [str(values[mine.id])]).fetchone()[0])
+    finally:
+        cur.close()
+
+
+def _source_line(sheet: Sheet, column: model.Column, row: int, edits: dict, values: dict) -> str:
     e = edits.get((row, column.id))
     if e is not None:
         who = (e.actor or "someone").removeprefix("user:")
@@ -36,10 +50,32 @@ def _source_line(sheet: Sheet, column: model.Column, row: int, edits: dict) -> s
         return f"via {other.name}" if other else "via a sheet that was removed"
     if column.role == "total":
         other = model.get(column.sheet)
-        return f"{column.how} of {other.name}" if other else "a total of a sheet that was removed"
+        if other is None:
+            return "a total of a sheet that was removed"
+        n = _parts(sheet, column, values, other)
+        of = other.column(column.of) if column.of else None
+        if n is None:
+            return f"{column.how} of {other.name}"
+        if n == 0:
+            return f"no row of {other.name} has this row's key" + ("" if column.how == "count" else ", so it is empty")
+        rows = f"{n:,} row{'s' if n != 1 else ''} of {other.name}"
+        return rows if column.how == "count" or of is None else f"{column.how} of {of.name} over {rows}"
     if row <= sheet.source.rows and column.source:
         return f"file row {row:,}" if sheet.source.kind == "file" else f"kept row {row:,}"
     return "typed in" if row > sheet.source.rows else "a column added in the sheet"
+
+
+def _kinds(sheet: Sheet) -> list[dict]:
+    """The kinds of the columns a linked row lists, so it is shown as its own sheet shows it."""
+    return [{"kind": o.kind, "currency": o.currency} for o in sheet.columns][:8]
+
+
+def _title(sheet: Sheet, values: dict) -> str:
+    """What a row is called when it is opened: its key's value, or its first text column's."""
+    first = sheet.column(sheet.key) if sheet.key else None
+    first = first or next((c for c in sheet.columns if c.kind in ("text", "email", "link")), None)
+    v = values.get(first.id) if first else None
+    return "" if v is None else str(v)
 
 
 def _linked(sheet: Sheet, values: dict) -> list[dict]:
@@ -58,7 +94,7 @@ def _linked(sheet: Sheet, values: dict) -> list[dict]:
                               f"CAST({ident(okey.name)} AS VARCHAR) = ? LIMIT {MAX_LINKED}",
                               [str(values[c.id])]).fetchall()
             out.append({"sheet": other.id, "name": other.name, "through": c.name, "direction": "to",
-                        "columns": [o.name for o in other.columns][:8],
+                        "columns": [o.name for o in other.columns][:8], "kinds": _kinds(other),
                         "rows": [{"row": int(r[0]), "values": [projection.jsonable(v) for v in r[1:9]]} for r in got],
                         "count": len(got)})
         for other in model.list_sheets():
@@ -76,7 +112,7 @@ def _linked(sheet: Sheet, values: dict) -> list[dict]:
                 got = cur.execute(f"SELECT _row, * EXCLUDE (_row) FROM {ident(other.table)} WHERE {where} "
                                   f"ORDER BY _row LIMIT {MAX_LINKED}", [str(values[mine.id])]).fetchall()
                 out.append({"sheet": other.id, "name": other.name, "through": c.name, "direction": "from",
-                            "columns": [o.name for o in other.columns][:8],
+                            "columns": [o.name for o in other.columns][:8], "kinds": _kinds(other),
                             "rows": [{"row": int(r[0]), "values": [projection.jsonable(v) for v in r[1:9]]}
                                      for r in got], "count": n})
     finally:
@@ -84,14 +120,15 @@ def _linked(sheet: Sheet, values: dict) -> list[dict]:
     return out
 
 
-def record(sheet: Sheet, row: int) -> Optional[dict]:
-    """The row as a record, or None when the sheet holds no such row."""
+def record(sheet: Sheet, row: int, *, marked_by_rules: bool = False) -> Optional[dict]:
+    """The row as a record, or None when the sheet holds no such row. ``marked_by_rules`` (SH-3) adds the rules that
+    mark it."""
     values = projection.read_row(sheet, row)
     if values is None:
         return None
     edits = {(int(e.row_key), e.column): e for e in overlay.sheet_values(sheet.id) if e.kind == overlay.SHEET_CELL}
     fields = [{"column": c.id, "name": c.name, "kind": c.kind, "role": c.role, "value": values.get(c.id),
-               "source": _source_line(sheet, c, row, edits), "description": c.description}
+               "source": _source_line(sheet, c, row, edits, values), "description": c.description}
               for c in sheet.columns]
     names = {c.id: c.name for c in sheet.columns}
     history = [{"event": h["event"], "column": names.get(h["column"], h["column"]) if h["column"] else "",
@@ -99,8 +136,11 @@ def record(sheet: Sheet, row: int) -> Optional[dict]:
                 "previous": service.value_of(h["previous"]) if h["previous"] else None,
                 "by": h["actor"], "at": h["at"], "origin": h["origin"]}
                for h in overlay.sheet_history(sheet.id, row=row, limit=200)]
-    return {"row": row, "came_from": service.origin_of_row(sheet, row), "fields": fields,
-            "linked": _linked(sheet, values), "history": history, "comments": comments(sheet, row)}
+    from aughor.sheets import views
+    marked = set((views.marks(sheet, {row}) if marked_by_rules else {}).get(str(row), []))
+    return {"row": row, "title": _title(sheet, values), "came_from": service.origin_of_row(sheet, row),
+            "fields": fields, "linked": _linked(sheet, values), "history": history, "comments": comments(sheet, row),
+            "marks": [{"id": r.id, "name": r.name, "tone": r.tone} for r in sheet.rules if r.id in marked]}
 
 
 def comments(sheet: Sheet, row: int) -> list[dict]:
