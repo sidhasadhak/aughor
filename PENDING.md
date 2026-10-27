@@ -898,3 +898,6 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     A sort keeps the rows on screen until the sorted ones land (no flash); the headers show the sort symbol the user
     drew, reversed for lowest first — **LIVE 2026-10-27** at `00d5d17e`.
     The chat beside a sheet stays closed until opened — **LIVE 2026-10-27** at `c4df75b9`.
+    A sort keeps the scroll across — **LIVE 2026-10-27** at `ad1718f2`. The first-minute basics of a spreadsheet
+    (keys, Enter/Tab after an edit, Delete, undo keys, paste, drag, Cmd+A, pinned row numbers, column widths) — BUILT
+    2026-10-27 at `9a1d4384`, not live. Next tier open: header menu, second sort, reorder, Cmd+F, edge-scroll on drag.

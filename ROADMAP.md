@@ -12559,6 +12559,19 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
 - **The chat beside a sheet stays closed until opened, 2026-10-27** (`c4df75b9`; the user: *"Chat window shall remain
   collapsed by default"*). **LIVE 2026-10-27** at `c4df75b9`, web only, no restart: on the live Olist orders the chat
   is closed on load, opens on a click and closes on the next.
+- **A sort keeps your place across, 2026-10-27** (`ad1718f2`; the user: *"I sorted the last column … and my sheet
+  moves back to left extreme scroll each time"*): the grid was keyed by its query, so each sort built a new one at the
+  first column. **LIVE 2026-10-27** at `ad1718f2`, web only, no restart: on the live Olist orders, scrolled to the last
+  column and 2,000 px down, sorting Paid both ways and back kept 1,205 px across, the same grid, the first row shown.
+- **The first-minute basics of a spreadsheet, 2026-10-27** (`9a1d4384`; the user: *"Ours is a SOTA platform!"*).
+  Measured on the grid first, eight basics failed; each now does what Sheets, Excel and Airtable do — Tab, Home/End,
+  Page Up/Down and Cmd+arrows; Enter and Tab keep an edit and move on; Delete empties a cell or a range; Cmd+Z and
+  Shift+Z undo and redo from the keys; a paste lays a copied block from the active cell (one change, refused whole with
+  the reason, what it left out said); a drag selects a range and Cmd+A every cell; the row numbers stay at the left;
+  a column's edge drags, double-clicks to fit and takes the arrows, the widths kept per sheet on this browser. Each
+  proven in a real browser on the scratch copy. Not live yet. Not built of the next tier: a menu on each header (sort,
+  filter by this column, hide, freeze), Shift+click for a second sort, dragging a header to reorder, Cmd+F to the
+  sheet's own search, a drag that scrolls the grid at its edge.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
