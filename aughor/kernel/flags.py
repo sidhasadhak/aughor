@@ -262,6 +262,8 @@ FLAG_ENV = {
     "dashboard.questions": "AUGHOR_DASHBOARD_QUESTIONS",
     # A breakdown piece — an entity's objects grouped by a property, adding up to the whole (the Grist study §10).
     "dashboard.breakdowns": "AUGHOR_DASHBOARD_BREAKDOWNS",
+    # A table's or a list's rows marked by a declared rule (the Grist study §10).
+    "dashboard.marks": "AUGHOR_DASHBOARD_MARKS",
     # PENDING 57 (2026-10-24, docs/DECISION_LOOP_STUDY_2026-10-24.md, D-1 to D-3). ON: a decision is booked in full where
     # it is made (Home's Decide cites its finding and may state an expectation; "Not worth it" books not acting; a
     # recommendation keeps its report's other actions as alternatives and marks what was recommended), every decision
@@ -924,6 +926,16 @@ FLAG_META = {
                        "who read it, whose run it was and the reason. The governance feed takes a first and last date, "
                        "pages past its newest thousand and exports as a file. Off: a payload read records who read it, "
                        "not why.",
+    },
+    "dashboard.marks": {
+        "label": "Rows marked by a rule on dashboards",
+        "summary": "Mark a table's or a list's rows that a declared rule admits, in a colour you choose. Its "
+                   "legend says how many.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Only rules the ontology declares"}],
+        "description": "A mark is never a condition written on the dashboard: it names a rule or segment declared on "
+                       "the entity. One the entity does not declare is refused when the dashboard is kept. Off: no "
+                       "row is marked.",
     },
     "dashboard.breakdowns": {
         "label": "Breakdowns on dashboards",
@@ -1901,11 +1913,14 @@ GRADUATION_QUEUE: dict = {
                                  "with a card per registered approved metric, the rest named as skipped, and the kept "
                                  "dashboard's source names the pack and its version. Falsifier: a drafted card made "
                                  "from a metric the connection does not hold stops it",
-    # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     # The Grist study §10, queued 2026-10-28. No model call.
-    "dashboard.breakdowns": "receipt: on theLook, a breakdown of orders by customer country shows groups whose counts "
-                            "and revenue add up to the dashboard's own figures, and a click on one narrows the figures "
-                            "and charts to it. Falsifier: groups that do not add up to the whole stop it",
+    "dashboard.marks": "receipt: on theLook, an objects table marks the objects a declared segment admits, and its "
+                       "legend's count equals the segment's own count over the same set. Falsifier: a marked row the "
+                       "segment does not admit, or a legend that differs from the segment's count, stops it",
+    "dashboard.breakdowns": "receipt: on theLook, a breakdown of an entity by a linked property shows groups whose "
+                            "count and sum add up to the dashboard's own figures, and a click on one narrows the other "
+                            "pieces to it. Falsifier: groups that do not add up to the whole stop it",
+    # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "
                               "Falsifier: a reader reads a version its owner never published stops it",

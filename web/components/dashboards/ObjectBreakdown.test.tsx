@@ -12,6 +12,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ComposedDashboard } from "@/components/dashboards/ComposedDashboard";
 import type { DashboardHostState } from "@/lib/dashboards/hostState";
+import { cardsDashboardSpec } from "@/lib/dashboards/start";
 import type { ObjectQueryRequest } from "@/lib/objects";
 
 const objects = vi.hoisted(() => ({ queryObjects: vi.fn(), cachedObjectCatalog: vi.fn() }));
@@ -21,16 +22,16 @@ beforeAll(() => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 });
 
-const SPEC = (breakdown: Record<string, unknown>) => ({
-  root: "cockpit",
-  elements: {
-    cockpit: { type: "Cockpit", props: { title: "Orders" }, children: ["sec"] },
-    sec: { type: "Section", props: { title: "Orders" }, children: ["orders", "by-country"] },
-    orders: { type: "ObjectFigure", props: { entity: "order", label: "Orders", agg: "count" }, children: [] },
-    "by-country": { type: "ObjectBreakdown", props: { entity: "order", label: "Revenue by customer country", by: "placed_by.country",
-      measures: [{ agg: "count" }, { agg: "sum", path: "revenue", format: "money" }], top: 5, ...breakdown }, children: [] },
-  },
-});
+// a new dashboard's own root and section, as the builder starts one, holding a figure and the breakdown
+const SPEC = (breakdown: Record<string, unknown>) => {
+  const spec = cardsDashboardSpec("Orders", []);
+  Object.values(spec.elements).find(e => e.type === "Section")!.children = ["orders", "by-country"];
+  spec.elements.orders = { type: "ObjectFigure", props: { entity: "order", label: "Orders", agg: "count" }, children: [] };
+  spec.elements["by-country"] = { type: "ObjectBreakdown", props: { entity: "order", label: "Revenue by customer country",
+    by: "placed_by.country", measures: [{ agg: "count" }, { agg: "sum", path: "revenue", format: "money" }], top: 5, ...breakdown },
+    children: [] };
+  return spec;
+};
 const HOST: DashboardHostState = { range: { status: "standing" }, cards: {} };
 
 // theLook's orders by customer country, as the mockup read them through the door (counts, revenue), and the whole

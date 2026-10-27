@@ -125,6 +125,7 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
 export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
+  marksOn = false,
   structureOn = false, onAddPiece, checks, cardSetup, variablesOn = false, cardReads, queryCards, children }: {
   spec: DashboardSpec;
   /** Every change, as the next spec and the version's note. */
@@ -144,6 +145,8 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   schema?: string;
   /** Arc AP-2 — whether this install wires cockpits: the Data tab, and what pieces read, then. */
   wiringOn?: boolean;
+  /** Whether a table's or a list's rows may be marked by a declared rule or segment (`dashboard.marks`). */
+  marksOn?: boolean;
   /** Arc AP-4 — whether a dashboard may be split into sections: a section's split, its sections inside, a copy, a width. */
   structureOn?: boolean;
   /** Arc AP-4 — open the piece picker for a section: the one chosen, the one a chosen piece sits in, or none. */
@@ -387,7 +390,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
               onRenamed={n => setWire(`value:${n}`)} queryCards={variablesOn ? queryCards : undefined} />
               : wireKind === "choice" ? <ChoiceSetup spec={spec} name={wireName} />
                 : <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
-                  entityTitle={entityTitle} wiringOn={wiringOn} cardSetup={cardSetup} />)}
+                  entityTitle={entityTitle} wiringOn={wiringOn} marksOn={marksOn} cardSetup={cardSetup} />)}
         </aside>
       </div>
     </div>

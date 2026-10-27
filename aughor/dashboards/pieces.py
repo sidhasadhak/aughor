@@ -131,6 +131,17 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                 check_listing(body, graph, connection_id)
             except ObjectQueryRefused as exc:
                 said.append(f'The search "{key}" cannot be read: {exc.reason}.')
+    # the Grist study §10 — a table's or a list's mark names a segment the entity declares, or the keep is refused
+    from aughor.dashboards.marks import MARKED, probes as mark_probes
+    for key, (kind, props) in pieces.items():
+        if kind not in MARKED or not props.get("marked") or (props.get("set") and not (sets.get(props["set"]) or {}).get("entity")):
+            continue
+        entity, segment, conditions = _scope(props, sets)
+        for what, body in mark_probes(props, entity, {"segment": segment, "filters": conditions} if (segment or conditions) else {}):
+            try:
+                check_query(body, graph, connection_id)
+            except ObjectQueryRefused as exc:
+                said.append(f'The {_WORDS[kind]} "{key}" cannot be read — {what}: {exc.reason}.')
     for key, (kind, props) in pieces.items():
         if kind != "ActionButton":
             continue

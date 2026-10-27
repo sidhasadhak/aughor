@@ -49,7 +49,8 @@ import { z } from "zod";
  *  summed from a set or read from a query of the dashboard's own (`sum`, `query`; Arc AP-8c, 2026-10-12). 11: a Question —
  *  asked by the agent on a rhythm and shown as the Data Canvas shows an answer (PENDING 54, 2026-10-23). 12: a breakdown —
  *  an entity's objects grouped by one property, a measure or three per group, always adding up to the whole, a click on
- *  a group the filter column's click (ObjectBreakdown; the Grist study §10, 2026-10-28). */
+ *  a group the filter column's click (ObjectBreakdown), and the rows of a table or a list a declared rule or segment
+ *  admits, marked in a tone (`marked`; the Grist study §10, 2026-10-28). */
 export const DASHBOARD_VOCABULARY_VERSION = 12;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
@@ -272,6 +273,13 @@ const h = z.number().int().min(1).max(MAX_ROWS).nullable().optional();
 const entityRef = z.string().regex(ONTOLOGY_ID).nullable().optional();
 const wireRef = z.string().regex(WIRE_NAME).nullable().optional();
 const pathRef = z.string().regex(PROPERTY_PATH);
+/** The rows a declared rule or segment admits, marked in one of the tones (the Grist study §10): never a formula of the
+ *  dashboard's own — the segment is the ontology's, read through the door as `in_set`. */
+const marked = z.object({
+  segment: z.string().regex(ONTOLOGY_ID),
+  tone: z.enum(TONES),
+  label: z.string().min(1).max(MAX_LABEL).nullable().optional(),
+}).strict().nullable().optional();
 
 export const dashboardCatalog = defineCatalog(schema, {
   components: {
@@ -350,6 +358,7 @@ export const dashboardCatalog = defineCatalog(schema, {
         columns: z.array(z.string().regex(PROPERTY_PATH)).max(MAX_TABLE_COLUMNS).nullable().optional(),
         sort: z.string().regex(PROPERTY_PATH).nullable().optional(),
         descending: z.boolean().nullable().optional(),
+        marked,
         size, w, h,
       }),
       description: "The objects of an entity, or of a segment of it, a page at a time: each object's key and the columns named, read through the object door.",
@@ -446,6 +455,7 @@ export const dashboardCatalog = defineCatalog(schema, {
          *  chip — under it. */
         title: pathRef.nullable().optional(), figure: pathRef.nullable().optional(), mark: pathRef.nullable().optional(),
         sort: pathRef.nullable().optional(), descending: z.boolean().nullable().optional(),
+        marked,
         size, w, h,
       }),
       description: "A queue of objects as cards: each called by a property, with a number and a mark beside it. A click chooses, a tick collects.",

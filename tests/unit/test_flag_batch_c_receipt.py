@@ -135,6 +135,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
                                      "metrics.coverage_writer", "metrics.blind_spot_proposals", "briefing.metric_cap",
                                      "state.backups", "sheets.core", "sheets.grid", "sheets.combine",
                                      "sheets.views", "sheets.everywhere", "sheets.sharing",
-                                     "sheets.model_columns", "dashboard.breakdowns"}
+                                     "sheets.model_columns", "dashboard.breakdowns",
+                                     "dashboard.marks"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

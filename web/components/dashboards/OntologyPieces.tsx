@@ -618,7 +618,7 @@ export function ProcessBoardPiece({ process }: { process: string }) {
 const TABLE_ROW_PX = 29;
 const TABLE_CHROME_PX = 110;
 
-export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, chooses, ticks, columns, sort, descending, tall }: {
+export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, chooses, ticks, columns, sort, descending, tall, marked }: {
   elementKey: string | null;
   entity?: string | null;
   segment?: string | null;
@@ -631,6 +631,8 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   sort?: string | null;
   descending?: boolean | null;
   tall: boolean;
+  /** the Grist study §10 — the rows a declared rule or segment admits, marked in its tone */
+  marked?: Marked | null;
 }) {
   const { connectionId, schema, tick, picked, pick, ticked, tickOne, tickNone, asGroup, say } = usePieces();
   const query = useSetQuery({ entity, segment, set, set_from: setFrom });
@@ -662,6 +664,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the table asks
   }, [asked, offset, limit, connectionId, schema, tick, asGroup]);
+  const marks = useMarked(target, marked, page?.key ?? "", page ? page.rows.map(r => String(r[0])) : []);
 
   if ("refused" in query) return <Unread what="This table cannot be read">{query.refused}</Unread>;
   if ("waiting" in query) {
@@ -686,11 +689,12 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   const shown = page.rows.length;
   return (
     <Frame testid="object-table">
-      <Title title={heading} right={
+      <Title title={heading} right={<>
+        {marked && <MarkLegend marked={marked} read={marks} total={page.total} />}
         <span className="aug-fs-xs" title={page.segment_said || undefined} data-testid="object-table-total"
           style={{ color: "var(--t3)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
           {page.total == null ? "not counted" : formatCount(page.total)}
-        </span>} />
+        </span></>} />
       <div style={{ overflowX: "auto", minHeight: 0, ...(box.onGrid ? { flex: 1, overflowY: "auto" } : {}) }}>
         <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
           <thead>
@@ -713,8 +717,9 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
               const on = chosen?.pk === pk;
               const object = { objectType: page.object_type, typeId: page.type_id, pk };
               const isTicked = ticks_.some(t => t.pk === pk);
+              const isMarked = !!marked && marks.on.has(pk);
               return (
-                <tr key={rowKey} data-testid="object-table-row" aria-selected={on}
+                <tr key={rowKey} data-testid="object-table-row" aria-selected={on} data-marked={isMarked || undefined}
                   onClick={() => choice && pick(choice, on ? null : object)}
                   style={{ cursor: choice ? "pointer" : undefined, background: on ? "var(--bg-sel)" : undefined }}>
                   {ticks && (
@@ -731,7 +736,8 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
                     const num = i > 0 && isNumericType(type);
                     return (
                       <td key={page.names[i] ?? i} className={i === 0 ? "aug-mono" : undefined} style={{
-                        padding: "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
+                        padding: i === 0 && marked ? "5px 8px 5px 8px" : "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
+                        boxShadow: i === 0 && isMarked && marked ? `inset 3px 0 0 ${MARK_TONE[marked.tone]}` : undefined,
                         textAlign: num ? "right" : undefined, color: text === "—" ? "var(--t3)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
                         {i > 0 && page.columns[i - 1]?.edited && text !== "—" && <Icon name="edit" size={11} label="Edited" />} {text}
                       </td>
@@ -1459,6 +1465,61 @@ export function ObjectBreakdownPiece({ entity, set, label, by, measures, top, sh
 const AGG_WORDS: Record<string, string> = {
   sum: "Sum of", avg: "Average", min: "Least", max: "Most", count_distinct: "Distinct",
 };
+
+/** A table's or a list's rows marked by a declared rule or segment (the Grist study §10, flag `dashboard.marks`). */
+export interface Marked { segment: string; tone: "good" | "warn" | "bad" | "info" | "neutral"; label?: string | null }
+
+/** A mark's colour, as a card's rule is drawn. */
+export const MARK_TONE: Record<Marked["tone"], string> = {
+  good: "var(--grn3)", warn: "var(--amb3)", bad: "var(--red3)", info: "var(--blue3)", neutral: "var(--b2)",
+};
+
+/** Which of the keys on screen a mark admits, and how many of the listing's objects it marks — both read through the
+ *  door as `in_set`, a set of the listing's own entity kept to the declared segment. Nothing a dashboard marks by is a
+ *  formula of its own: a mark names what the ontology declares, or it is refused at the keep. */
+export function useMarked(target: { entity: string; segment: string; conditions: DoorCondition[] } | null,
+  marked: Marked | null | undefined, keyPath: string, keys: string[]): { on: Set<string>; count: number | null; refused: string } {
+  const { connectionId, schema, asGroup } = usePieces();
+  const inSet = target && marked
+    ? ({ path: "", op: "in_set", sets: [{ entity: target.entity, segment: marked.segment }] } as unknown as DoorCondition) : null;
+  const counted = useObjectQuery(inSet && target ? { object_type: target.entity, ...(target.segment ? { segment: target.segment } : {}),
+    measures: [COUNT], filters: [...target.conditions, inSet] } : null);
+  const [on, setOn] = useState<Set<string>>(() => new Set());
+  const [refused, setRefused] = useState("");
+  const asked = JSON.stringify([target?.entity, target?.segment, target?.conditions, marked?.segment, keyPath, keys]);
+  useEffect(() => {
+    if (!target || !inSet || !keyPath || !keys.length) { setOn(new Set()); return; }
+    let alive = true;
+    listObjects({ entity: target.entity, segment: target.segment, columns: [], offset: 0, limit: keys.length,
+                  filters: [...target.conditions, inSet, { path: keyPath, op: "in", values: keys } as unknown as DoorCondition] },
+                connectionId, schema, ...(asGroup ? [asGroup] : []))
+      .then(out => {
+        if (!alive) return;
+        if (out.path === "refused") { setRefused(out.refused); setOn(new Set()); return; }
+        setRefused(out.error ?? "");
+        setOn(new Set(out.rows.map(r => String(r[0]))));
+      })
+      .catch(e => { if (alive) setRefused((e as Error).message); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what it asks
+  }, [asked, connectionId, schema, asGroup]);
+  return { on, count: counted && "rows" in counted ? num(counted.rows[0]?.[0]) : null,
+    refused: counted && "refused" in counted ? counted.refused : refused };
+}
+
+/** What a mark means and how many it marks, beside the piece's title: "● Late dispatch — 1,275 of 6,366". A mark that
+ *  cannot be read says so in its place. */
+export function MarkLegend({ marked, read, total }: { marked: Marked; read: ReturnType<typeof useMarked>; total: number | null }) {
+  const name = marked.label || words(marked.segment).replace(/^./, c => c.toUpperCase());
+  return (
+    <span className="aug-fs-xs" data-testid="object-mark-legend" title={read.refused || `Rows ${name} admits are marked`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 5, color: read.refused ? "var(--amb4)" : "var(--t2)", whiteSpace: "nowrap" }}>
+      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: MARK_TONE[marked.tone] }} />
+      {read.refused ? `${name} cannot be marked` : `${name} — ${read.count == null ? "…" : formatCount(read.count)}`
+        + `${total != null && read.count != null ? ` of ${formatCount(total)}` : ""}`}
+    </span>
+  );
+}
 
 // the chart's frame in px, drawn at the size its card gives it (Arc AP-1): off the grid at the mockup's shape, 640 × 210
 // scaled to the card's width; on the grid at the box's own width and height — its text always at its own size

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from aughor.dashboards import breakdowns as B
 from aughor.dashboards import pieces
+from aughor.dashboards.compose import default_spec
 from aughor.kernel.flags import flag_overrides
 
 BREAKDOWN = {"type": "ObjectBreakdown", "children": [], "props": {
@@ -27,9 +28,10 @@ def _with_breakdown(spec: dict, key: str = "by-country") -> dict:
 
 
 def test_off_a_spec_holding_a_breakdown_is_refused_and_any_other_is_not():
-    spec = {"root": "c", "elements": {"c": {"type": "Cockpit", "props": {}, "children": ["s"]},
-                                      "s": {"type": "Section", "props": {}, "children": ["b"]}, "b": BREAKDOWN}}
-    bare = {"root": "c", "elements": {"c": {"type": "Cockpit", "props": {}, "children": []}}}
+    bare = default_spec("Desk", [])   # a new dashboard's own root, as one starts
+    spec = default_spec("Desk", [])
+    spec["elements"][spec["root"]]["children"] = ["s"]
+    spec["elements"].update({"s": {"type": "Section", "props": {}, "children": ["b"]}, "b": BREAKDOWN})
     with flag_overrides({"dashboard.breakdowns": False}):
         assert B.held(spec) == ["b"]
         assert B.refused_off(spec) == ["The dashboard holds a breakdown — b — and breakdowns are off on this install."]
