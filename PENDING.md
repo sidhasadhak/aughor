@@ -894,3 +894,4 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     grid (`show_rows`), and the numbers check matches labels as words — **LIVE 2026-10-27** at `1a2af818`, three
     questions proven. Both of what stayed open fixed — **LIVE 2026-10-27** at `580e31f4` (one-step answers; the whole
     header sorts). Open: a breakdown's chart can be titled "Daily …" when nothing is daily.
+    The answer beside a sheet is lean, no template under it — **LIVE 2026-10-27** at `8bdb1304`.

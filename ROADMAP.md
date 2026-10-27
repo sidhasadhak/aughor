@@ -12543,6 +12543,11 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   99,441 (about 0.63%)*; *by status* → opens on *1,783 of 99,441*, all seven groups, the card under it, no guard. A click
   past order_status's name sorts it. Seen, not fixed: the breakdown's chart is titled *"Daily Orders Without Carrier
   Date…"*, though nothing is daily.
+  The answer beside a sheet is lean (`8bdb1304`; the user: *"Do we need the N, Late N, Late Pct and everything below
+  that? … it need not be everywhere"*): `ChatMessage` takes `lean`, set by the sheet's chat only — the answer and its
+  steps, no result figure (the last query's one row as tiles under raw column names), no actions, details or export;
+  a withheld answer still shows its result. **LIVE 2026-10-27** at `8bdb1304`, web only, no restart; the served
+  `ChatMessage` chunk carries it. Not yet seen on a fresh live answer (no question spent).
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
