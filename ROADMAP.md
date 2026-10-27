@@ -12494,6 +12494,12 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   file's draft and the sheet made from it number their columns alike). On the scratch API over the Olist orders: the five
   cards offered in 0.3 s, *Paid* R$16,008,872.12 as the grid sums it, the *Open orders* view's count card 1,728 as the
   board counts it; the dashboard made and opened; a card moved by the keyboard and undone.
+- **LIVE 2026-10-27** (the user: *"Commit locally, then put it on the live install and turn on sheets.everywhere"*): the
+  restart waited for a scheduled 09:00 UTC analysis on another connection to finish (09:11); the live checkout moved to
+  `277b729f`, the API restarted with its twelve settings — the fingerprint the same before and after — and
+  `sheets.everywhere` turned on (58 flags). On the live Olist orders, read only: the five cards offered in 0.26 s, *Paid*
+  R$16,008,872.12 as the grid sums it; on the user's :3000 a click selects with the cell bar saying the cell's origin,
+  and *Make a dashboard* opens on the sheet. No dashboard has been made on the live install yet.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.

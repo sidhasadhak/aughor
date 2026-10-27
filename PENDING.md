@@ -885,4 +885,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     ✅ **SH-6's first piece, chat rules, board keys, the cell bar BUILT 2026-10-27** (branch `claude/sheets-next`): *Make a
     dashboard* from a sheet or a view (`sheets.everywhere`, off; query cards that read the sheet live), rules proposed
     by the chat, cards moved by ← → and *Move to*, and a cell bar in place of the cell pop-up (the user: *"There has to
-    be a better way"*). A cell undone since SH-2 could not be changed again (the page sent version 0) — fixed. Not live.
+    be a better way"*). A cell undone since SH-2 could not be changed again (the page sent version 0) — fixed. **LIVE
+    2026-10-27** at `277b729f`, `sheets.everywhere` on (58 flags); no dashboard made on the live install yet.
