@@ -107,9 +107,9 @@ def how_to_answer(sheet: Sheet) -> list[str]:
     return [
         "The person is looking at this sheet's grid; answer as the sheet would, in one or two sentences.",
         f"Asked which {noun}, or to show, find or list some (\"which {noun} have…\", \"the ones that…\"): call "
-        "show_rows with them as the grid's filter. It counts them as the grid does and puts them under your answer, "
-        f"to open in the grid. Say how many there are of what whole (\"312 of 4,800 {noun} have no due date.\") "
-        "— never list the rows or their ids.",
+        "show_rows with them as the grid's filter, and nothing else — no query of your own first, no breakdown. It "
+        "counts them as the grid does and puts them under your answer, to open in the grid. Say how many there are "
+        f"of what whole (\"312 of 4,800 {noun} have no due date.\") — never list the rows or their ids.",
         "Asked how many: lead with the number and its whole, and the share where it helps.",
         "Break the rows down only when asked by or per something; then give every group the query returned, or say "
         "how many you left out. Name what stands out only from what a query returned.",

@@ -313,7 +313,11 @@ def ungrounded_label_values(text: str, rows) -> list[str]:
     for label, values in facts.items():
         if label not in low:
             continue
-        for m in re.finditer(re.escape(label), low):
+        # The label as a word, never a piece of one: "delivered" is not in `order_delivered_carrier_date` or
+        # "undelivered". Matched as a substring, a sheet's answer "1,783 of 99,441 orders have no
+        # order_delivered_carrier_date" read as "delivered=1783" against a status row of 2, and was withheld whole
+        # (live, trace 062247c1).
+        for m in re.finditer(r"(?<!\w)" + re.escape(label) + r"(?!\w)", low):
             # BOTH directions. A table writes "ZRH-LHR | 28" and prose writes "28
             # flights on ZRH-LHR"; a forward-only window reads the second as a label
             # with no claim attached and waves the fabrication through.

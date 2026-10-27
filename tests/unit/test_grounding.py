@@ -274,6 +274,23 @@ def test_no_false_positives(text, why):
     assert ungrounded_label_values(text, _ROUTES) == [], why
 
 
+_STATUSES = [["unavailable", 609], ["canceled", 550], ["delivered", 2]]
+
+
+@pytest.mark.parametrize("text", [
+    '1,783 of 99,441 orders (1.8%) have no "order_delivered_carrier_date".',     # live, trace 062247c1
+    "1,783 orders are undelivered to the carrier.",
+])
+def test_a_label_inside_another_word_is_not_a_claim_about_its_row(text):
+    """The label is matched as a word: `delivered` inside a column name or a longer word names no status row."""
+    assert ungrounded_label_values(text, _STATUSES) == []
+
+
+def test_a_label_as_its_own_word_is_still_checked():
+    assert ungrounded_label_values("delivered: 1,783 of them", _STATUSES) == ["delivered=1783"]
+    assert ungrounded_label_values("2 were delivered", _STATUSES) == []
+
+
 def test_rounding_a_writer_would_do_is_accepted():
     assert ungrounded_label_values("revenue on ZRH-LHR was 1000.4", [["ZRH-LHR", 1000.0]]) == []
 

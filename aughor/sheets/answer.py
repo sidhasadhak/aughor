@@ -188,7 +188,8 @@ def sheet_tools(ref: str, *, emit: Optional[Callable[[str, dict], None]] = None)
             "Put the rows a question about this sheet asks for on its grid: which rows, the ones that, show me, find, "
             "list. Give the rows as the grid's filter, by the sheet's column names; the platform checks it, counts "
             "the rows as the grid counts them, and shows the person a card that opens them in the grid or keeps "
-            "them as a view. Use it whenever the answer IS a set of rows, instead of listing them."
+            "them as a view. Use it whenever the answer IS a set of rows, instead of listing them, and instead of a "
+            "query of your own: its count is the answer."
         ),
         parameters=_PARAMS,
         run=lambda a: show_rows(ref, a, emit=emit),
