@@ -897,3 +897,4 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     The answer beside a sheet is lean, no template under it — **LIVE 2026-10-27** at `8bdb1304`.
     A sort keeps the rows on screen until the sorted ones land (no flash); the headers show the sort symbol the user
     drew, reversed for lowest first — **LIVE 2026-10-27** at `00d5d17e`.
+    The chat beside a sheet stays closed until opened — **LIVE 2026-10-27** at `c4df75b9`.

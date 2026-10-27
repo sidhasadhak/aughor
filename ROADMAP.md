@@ -12556,6 +12556,9 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   first, as drawn) and `sortasc` (narrowest first), in Tabler's own way. **LIVE 2026-10-27** at `00d5d17e`, web only, no
   restart: sorting customer_city A–Z, Z–A and back, the grid never left (385 cells throughout, no Loading, two changes
   to the page each time), the header's symbol following the direction.
+- **The chat beside a sheet stays closed until opened, 2026-10-27** (`c4df75b9`; the user: *"Chat window shall remain
+  collapsed by default"*). **LIVE 2026-10-27** at `c4df75b9`, web only, no restart: on the live Olist orders the chat
+  is closed on load, opens on a click and closes on the next.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
