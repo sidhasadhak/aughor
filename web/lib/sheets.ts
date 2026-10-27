@@ -8,7 +8,7 @@
  * Every write is the server's to check — the kinds, the versions, who may — and a refusal comes back as an Error
  * carrying the server's own sentence, which the screen shows as said.
  */
-import { fastApiError } from "@/lib/api";
+import { fastApiError, type QueryShown } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 import { formatCount, formatMoney } from "@/lib/format";
 import { currencySymbol } from "@/lib/orgSettings";
@@ -136,6 +136,8 @@ export interface ColumnTotals {
 }
 
 export type Changed = Record<string, Record<string, { by: string; at: string; version: number }>>;
+/** Row → column → the version a change to that cell must name: set, or put back by an undo (then not in `changed`). */
+export type Versions = Record<string, Record<string, number>>;
 
 export interface RowsPage {
   rows: unknown[][];
@@ -144,6 +146,7 @@ export interface RowsPage {
   totals: Record<string, ColumnTotals>;
   groups: { value: unknown; rows: number }[];
   changed: Changed;
+  versions?: Versions;
   columns: string[];
   source_rows: number;
   /** With `sheets.views`: row → the rules marking it. */
@@ -160,6 +163,7 @@ export interface GroupsPage {
   groups_not_listed: number;
   columns: string[];
   changed: Changed;
+  versions?: Versions;
   marks?: Record<string, string[]>;
 }
 
@@ -171,6 +175,7 @@ export interface BoardPage {
   columns: string[];
   movable: boolean;
   changed: Changed;
+  versions?: Versions;
   marks: Record<string, string[]>;
 }
 
@@ -187,15 +192,6 @@ export interface CalendarPage {
   month_rows: number;
 }
 
-export interface CellStory {
-  row: number;
-  column: string;
-  came_from: string;
-  version: number;
-  changed: boolean;
-  events: { event: string; value: unknown; previous: unknown; by: string; at: string; origin: string;
-    version: number; change_id: string }[];
-}
 
 export interface RecordField {
   column: string; name: string; kind: Kind; role: Role; value: unknown; source: string; description: string;
@@ -218,7 +214,7 @@ export interface SheetRecord {
 export interface ChangeRow extends SheetChange { values: number; definition: number }
 
 export interface ProposedChange {
-  type: "view" | "computed_column" | "column" | "link" | "total";
+  type: "view" | "computed_column" | "column" | "link" | "total" | "rule";
   name?: string;
   said: string;
   rows?: number;
@@ -335,6 +331,38 @@ export const readCalendar = (id: string, q: RowsQuery, column: string, month = "
   call<CalendarPage>(`/${id}/calendar${extra({ ...q, group: undefined, sort: undefined },
     month ? { column, month } : { column })}`, undefined, "Reading the calendar");
 
+/** A piece offered for a dashboard made from a sheet (SH-6): a query card of the sheet, run once to say what it shows. */
+export interface DashboardPiece {
+  key: string;
+  title: string;
+  kind: "figure" | "bar" | "line" | "table";
+  size: "small" | "wide" | "full";
+  why: string;
+  column?: string;
+  currency?: string;
+  shown: Partial<QueryShown>;
+  preview?: { value?: number | string | null; values?: { x: unknown; v: number | null }[]; of?: number; points?: number;
+    first?: unknown; last?: unknown; most?: number | null; rows?: number; more?: boolean };
+  refused?: string[];
+}
+
+export interface DashboardProposal {
+  sheet: string;
+  title: string;
+  connection_id: string;
+  /** What every card reads: the sheet's table, narrowed to the view's rows when the view has a filter. */
+  sql: string;
+  where: string;
+  rows: number | null;
+  view: string;
+  pieces: DashboardPiece[];
+  refused?: string[];
+}
+
+export const proposeDashboard = (id: string, view = "") =>
+  call<DashboardProposal>(`/${id}/dashboard${view ? `?view=${encodeURIComponent(view)}` : ""}`, undefined,
+    "Reading what a dashboard of this sheet would show");
+
 export const saveRule = (id: string, rule: Partial<SheetRule>) =>
   call<Sheet>(`/${id}/rules`, json("PUT", { rule }), "Keeping the rule");
 
@@ -357,7 +385,7 @@ export const addColumn = (id: string, name: string, kind: Kind, description = ""
   call<Sheet>(`/${id}/columns`, json("POST", { name, kind, description }), "Adding the column");
 
 export const updateColumn = (id: string, column: string,
-  change: { name?: string; description?: string; kind?: Kind; hidden?: boolean }) =>
+  change: { name?: string; description?: string; kind?: Kind; hidden?: boolean; before?: string }) =>
   call<Sheet>(`/${id}/columns/${encodeURIComponent(column)}`, json("PATCH", change), "Changing the column");
 
 export const removeColumn = (id: string, column: string) =>
@@ -382,9 +410,6 @@ export const undo = (id: string, removing = false) => call<{ change_id: string; 
 
 export const redo = (id: string) => call<{ change_id: string; removed: boolean }>(`/${id}/redo`, { method: "POST" },
   "Redoing");
-
-export const readCell = (id: string, row: number, column: string) =>
-  call<CellStory>(`/${id}/cells/${row}/${encodeURIComponent(column)}`, undefined, "Reading the cell's history");
 
 export const readRecord = (id: string, row: number) =>
   call<SheetRecord>(`/${id}/records/${row}`, undefined, "Reading the row");

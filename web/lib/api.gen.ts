@@ -16762,6 +16762,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sheets/{sheet_id}/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Proposal
+         * @description The cards a dashboard made from this sheet — or from the view on screen — is offered, each run once on the sheet
+         *     as it stands. Nothing is kept here: the cards and the dashboard are kept through the dashboards' own doors.
+         */
+        get: operations["dashboard_proposal_sheets__sheet_id__dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/grounding": {
         parameters: {
             query?: never;
@@ -19123,6 +19144,8 @@ export interface components {
         };
         /** ColumnUpdate */
         ColumnUpdate: {
+            /** Before */
+            before?: string | null;
             /** Description */
             description?: string | null;
             /** Hidden */
@@ -54069,6 +54092,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_proposal_sheets__sheet_id__dashboard_get: {
+        parameters: {
+            query?: {
+                view?: string;
+            };
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

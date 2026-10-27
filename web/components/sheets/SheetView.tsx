@@ -10,18 +10,20 @@
  * `sheets.views` (SH-3) a view can be a board or a calendar, grouped with its totals, or kept to its maker — and rules mark
  * rows.
  */
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Chip, Dot, MUTED, NUM } from "@/components/clarity/kit";
 import { SheetBoard } from "@/components/sheets/SheetBoard";
 import { SheetCalendar } from "@/components/sheets/SheetCalendar";
 import { SheetChat } from "@/components/sheets/SheetChat";
 import { SheetCombine } from "@/components/sheets/SheetCombine";
-import { RULE_COLOR, SheetGrid, type EditResult } from "@/components/sheets/SheetGrid";
+import { SheetDashboard } from "@/components/sheets/SheetDashboard";
+import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type ColumnAction, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
 import { SharePop } from "@/components/sheets/SheetsHome";
 import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
+import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { useRowBlocks } from "@/components/sheets/useRowBlocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,10 +32,12 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import type { SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
   KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, opWords, opsFor, readChanges,
-  readRows, readSheet, redo, removeColumn, removeRule, renameSheet, saveRule, saveView, setCells, showValue, undo,
+  readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, showValue,
+  undo,
   updateColumn, type Condition, type Kind, type RowsQuery, type RuleTone, type Sheet, type SheetColumn, type SheetView as View,
   type ViewKind,
 } from "@/lib/sheets";
@@ -47,6 +51,34 @@ const BAR: CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", borderBottom: "1px solid var(--b1)",
   background: "var(--bg-1)", flexWrap: "nowrap", minWidth: 0,
 };
+
+/** The widths a person gave a sheet's columns, on this browser — a convenience of theirs, so it lives in the browser and
+ *  a page that cannot read it lays the columns out by their kinds. */
+const WIDTHS_KEY = (sheetId: string) => `aughor.sheets.widths.${sheetId}`;
+function readWidths(sheetId: string): Record<string, number> {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(WIDTHS_KEY(sheetId)) ?? "{}");
+    return v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([, n]) => typeof n === "number")) as Record<string, number> : {};
+  } catch {
+    return {};
+  }
+}
+function keepWidths(sheetId: string, widths: Record<string, number>) {
+  try { window.localStorage.setItem(WIDTHS_KEY(sheetId), JSON.stringify(widths)); } catch { /* the widths stay for this visit */ }
+}
+/** How many columns the person froze at the left of a sheet, on this browser — as the widths are. */
+const FROZEN_KEY = (sheetId: string) => `aughor.sheets.frozen.${sheetId}`;
+function readFrozen(sheetId: string): number {
+  try {
+    const n = Number(window.localStorage.getItem(FROZEN_KEY(sheetId)) ?? 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+function keepFrozen(sheetId: string, n: number) {
+  try { window.localStorage.setItem(FROZEN_KEY(sheetId), String(n)); } catch { /* frozen for this visit */ }
+}
 
 const KIND_OF_VIEW: Record<ViewKind | "grouped", IconName> = { grid: "table", grouped: "list", board: "column", calendar: "date" };
 
@@ -105,7 +137,9 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [query, setQuery] = useState<Query | null>(null);
-  const [panel, setPanel] = useState<Panel>(waves.chat ? "chat" : "");
+  // nothing opens beside the sheet until the person opens it — the chat too (the user, 2026-10-27: "Chat window shall
+  // remain collapsed by default")
+  const [panel, setPanel] = useState<Panel>("");
   const [pop, setPop] = useState<Pop>("");
   const [recordRow, setRecordRow] = useState<number | null>(null);
   // what was just done, and the one step back (or forward, after an undo) offered beside it
@@ -113,6 +147,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   const [history, setHistory] = useState<{ can_undo: string; can_redo: string } | null>(null);
   const [tick, setTick] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState(false);
   const [narrow, mainRef] = useNarrow();
 
   const readDefinition = useCallback(() => readSheet(sheetId).then(s => {
@@ -153,6 +188,54 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
     }
   }, [changed]);
 
+  /** Many cells as one change — a paste, a range cleared: one entry in the history, undone whole. */
+  const onEditMany = useCallback(async (cells: { row: number; column: string; value: unknown; version: number }[],
+    words: string): Promise<EditResult> => {
+    if (!sheet) return { ok: false };
+    try {
+      await setCells(sheet.id, cells);
+      setTick(t => t + 1);
+      setSaid({ text: words, tone: "ok", offer: "undo" });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [sheet]);
+
+  // the columns' widths, as the person dragged them — kept on this browser, per sheet
+  const [widths, setWidths] = useState<Record<string, number>>(() => readWidths(sheetId));
+  useEffect(() => { setWidths(readWidths(sheetId)); }, [sheetId]);
+  // the columns frozen at the left, and the column a filter is being added for from its header's menu
+  const [frozen, setFrozen] = useState(() => readFrozen(sheetId));
+  useEffect(() => { setFrozen(readFrozen(sheetId)); }, [sheetId]);
+  const freeze = useCallback((n: number) => { setFrozen(n); keepFrozen(sheetId, n); }, [sheetId]);
+  const [filterFor, setFilterFor] = useState("");
+
+  // Cmd or Ctrl+F: the sheet's own search — the browser's find sees only the rows on screen, never the rest of the view
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const find = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f" || e.shiftKey || e.altKey) return;
+      const box = rootRef.current?.querySelector<HTMLInputElement>('input[aria-label="Search this sheet"]');
+      if (!box) return;
+      e.preventDefault();
+      box.focus();
+      box.select();
+    };
+    window.addEventListener("keydown", find);
+    return () => window.removeEventListener("keydown", find);
+  }, []);
+
+  const onWidth = useCallback((column: string, px: number | null) => {
+    setWidths(old => {
+      const next = { ...old };
+      if (px === null) delete next[column];
+      else next[column] = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, px)));
+      keepWidths(sheetId, next);
+      return next;
+    });
+  }, [sheetId]);
+
   const onEdit = useCallback(async (row: number, c: SheetColumn, value: unknown, version: number): Promise<EditResult> => {
     if (!sheet) return { ok: false };
     try {
@@ -174,6 +257,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   const dirty = !sameAsView(sheet, query, waves.views);
   const view = sheet.views.find(v => v.id === query.view);
   const all = Number(sheet.rows ?? 0);
+  const counted = `${flat && rows.total !== null && rows.total !== all ? `${formatCount(rows.total)} of ` : ""}${formatCount(all)} rows · `
+    + `${sheet.columns.length} columns`;
   const openRow = (row: number) => { setRecordRow(row); setPanel("record"); };
   const colName = (id: string) => sheet.columns.find(c => c.id === id)?.name ?? "";
   const viewQuery: RowsQuery = { filter: query.filter, sort: query.sort, search: query.search };
@@ -184,9 +269,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       const idx = Object.fromEntries(p.columns.map((id, i) => [id, i + 1]));
       const lines = [shown.map(c => c.name).join("\t"),
         ...p.rows.map(r => shown.map(c => showValue(r[idx[c.id]], c)).join("\t"))];
-      void navigator.clipboard?.writeText(lines.join("\n"));
-      setSaid({ text: p.total > p.rows.length ? `Copied the first ${formatCount(p.rows.length)} of ${formatCount(p.total)} rows — the CSV holds them all`
-        : `Copied ${formatCount(p.rows.length)} rows`, tone: "ok" });
+      if (!navigator.clipboard) throw new Error("Not copied — this browser gives the page no clipboard");
+      return navigator.clipboard.writeText(lines.join("\n")).then(
+        () => setSaid({ text: p.total > p.rows.length ? `Copied the first ${formatCount(p.rows.length)} of ${formatCount(p.total)} rows — the CSV holds them all`
+          : `Copied ${formatCount(p.rows.length)} rows`, tone: "ok" }),
+        () => { throw new Error("Not copied — the browser refused the page its clipboard"); });
     }).catch(e => setSaid({ text: e instanceof Error ? e.message : String(e), tone: "bad" }));
   };
 
@@ -212,6 +299,69 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
     }
   };
 
+  /** The rows an answer beside the sheet is about (SH-4), on the grid as the person's own until they keep them — the
+   *  filter the answer counted, so the grid shows the count the answer gave. */
+  const showRows = (r: SheetRowsRef) => setQ({ filter: r.filter, sort: r.sort.length ? r.sort : query.sort, search: r.search,
+    kind: "grid", group: "" });
+
+  /** The same rows kept as a view named as the answer named them, and opened. */
+  const keepRows = async (r: SheetRowsRef) => {
+    let madeId = "";
+    const ok = await run(async () => {
+      const s = await saveView(sheet.id, { filter: r.filter, sort: r.sort, search: r.search, hidden: [], name: r.about,
+        shared: true });
+      madeId = s.views[s.views.length - 1]?.id ?? "";
+    }, `View ${r.about} kept`);
+    if (ok) {
+      const s = await readSheet(sheet.id);
+      setQuery(fromView(s, madeId || s.views[s.views.length - 1]?.id || ""));
+    }
+    return ok;
+  };
+
+  /** A click on a column's header: lowest first, then highest first, then the sheet's own order — the person's own
+   *  until they keep it in the view. */
+  const sortBy = (column: string, add = false) => {
+    if (add) {
+      // Shift+click: a further sort — added lowest first, then highest first, then taken out; the others kept
+      const i = query.sort.findIndex(s => s.column === column);
+      setQ({ sort: i < 0 ? [...query.sort, { column, desc: false }]
+        : !query.sort[i].desc ? query.sort.map((s, j) => (j === i ? { ...s, desc: true } : s))
+          : query.sort.filter((_, j) => j !== i) });
+      return;
+    }
+    const now = query.sort[0]?.column === column ? query.sort[0] : undefined;
+    setQ({ sort: !now ? [{ column, desc: false }] : !now.desc ? [{ column, desc: true }] : [] });
+  };
+
+  /** A column's menu, from its header: sort by it, or after the sorts there are; filter by it; hide it from what is
+   *  shown (the person's own until kept in the view); freeze the columns up to it; put its width back. */
+  const onColumnAction = (action: ColumnAction, column: string) => {
+    if (action === "asc" || action === "desc") setQ({ sort: [{ column, desc: action === "desc" }] });
+    else if (action === "then-asc" || action === "then-desc") {
+      setQ({ sort: [...query.sort.filter(s => s.column !== column), { column, desc: action === "then-desc" }] });
+    } else if (action === "filter") { setFilterFor(column); setPop("filter"); }
+    else if (action === "hide") setQ({ hidden: [...query.hidden, column] });
+    else if (action === "freeze") freeze(sheet.columns.filter(c => !hidden.has(c.id)).findIndex(c => c.id === column) + 1);
+    else if (action === "unfreeze") freeze(0);
+    else if (action === "width") onWidth(column, null);
+  };
+
+  /** A header dragged to a new place: the sheet's column order, for everyone — one change, undone whole. */
+  const moveColumn = (column: string, before: string) => void run(() => updateColumn(sheet.id, column, { before }),
+    `${colName(column)} moved ${before ? `before ${colName(before)}` : "to the end"}`);
+
+  /** Take a view off the sheet — undo puts it back — and read the sheet on its first view. */
+  const takeOff = async (v: View) => {
+    const ok = await run(() => removeView(sheet.id, v.id), `View ${v.name} taken off`);
+    if (ok) {
+      const s = await readSheet(sheet.id);
+      setQuery(fromView(s, s.views[0]?.id ?? ""));
+    }
+  };
+  // a sheet keeps one shared view; a view of someone else's own is never listed here
+  const canTakeOff = (v: View) => waves.grid && (!v.shared || sheet.views.filter(x => x.shared).length > 1);
+
   const updateThisView = () => view && run(() => saveView(sheet.id, { ...view, ...kept() }), `View ${view.name} changed`);
 
   const toolbar = (
@@ -223,69 +373,83 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
         })} />
       )}
       {query.kind === "grid" && (
-        <ToolButton narrow={narrow} on={hidden.size > 0} onClick={() => setPop(pop === "fields" ? "" : "fields")} icon="column"
+        <ToolButton expanded={pop === "fields"} narrow={narrow} on={hidden.size > 0} onClick={() => setPop(pop === "fields" ? "" : "fields")} icon="column"
           label={hidden.size ? `Fields · ${hidden.size} hidden` : "Fields"} />
       )}
-      <ToolButton narrow={narrow} on={query.filter.length > 0} onClick={() => setPop(pop === "filter" ? "" : "filter")}
+      <ToolButton expanded={pop === "filter"} narrow={narrow} on={query.filter.length > 0} onClick={() => setPop(pop === "filter" ? "" : "filter")}
         icon="filter" label={query.filter.length ? `Filter · ${query.filter.length}` : "Filter"} />
       {query.kind !== "calendar" && (
-        <ToolButton narrow={narrow} on={query.sort.length > 0} onClick={() => setPop(pop === "sort" ? "" : "sort")}
+        <ToolButton expanded={pop === "sort"} narrow={narrow} on={query.sort.length > 0} onClick={() => setPop(pop === "sort" ? "" : "sort")}
           icon="sliders" label={query.sort.length ? `Sort · ${query.sort.length}` : "Sort"} />
       )}
       {query.kind === "grid" && (
-        <ToolButton narrow={narrow} on={!!query.group} onClick={() => setPop(pop === "group" ? "" : "group")} icon="list"
+        <ToolButton expanded={pop === "group"} narrow={narrow} on={!!query.group} onClick={() => setPop(pop === "group" ? "" : "group")} icon="list"
           label={query.group ? `Group · ${colName(query.group)}` : "Group"} />
       )}
       {query.kind === "board" && (
-        <ToolButton narrow={narrow} on onClick={() => setPop(pop === "lanes" ? "" : "lanes")} icon="column"
+        <ToolButton expanded={pop === "lanes"} narrow={narrow} on onClick={() => setPop(pop === "lanes" ? "" : "lanes")} icon="column"
           label={`Lanes by ${colName(query.group)}`} />
       )}
       {query.kind === "calendar" && (
-        <ToolButton narrow={narrow} on onClick={() => setPop(pop === "by" ? "" : "by")} icon="date"
+        <ToolButton expanded={pop === "by"} narrow={narrow} on onClick={() => setPop(pop === "by" ? "" : "by")} icon="date"
           label={`By ${colName(query.date)}`} />
       )}
       {query.kind !== "grid" && (
-        <ToolButton narrow={narrow} on={query.card.length > 0} onClick={() => setPop(pop === "card" ? "" : "card")}
+        <ToolButton expanded={pop === "card"} narrow={narrow} on={query.card.length > 0} onClick={() => setPop(pop === "card" ? "" : "card")}
           icon="eye" label={query.card.length ? `Card shows ${query.card.length}` : "Card shows"} />
       )}
       {waves.views && (
-        <ToolButton narrow={narrow} on={sheet.rules.length > 0} onClick={() => setPop(pop === "rules" ? "" : "rules")}
+        <ToolButton expanded={pop === "rules"} narrow={narrow} on={sheet.rules.length > 0} onClick={() => setPop(pop === "rules" ? "" : "rules")}
           icon="bookmark" label={sheet.rules.length ? `Rules · ${sheet.rules.length}` : "Rules"} />
       )}
     </>
   );
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+    <div ref={rootRef} style={{ flex: 1, minHeight: 0, display: "flex" }}>
       <div ref={mainRef} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
-        {/* the sheet's bar */}
-        <div style={BAR}>
+        {/* the sheet's bar: where it is too narrow for one line, the source gives way first, then the buttons take a
+            line of their own, and only then the name and the count shorten — never drawn past the sheet, under what
+            opens beside it */}
+        <div style={{ ...BAR, flexWrap: "wrap", rowGap: 6 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, overflow: "hidden" }}>
           <Button variant="ghost" size="sm" onClick={onBack} style={{ ...MUTED, padding: "0 4px", flex: "0 0 auto" }}>Spreadsheets /</Button>
           {renaming !== null ? (
-            <Input value={renaming} autoFocus aria-label="The sheet's name" style={{ width: 240 }}
+            <Input value={renaming} autoFocus aria-label="The sheet's name" style={{ flex: "0 1 240px", minWidth: 80 }}
               onChange={e => setRenaming(e.target.value)}
               onKeyDown={e => {
                 if (e.key === "Enter") { const n = renaming; setRenaming(null); void run(() => renameSheet(sheet.id, n), "Renamed"); }
                 if (e.key === "Escape") setRenaming(null);
               }} onBlur={() => setRenaming(null)} />
           ) : (
-            <Button variant="ghost" size="sm" disabled={!waves.grid} title={waves.grid ? "Rename" : undefined}
-              onClick={() => setRenaming(sheet.name)} style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px", flex: "0 0 auto" }}>
+            <Button variant="ghost" size="sm" disabled={!waves.grid} title={waves.grid ? `Rename ${sheet.name}` : sheet.name}
+              onClick={() => setRenaming(sheet.name)} style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px",
+                flex: "0 1 auto", minWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
               {sheet.name}
             </Button>
           )}
-          {/* the plain chip's look, shrinking to "…" where the bar is narrow */}
-          <span className="aug-fs-xs" title={sheet.source.sql || sheet.came_from} style={{ minWidth: 40, flex: "0 1 auto",
-            maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "var(--bg-3)",
+          {/* the plain chip's look, shrinking to "…" where the bar is narrow: it counts as its narrowest when the bar
+              decides whether the buttons fit beside it (width 0), and grows into what is left, up to its own text */}
+          <span className="aug-fs-xs" title={sheet.source.sql || sheet.came_from} style={{ display: "flex", width: 0,
+            flex: "1 1 auto", minWidth: 40, maxWidth: "max-content", overflow: "hidden", background: "var(--bg-3)",
             color: "var(--t2)", border: "1px solid var(--b1)", borderRadius: "var(--r-pill)", padding: "1px 8px" }}>
-            {sheet.came_from}
+            <span style={{ maxWidth: 260, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {sheet.came_from}
+            </span>
           </span>
-          <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", flex: "0 0 auto" }}>
-            {flat && rows.total !== null && rows.total !== all ? `${formatCount(rows.total)} of ` : ""}{formatCount(all)} rows ·{" "}
-            {sheet.columns.length} columns
+          <span className="aug-fs-xs" title={counted} style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", flex: "0 4 auto", minWidth: 0,
+            overflow: "hidden", textOverflow: "ellipsis" }}>{counted}</span>
           </span>
-          <span style={{ marginLeft: "auto", display: "flex", gap: 6, position: "relative", flex: "0 0 auto" }}>
-            <Button variant="outline" size="sm" onClick={() => setPop(pop === "share" ? "" : "share")}>Share · Workspace</Button>
+          <span style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6,
+            position: "relative", flex: "0 1 auto" }}>
+            {waves.dashboard && (
+              <Button variant="outline" size="sm" onClick={() => setDashboard(true)}
+                title={view && (view.filter.length || view.search) ? `Cards that read the view ${view.name}` : "Cards that read the sheet"}>
+                <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" aria-expanded={pop === "share"} title={narrow ? "Share · the workspace" : undefined}
+              onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : "Share · Workspace"}</Button>
             {pop === "share" && <SharePop name={sheet.name} sheetId={sheet.id} views={sheet.views} me={sheet.me}
               onDone={() => setPop("")} />}
             {waves.combine && (
@@ -306,23 +470,33 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           {sheet.views.map(v => {
             const n = sheet.view_rows?.[v.id];
             const narrowed = v.filter.length > 0 || !!v.search;
+            const on = v.id === query.view;
             return (
-              <Button key={v.id} role="tab" aria-selected={v.id === query.view} variant="ghost" size="sm"
-                onClick={() => setQuery(fromView(sheet, v.id))}
-                title={v.shared ? undefined : "Your own view — only you see it"}
-                style={{ borderBottom: v.id === query.view ? "2px solid var(--blue3)" : "2px solid transparent", flex: "0 0 auto",
-                  borderRadius: 0, color: v.id === query.view ? "var(--t1)" : "var(--t2)", height: 34 }}>
-                <Icon name={KIND_OF_VIEW[v.kind === "grid" && v.group ? "grouped" : v.kind]} size={12} /> {v.name}
-                {!v.shared && <Icon name="user" size={11} />}
-                {narrowed && n !== null && n !== undefined && <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{formatCount(n)}</span>}
-                {v.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
-              </Button>
+              <span key={v.id} style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto",
+                borderBottom: on ? "2px solid var(--blue3)" : "2px solid transparent" }}>
+                <Button role="tab" aria-selected={on} variant="ghost" size="sm"
+                  onClick={() => setQuery(fromView(sheet, v.id))}
+                  title={v.shared ? undefined : "Your own view — only you see it"}
+                  style={{ borderRadius: 0, color: on ? "var(--t1)" : "var(--t2)", height: 32 }}>
+                  <Icon name={KIND_OF_VIEW[v.kind === "grid" && v.group ? "grouped" : v.kind]} size={12} /> {v.name}
+                  {!v.shared && <Icon name="user" size={11} />}
+                  {narrowed && n !== null && n !== undefined && <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{formatCount(n)}</span>}
+                  {v.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
+                </Button>
+                {on && canTakeOff(v) && (
+                  <Button variant="ghost" size="icon-xs" aria-label={`Take off the view ${v.name}`}
+                    title="Take off this view — Undo puts it back" onClick={() => void takeOff(v)} style={MUTED}>
+                    <Icon name="close" size={11} />
+                  </Button>
+                )}
+              </span>
             );
           })}
           </span>
           {waves.grid && (
             <span style={{ position: "relative", flex: "0 0 auto" }}>
-              <Button variant="ghost" size="sm" onClick={() => setPop(pop === "view" ? "" : "view")} style={{ ...MUTED, height: 34 }}>
+              <Button variant="ghost" size="sm" aria-expanded={pop === "view"} onClick={() => setPop(pop === "view" ? "" : "view")}
+                style={{ ...MUTED, height: 34 }}>
                 <Icon name="plus" size={12} /> View
               </Button>
               {pop === "view" && (
@@ -353,12 +527,18 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           </span>
         </div>
 
-        {/* the toolbar */}
-        <div style={{ ...BAR, gap: 4, background: "var(--bg-0)", position: "relative" }}>
+        {/* the toolbar: the search gives way first, then undo, history and copy take a line of their own */}
+        <div style={{ ...BAR, gap: 4, flexWrap: "wrap", rowGap: 4, background: "var(--bg-0)", position: "relative" }}>
           {toolbar}
-          <div style={{ flex: "0 1 220px", minWidth: 110, marginLeft: 8 }}>
+          <div style={{ flex: "1 1 110px", maxWidth: 220, minWidth: 110, marginLeft: 8 }}>
             <Input value={query.search} placeholder="Search this sheet" aria-label="Search this sheet"
-              onChange={e => setQ({ search: e.target.value })} />
+              title="Cmd or Ctrl+F · Escape goes back to the grid"
+              onChange={e => setQ({ search: e.target.value })}
+              onKeyDown={e => {
+                if (e.key !== "Escape") return;
+                (e.target as HTMLInputElement).blur();
+                rootRef.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();
+              }} />
           </div>
           <span style={{ marginLeft: "auto", display: "flex", gap: 2, flex: "0 0 auto" }}>
             {waves.grid && (
@@ -388,8 +568,9 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
               onClose={() => setPop("")} run={run} />
           )}
           {pop === "filter" && (
-            <FilterPop sheet={sheet} conditions={query.filter} onApply={f => { setQ({ filter: f }); setPop(""); }}
-              onClose={() => setPop("")} />
+            <FilterPop sheet={sheet} conditions={query.filter} adding={filterFor}
+              onApply={f => { setQ({ filter: f }); setPop(""); setFilterFor(""); }}
+              onClose={() => { setPop(""); setFilterFor(""); }} />
           )}
           {pop === "sort" && (
             <SortPop sheet={sheet} sort={query.sort} onApply={s => { setQ({ sort: s }); setPop(""); }} onClose={() => setPop("")} />
@@ -446,16 +627,24 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           <SheetCalendar sheet={sheet} query={viewQuery} column={query.date} card={query.card} tick={tick} onOpenRow={openRow} />
         ) : query.group ? (
           <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={waves.grid} tick={tick}
-            onEdit={onEdit} onOpenRow={openRow} />
+            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} widths={widths} onWidth={onWidth} frozen={frozen}
+            onColumnAction={onColumnAction} onMoveColumn={waves.grid ? moveColumn : undefined} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
-            <SheetGrid key={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
-              onEdit={onEdit} onOpenRow={openRow}
+            <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
+              onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
+              widths={widths} onWidth={onWidth} frozen={frozen} onColumnAction={onColumnAction}
+              onMoveColumn={waves.grid ? moveColumn : undefined}
+              onUndo={waves.grid ? () => history?.can_undo ? void run(() => undo(sheet.id), "Undone", "redo")
+                : setSaid({ text: "Nothing to undo", tone: "ok" }) : undefined}
+              onRedo={waves.grid ? () => history?.can_redo ? void run(() => redo(sheet.id), "Redone")
+                : setSaid({ text: "Nothing to redo", tone: "ok" }) : undefined}
               footer={`${view ? view.name : "the sheet"}${query.sort.length
                 ? ` · sorted by ${query.sort.map(s => colName(s.column)).join(", ")}` : " · in the sheet's order"}`} />
           )}
       </div>
 
+      {dashboard && <SheetDashboard sheet={sheet} viewId={query.view} onClose={() => setDashboard(false)} />}
       {panel === "chat" && waves.chat && (
         <SheetChat sheet={sheet} viewId={query.view} viewRows={rows.total} onClose={() => setPanel("")}
           onApplied={() => void changed("Applied")} onOpenSheet={onOpen} onAsk={onAsk}
@@ -463,7 +652,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
             setSheet(s);
             const v = [...s.views].reverse().find(x => x.name === name);
             if (v) setQuery(fromView(s, v.id));
-          }); }} />
+          }); }} onShowRows={showRows} onKeepRows={keepRows} />
       )}
       {panel === "combine" && waves.combine && (
         <SheetCombine sheet={sheet} onClose={() => setPanel("")} onChanged={words => void changed(words)} />
@@ -481,11 +670,13 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
 }
 
 /** A toolbar button: its icon and its name — the name only on hover where the sheet is narrow. */
-function ToolButton({ on = false, onClick, icon, label, narrow }: {
+function ToolButton({ on = false, onClick, icon, label, narrow, expanded }: {
   on?: boolean; onClick: () => void; icon: IconName; label: string; narrow: boolean;
+  /** Whether the box this button opens is open — said, so a click on it toggles the box rather than closing it twice. */
+  expanded?: boolean;
 }) {
   return (
-    <Button variant={on ? "secondary" : "ghost"} size={narrow ? "icon-sm" : "sm"} onClick={onClick}
+    <Button variant={on ? "secondary" : "ghost"} size={narrow ? "icon-sm" : "sm"} onClick={onClick} aria-expanded={expanded}
       aria-label={narrow ? label : undefined} title={narrow ? label : undefined} style={{ flex: "0 0 auto" }}>
       <Icon name={icon} />{narrow ? null : ` ${label}`}
     </Button>
@@ -495,13 +686,10 @@ function ToolButton({ on = false, onClick, icon, label, narrow }: {
 export function Popover({ children, onClose, left = 0, width = 360 }: {
   children: ReactNode; onClose: () => void; left?: number; width?: number;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onClose);
   return (
-    <div role="dialog" className="aug-fs-sm" style={{ position: "absolute", top: "100%", left, zIndex: 30, width,
+    <div ref={ref} role="dialog" className="aug-fs-sm" style={{ position: "absolute", top: "100%", left, zIndex: 30, width,
       background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
       padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxShadow: "var(--shadow-md)" }}>
       {children}
@@ -765,14 +953,19 @@ function ConditionRows({ sheet, rows, setRows }: {
   );
 }
 
-function FilterPop({ sheet, conditions, onApply, onClose }: {
-  sheet: Sheet; conditions: Condition[]; onApply: (f: Condition[]) => void; onClose: () => void;
+function FilterPop({ sheet, conditions, adding = "", onApply, onClose }: {
+  sheet: Sheet; conditions: Condition[];
+  /** A column whose header's menu asked to filter by it: a condition on it, ready to fill. */
+  adding?: string;
+  onApply: (f: Condition[]) => void; onClose: () => void;
 }) {
   // a rule's marks are kept as they are; the conditions on columns are written here
   const marks = conditions.filter(c => c.op === "marked" || c.op === "not_marked");
   const [rows, setRows] = useState<Condition[]>(() => {
     const own = conditions.filter(c => c.op !== "marked" && c.op !== "not_marked");
-    return own.length ? own : [{ column: sheet.columns[0]?.id ?? "", op: "is", value: "" }];
+    const col = sheet.columns.find(c => c.id === adding);
+    const added = col ? [{ column: col.id, op: opsFor(col.kind)[0], value: "" }] : [];
+    return own.length || added.length ? [...own, ...added] : [{ column: sheet.columns[0]?.id ?? "", op: "is", value: "" }];
   });
   return (
     <Popover onClose={onClose} left={150} width={560}>

@@ -231,6 +231,16 @@ def _changed(sheet, on_page: set[int]) -> dict[str, dict[str, dict]]:
     return changed
 
 
+def _versions(sheet, on_page: set[int]) -> dict[str, dict[str, int]]:
+    """The version each cell on a page stands at — set, or put back by an undo — the one a change to it must name. A
+    cell an undo put back holds no edit (it is not in ``changed``) but keeps its version."""
+    from aughor.actions import overlay
+    out: dict[str, dict[str, int]] = {}
+    for (row, column), version in overlay.sheet_versions(sheet.id, on_page).items():
+        out.setdefault(str(row), {})[column] = version
+    return out
+
+
 @router.get("/{sheet_id}/rows")
 def rows(sheet_id: str, request: Request, view: str = "", filter: str = "", sort: str = "", search: str = "",
          group: str = "", offset: int = 0, limit: int = 200) -> dict:
@@ -250,6 +260,7 @@ def rows(sheet_id: str, request: Request, view: str = "", filter: str = "", sort
         raise HTTPException(status_code=422, detail=str(exc)) from None
     on_page = {int(r[0]) for r in page["rows"]}
     page["changed"] = _changed(sheet, on_page)
+    page["versions"] = _versions(sheet, on_page)
     page["columns"] = [c.id for c in sheet.columns]
     page["source_rows"] = sheet.source.rows
     if sheets.on(sheets.VIEWS):
@@ -344,6 +355,8 @@ class ColumnUpdate(BaseModel):
     description: Optional[str] = None
     kind: Optional[str] = None
     hidden: Optional[bool] = None
+    #: move the column in front of this one ("" to the end)
+    before: Optional[str] = None
 
 
 @router.patch("/{sheet_id}/columns/{column_id}")
@@ -352,7 +365,8 @@ def update_column(sheet_id: str, column_id: str, req: ColumnUpdate, request: Req
     from aughor.sheets import service
     try:
         return _definition(service.update_column(_sheet(sheet_id), column_id, by=_who(request), name=req.name,
-                                                 description=req.description, kind=req.kind, hidden=req.hidden),
+                                                 description=req.description, kind=req.kind, hidden=req.hidden,
+                                                 before=req.before),
                            _who(request))
     except service.Refused as exc:
         raise _refused(exc) from None
@@ -509,6 +523,7 @@ def groups(sheet_id: str, request: Request, group: str, view: str = "", filter: 
         raise HTTPException(status_code=422, detail=str(exc)) from None
     on_page = {int(r[0]) for g in out["groups"] for r in g["shown"]}
     out["changed"] = _changed(sheet, on_page)
+    out["versions"] = _versions(sheet, on_page)
     if sheets.on(sheets.VIEWS):
         out["marks"] = _views.marks(sheet, on_page)
     return out
@@ -531,6 +546,7 @@ def board(sheet_id: str, request: Request, column: str, view: str = "", filter: 
         raise HTTPException(status_code=422, detail=str(exc)) from None
     on_board = {int(r[0]) for lane in out["lanes"] for r in lane["cards"]}
     out["changed"] = _changed(sheet, on_board)
+    out["versions"] = _versions(sheet, on_board)
     out["marks"] = _views.marks(sheet, on_board)
     return out
 
@@ -574,6 +590,25 @@ def remove_rule(sheet_id: str, rule_id: str, request: Request) -> dict:
         return _definition(service.remove_rule(_sheet(sheet_id), rule_id, by=_who(request)), _who(request))
     except service.Refused as exc:
         raise _refused(exc) from None
+
+
+# ── SH-6 — a sheet everywhere else: first, a dashboard made from it ────────────────────────────────────────────────
+
+@router.get("/{sheet_id}/dashboard")
+def dashboard_proposal(sheet_id: str, request: Request, view: str = "") -> dict:
+    """The cards a dashboard made from this sheet — or from the view on screen — is offered, each run once on the sheet
+    as it stands. Nothing is kept here: the cards and the dashboard are kept through the dashboards' own doors."""
+    _on("sheets.everywhere")
+    from aughor.sheets import dashboard, projection
+    why = dashboard.unavailable()
+    if why:
+        raise HTTPException(status_code=404, detail=why)
+    sheet = _sheet(sheet_id)
+    chosen = next((v for v in sheet.views_for(_who(request)) if v.id == view), None) if view else None
+    try:
+        return dashboard.propose(sheet, chosen)
+    except projection.FilterRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 # ── SH-7 — combining ────────────────────────────────────────────────────────────────────────────────────────────────

@@ -882,3 +882,24 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     the Olist orders; a new view from the grid was refused (no id) and is fixed. SH-5, SH-6, SH-8 not built.
     **LIVE 2026-10-27**: live checkout at `3f5e117a`, `sheets.views` on (57 flags); on the live Olist orders every group,
     lane and day count equals the grid's (1,729 open orders, 2,001 due in September 2018) — no view or rule kept yet.
+    ✅ **SH-6's first piece, chat rules, board keys, the cell bar BUILT 2026-10-27** (branch `claude/sheets-next`): *Make a
+    dashboard* from a sheet or a view (`sheets.everywhere`, off; query cards that read the sheet live), rules proposed
+    by the chat, cards moved by ← → and *Move to*, and a cell bar in place of the cell pop-up (the user: *"There has to
+    be a better way"*). A cell undone since SH-2 could not be changed again (the page sent version 0) — fixed. **LIVE
+    2026-10-27** at `277b729f`, `sheets.everywhere` on (58 flags); no dashboard made on the live install yet.
+    The grid's lines, border-only selection with Shift ranges, sort from the header and views taken off — **LIVE
+    2026-10-27** at `b7b12c0a`, `sheets.chat` on (59 flags); no question asked on the live install yet. The head's
+    buttons no longer run under the open chat — **LIVE 2026-10-27** at `ec73d4c1`.
+    The chat beside a sheet: a which-rows question gets the count of its whole and a card that opens the rows in the
+    grid (`show_rows`), and the numbers check matches labels as words — **LIVE 2026-10-27** at `1a2af818`, three
+    questions proven. Both of what stayed open fixed — **LIVE 2026-10-27** at `580e31f4` (one-step answers; the whole
+    header sorts). Open: a breakdown's chart can be titled "Daily …" when nothing is daily.
+    The answer beside a sheet is lean, no template under it — **LIVE 2026-10-27** at `8bdb1304`.
+    A sort keeps the rows on screen until the sorted ones land (no flash); the headers show the sort symbol the user
+    drew, reversed for lowest first — **LIVE 2026-10-27** at `00d5d17e`.
+    The chat beside a sheet stays closed until opened — **LIVE 2026-10-27** at `c4df75b9`.
+    A sort keeps the scroll across — **LIVE 2026-10-27** at `ad1718f2`. The first-minute basics of a spreadsheet
+    (keys, Enter/Tab after an edit, Delete, undo keys, paste, drag, Cmd+A, pinned row numbers, column widths) — BUILT
+    2026-10-27 at `9a1d4384` — **LIVE 2026-10-27** at `2a934270`. The next tier — header menu, second sort, frozen
+    columns, headers dragged to reorder (shared, undoable), Cmd+F, edge-scroll — **LIVE 2026-10-27** at `773d5041`.
+    Undo steps back through several definition changes in a row (and redo forward) — **LIVE 2026-10-27** at `929c7ba8`.

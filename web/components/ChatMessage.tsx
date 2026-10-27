@@ -1071,7 +1071,7 @@ function TurnActions({
 }
 
 function NarrativeBrief({
-  turn, connectionId, onShowSource, onFollowUp, onRunFresh, onDrill,
+  turn, connectionId, onShowSource, onFollowUp, onRunFresh, onDrill, lean = false,
 }: {
   turn: ChatTurn;
   connectionId?: string;
@@ -1080,8 +1080,12 @@ function NarrativeBrief({
   /** CA-5 — re-ask this turn's question as a deep analysis. */
   onDrill?: () => void;
   onRunFresh?: (q: string) => void;
+  /** The answer and nothing of the template under it (see ChatMessageProps.lean). */
+  lean?: boolean;
 }) {
   const streaming = turn.status === "loading";
+  // a withheld answer says "the result below is what the query returned" — so its result is shown, lean or not
+  const showFigure = !lean || turn.guardReceipts.some(g => g.action === "withheld the answer");
   const proseText = turn.narrative?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
   const anomalies = (turn.narrative?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
@@ -1146,11 +1150,13 @@ function NarrativeBrief({
         </p>
       )}
 
-      <ResultFigure turn={turn} onShowSource={onShowSource} streaming={streaming} connectionId={connectionId} />
+      {showFigure && (
+        <ResultFigure turn={turn} onShowSource={onShowSource} streaming={streaming} connectionId={connectionId} />
+      )}
 
       {/* Explain the data — on-demand interpretation, so a direct lookup leads with
           the chart + numbers instead of unrequested narration. */}
-      {!streaming && hasExplanation && !explained && (
+      {!streaming && !lean && hasExplanation && !explained && (
         <Button
           variant="ghost"
           size="xs"
@@ -1161,7 +1167,7 @@ function NarrativeBrief({
           Explain the data
         </Button>
       )}
-      {!streaming && explained && (
+      {!streaming && !lean && explained && (
         <>
           {/* One BriefProse for both phases (streaming partial → final narrative) so the
               text swap never remounts; safePartial closes a dangling ** mid-stream. While
@@ -1203,20 +1209,20 @@ function NarrativeBrief({
         </BriefSection>
       )}
 
-      {!streaming && (
+      {!streaming && !lean && (
         <TurnActions turn={turn} connectionId={connectionId} onDrill={onDrill} />
       )}
 
       {/* Hover toolbar (CK-grade): message actions stay invisible until the turn is
           hovered, and never appear while the answer is still streaming. Copy the whole
           answer (headline + narrative) with an in-place checkmark, no toast. */}
-      {!streaming && turn.headline && (
+      {!streaming && !lean && turn.headline && (
         <div className="opacity-0 group-hover:opacity-100 transition-opacity -ml-1.5">
           <CopyAnswerButton text={[turn.headline, turn.narrative?.narrative?.trim()].filter(Boolean).join("\n\n")} />
         </div>
       )}
 
-      {!streaming && <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />}
+      {!streaming && !lean && <InsightDetails turn={turn} connectionId={connectionId} onShowSource={onShowSource} />}
     </Brief>
   );
 }
@@ -1491,6 +1497,11 @@ export interface ChatMessageProps {
   onRetry?: (question: string) => void;
   /** CA-1 — replace this turn's question and re-send from here (edit-and-resend). */
   onEdit?: (newQuestion: string) => void;
+  /** A chat beside one object — a sheet (Arc SH) — where the object on screen is the table: the answer and the steps
+   *  it took, and nothing of the general chat's template under it — no result figure (it repeated the answer's own
+   *  numbers under raw column names), no actions, no details, no export. Shown anyway: the result an answer the
+   *  numbers check withheld points at. */
+  lean?: boolean;
 }
 
 export function ChatMessage({
@@ -1506,6 +1517,7 @@ export function ChatMessage({
   onChooseClarify,
   onRetry,
   onEdit,
+  lean = false,
 }: ChatMessageProps) {
   const [collapsed, setCollapsed] = useState(false);
   // CA-1 edit-and-resend: the question bubble becomes an editor; sending replaces
@@ -1755,6 +1767,7 @@ export function ChatMessage({
           onFollowUp={onFollowUp}
           onRunFresh={onRunFresh}
           onDrill={onDeeper ? () => onDeeper(turn.question, null) : undefined}
+          lean={lean}
         />
       )}
 
@@ -1811,7 +1824,7 @@ export function ChatMessage({
       )}
 
       {/* ── Export this response as PDF / PowerPoint (Insight or Deep Analysis) ── */}
-      {isDone && (turn.investigationId || turn.receiptId) && (
+      {isDone && !lean && (turn.investigationId || turn.receiptId) && (
         <div className="flex flex-wrap justify-end items-center gap-2 mt-3">
           {turn.investigationId && connectionId && (
             <RunDoors invId={turn.investigationId} connectionId={connectionId} question={turn.question} />

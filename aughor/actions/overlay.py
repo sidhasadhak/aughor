@@ -19,7 +19,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from pydantic import BaseModel
 
@@ -489,6 +489,28 @@ def sheet_values(sheet_id: str, org_id: str = "") -> list[OverlayEdit]:
             rows = c.execute('SELECT * FROM overlay_edits WHERE connection_id = ? AND "table" = ? AND org_id = ? '
                              'AND kind IN (?, ?)', (SHEETS_CONNECTION, sheet_id, org_id, *SHEET_KINDS)).fetchall()
             return [_row_to_edit(r) for r in rows]
+        finally:
+            c.close()
+
+
+def sheet_versions(sheet_id: str, rows: Iterable[int], org_id: str = "") -> dict[tuple[int, str], int]:
+    """The version each cell of these rows stands at — the one a change to it must name. A cell whose edit was
+    withdrawn (an undo put the source's value back) holds no current edit but keeps its version, so a change made to it
+    at version 0 would be refused as stale; this is where a page reads the version it must send."""
+    wanted = sorted({int(r) for r in rows})
+    if not wanted:
+        return {}
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            got = c.execute('SELECT row_key, column, MAX(version) AS v FROM overlay_edit_history WHERE connection_id = ? '
+                            'AND "table" = ? AND org_id = ? AND column != \'\' AND row_key IN '
+                            f'({", ".join("?" for _ in wanted)}) GROUP BY row_key, column',
+                            (SHEETS_CONNECTION, sheet_id, org_id, *[str(r) for r in wanted])).fetchall()
+            return {(int(r["row_key"]), str(r["column"])): int(r["v"] or 0) for r in got}
         finally:
             c.close()
 

@@ -187,3 +187,63 @@ def test_off_the_chat_explains_nothing_and_answers_no_route(env):
         client = TestClient(app)
         assert client.post(f"/sheets/{sheet.id}/propose", json={"words": "x"}).status_code == 404
         assert client.get(f"/sheets/{sheet.id}/grounding").status_code == 404
+
+
+# ── a rule, proposed (SH-3's rules in SH-4's chat) ───────────────────────────────────────────────────────────────────
+
+def test_a_proposed_rule_is_counted_as_the_grid_counts_and_applied_as_the_assistants(env, faux):
+    from aughor.llm.faux import set_responses
+    from aughor.sheets import chat, model, projection, views
+    from aughor.sheets.model import Condition
+    sheet = _orders(env)
+    set_responses([_call(op="options"),
+                   _call(op="propose", changes=[{"type": "rule", "name": "Late and still open", "tone": "red",
+                                                 "conditions": OPEN}]),
+                   "Proposed."])
+    with flag_overrides({"sheets.views": True}):
+        out = chat.propose(sheet, "mark the ones that need following up", by="user:ana", provider=faux)
+        assert out["staged"], out
+        rule = out["proposal"]["changes"][0]
+        grid = projection.read_rows(sheet, conditions=[Condition(column=sheet.column(c["column"]).id, op=c["op"],
+                                                                 value=c["value"]) for c in OPEN])["total"]
+        assert rule["rows"] == grid == 2 and rule["said"] == "Rule Late and still open — marks 2 rows"
+        chat.apply(out["proposal"]["id"], None, by="user:ana")
+        now = model.get(sheet.id)
+        assert [(r.name, r.tone, r.made_by) for r in now.rules] == [("Late and still open", "red", "the assistant")]
+        assert now.change.origin == f"proposal:{out['proposal']['id']}"
+        assert views.rule_rows(now) == {now.rules[0].id: 2}
+
+
+def test_a_rule_is_not_proposed_while_rules_are_off(env, faux):
+    from aughor.sheets import chat, projection
+    sheet = _orders(env)
+    cur = projection.cursor()
+    try:
+        with flag_overrides({"sheets.views": False}), pytest.raises(chat.ChangeRefused, match="rules are off"):
+            chat.check_change(sheet, {"type": "rule", "name": "Late", "conditions": OPEN}, cur)
+        with flag_overrides({"sheets.views": True}), pytest.raises(chat.ChangeRefused, match="not a mark's colour"):
+            chat.check_change(sheet, {"type": "rule", "name": "Late", "tone": "pink", "conditions": OPEN}, cur)
+    finally:
+        cur.close()
+
+
+def test_a_dropped_file_can_come_with_a_rule_for_the_rows_that_need_attention(env, faux):
+    from aughor.llm.faux import set_responses
+    from aughor.sheets import chat, files, model, views
+    path = env / "olist_order_reviews.csv"
+    path.write_text("review_id,order_id,review_score,review_comment_message\nr1,o1,1,late\nr2,o2,5,\n"
+                    "r3,o3,2,broken\nr4,o4,4,\n")
+    token = files.stage(path, path.name)
+    set_responses([_call(tool="propose_sheet", op="options"),
+                   _call(tool="propose_sheet", op="propose", name="Olist reviews", changes=[
+                       {"type": "rule", "name": "Low score", "conditions": [
+                           {"column": "review_score", "op": "lte", "value": 2}]}]),
+                   "Proposed."])
+    with flag_overrides({"sheets.views": True}):
+        p = chat.propose_new_sheet(token, "a sheet to follow up complaints", by="user:ana", provider=faux)["proposal"]
+        assert p["changes"][0]["rows"] == 2
+        made = model.get(chat.apply(p["id"], None, by="user:ana")["sheet"])
+        rule = made.rules[0]
+        # the condition names the made sheet's own column, not the draft's
+        assert rule.conditions[0].column == made.column("review_score").id
+        assert views.rule_rows(made) == {rule.id: 2}

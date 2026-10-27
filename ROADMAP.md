@@ -12466,6 +12466,142 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   holding 2,001 — each count equal to the grid's own, 0 differing; the grid grouped by status shows each group's totals
   in R$ on the user's :3000. No view or rule has been kept on the live sheets yet.
 
+**SH-6's first piece, rules in the chat, the board by the keyboard, and the cell bar — built 2026-10-27** (branch
+`claude/sheets-next`; the user, on the three things SH-3 left: *"Lets keep building"*, then of the grid's cell pop-up:
+*"I don't want a pop-up to appear every time I click on a cell.. There has to be a better way"*).
+- **Make a dashboard from a sheet** (`aughor/sheets/dashboard.py`, flag `sheets.everywhere`, off, queued with the receipt
+  below; offered only where `dashboard.composed` and `dashboard.queries` are on). The platform offers what the sheet holds
+  — its rows counted, each money column summed, the rows per value of its choice columns, the rows by month of its first
+  date, a table — each a query card of the person's own on the Sheets connection, run once before it is offered; with a
+  filtered view on screen, every card reads the view's rows. The ticked cards and the dashboard are kept through the
+  dashboards' own doors, and the Dashboards tab opens on it. A card runs its query each time it is read, so it never
+  settles: on the scratch API a row added to the sheet moved the Orders card from 99,441 to 99,442 on its next read.
+- **Rules in the chat's proposals** (SH-4 with SH-3): a rule is a change the chat may propose — on a sheet or a dropped
+  file ("a rule for the rows that need attention", as the arc says) — counted as the grid counts it and applied as the
+  assistant's; refused while rules are off.
+- **A board by the keyboard:** on a card, ← and → move it to the lane beside and Enter opens it; its *Move to* list names
+  every other lane; the focus follows the card to its new lane.
+- **The cell bar replaces the cell pop-up.** A click only selects; one line above the grid, where a spreadsheet keeps
+  its formula bar, says the selected cell's value and where it came from — the file's row, or who set it and when — with
+  *Change* and *Open row*; it is read from what the grid holds, never a request per click. The arrows move, Enter or
+  typing edits, Escape leaves. Nothing opens over the rows, so nothing outlives the next click.
+- **A defect found on the way, since SH-2:** a cell set and then undone could not be changed again from the grid or the
+  board — the page told only the versions of cells holding an edit, so it sent 0 where the cell stood at 2, and the
+  change was refused as stale. Each page now carries every cell's version (`overlay.sheet_versions`).
+- **Proven.** 8 server tests and 10 web tests; the full unit suite 15,584 passed, its one failure (the SQL door census:
+  the proposal counted its rows through the door, undeclared) fixed by counting on the sheet itself, as the grid does;
+  11 guards mutation-tested, 10 killed, the eleventh equivalent (a dropped
+  file's draft and the sheet made from it number their columns alike). On the scratch API over the Olist orders: the five
+  cards offered in 0.3 s, *Paid* R$16,008,872.12 as the grid sums it, the *Open orders* view's count card 1,728 as the
+  board counts it; the dashboard made and opened; a card moved by the keyboard and undone.
+- **LIVE 2026-10-27** (the user: *"Commit locally, then put it on the live install and turn on sheets.everywhere"*): the
+  restart waited for a scheduled 09:00 UTC analysis on another connection to finish (09:11); the live checkout moved to
+  `277b729f`, the API restarted with its twelve settings — the fingerprint the same before and after — and
+  `sheets.everywhere` turned on (58 flags). On the live Olist orders, read only: the five cards offered in 0.26 s, *Paid*
+  R$16,008,872.12 as the grid sums it; on the user's :3000 a click selects with the cell bar saying the cell's origin,
+  and *Make a dashboard* opens on the sheet. No dashboard has been made on the live install yet.
+- **The grid as a spreadsheet reads, 2026-10-27** (`b7b12c0a`, from the user's five points on the live grid): lines
+  between the rows (each cell draws its own — a placed row painted over the line of the row before it), one selected cell
+  drawn by its border alone and a Shift range drawn filled, counted and — where every column holds numbers — summed by
+  the cell bar, Cmd or Ctrl+C copying it (and saying *Not copied* when the browser refuses, the toolbar's copy too), a
+  click on a column's name sorting ascending → descending → the sheet's order, and an × on the open view's tab taking
+  it off with Undo (never the last shared view). Proven on the scratch API: four Paid cells summed 431.49 as their
+  values add; the sort cycle 0.00 → 13,664.08 → the sheet's order; *Delivery calendar* taken off and put back as the
+  same calendar. **LIVE 2026-10-27** (the user: *"Put b7b12c0a on the live install and turn on sheets.chat"*): the
+  round is web only, so the live checkout moved with no restart; `sheets.chat` on (59 flags), its model the install's
+  coder (`claude-sonnet-5-5`, tools native). The chat panel opens beside the live Olist orders; no question has been
+  asked on the live install yet. Seen there and fixed in `ec73d4c1`: with the chat open the sheet's head buttons ran
+  under the panel (82 px past the sheet at 1,280 px wide, 338 at 1,024; the toolbar 52 at 1,024) — the head and the
+  toolbar now wrap, the source giving way first, then the buttons taking a line of their own. **LIVE 2026-10-27** at
+  `ec73d4c1` (the user: *"Put ec73d4c1 on the live install"*), no restart: at 1,280 px on the live Olist orders the
+  buttons end at 844, the sheet at 860.
+- **The chat beside a sheet answers as the sheet would, 2026-10-27** (`120cffd3`, `1a2af818`; the user, on the live
+  answer to *"Which records do not have order delivered carrier date?"*: *"it has no clue how it is supposed to
+  answer"*). Measured first (trace d77fd873): the question went to the general quick chat, which ran one breakdown by
+  status, never counted the 1,783 rows asked about (*"a small share"*), dropped one of its own seven groups — the two
+  delivered orders with no carrier date, the one that mattered — and drew a chart. Built: `show_rows`
+  (`aughor/sheets/answer.py`), offered only to a question asked beside a sheet, bound to it by closure — the rows as the
+  grid's filter, checked and counted by the grid's own reading, under the answer as a card (*Show in the grid*, the
+  person's own until kept; *Keep as a view*); the sheet's answer rules handed ahead of its columns. Live, the first
+  run showed a defect in the shared numbers check (trace 062247c1): the model wrote the right answer and the check
+  withheld it as `delivered=1783`, its label check matching the status *delivered* inside
+  `order_delivered_carrier_date` — labels are now matched as words. **LIVE 2026-10-27** at `1a2af818` (API restarted
+  twice with its twelve settings, the fingerprint the same each time), three questions on the live Olist orders, 18
+  model calls: *which records* → *1,783 of 99,441 orders (1.8%)* and the card, which opened exactly those rows in the
+  grid; *how many canceled* → *625 of 99,441*, the grid's count; *by status* → all seven groups, *delivered: 2* named
+  as the odd one. Still wrong, and said: the which-rows answer still runs a breakdown of its own after the card, and
+  writes *"The earlier answers in this session…"* — the platform's prior answers to the same question, from other
+  sessions, are handed to the model and pull it back to their shape; and the numbers check cannot cite the sheet's own
+  count (99,441, in what the chat is handed) or an earlier turn's card, so it rewrote the breakdown's correct lead
+  *"1,783 of the 99,441 orders…"* away.
+  Both fixed in `5548a058` — a sheet question keeps its own conversation and is no longer handed other
+  conversations' answers; the sheet's own counts are citable; a breakdown of some rows also calls `show_rows` — and the
+  whole column header now sorts (`580e31f4`; the user: *"I still cant sort the sheet"* — the button was as wide as the
+  name). **LIVE 2026-10-27** at `580e31f4`, the three questions asked again, 11 model calls: *which records* → one step,
+  `show_rows` alone, *"1,783 of 99,441 orders (1.8%) have no order_delivered_carrier_date. You can open them in the grid
+  from the card below, or keep them as a view."* — no breakdown, no chart, no guard; *how many canceled* → *625 of
+  99,441 (about 0.63%)*; *by status* → opens on *1,783 of 99,441*, all seven groups, the card under it, no guard. A click
+  past order_status's name sorts it. Seen, not fixed: the breakdown's chart is titled *"Daily Orders Without Carrier
+  Date…"*, though nothing is daily.
+  The answer beside a sheet is lean (`8bdb1304`; the user: *"Do we need the N, Late N, Late Pct and everything below
+  that? … it need not be everywhere"*): `ChatMessage` takes `lean`, set by the sheet's chat only — the answer and its
+  steps, no result figure (the last query's one row as tiles under raw column names), no actions, details or export;
+  a withheld answer still shows its result. **LIVE 2026-10-27** at `8bdb1304`, web only, no restart; the served
+  `ChatMessage` chunk carries it. Not yet seen on a fresh live answer (no question spent).
+- **A sort no longer flashes the grid; the headers show the sort as the user drew it, 2026-10-27** (`00d5d17e`; the
+  user: *"why does the sheet flashes (flickering) when I sort it"*, and an icon to follow, reversed for each
+  direction). A new sort emptied the rows and the count before the sorted rows were read, so *Loading the rows* stood
+  in the grid's place for the length of a read — measured on the live Olist orders. The rows now stay until the first
+  sorted block lands and are replaced whole; another sheet's rows never stay. `sortdesc` (a down arrow, the bars widest
+  first, as drawn) and `sortasc` (narrowest first), in Tabler's own way. **LIVE 2026-10-27** at `00d5d17e`, web only, no
+  restart: sorting customer_city A–Z, Z–A and back, the grid never left (385 cells throughout, no Loading, two changes
+  to the page each time), the header's symbol following the direction.
+- **The chat beside a sheet stays closed until opened, 2026-10-27** (`c4df75b9`; the user: *"Chat window shall remain
+  collapsed by default"*). **LIVE 2026-10-27** at `c4df75b9`, web only, no restart: on the live Olist orders the chat
+  is closed on load, opens on a click and closes on the next.
+- **A sort keeps your place across, 2026-10-27** (`ad1718f2`; the user: *"I sorted the last column … and my sheet
+  moves back to left extreme scroll each time"*): the grid was keyed by its query, so each sort built a new one at the
+  first column. **LIVE 2026-10-27** at `ad1718f2`, web only, no restart: on the live Olist orders, scrolled to the last
+  column and 2,000 px down, sorting Paid both ways and back kept 1,205 px across, the same grid, the first row shown.
+- **The first-minute basics of a spreadsheet, 2026-10-27** (`9a1d4384`; the user: *"Ours is a SOTA platform!"*).
+  Measured on the grid first, eight basics failed; each now does what Sheets, Excel and Airtable do — Tab, Home/End,
+  Page Up/Down and Cmd+arrows; Enter and Tab keep an edit and move on; Delete empties a cell or a range; Cmd+Z and
+  Shift+Z undo and redo from the keys; a paste lays a copied block from the active cell (one change, refused whole with
+  the reason, what it left out said); a drag selects a range and Cmd+A every cell; the row numbers stay at the left;
+  a column's edge drags, double-clicks to fit and takes the arrows, the widths kept per sheet on this browser. Each
+  proven in a real browser on the scratch copy. **LIVE 2026-10-27** at `2a934270`, web only, no restart; on the live
+  Olist orders, nothing changed: Tab → column 3, End → 10, Home → 0, Page Down → row 23, Cmd+Home → row 1; a paced drag
+  → 4 rows × 3 columns; Cmd+A → 99,441 rows × 11 columns; scrolled across, the row number at the left; a real drag on
+  order_id's edge 160 → 261 px, put back after. Delete, paste, edits and the undo keys were proven on the scratch copy
+  only — pressed on the live sheet they would change or undo the user's own data. Not built of the next tier: a menu
+  on each header (sort,
+  filter by this column, hide, freeze), Shift+click for a second sort, dragging a header to reorder, Cmd+F to the
+  sheet's own search, a drag that scrolls the grid at its edge.
+- **The next tier of a spreadsheet's grid, 2026-10-27** (`de10afca`; the user: *"Build the next tier"*): a menu on
+  each header (its ▾ or a right-click — sort either way, then by this, filter by this column, hide it, freeze up to it,
+  fit or put back its width); Shift+click for a further sort, each sorted header showing its place; frozen columns
+  held after the row numbers; a header dragged to move the column for everyone (`before` on a column's PATCH, one
+  change, undone whole, no rebuild — the SH-1 oracle now compares the table with its rebuild by column name, the same
+  columns of the same types required); Cmd+F to the sheet's search; a drag at the grid's edge scrolls it, the range
+  following. Each proven in a real browser on the scratch copy. **LIVE 2026-10-27** at `773d5041` (API restarted with
+  its twelve settings, the fingerprint the same); on the live Olist orders, nothing changed: order_status then Paid
+  ("approved R$61.62, approved R$179.46" first), the menu by a right-click and its sort, two columns frozen at 64 px and
+  put back, Cmd+F, a range held at the edge scrolling 960 px to 34 rows. A header drag would reorder the live sheet for
+  everyone, so it was proven on the scratch copy only. Seen
+  then, and fixed after (below): undo could not take back two changes to a sheet's definition in a row.
+- **Undo steps back through several changes to a sheet's definition, 2026-10-27** (the user: *"Fix undo so it steps
+  back through several changes to a sheet's definition in a row"*). Two renames, or two moved columns, undone in a
+  row: the second was refused, *"undo that first"*, though the first had been undone. The guard asked whether the change
+  was the newest version of the definition; an undo is a newer version holding an older definition. It asks now
+  whether the definition is still what the change left — true after newer changes that were themselves undone, so undo
+  steps back and redo forward again; false after a change still standing over it, which stays refused. Proven on the
+  scratch copy: two headers dragged, Cmd+Z twice back to the start, Cmd+Shift+Z twice forward. **LIVE 2026-10-27** at
+  `929c7ba8` (API restarted with its twelve settings, the fingerprint the same); the live sheet reads as before. Not
+  exercised on the live sheet: it would take two changes to its definition and their undoing in the user's history.
+- **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
+  entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
+  — said by the card, not followed.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

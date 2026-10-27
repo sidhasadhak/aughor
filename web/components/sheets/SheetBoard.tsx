@@ -4,14 +4,17 @@
  * A board (SH-3; mockup screen 8): the view's rows as cards in lanes, a lane per value of a choice or yes/no column.
  *
  * Moving a card to another lane is an edit of that column — the same edit the grid makes, kept with who and when, a
- * stale one refused — and a card opens its row as a record. A value the view's filter leaves out is not a lane; it is
- * said under the board with its rows. A choice no row holds yet is an empty lane, so a card can be moved into it.
+ * stale one refused — and a card opens its row as a record. A card moves by dragging, or by the keyboard: on a card,
+ * ← and → move it to the lane beside and Enter opens it, and its "Move to" button lists the lanes for whoever does not
+ * know the keys; the card keeps the focus as it lands. A value the view's filter leaves out is not a lane; it is said
+ * under the board with its rows. A choice no row holds yet is an empty lane, so a card can be moved into it.
  */
-import { type DragEvent, useCallback, useEffect, useState } from "react";
+import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { MUTED, NUM } from "@/components/clarity/kit";
 import { CellValue, RULE_COLOR } from "@/components/sheets/SheetGrid";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount } from "@/lib/format";
 import {
@@ -45,6 +48,10 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
   const [perLane, setPerLane] = useState(MORE);
   const [over, setOver] = useState<string | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
+  // the card whose "Move to" list is open, and the card the focus returns to once the board is read after a move
+  const [moving, setMoving] = useState<number | null>(null);
+  const landed = useRef<number | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
   const qKey = JSON.stringify(query);
 
   const read = useCallback(() => {
@@ -53,6 +60,11 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read again when the view's reading changes, by its key
   }, [sheet.id, qKey, column, perLane]);
   useEffect(() => { read(); }, [read, tick]);
+  useEffect(() => {
+    if (landed.current === null) return;
+    const card = boardRef.current?.querySelector<HTMLElement>(`[data-row="${landed.current}"]`);
+    if (card) { card.focus(); landed.current = null; }
+  }, [page]);
 
   const lane = sheet.columns.find(c => c.id === column);
   if (failed) return <ReadFailed what="the board" error={failed} onRetry={read} />;
@@ -63,26 +75,45 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
   const fields = cardColumns(sheet, card, column);
   const movable = editable && page.movable;
 
+  /** Move a card to a lane: the column's edit, at the version the board read. */
+  const move = (row: number, value: unknown, keepFocus = false) => {
+    // the cell's version as it stands — an undo leaves a version behind a cell that holds no edit
+    const version = page.versions?.[String(row)]?.[column] ?? page.changed[String(row)]?.[column]?.version ?? 0;
+    setRefused(null);
+    setMoving(null);
+    if (keepFocus) landed.current = row;
+    setCells(sheet.id, [{ row, column, value, version }])
+      .then(() => onMoved(`Row ${row} moved to ${valueWords(value, lane)}`))
+      .catch(err => { landed.current = null; setRefused(err instanceof Error ? err.message : String(err)); });
+  };
+
   const drop = (e: DragEvent, value: unknown) => {
     e.preventDefault();
     setOver(null);
     const row = Number(e.dataTransfer.getData("text/x-sheet-row"));
     const from = e.dataTransfer.getData("text/x-sheet-lane");
     if (!row || from === JSON.stringify(value)) return;
-    const version = page.changed[String(row)]?.[column]?.version ?? 0;
-    setRefused(null);
-    setCells(sheet.id, [{ row, column, value, version }])
-      .then(() => onMoved(`Row ${row} moved to ${valueWords(value, lane)}`))
-      .catch(err => setRefused(err instanceof Error ? err.message : String(err)));
+    move(row, value);
+  };
+
+  /** On a card: ← and → move it to the lane beside, Enter opens it. */
+  const keys = (e: KeyboardEvent, row: number, at: number) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter") { e.preventDefault(); onOpenRow(row); return; }
+    if (!movable || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    const to = page.lanes[at + (e.key === "ArrowLeft" ? -1 : 1)];
+    if (!to) return;
+    e.preventDefault();
+    move(row, to.value, true);
   };
 
   const lanesWithRows = page.lanes.filter(l => l.rows > 0).length;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {refused && <div role="alert" className="aug-fs-sm" style={{ padding: "6px 16px", color: "var(--red4)" }}>{refused}</div>}
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", gap: 10, padding: "12px 16px",
+      <div ref={boardRef} style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", gap: 10, padding: "12px 16px",
         background: "var(--bg-0)", alignItems: "flex-start" }}>
-        {page.lanes.map(l => {
+        {page.lanes.map((l, at) => {
           const k = JSON.stringify(l.value);
           return (
             <section key={k} aria-label={`${valueWords(l.value, lane)} · ${formatCount(l.rows)}`}
@@ -100,7 +131,10 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
                 const rowNo = Number(r[0]);
                 const marks = sheet.rules.filter(x => page.marks[String(rowNo)]?.includes(x.id));
                 return (
-                  <div key={rowNo} draggable={movable} role="group" aria-label={`Row ${rowNo}`}
+                  <div key={rowNo} draggable={movable} role="group" tabIndex={0} data-row={rowNo}
+                    aria-label={`Row ${rowNo}, in ${valueWords(l.value, lane)}`}
+                    aria-keyshortcuts={movable ? "ArrowLeft ArrowRight Enter" : "Enter"}
+                    onKeyDown={e => keys(e, rowNo, at)}
                     onDragStart={e => {
                       e.dataTransfer.setData("text/x-sheet-row", String(rowNo));
                       e.dataTransfer.setData("text/x-sheet-lane", k);
@@ -110,12 +144,33 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
                       padding: "7px 9px", display: "flex", flexDirection: "column", gap: 3, cursor: movable ? "grab" : "default",
                       boxShadow: marks.length ? `inset 3px 0 0 ${RULE_COLOR[marks[0].tone]}` : undefined }}
                     title={marks.length ? `marked: ${marks.map(m => m.name).join(", ")}` : undefined}>
-                    <Button variant="ghost" size="xs" onClick={() => onOpenRow(rowNo)}
-                      style={{ justifyContent: "flex-start", padding: 0, height: "auto", fontWeight: 600, color: "var(--t1)" }}>
-                      <span className="aug-mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {title ? String(r[index[title.id]] ?? `row ${rowNo}`) : `row ${rowNo}`}
-                      </span>
-                    </Button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                      <Button variant="ghost" size="xs" onClick={() => onOpenRow(rowNo)}
+                        style={{ justifyContent: "flex-start", padding: 0, height: "auto", fontWeight: 600, color: "var(--t1)",
+                          minWidth: 0, flex: 1 }}>
+                        <span className="aug-mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {title ? String(r[index[title.id]] ?? `row ${rowNo}`) : `row ${rowNo}`}
+                        </span>
+                      </Button>
+                      {movable && page.lanes.length > 1 && (
+                        <Button variant="ghost" size="icon-xs" aria-expanded={moving === rowNo}
+                          aria-label={`Move row ${rowNo} to another lane`} title="Move to another lane (or ← →)"
+                          onClick={() => setMoving(moving === rowNo ? null : rowNo)}>
+                          <Icon name="morev" size={12} />
+                        </Button>
+                      )}
+                    </div>
+                    {moving === rowNo && (
+                      <div role="group" aria-label={`Move row ${rowNo} to`} style={{ display: "flex", flexWrap: "wrap", gap: 4,
+                        padding: "4px 0", borderTop: "1px solid var(--b0)", borderBottom: "1px solid var(--b0)" }}>
+                        <span className="aug-fs-xs" style={{ ...MUTED, width: "100%" }}>Move to</span>
+                        {page.lanes.filter(o => o !== l).map(o => (
+                          <Button key={JSON.stringify(o.value)} variant="outline" size="xs" onClick={() => move(rowNo, o.value, true)}>
+                            {valueWords(o.value, lane)}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
                     {fields.map(c => {
                       const v = r[index[c.id]];
                       return (

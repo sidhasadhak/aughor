@@ -514,6 +514,28 @@ describe("proposal_staged reaches the turn THROUGH the adapter (SP-9)", () => {
     const t = projectTurn("q", msg);
     expect(t.answerParts).toEqual([{ kind: "fact_set", facts: [{ label: "a", value: "b" }] }]);
   });
+
+  it("sheet_rows (Arc SH) rides the same whole path to the sheet's card", async () => {
+    const msg = await messageFrom([
+      { event: "start", data: {} },
+      { event: "sheet_rows", data: {
+        sheet: "s1", view: "v1", within_view: false, filter: [{ column: "c7", op: "empty", value: null }],
+        conditions: [{ column: "c7", op: "empty", value: null }], sort: [], search: "",
+        about: "Orders with no carrier date", rows: 1783, of: 99441, share: 1.8,
+        said: "order_delivered_carrier_date is empty" } },
+      { event: "headline", data: { text: "1,783 of 99,441 orders have no carrier date." } },
+      { event: "done", data: {} },
+    ]);
+    expect(msg.parts.map(p => p.type)).toContain("data-sheet_rows");
+    expect(msg.parts.map(p => p.type)).not.toContain("data-unknown_frame");
+    const t = projectTurn("which orders have no carrier date?", msg);
+    expect(t.sheetRows).toEqual([{
+      sheet: "s1", view: "v1", withinView: false, filter: [{ column: "c7", op: "empty", value: null }],
+      conditions: [{ column: "c7", op: "empty", value: null }], sort: [], search: "",
+      about: "Orders with no carrier date", rows: 1783, of: 99441, share: 1.8,
+      said: "order_delivered_carrier_date is empty",
+    }]);
+  });
 });
 
 describe("toErrorDetail — the budget stop", () => {

@@ -7,7 +7,8 @@
  * The home lists the workspace's sheets and the files already uploaded to start one from; a sheet opens on its grid,
  * with the chat, the combining tools or a row's record beside it. Each wave shows only with its flag on: the sheets
  * themselves (`sheets.core`), editing (`sheets.grid`), the chat (`sheets.chat`), combining (`sheets.combine`) and
- * boards, calendars, rules and views kept to oneself (`sheets.views`).
+ * boards, calendars, rules and views kept to oneself (`sheets.views`), and a dashboard made from a sheet
+ * (`sheets.everywhere`).
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -16,7 +17,11 @@ import { SheetsHome } from "@/components/sheets/SheetsHome";
 import { Loading } from "@/components/ui/states";
 import { getSystemFlags } from "@/lib/api";
 
-export interface SheetsWaves { grid: boolean; chat: boolean; combine: boolean; views: boolean }
+export interface SheetsWaves {
+  grid: boolean; chat: boolean; combine: boolean; views: boolean;
+  /** SH-6's first piece: Make a dashboard — offered only where dashboards and their own queries are on. */
+  dashboard: boolean;
+}
 
 /** The sheet in the address, so a sheet is linkable and the back button leaves it. */
 function sheetInUrl(): string {
@@ -43,8 +48,9 @@ export function SpreadsheetsPage({ onAsk }: { onAsk?: (question: string) => void
       const on = (k: string) => !!f[k]?.value;
       setCore(on("sheets.core"));
       setWaves({ grid: on("sheets.grid"), chat: on("sheets.chat"), combine: on("sheets.combine"),
-        views: on("sheets.views") });
-    }).catch(() => { if (live) { setCore(false); setWaves({ grid: false, chat: false, combine: false, views: false }); } });
+        views: on("sheets.views"),
+        dashboard: on("sheets.everywhere") && on("dashboard.composed") && on("dashboard.queries") });
+    }).catch(() => { if (live) { setCore(false); setWaves({ grid: false, chat: false, combine: false, views: false, dashboard: false }); } });
     return () => { live = false; };
   }, []);
 

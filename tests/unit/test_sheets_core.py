@@ -334,3 +334,117 @@ def test_a_sheets_own_values_are_never_merged_onto_a_query_as_annotations(env):
     result = SheetsConnection().execute("t", f"SELECT _row, order_status AS {cid} FROM {sheet.table} ORDER BY _row LIMIT 2")
     apply_overlay(result, "sheets")
     assert result.annotations == [] and result.rows[0] == ["1", "shipped"]
+
+
+def test_a_cell_an_undo_put_back_is_changed_again_at_the_version_its_page_reads(env):
+    """A cell set and then undone holds no edit but keeps its version: the page says that version, a change made at it
+    is kept, and one made at 0 — what a page that knew only the cells holding an edit sent — is refused as stale."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from aughor.routers import sheets as sheets_router
+    from aughor.sheets import model, service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    service.set_cells(sheet, [{"row": 3, "column": status, "value": "delivered", "version": 0}], by="user:ana")
+    service.undo(model.get(sheet.id), by="user:ana")
+    app = FastAPI()
+    app.include_router(sheets_router.router)
+    page = TestClient(app).get(f"/sheets/{sheet.id}/rows").json()
+    assert "3" not in page["changed"]                                  # the source's value stands again
+    assert page["versions"]["3"][status] == 2                          # set, then put back
+    with pytest.raises(service.Conflict, match="read at version 0"):
+        service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 0}],
+                          by="user:ana")
+    service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 2}],
+                      by="user:ana")
+    assert _cell(model.get(sheet.id), 3, "order_status") == "canceled"
+
+
+# ── a column moved (the grid's header dragged) ──────────────────────────────────────────────────────────────────────
+
+def test_a_column_moved_is_the_sheets_order_and_undo_puts_it_back(env):
+    """Dragging a header moves the column for everyone, as a spreadsheet's column order is — one change in the history,
+    undone whole; the rows still read under their own columns, and the table needs no rebuild for it."""
+    from aughor.sheets import model, projection, service
+    sheet = _orders(env)
+    names = lambda: [c.name for c in model.get(sheet.id).columns]          # noqa: E731
+    before = names()
+    price = sheet.column("price")
+    status = sheet.column("order_status")
+    first = (_cell(sheet, 1, "price"), _cell(sheet, 1, "order_status"))
+    service.update_column(sheet, price.id, by="user:ana", before=status.id)
+    now = names()
+    assert now.index("price") == now.index("order_status") - 1 and len(now) == len(before)
+    moved = model.get(sheet.id)
+    assert moved.change.what == "price moved before order_status"
+    page = projection.read_rows(moved, limit=1)
+    at = [c.id for c in moved.columns].index(price.id) + 1                             # after the row's number
+    assert page["rows"][0][at] == first[0]                                             # read under its own column
+    assert (_cell(moved, 1, "price"), _cell(moved, 1, "order_status")) == first
+    assert _same(moved)["same"]
+    service.update_column(moved, price.id, by="user:ana", before="")
+    assert names()[-1] == "price"
+    service.undo(model.get(sheet.id), by="user:ana")
+    assert names() == now                                                               # the move to the end undone
+    service.undo(model.get(sheet.id), by="user:ana")
+    assert names() == before                                                            # and the first, after it
+    with pytest.raises(service.Refused, match="no column 'nope'"):
+        service.update_column(model.get(sheet.id), price.id, by="user:ana", before="nope")
+    unchanged = model.get(sheet.id)
+    service.update_column(unchanged, price.id, by="user:ana", before=price.id)            # in front of itself: nothing
+    assert names() == before and model.get(sheet.id).change.what == unchanged.change.what
+
+
+
+# ── undo, several changes to a definition in a row ──────────────────────────────────────────────────────────────────
+
+def test_undo_steps_back_through_several_changes_to_a_definition_and_redo_forward_again(env):
+    """Two renames in a row: the second undo was refused, "undo that first", when the first had been undone — the
+    guard asked which version was newest, and an undo is a newer version holding an older definition. It asks now
+    whether the definition is still what the change left."""
+    from aughor.sheets import model, service
+    sheet = _orders(env)
+    col = sheet.column("price").id
+    name = lambda: model.get(sheet.id).column(col).name                                # noqa: E731
+    service.update_column(sheet, col, by="user:ana", name="price2")
+    service.update_column(model.get(sheet.id), col, by="user:ana", name="price3")
+    service.undo(model.get(sheet.id), by="user:ana")
+    assert name() == "price2"
+    service.undo(model.get(sheet.id), by="user:ana")
+    assert name() == "price"
+    service.redo(model.get(sheet.id), by="user:ana")
+    assert name() == "price2"
+    service.redo(model.get(sheet.id), by="user:ana")
+    assert name() == "price3"
+    assert _same(sheet)["same"]
+
+
+def test_undo_takes_back_definitions_and_values_in_turn_whatever_their_mix(env):
+    from aughor.sheets import model, service
+    sheet = _orders(env)
+    col = sheet.column("price")
+    status = sheet.column("order_status")
+    order = lambda: [c.name for c in model.get(sheet.id).columns]                       # noqa: E731
+    before_order, before_cell = order(), _cell(sheet, 2, "order_status")
+    service.update_column(sheet, col.id, by="user:ana", name="Paid")                   # a definition
+    service.set_cells(model.get(sheet.id), [{"row": 2, "column": status.id, "value": "canceled"}], by="user:ana")
+    service.update_column(model.get(sheet.id), col.id, by="user:ana", before=status.id)  # a definition again
+    for _ in range(3):
+        service.undo(model.get(sheet.id), by="user:ana")
+    now = model.get(sheet.id)
+    assert order() == before_order and _cell(now, 2, "order_status") == before_cell
+    assert _same(now)["same"]
+
+
+def test_a_change_still_standing_over_yours_keeps_yours_from_being_undone(env):
+    """The guard is kept where it guards: someone else's change to the definition, not undone, stands over yours —
+    putting back the definition from before yours would throw theirs away."""
+    from aughor.sheets import model, service
+    sheet = _orders(env)
+    col = sheet.column("price").id
+    service.update_column(sheet, col, by="user:ana", name="price2")
+    service.update_column(model.get(sheet.id), sheet.column("zip").id, by="user:bo", name="postcode")
+    with pytest.raises(service.Refused, match="postcode by user:bo"):
+        service.undo(model.get(sheet.id), by="user:ana")
+    assert model.get(sheet.id).column(col).name == "price2"

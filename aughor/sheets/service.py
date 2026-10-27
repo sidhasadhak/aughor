@@ -351,12 +351,28 @@ def add_column(sheet: Sheet, *, name: str, kind: str, by: str, description: str 
 
 
 def update_column(sheet: Sheet, ref: str, *, by: str, name: Optional[str] = None, description: Optional[str] = None,
-                  kind: Optional[str] = None, hidden: Optional[bool] = None, cid: str = "") -> Sheet:
-    """Rename a column, describe it, hide it, or change its kind — only to a kind every value it holds reads as."""
+                  kind: Optional[str] = None, hidden: Optional[bool] = None, before: Optional[str] = None,
+                  cid: str = "") -> Sheet:
+    """Rename a column, describe it, hide it, change its kind — only to a kind every value it holds reads as — or move
+    it: ``before`` names the column it goes in front of, ``""`` the end. A move is the sheet's, as a spreadsheet's
+    column order is: everyone who reads the sheet sees it, and undo puts it back."""
     c = sheet.column(ref)
     if c is None:
         raise Refused(f"{sheet.name} has no column {ref!r}")
     said = []
+    moved = False
+    if before is not None:
+        target = sheet.column(before) if before else None
+        if before and target is None:
+            raise Refused(f"{sheet.name} has no column {before!r} to put {c.name} before")
+        if target is None or target.id != c.id:
+            rest = [x for x in sheet.columns if x.id != c.id]
+            at = rest.index(target) if target is not None else len(rest)
+            order = rest[:at] + [c] + rest[at:]
+            if [x.id for x in order] != [x.id for x in sheet.columns]:
+                sheet.columns = order
+                moved = True
+                said.append(f"{c.name} moved " + (f"before {target.name}" if target is not None else "to the end"))
     if name is not None and name.strip() and name.strip() != c.name:
         said.append(f"{c.name} renamed {name.strip()}")
         c.name = unique_name(name, sheet, but=c.id)
@@ -379,7 +395,9 @@ def update_column(sheet: Sheet, ref: str, *, by: str, name: Optional[str] = None
     if not said:
         return sheet
     model.save(sheet, what="; ".join(said), by=by, change_id=cid or change_id())
-    projection.rebuild(sheet)
+    # the table reads its columns by name, in the sheet's order — a move alone changes nothing in it
+    if len(said) > 1 or not moved:
+        projection.rebuild(sheet)
     return sheet
 
 
@@ -635,6 +653,12 @@ def redo(sheet: Sheet, *, by: str) -> dict:
     return _reverse(sheet, undo_change, by=by, origin=f"redo:{undo_change['id']}", what=f"redid: {target['what']}")
 
 
+def _holds(definition: Sheet) -> dict:
+    """What a version of a sheet's definition holds — its name, columns, views, rules and source — without the record of
+    who kept it, when, and as which version."""
+    return definition.model_dump(exclude={"version", "state", "change"})
+
+
 def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> dict:
     """A change that puts back what ``change`` replaced — its values and its definition — refused when someone has
     changed over it since."""
@@ -667,7 +691,13 @@ def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> 
         # every version the change kept (making a sheet and folding in what was proposed for it is one change)
         mine = [i for i, v in enumerate(versions) if v.change.id == change["id"]]
         if mine:
-            if mine[0] != 0:
+            # Undone only where the sheet's definition is still what this change left: putting back the version before
+            # it then loses nothing. That holds after newer changes that were themselves undone — so undo steps back
+            # through several changes in a row, and redo forward again — and fails after a change still standing over
+            # it, which this would silently discard. Compared by what a definition holds, never by which version is
+            # newest: an undo is a newer version that holds an older definition (two renames undone in a row were
+            # refused at the second, "undo that first", when the first had been).
+            if mine[0] != 0 and _holds(versions[0]) != _holds(versions[mine[0]]):
                 newer = versions[0].change
                 raise Refused(f"the sheet was changed since — {newer.what} by {newer.by} — so this cannot be undone "
                               "on its own; undo that first")

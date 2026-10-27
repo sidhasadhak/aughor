@@ -5,12 +5,13 @@
  * from, its last change and who it is shared with — and the files already uploaded to the Workspace, each one click
  * from becoming a sheet.
  */
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Chip, Empty, Label, MUTED, NUM, ONE_LINE } from "@/components/clarity/kit";
 import { NewSheetDialog, type NewSheetStart } from "@/components/sheets/NewSheetDialog";
 import { NewSheetChat } from "@/components/sheets/SheetChat";
 import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
+import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -212,8 +213,10 @@ export function SharePop({ name, sheetId, views, me, onDone }: {
 }) {
   const shared = views?.filter(v => v.shared).length ?? 0;
   const mine = views?.filter(v => !v.shared && v.owner === me).length ?? 0;
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onDone);
   return (
-    <div role="dialog" aria-label={`Share · ${name}`} className="aug-fs-sm" style={{ position: "absolute", right: 0,
+    <div ref={ref} role="dialog" aria-label={`Share · ${name}`} className="aug-fs-sm" style={{ position: "absolute", right: 0,
       top: "100%", zIndex: 20, width: 300, background: "var(--bg-2)", border: "1px solid var(--b1)",
       borderRadius: "var(--r3)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
       <span className="aug-fs-xs" style={MUTED}>Share · {name}</span>
