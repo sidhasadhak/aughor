@@ -927,8 +927,11 @@ class AskFocus(BaseModel):
     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
-    (`agent.ask_subject`); off, they contribute nothing."""
-    kind: Literal["departure", "automation", "metric", "objects", "set"]
+    (`agent.ask_subject`); off, they contribute nothing.
+
+    Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with
+    ``sheets.chat`` on)."""
+    kind: Literal["departure", "automation", "metric", "objects", "set", "sheet"]
     id: str = Field(default="", max_length=200)
     objects: list[str] = Field(default_factory=list, max_length=50)
     label: str = Field(default="", max_length=80)
@@ -949,7 +952,7 @@ class AskFocus(BaseModel):
     @model_validator(mode="after")
     def names_what_it_is_about(self) -> "AskFocus":
         # one object is named by its id, as SP-15 always required; a subject by its references or its set
-        if self.kind in ("departure", "automation", "metric") and not self.id:
+        if self.kind in ("departure", "automation", "metric", "sheet") and not self.id:
             raise ValueError(f"a {self.kind} on screen is named by its id")
         if self.kind == "objects" and not self.objects:
             raise ValueError("a subject of objects names at least one, as <type>:<key>")

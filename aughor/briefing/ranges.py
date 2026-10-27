@@ -63,6 +63,9 @@ MAX_RANGE_DAYS = 3 * 366
 #: headline set without inviting a Briefing that measures everything; the cost is per metric
 #: per window (three windows), so each one past the cap is three more warehouse queries.
 MAX_METRICS = 12
+#: Arc MC, MC-6 (the user's call, 2026-10-26, §6 item 55(f): "Raise the default") — the cap while `briefing.metric_cap`
+#: is on, unless the workspace sets its own (`OrgSettings.briefing_metric_cap`).
+CAPPED_METRICS = 24
 #: How many days a window's rows may start late or end early before its value stops being
 #: that window's (§3.27's slack, by length).
 def _slack(days: int) -> int:
@@ -548,6 +551,48 @@ def _get_kind(metric: Any) -> str:
     return str(getattr(metric, "time_kind", "") or "")
 
 
+def metric_cap(conn_id: str) -> int:
+    """How many headline metrics a Briefing of this connection measures: 12 while `briefing.metric_cap` is off; the
+    workspace's own number, else 24, while it is on."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("briefing.metric_cap"):
+        return MAX_METRICS
+    try:
+        from aughor.orgsettings.store import effective_settings
+        from aughor.workspace.store import workspace_for_connection
+        own = int(effective_settings(workspace_for_connection(conn_id)).briefing_metric_cap or 0)
+    except Exception as exc:  # noqa: BLE001 — an unreadable setting reads the default, never fewer
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the workspace's Briefing cap could not be read; the default holds", counter="briefing.metric_cap")
+        own = 0
+    return own or CAPPED_METRICS
+
+
+def areas_of(conn_id: str, metrics: list, schema: Optional[str] = None) -> dict[str, dict]:
+    """Arc MC — name → the area of the map each metric reads on (``{"id", "name", "order"}``), while
+    `briefing.metric_cap` is on; {} otherwise, so the Briefing reads as it did."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("briefing.metric_cap") or not metrics:
+        return {}
+    try:
+        from aughor.semantic.metric_coverage import place_metric, place_table, tables_of
+        from aughor.semantic.metric_map import map_for
+        mmap = map_for(conn_id, schema)
+        areas = mmap.readable
+        tables = {t.name: place_table(t, areas) for t in tables_of(conn_id, schema)}
+        out = {}
+        for m in metrics:
+            placed = place_metric(m, mmap, tables)
+            area = mmap.area(placed.area)
+            out[m.name] = {"id": placed.area, "name": area.name if area else placed.area, "order": mmap.order(placed.area)}
+        return out
+    except Exception as exc:  # noqa: BLE001 — unplaced metrics keep the statement's order
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the Briefing's metrics could not be placed by area; the statement's order holds",
+                 counter="briefing.areas")
+        return {}
+
+
 def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
     """The connection's approved metrics in reading order (§6 item 43(d)): sales first, profit
     last, the industry's own order within. Ordered BEFORE any cap, so a connection past it keeps
@@ -561,9 +606,14 @@ def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
     from aughor.semantic.metrics import list_metrics
 
     order, statement = industry_reading(conn_id)
-    return ordered([m for m in list_metrics(connection_id=conn_id, schema_name=schema or None)
-                    if m.status == "approved" and m.connection == conn_id],
-                   order, statement)
+    governed = ordered([m for m in list_metrics(connection_id=conn_id, schema_name=schema or None)
+                        if m.status == "approved" and m.connection == conn_id],
+                       order, statement)
+    # Arc MC, MC-6 — by area in the map's order (the income statement's areas first), the statement's order within one
+    placed = areas_of(conn_id, governed, schema)
+    if placed:
+        governed = sorted(governed, key=lambda m: placed.get(m.name, {}).get("order", 10 ** 6))
+    return governed
 
 
 def _deprecated(conn_id: str, schema: Optional[str] = None) -> list:
@@ -758,19 +808,21 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     governed = governed_metrics(conn_id, schema)
     if only:
         governed = [m for m in governed if m.name == only]     # one metric, asked for by name
-    approved, over_cap = governed[:MAX_METRICS], governed[MAX_METRICS:]
+    cap = metric_cap(conn_id)
+    approved, over_cap = governed[:cap], governed[cap:]
     line_of = statement_lines(conn_id)
+    area_of = areas_of(conn_id, approved, schema)
     windows = spec.windows()
     measured: list[dict] = []
     unmeasured: list[dict] = []
     for m in approved:
         name = m.label or m.name
         if not mt.declared(m):
-            unmeasured.append({"name": name, "reason": said.get(m.name) or "its dates are not set"})
+            unmeasured.append({"name": name, "metric": m.name, "reason": said.get(m.name) or "its dates are not set"})
             continue
         rows, why = mt.run_measure(m, windows, run_sql, dialect=dialect)
         if why:
-            unmeasured.append({"name": name, "reason": why})
+            unmeasured.append({"name": name, "metric": m.name, "reason": why})
             continue
         got = {r["window"]: r for r in rows}
         cur = got.get("current")
@@ -780,7 +832,10 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
         if cur is None or cur["value"] is None:
             unmeasured.append({"name": name, "metric": m.name, "reason": "its data has no rows in this range"})
             continue
-        measured.append(_figure_row(m, name, spec, got, dialect=dialect, line_of=line_of))
+        row = _figure_row(m, name, spec, got, dialect=dialect, line_of=line_of)
+        if m.name in area_of:
+            row["area"] = {"id": area_of[m.name]["id"], "name": area_of[m.name]["name"]}
+        measured.append(row)
     # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
     # definitions against a cap of eight, and the two it dropped fell through to the north-star
     # loop below — which sees only that the name is unaccounted for and reports "no approved
@@ -789,7 +844,7 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     # learn why the figure is missing. Named here first, so the loop below never sees them.
     for m in over_cap:
         unmeasured.append({"name": m.label or m.name, "metric": m.name,
-                           "reason": (f"past this Briefing's cap of {MAX_METRICS} headline metrics — "
+                           "reason": (f"past this Briefing's cap of {cap} headline metrics — "
                                       "it is approved and governed, and measuring it needs the cap "
                                       "raised, not a definition")})
     # `seen` reads the WHOLE governed set, not the capped slice, for the same reason.

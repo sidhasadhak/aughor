@@ -104,6 +104,16 @@ describe("PaperNumbers", () => {
     expect(screen.getByText("+3.1%")).toBeInTheDocument();
     expect(screen.queryByText("0")).toBeNull();
   });
+
+  it("reads by area when the figures carry one: a heading over each area's first figure, none without", () => {
+    const { rerender } = render(<PaperNumbers title="The week in numbers" rows={[
+      { key: "g", label: "GMV", value: "€1.2M", area: "Orders & sales" },
+      { key: "a", label: "AOV", value: "€640", area: "Orders & sales" },
+      { key: "r", label: "Item return rate", value: "31%", area: "Returns" }]} />);
+    expect(screen.getAllByTestId("paper-area").map(h => h.textContent)).toEqual(["Orders & sales", "Returns"]);
+    rerender(<PaperNumbers title="The week in numbers" rows={[{ key: "g", label: "GMV", value: "€1.2M" }]} />);
+    expect(screen.queryAllByTestId("paper-area")).toHaveLength(0);
+  });
 });
 
 describe("InBrief", () => {
@@ -180,6 +190,31 @@ describe("rangeNumbers — every figure is the edition's own (LuxExperience's we
     expect(rows.map(r => r.label)).toEqual(["Average Order Value (AOV)", "Session Conversion Rate",
       "Clienteling-Influenced GMV per Interaction", "Marketing ROAS"]);
     expect(rows[2]).toMatchObject({ value: "", unknown: "data ended Jun 2025" });
+  });
+
+  it("says under the box why each figure is blank, and where to fix it — never only in a tooltip", async () => {
+    const { requestTab } = await import("@/lib/navigate");
+    const margin = { name: "Gross Margin %", metric: "gross_margin",
+      reason: "its date table orders sits on the optional side of a LEFT JOIN, so a window cannot bound the statement's rows — read from that table, or join it inner" };
+    const withMargin = { ...block, unmeasured: [...block.unmeasured, margin] } as BriefingRangeBlock;
+    render(<PaperNumbers title="The week in numbers" rows={rangeNumbers(withMargin)} connectionId="lux" />);
+    const why = screen.getAllByTestId("paper-blank-why").map(n => n.textContent);
+    expect(why).toEqual([
+      "Marketing ROAS — Its data has no rows in this range",
+      "Gross Margin % — Its date table orders sits on the optional side of a LEFT JOIN, so a window cannot bound the statement's rows — read from that table, or join it innerFix its definition",
+    ]);
+    expect(screen.getByTestId("paper-blank-ended")).toHaveTextContent(
+      "Clienteling-Influenced GMV per Interaction stopped before this edition. If its source should still be loading, the feed needs fixing; if not, read it in a Custom range.");
+    fireEvent.click(screen.getByTestId("paper-blank-open"));
+    expect(requestTab).toHaveBeenCalledWith("semantic", { conn: "lux", metric: "gross_margin" });
+    // ROAS names no metric here, so the layer itself is offered for it
+    fireEvent.click(screen.getByTestId("paper-blank-fix"));
+    expect(requestTab).toHaveBeenCalledWith("semantic", { conn: "lux" });
+  });
+
+  it("says nothing under the box when every figure is measured", () => {
+    render(<PaperNumbers title="The week in numbers" rows={rangeNumbers({ ...block, unmeasured: [] } as BriefingRangeBlock)} />);
+    expect(screen.queryByTestId("paper-blanks")).toBeNull();
   });
 
   it("prints no other week's dates under any name", () => {

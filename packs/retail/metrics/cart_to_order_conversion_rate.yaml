@@ -2,6 +2,7 @@ name: cart_to_order_conversion_rate
 title: Cart-to-order conversion rate
 aliases: [cart conversion rate, checkout conversion rate, cart to order rate]
 unit: ratio
+area: traffic_conversion
 definition: The share of carts that became an order.
 formula: >
   SUM(CASE WHEN {{role.cart.converted_order_id}} IS NOT NULL THEN 1.0 ELSE 0.0 END)

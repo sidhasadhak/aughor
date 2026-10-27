@@ -1,0 +1,16 @@
+# Arc MC (ROADMAP §3.62) — the areas the base pack's metric patterns are read on. `analysis` holds the patterns that
+# are ways to read a metric (a volatility, a cohort assignment) rather than metrics: they are never proposed, and the
+# area carries no words, so no table is placed in it.
+areas:
+  - id: inventory
+    name: Inventory
+    question: Is the stock right?
+    words: [inventory, stock, sku, warehouse, supplier]
+  - id: fulfilment
+    name: Fulfilment
+    question: Did it arrive as promised?
+    words: [shipment, shipping, delivery, dispatch, fulfilment, fulfillment, carrier, logistic, logistics]
+  - id: analysis
+    name: Ways to read a metric
+    question: How is a figure explained?
+    words: []

@@ -140,7 +140,9 @@ def test_every_store_connect_site_is_tuned():
         ["grep", "-rl", r"sqlite3\.connect", "aughor", "--include=*.py"],
         capture_output=True, text=True, check=True,
     ).stdout.split()
-    ALLOWED_UNTUNED = {"aughor/connectors/file/sqlite.py"}
+    # `db/migrations.py` opens only the copy it makes before a migration (Arc SV-1): a file no
+    # other connection can be writing, opened once and closed — busy_timeout guards nothing there.
+    ALLOWED_UNTUNED = {"aughor/connectors/file/sqlite.py", "aughor/db/migrations.py"}
     offenders = []
     for f in out:
         text = open(f).read()

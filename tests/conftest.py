@@ -579,6 +579,18 @@ def _reset_guard_process_caches():
 
 
 @pytest.fixture(autouse=True)
+def _reset_migration_report():
+    """Clear what this process recorded before its migrations (Arc SV-1). A store held back in one test — the
+    damaged-ledger probe holds one back on purpose — would otherwise leave `/health` degraded for every test after it."""
+    from aughor.db import migrations as _mig
+    _mig._HELD_BACK.clear()
+    _mig._BACKED_UP.clear()
+    yield
+    _mig._HELD_BACK.clear()
+    _mig._BACKED_UP.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_provider_process_caches():
     """Clear the LLM provider's process-global caches between tests.
 

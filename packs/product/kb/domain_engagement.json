@@ -1,6 +1,9 @@
 [
   {
     "id": "engagement_metrics",
+    "area": "engagement",
+    "kind": "volume",
+    "direction": "up",
     "title": "Product Engagement — DAU, MAU, Stickiness",
     "business_definition": "DAU (Daily Active Users) and MAU (Monthly Active Users) measure how many unique users engage with the product per day/month. Stickiness = DAU/MAU — a ratio above 20% indicates strong habit formation. L28 (users active in last 28 days) is a more stable MAU proxy.",
     "intent_tags": ["engagement", "DAU", "MAU", "stickiness", "active users", "L28", "daily active", "monthly active", "product engagement"],

@@ -1,6 +1,9 @@
 [
   {
     "id": "ec_customer_acquisition_cost",
+    "area": "marketing",
+    "kind": "value",
+    "direction": "down",
     "title": "Customer Acquisition Cost",
     "intent_tags": [
       "CAC",
@@ -257,6 +260,9 @@
   },
   {
     "id": "ec_win_back_rate",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "Win-back Rate",
     "intent_tags": [
       "win-back rate",
@@ -385,6 +391,9 @@
   },
   {
     "id": "ec_first_order_to_second_order_conversion",
+    "area": "customers",
+    "kind": "rate",
+    "direction": "up",
     "title": "First Order to Second Order Conversion",
     "intent_tags": [
       "first to second order conversion",

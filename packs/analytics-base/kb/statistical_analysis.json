@@ -89,6 +89,9 @@
   },
   {
     "id": "stat_stddev",
+    "area": "analysis",
+    "kind": "analysis",
+    "direction": "either",
     "title": "Standard deviation and variance for metric volatility",
     "intent_tags": ["standard deviation", "variance", "volatility", "stddev", "metric stability"],
     "sql_features": ["aggregation", "window"],

@@ -1,0 +1,14 @@
+# Arc MC (ROADMAP §3.62) — the areas a manufacturer is read by.
+areas:
+  - id: production
+    name: Production
+    question: How much did we make, and how fast?
+    words: [production, machine, line, shift, work order, output, equipment, batch]
+  - id: quality
+    name: Quality
+    question: Did we make it right?
+    words: [defect, scrap, inspection, yield, rework, quality]
+  - id: maintenance
+    name: Maintenance
+    question: Is the equipment available?
+    words: [downtime, maintenance, failure, repair, breakdown]

@@ -92,9 +92,38 @@ def health():
     except Exception as exc:
         wal_drifted = []
         wal = {"error": f"{type(exc).__name__}: {exc}"}
+    # Arc SV-1 — a store whose copy before migrating failed stays at its old version; code that reads
+    # the columns the migration would have added fails until it migrates, so it is named here.
+    from aughor.db.migrations import migration_report
+    migrations = migration_report()
+    # Arc SV-2 — the rolling backups, only while `state.backups` is on: off, this block is absent and the status is
+    # decided as before. On, a backup that failed, was skipped for space, or has not been checked for two hours is
+    # degraded — the last good copy is older than it should be, and nothing else would say so.
+    backups = None
+    try:
+        from aughor.kernel.flags import flag_enabled
+        backups_on = flag_enabled("state.backups")
+    except Exception:
+        backups_on = False      # a flag that cannot be read is the ledger failing, which `ledger` above already says
+    if backups_on:
+        try:
+            from aughor.db.backups import health_block
+            backups = health_block()
+        except Exception as exc:
+            backups = {"ok": False, "detail": f"the backups could not be read ({type(exc).__name__}: {exc})"}
     return {
-        "status": "degraded" if (ledger_error or wal_drifted) else "ok",
+        "status": "degraded" if (ledger_error or wal_drifted or not migrations["ok"]
+                                 or (backups is not None and not backups["ok"])) else "ok",
         "ledger": {"ok": not ledger_error, "error": ledger_error},
+        "migrations": {
+            **migrations,
+            "detail": (
+                f"{len(migrations['held_back'])} store(s) held at their old version — the copy before migrating failed"
+                if not migrations["ok"] else
+                f"{len(migrations['backed_up'])} store(s) copied before migrating since this process started"
+            ),
+        },
+        **({"backups": backups} if backups is not None else {}),
         "stores": {
             "ok": not wal_drifted,
             "wal_drifted": wal_drifted,

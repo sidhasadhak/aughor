@@ -2,6 +2,7 @@ name: return_rate
 title: Return rate
 aliases: [item return rate, returns rate]
 unit: ratio
+area: returns
 definition: The share of sold lines that the customer sent back.
 formula: >
   SUM(CASE WHEN {{role.order_item.returned_at}} IS NOT NULL THEN 1.0 ELSE 0.0 END)

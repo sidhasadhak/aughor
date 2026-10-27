@@ -29,7 +29,7 @@
  * re-draws them over that set, and an incompatible pick degrades rather than throws
  * (the card's own rule).
  */
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { formatCount, formatTimestamp } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
@@ -47,8 +47,11 @@ import { toast } from "@/components/ui/toast";
 import { csvFilename, downloadText } from "@/lib/query/csv";
 import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractors";
 import { applyFilters } from "@/lib/query/resultFilter";
-import { describeRunError, resultFigures, resultTools } from "@/lib/query/workbench";
-import type { RelatedJoin, TypedQueryPage, TypedQueryResult } from "@/lib/api";
+import { describeRunError, resultFigures, resultTools, unwrapRunSql } from "@/lib/query/workbench";
+
+// Arc SH — loaded only when a person keeps a result's rows as a sheet, so the editor carries none of it otherwise.
+const NewSheetDialog = lazy(() => import("@/components/sheets/NewSheetDialog").then(m => ({ default: m.NewSheetDialog })));
+import { getSystemFlags, type RelatedJoin, type TypedQueryPage, type TypedQueryResult } from "@/lib/api";
 import type { Cell } from "@/lib/query/resultFilter";
 import { Input } from "@/components/ui/input";
 
@@ -143,6 +146,14 @@ export function ResultsPanel({
 }) {
   const [showExport, setShowExport] = useState(false);
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
+  // Arc SH, SH-7 — "Keep the rows as a sheet", offered only while sheets are on.
+  const [sheetsOn, setSheetsOn] = useState(false);
+  const [keeping, setKeeping] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getSystemFlags().then(f => { if (live) setSheetsOn(!!f["sheets.core"]?.value); }).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -420,9 +431,9 @@ export function ResultsPanel({
   };
 
   const tools = resultTools({
-    hasRows: !empty, connected: !!connId, filtered: filters.length > 0, scheduleCount,
+    hasRows: !empty, connected: !!connId, filtered: filters.length > 0, scheduleCount, sheets: sheetsOn,
     act: { addChart: addViz, export: () => setShowExport(true), pin: () => void pin(),
-      schedule: () => setShowSchedule(true) },
+      schedule: () => setShowSchedule(true), keepAsSheet: () => setKeeping(true) },
   });
 
   const filtersVisible = showFilters || filters.length > 0;
@@ -550,6 +561,13 @@ export function ResultsPanel({
           {connId && (
             <SchedulePopover connId={connId} sql={result.sql} open={showSchedule} onOpenChange={setShowSchedule}
               onCount={setScheduleCount} onOpenMonitors={onSchedule} />
+          )}
+          {keeping && connId && (
+            <Suspense fallback={null}>
+              <NewSheetDialog start={{ source: "rows", connectionId: connId, sql: unwrapRunSql(result.sql),
+                name: pinTitle(result.sql) }} onClose={() => setKeeping(false)}
+                onMade={() => { setKeeping(false); toast.success("Kept as a sheet — it is in Spreadsheets"); }} />
+            </Suspense>
           )}
         </span>
         {onToggleMaximize && headerIcon("expand",

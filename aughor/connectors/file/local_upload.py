@@ -123,6 +123,10 @@ def _fallback_encoding(path: Path) -> str:
     return "utf-16" if head in _UTF16_BOMS else "latin-1"
 
 
+#: Public: the sheets read a file the way this door does (`aughor/sheets/imports.py`).
+fallback_encoding = _fallback_encoding
+
+
 def _quote(path: Path) -> str:
     return path.as_posix().replace("'", "''")
 
@@ -151,6 +155,10 @@ def _ensure_excel_extension(con) -> None:
         con.execute("LOAD excel")
     except Exception:
         logger.debug("duckdb excel extension load failed", exc_info=True)
+
+
+#: Public: the sheets read a workbook the way this door does (`aughor/sheets/imports.py`).
+ensure_excel_extension = _ensure_excel_extension
 
 
 #: (source path, size, mtime) → the UTF-8 copy already produced for it.
@@ -491,6 +499,10 @@ def _is_data_file(f: Path) -> bool:
         and not f.name.endswith(_SIDECAR_SUFFIX)
         and f.suffix.lower() in _SUPPORTED_EXTENSIONS
     )
+
+
+#: Public: the Spreadsheets home offers exactly the files this door reads (`aughor/sheets/files.py`).
+is_data_file = _is_data_file
 
 
 def _safe_ident(name: str, fallback: str = "table") -> str:

@@ -184,8 +184,75 @@ def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
             # Counted apart from `needs_formula` on purpose: a connection where every
             # metric lands here is telling you about the CONNECTION, not about missing SQL.
             "formula_rejected": sum(1 for r in rows if r.state == "formula_rejected"),
+            # Arc MC — proposed for an area of the map, and the proposals a gate refused (never adoptable as they are);
+            # counted only while a coverage flag is on, so the answer is the one it was while they are off.
+            **({"coverage": sum(1 for r in rows if r.source == "coverage"),
+                "gate_failed": sum(1 for r in rows if r.state == "gate_failed")} if _coverage_on() else {}),
         },
     }
+
+
+def _coverage_on() -> bool:
+    from aughor.semantic.coverage_proposals import any_on
+    return any_on()
+
+
+# ── Arc MC — the areas a connection's metrics cover ─────────────────────────────────────────────────────────────────
+
+def _require(flag: str, what: str) -> None:
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled(flag):
+        raise HTTPException(status_code=404, detail=f"{what} is off ({flag})")
+
+
+@router.get("/metrics/coverage/{conn_id}")
+def get_metric_coverage(conn_id: str, schema: Optional[str] = None, figures: bool = False):
+    """Arc MC, MC-2 — the map this connection's metrics are read against and how far they cover it: per area, in the
+    map's order, the data placed in it, its metrics, the knowledge base's patterns, the proposals waiting — every
+    placement with its reason. ``figures`` reads the approved metrics' figures that were not read within the hour, so no
+    area is said covered by one that never moves; without it, an unread metric is said as not checked."""
+    _require("metrics.coverage_map", "the coverage view")
+    from aughor.business_profile import store as profile_store
+    from aughor.semantic import coverage_proposals as CP
+    from aughor.semantic.metric_coverage import coverage
+
+    schema = schema or _declared_schema(conn_id)
+    out = coverage(conn_id, schema, figures=figures)
+    run = profile_store.load_coverage(conn_id, schema)
+    out["proposals"] = CP.stored(conn_id, schema)
+    out["run"] = {"run_at": run.get("run_at"), "why": run.get("why") or "", "spend": run.get("spend"),
+                  "said": run.get("said") or []} if run else None
+    from aughor.kernel.flags import flag_enabled
+    out["flags"] = {f: flag_enabled(f) for f in ("metrics.coverage_proposals", "metrics.coverage_writer",
+                                                  "metrics.blind_spot_proposals", "metrics.figure_gates")}
+    return out
+
+
+@router.post("/metrics/coverage/{conn_id}/run", status_code=202, dependencies=[gate(Capability.METRICS_DEFINE)])
+def run_metric_coverage(conn_id: str, schema: Optional[str] = None):
+    """Arc MC, MC-3/4/6 — propose by code for the areas the data covers, every proposal through the gates, kept beside
+    the profile, on a thread: the gates read each proposal's figures, which took four minutes on LuxExperience's 54
+    (2026-10-26). No model call — the writer's last proposals are kept and checked again; it writes only when the
+    connection is profiled, or on its own door."""
+    from aughor.semantic import coverage_proposals as CP
+    if not CP.any_on():
+        raise HTTPException(status_code=404, detail="no coverage proposer is on (metrics.coverage_proposals, "
+                                                    "metrics.blind_spot_proposals)")
+    schema = schema or _declared_schema(conn_id)
+    started = CP.run_in_background(conn_id, schema, write=False, why=f"run by {caller()}")
+    return {"started": started, "connection_id": conn_id, "schema": schema}
+
+
+@router.post("/metrics/coverage/{conn_id}/write", status_code=202, dependencies=[gate(Capability.METRICS_DEFINE)])
+def write_metric_coverage(conn_id: str, schema: Optional[str] = None):
+    """Arc MC, MC-5 — the knowledge base's patterns written for this schema now, one model call per open area, on
+    a thread; the coverage view says the calls when they are made. The same run starts by itself when the connection is
+    profiled (the user's call, 2026-10-26)."""
+    _require("metrics.coverage_writer", "the coverage writer")
+    from aughor.semantic import coverage_proposals as CP
+    schema = schema or _declared_schema(conn_id)
+    started = CP.run_in_background(conn_id, schema, write=True, why=f"written at {caller()}'s request")
+    return {"started": started, "connection_id": conn_id, "schema": schema}
 
 
 @router.post("/metrics/catalogue/{conn_id}/{name}/materialise",
@@ -258,6 +325,11 @@ def adopt_metrics(conn_id: str, req: _AdoptRequest, schema: Optional[str] = None
     for item, label in zip(items, labels):
         def skip(why: str) -> None:
             skipped.append({"name": item.name, "label": label, "reason": why})
+        # Arc MC — a proposal a gate refused is fixed in its editor first, never adopted as it stands
+        refused = find_entry(conn_id, item.name, dataset or ALL_DATASETS)
+        if getattr(refused, "state", "") == "gate_failed":
+            skip(f"it failed a check when it was proposed: {getattr(refused, 'reason', '')}")
+            continue
         try:
             m = materialise(conn_id, item.name, dataset, actor=actor)
         except MaterialiseError as exc:
@@ -283,6 +355,10 @@ def adopt_metrics(conn_id: str, req: _AdoptRequest, schema: Optional[str] = None
             skip(str(exc.detail))
             continue
         m = m.model_copy(update={k: v for k, v in time.items() if k in MetricDefinition.model_fields})
+        figures = _figure_gates(m, conn_id)
+        if figures and figures.get("refused"):
+            skip(figures["refused"][1])
+            continue
         twin = _twin_check(m, conn_id)
         if twin and twin.get("twin"):
             from aughor.semantic import metric_twins
@@ -860,6 +936,24 @@ def transition_metric(name: str, req: TransitionRequest):
         from aughor import govern
         govern.guard(_action, name)
     now = datetime.now(timezone.utc).isoformat()
+    # A definition whose date cannot bound its rows is not made authoritative: every period's figure would be another
+    # period's (the user, 2026-10-26: "Make sure that this never happens again"). Its dates unset is not this — that
+    # metric is simply not measured for a period, and says so.
+    if str(req.action or "").strip().lower() == "approve":
+        from aughor.semantic.metric_time import unbounded_date
+        if (why := unbounded_date(m)):
+            raise HTTPException(status_code=409, detail={
+                "reason": "window_unbounded",
+                "message": (f"{m.label or name} cannot be approved: {why}. A day's, a week's or a month's figure "
+                            "would not be that period's.")})
+    # Arc MC, MC-0 — the figures, not only the SQL: one that never moves, one outside its recipe's sane range, a recipe
+    # whose roles are bound to the wrong columns (the user's call, 2026-10-26: refuse at approval).
+    figures = _figure_gates(m, req.connection) if str(req.action or "").strip().lower() == "approve" else None
+    if figures and figures.get("refused"):
+        reason, why = figures["refused"]
+        raise HTTPException(status_code=409, detail={
+            "reason": reason, "gates": figures["gates"],
+            "message": f"{m.label or name} cannot be approved: {why}."})
     # One measure, one approved definition (the user, 2026-10-08: "Why should we have duplicates?").
     # The name check at definition never saw two names for one figure; the approval is where a
     # definition becomes authoritative, so it is checked here, by its figures.
@@ -879,10 +973,24 @@ def transition_metric(name: str, req: TransitionRequest):
         audit["approved_though_same_as"] = twin["twin"]["name"]
     elif twin and not twin.get("checked"):
         audit["same_as_check"] = f"not read: {twin.get('why') or 'unknown'}"
+    if figures and figures.get("unread"):
+        audit["figure_check"] = f"not read: {figures['unread']}"
     Ledger.default().emit("metric.governance", audit)
     if updated.get("status") == "approved":
         _reopen_questions(req.connection, home_schema(m), f"{m.label or name} was approved")
     return {"metric": updated, "audit": audit}
+
+
+def _figure_gates(m: MetricDefinition, connection: str) -> Optional[dict]:
+    """Arc MC, MC-0 — ``metric_gates.check`` while `metrics.figure_gates` is on: ``{"gates", "refused", "unread"}``,
+    ``refused`` the first gate that failed as ``(reason, why)``. None while the flag is off, so approval reads exactly as
+    before."""
+    from aughor.semantic import metric_gates
+    if not metric_gates.enabled():
+        return None
+    verdict = metric_gates.check(m, connection)
+    gates = {g: verdict[g] for g in ("moves", "sane_range", "binding")}
+    return {"gates": gates, "refused": metric_gates.refusal(verdict), "unread": metric_gates.not_read(verdict)}
 
 
 def _twin_check(m: MetricDefinition, connection: str) -> dict:

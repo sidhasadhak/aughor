@@ -22,12 +22,14 @@ export function adoptable(rows: CatalogueMetric[]): CatalogueMetric[] {
 
 type Dates = Record<string, { options: string[]; chosen: string; error?: string }>;
 
-export function AdoptProposals({ connId, schema, rows, onDone }: {
+export function AdoptProposals({ connId, schema, rows, onDone, label = "Adopt the proposals" }: {
   connId: string;
   schema?: string;
   rows: CatalogueMetric[];
   /** Read the catalogue again once a set was adopted. */
   onDone: () => void;
+  /** Arc MC — the card's label when it adopts one area's proposals. */
+  label?: string;
 }) {
   const list = useMemo(() => adoptable(rows), [rows]);
   const [open, setOpen] = useState(false);
@@ -75,7 +77,7 @@ export function AdoptProposals({ connId, schema, rows, onDone }: {
   }
 
   return (
-    <Card label="Adopt the proposals" testId="adopt-proposals"
+    <Card label={label} testId="adopt-proposals"
       right={!open ? <Button size="xs" variant="secondary" onClick={() => setOpen(true)}>Choose and date them</Button> : undefined}>
       {!open ? (
         <div className="aug-fs-sm" style={MUTED}>

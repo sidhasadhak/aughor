@@ -128,6 +128,9 @@
   },
   {
     "id": "fin_price_realization_rate",
+    "area": "profitability",
+    "kind": "rate",
+    "direction": "up",
     "title": "Price Realization Rate",
     "intent_tags": [
       "price realization rate",
@@ -255,6 +258,9 @@
   },
   {
     "id": "fin_revenue_per_employee",
+    "area": "revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Revenue per Employee",
     "intent_tags": [
       "revenue per employee",
@@ -381,6 +387,9 @@
   },
   {
     "id": "fin_upsell_revenue_rate",
+    "area": "recurring_revenue",
+    "kind": "rate",
+    "direction": "up",
     "title": "Upsell Revenue Rate",
     "intent_tags": [
       "upsell revenue rate",
@@ -508,6 +517,9 @@
   },
   {
     "id": "fin_contract_renewal_rate",
+    "area": "recurring_revenue",
+    "kind": "rate",
+    "direction": "up",
     "title": "Contract Renewal Rate",
     "intent_tags": [
       "contract renewal rate",

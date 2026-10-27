@@ -1,6 +1,9 @@
 [
   {
     "id": "mkt_cac_by_channel",
+    "area": "acquisition",
+    "kind": "value",
+    "direction": "down",
     "title": "Customer Acquisition Cost by Channel",
     "intent_tags": [
       "CAC by channel",
@@ -128,6 +131,9 @@
   },
   {
     "id": "mkt_roas",
+    "area": "marketing",
+    "kind": "rate",
+    "direction": "up",
     "title": "Return on Ad Spend (ROAS)",
     "intent_tags": [
       "ROAS",
@@ -253,6 +259,9 @@
   },
   {
     "id": "mkt_cpc",
+    "area": "marketing",
+    "kind": "value",
+    "direction": "down",
     "title": "Cost per Click (CPC)",
     "intent_tags": [
       "CPC",
@@ -378,6 +387,9 @@
   },
   {
     "id": "mkt_cpl",
+    "area": "acquisition",
+    "kind": "value",
+    "direction": "down",
     "title": "Cost per Lead (CPL)",
     "intent_tags": [
       "CPL",
@@ -503,6 +515,9 @@
   },
   {
     "id": "mkt_cpm",
+    "area": "marketing",
+    "kind": "value",
+    "direction": "down",
     "title": "Cost per Mille (CPM)",
     "intent_tags": [
       "CPM",
@@ -628,6 +643,9 @@
   },
   {
     "id": "mkt_blended_cac",
+    "area": "acquisition",
+    "kind": "value",
+    "direction": "down",
     "title": "Blended Customer Acquisition Cost",
     "intent_tags": [
       "blended CAC",

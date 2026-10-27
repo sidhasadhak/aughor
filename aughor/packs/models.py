@@ -110,6 +110,18 @@ class PackMetric(_Base):
     unit: str = ""
     #: IP-3 — the sourced band the value is plausible in.
     sane_range: Optional[SaneRange] = None
+    #: Arc MC — the area of the pack's map (`areas.yaml`) the recipe covers; "" when the pack declares none.
+    area: str = ""
+
+
+class PackArea(_Base):
+    """Arc MC — one area a business is read by (`areas.yaml`): the question it answers, the words that place a table or
+    a metric in it by name, and the areas of the function and base packs whose knowledge-base patterns read on it."""
+    id: str
+    name: str = ""
+    question: str = ""
+    words: list[str] = Field(default_factory=list)
+    absorbs: list[str] = Field(default_factory=list)
 
 
 class RoleAttribute(_Base):
@@ -485,6 +497,8 @@ class Pack(_Base):
     missions: list[PackMissionTemplate] = Field(default_factory=list)   # missions/*.yaml
     #: Arc FA, FA-6 — the dashboard templates a pack ships (`dashboards/*.yaml`).
     dashboards: list[PackDashboardTemplate] = Field(default_factory=list)
+    #: Arc MC — the areas the pack's map reads its business by (`areas.yaml`), as the business reads them.
+    areas: list[PackArea] = Field(default_factory=list)
     path: str = ""                                   # source folder
 
     @property

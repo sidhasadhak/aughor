@@ -1,6 +1,9 @@
 [
   {
     "id": "log_otd",
+    "area": "service_level",
+    "kind": "rate",
+    "direction": "up",
     "title": "On-Time Delivery Rate (OTD)",
     "intent_tags": [
       "otd",
@@ -139,6 +142,9 @@
   },
   {
     "id": "log_otif",
+    "area": "service_level",
+    "kind": "rate",
+    "direction": "up",
     "title": "OTIF (On-Time In-Full)",
     "intent_tags": [
       "otif",
@@ -277,6 +283,9 @@
   },
   {
     "id": "log_transit_time",
+    "area": "transit",
+    "kind": "duration",
+    "direction": "down",
     "title": "Average Transit Time",
     "intent_tags": [
       "transit time",
@@ -414,6 +423,9 @@
   },
   {
     "id": "log_cost_per_shipment",
+    "area": "cost_capacity",
+    "kind": "value",
+    "direction": "down",
     "title": "Cost per Shipment / per km",
     "intent_tags": [
       "cost per shipment",
@@ -551,6 +563,9 @@
   },
   {
     "id": "log_capacity_utilization",
+    "area": "cost_capacity",
+    "kind": "rate",
+    "direction": "up",
     "title": "Vehicle Capacity Utilization (Load Factor)",
     "intent_tags": [
       "capacity utilization",
@@ -688,6 +703,9 @@
   },
   {
     "id": "log_first_attempt",
+    "area": "service_level",
+    "kind": "rate",
+    "direction": "up",
     "title": "First-Attempt Delivery Success Rate",
     "intent_tags": [
       "first attempt delivery",

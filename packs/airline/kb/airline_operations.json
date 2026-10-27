@@ -1,6 +1,9 @@
 [
   {
     "id": "air_load_factor",
+    "area": "network",
+    "kind": "rate",
+    "direction": "up",
     "title": "Passenger Load Factor (PLF)",
     "intent_tags": [
       "load factor",
@@ -141,6 +144,9 @@
   },
   {
     "id": "air_otp",
+    "area": "operations",
+    "kind": "rate",
+    "direction": "up",
     "title": "On-Time Performance (OTP)",
     "intent_tags": [
       "on time performance",
@@ -281,6 +287,9 @@
   },
   {
     "id": "air_yield",
+    "area": "unit_revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Passenger Yield (Revenue per RPK)",
     "intent_tags": [
       "yield",
@@ -419,6 +428,9 @@
   },
   {
     "id": "air_rasm_casm",
+    "area": "unit_revenue",
+    "kind": "value",
+    "direction": "either",
     "title": "Unit Revenue and Unit Cost (RASM & CASM)",
     "intent_tags": [
       "rasm",
@@ -560,6 +572,9 @@
   },
   {
     "id": "air_ancillary_per_pax",
+    "area": "unit_revenue",
+    "kind": "value",
+    "direction": "up",
     "title": "Ancillary Revenue per Passenger",
     "intent_tags": [
       "ancillary revenue per passenger",
@@ -697,6 +712,9 @@
   },
   {
     "id": "air_fleet_utilization",
+    "area": "network",
+    "kind": "rate",
+    "direction": "up",
     "title": "Aircraft / Fleet Utilization (Block Hours per Aircraft per Day)",
     "intent_tags": [
       "fleet utilization",

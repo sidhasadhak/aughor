@@ -140,7 +140,7 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     where each category's own history credits +19.83%, and the company total says cannot tell. Owed: §5.2 read
     on 2026-12-05 (five decisions on live data reaching a verdict); D-4 and D-5 not built.*
 
-58. [ ] **Palantir's features, the Aughor way — Arcs ED, TC and FA** (ROADMAP §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6
+58. [x] **Palantir's features, the Aughor way — Arcs ED, TC and FA** (ROADMAP §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6
     item 52; `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md`) — the user, 2026-10-24: *"The whole point of this Study is
     to understand how we can incorporate the features of Palantir into our platform"*. Aughor already has most of Foundry's
     shape; what is left is three properties of what it built. In plain words: **ED** fixes what does not hold today (a row
@@ -148,7 +148,7 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     its failures, outside programs that all look like one caller); **TC** makes every answer, edit, alert and run say what
     made it; **FA** makes the ontology searchable and lets a choice travel. The three calls were decided 2026-10-24 (§6
     item 52 (a)–(c): one published App version · the chat endpoint when a customer asks · proposed agent revisions once
-    goldens exist). **ED-0 started 2026-10-24.** *Arc ED merged as #626 (`abd1a3f4`); Arc TC merged 2026-10-26 as #628 (`e25badee`), each piece behind its flag; Arc FA started 2026-10-26 on `claude/arc-fa`.*
+    goldens exist). **ED-0 started 2026-10-24.** *Arc ED merged as #626 (`abd1a3f4`); Arc TC merged 2026-10-26 as #628 (`e25badee`), each piece behind its flag; Arc FA merged 2026-10-26 as #629 (`9d1add2f`), every piece behind its flag, all eleven on live at the user's call.*
 
 59. [ ] **A side assistant beside every screen** (the user, 2026-10-24, with CopilotKit's FinanceOS showcase: *"when a
     user wants to ask a question about a number already given in the briefing section and user clicks on "pull the
@@ -182,13 +182,13 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] TC-5 · operations read across runs — hub-map failure rate, log search, audit window and export, reasons on payload reads (`hub.failure_rate`, `obs.log_search`, `govern.justifications`) — ✅ BUILT 2026-10-26/27, all three off (`a556fb5b`…`05f88608`): the hub map holds automations and monitors only (no agents, no syncs), each with a rate, *no runs* (never 0%) or *not permitted*; `GET /obs/logs` searches the journal's run lines over 30 days and says how far it reached (`job.state`/`automation.run` are swept after 2 days); the audit feed takes since/until/cursor and exports CSV or JSON lines; reading a run's payload or exporting the ledger needs a reason, written once as `access.justified` to the journal (no sixth sink). **With `govern.justifications` on, the web trace viewer and the MCP `read_run_span` tool get a 422 — they cannot pass a reason yet.** Adjacent, not fixed: `/traces/{id}/summary|spans|logs|trajectory` are open reads while `/traces/{id}` is admin-only; `/activity` serves session payloads unaudited — **merged 2026-10-26, #628** (`e25badee`)
 
 ### The ontology people can find and act on — Arc FA (§3.60; drafted and adopted 2026-10-24, §6 item 52; third of three)
-- [~] FA-1 · the ontology can be searched — declarations in graph search, ⌘K finds objects across entities, hybrid document search (`graph.declarations`, `objects.find`, `knowledge.hybrid_documents`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, all three off by default; **live on theLook**: graph search finds the published process, impact and rule as `declaration` nodes; ⌘K `levi` → "searched 4 of 8 entities", jackets and customers, each skip said (a 4 s budget skips slow BigQuery entities, said); the words-only document fallback is tested, not driven live (the local embedder was up). Unflagged: one trim for the graph read-back and the MCP knowledge door — a finding or metric over a withheld table no longer reaches either
-- [~] FA-2 · a choice can leave its piece — typed object and set references, "ask about these" in the Data Canvas; mockup first (`canvas.ask_about_chosen`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; **live on theLook**: the Late dispatch table offers *Ask about this set* → the Data Canvas reads "Asking about overdue dispatch · 24,934 orders" (a table over a named segment was found offering nothing, fixed live); no question was sent (it spends)
-- [~] FA-3 · safe removal — put back, retiring, usage per entity (`ontology.put_back`, `ontology.retiring`, `ontology.usage`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; `ontology.usage` folded into `ontology.entity_usage` (§6 52(e)); **live on theLook**: Tools → Reads by entity, least read first (19 s → 4 s, fixed live); put back and retiring **live** with the user's approval of `ontology.override` on theLook (granted for the proof, revoked after, the gate back at 428): Order Fulfilment's version 10 put back waited in the draft classed MEANING ("how an object leaves it changed… the promise on 'delivered' was dropped"); Order::complete_orders marked retiring read "retiring on 2026-12-01 — use Returned Orders instead", MEANING; both discarded, the draft empty. Two wording slips, open: a retiring mark on a built element is labelled *added*, and its reason quotes the successor's id, not its name
-- [~] FA-4 · a set becomes a segment; the set's chain with counts (`ontology.set_segments`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; its server half **live** with the same approval: a person's condition rule with `in_last` 30 days declared through `POST /ontology/rules`, verified and counted, waited in the draft and was discarded; the builder's step-by-step counts and the button itself are tested only — no theLook dashboard defines a set
-- [~] FA-5 · act on each object a rule admits (`automations.objects_admitted`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; **live on theLook**: an automation on `overdue_dispatch`, switched on for one check: "first check — 24,934 already in, none new; recorded, not fired · listed as user:amitkamlapure, this install's operator"; removed after
-- [~] FA-6 · packs as products — installed versions, upgrade diff, dashboard templates (`packs.installed_versions`, `packs.dashboard_templates`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, both off by default; pack_bindings migration 3 applied live; **live on theLook**: retail reads installed v1 · not recorded (bound before the flag), the diff lists 8 added and 6 it would offer; the retail template shows under New dashboard → From a pack template, both cards ready; *Upgrade* and *Draft it* not pressed (they stage proposals)
-- [~] FA-7 · any SDK can call an agent — the grounding read (`agents.grounding_read`); the chat-compatible endpoint (`doors.chat_completions`) waits until a customer asks — ✅ §6 item 52(b) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; **live**: The Look Analyst's read through the MCP route in 1.5 s — 9 blocks with content, 8 absent with why, the local embedder said (6 calls), no chat model, one `agent.grounding_read` entry without content. Unflagged: `/ask/context` now checks the connection's owner
+- [x] FA-1 · the ontology can be searched — declarations in graph search, ⌘K finds objects across entities, hybrid document search (`graph.declarations`, `objects.find`, `knowledge.hybrid_documents`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, all three off by default; **live on theLook**: graph search finds the published process, impact and rule as `declaration` nodes; ⌘K `levi` → "searched 4 of 8 entities", jackets and customers, each skip said (a 4 s budget skips slow BigQuery entities, said); the words-only document fallback is tested, not driven live (the local embedder was up). Unflagged: one trim for the graph read-back and the MCP knowledge door — a finding or metric over a withheld table no longer reaches either — **merged 2026-10-26, #629** (`9d1add2f`)
+- [x] FA-2 · a choice can leave its piece — typed object and set references, "ask about these" in the Data Canvas; mockup first (`canvas.ask_about_chosen`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; **live on theLook**: the Late dispatch table offers *Ask about this set* → the Data Canvas reads "Asking about overdue dispatch · 24,934 orders" (a table over a named segment was found offering nothing, fixed live); no question was sent (it spends) — **merged 2026-10-26, #629** (`9d1add2f`)
+- [x] FA-3 · safe removal — put back, retiring, usage per entity (`ontology.put_back`, `ontology.retiring`, `ontology.usage`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; `ontology.usage` folded into `ontology.entity_usage` (§6 52(e)); **live on theLook**: Tools → Reads by entity, least read first (19 s → 4 s, fixed live); put back and retiring **live** with the user's approval of `ontology.override` on theLook (granted for the proof, revoked after, the gate back at 428): Order Fulfilment's version 10 put back waited in the draft classed MEANING ("how an object leaves it changed… the promise on 'delivered' was dropped"); Order::complete_orders marked retiring read "retiring on 2026-12-01 — use Returned Orders instead", MEANING; both discarded, the draft empty. Two wording slips, open: a retiring mark on a built element is labelled *added*, and its reason quotes the successor's id, not its name — **merged 2026-10-26, #629** (`9d1add2f`)
+- [x] FA-4 · a set becomes a segment; the set's chain with counts (`ontology.set_segments`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; its server half **live** with the same approval: a person's condition rule with `in_last` 30 days declared through `POST /ontology/rules`, verified and counted, waited in the draft and was discarded; the builder's step-by-step counts and the button itself are tested only — no theLook dashboard defines a set — **merged 2026-10-26, #629** (`9d1add2f`)
+- [x] FA-5 · act on each object a rule admits (`automations.objects_admitted`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; **live on theLook**: an automation on `overdue_dispatch`, switched on for one check: "first check — 24,934 already in, none new; recorded, not fired · listed as user:amitkamlapure, this install's operator"; removed after — **merged 2026-10-26, #629** (`9d1add2f`)
+- [x] FA-6 · packs as products — installed versions, upgrade diff, dashboard templates (`packs.installed_versions`, `packs.dashboard_templates`) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, both off by default; pack_bindings migration 3 applied live; **live on theLook**: retail reads installed v1 · not recorded (bound before the flag), the diff lists 8 added and 6 it would offer; the retail template shows under New dashboard → From a pack template, both cards ready; *Upgrade* and *Draft it* not pressed (they stage proposals) — **merged 2026-10-26, #629** (`9d1add2f`)
+- [x] FA-7 · any SDK can call an agent — the grounding read (`agents.grounding_read`); the chat-compatible endpoint (`doors.chat_completions`) waits until a customer asks — ✅ §6 item 52(b) — 🔨 BUILT 2026-10-26 on `claude/arc-fa`, unmerged, off by default; **live**: The Look Analyst's read through the MCP route in 1.5 s — 9 blocks with content, 8 absent with why, the local embedder said (6 calls), no chat model, one `agent.grounding_read` entry without content. Unflagged: `/ask/context` now checks the connection's owner — **merged 2026-10-26, #629** (`9d1add2f`)
 
 ### The cockpit as an App builder — Arc AP (§3.57; drafted and adopted 2026-10-10, §6 item 51; branch `claude/platform-text-density-002fe8`)
 - [x] AP-0 · the study — [docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md](docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md): Workshop read across ~220 doc pages and the user's 22 screenshots, the cockpit inventoried, the starter measured on every theLook entity; the mockup `design-mockups/cockpit-builder.html` (seven screens on live theLook numbers, drawn for 1920 × 1080). The words in `docs/GLOSSARY.md` (set · chosen · ticked · value · drawer · form · shape; *Size* one grade at a time).
@@ -715,3 +715,170 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     `AUGHOR_INBOUND_EMAIL_DOMAIN` and `AUGHOR_INBOUND_EMAIL_SECRET` and a mail provider posts to a PUBLIC address
     (a laptop install needs a tunnel); Google comments on a named file are BUILT and ON (`391aae01`) — they wait on the
     user's OAuth client (`docs/GOOGLE_OAUTH_CLIENT_SETUP.md`). Merged 2026-10-26 as #628 (`e25badee`); the coverage test skipped (owed).
+
+62. [ ] **Metrics that cover the business — Arc MC** (the user, 2026-10-26, on LuxExperience: *"only 12 proposed
+    metrics.. for an e-commerce organisation that is probably not even 50% of the matrix.. Missing in terms of approach
+    or logic.."*, then *"Proceed with framework first"*) — **studied 2026-10-26**, nothing built:
+    `docs/METRICS_COVERAGE_STUDY_2026-10-26.md`, ROADMAP §3.62. Measured: LuxExperience 33 tables, 12 metrics over 12
+    of them, 9 working (two read 1 in every period — the retail pack's recipes bound to the wrong tables, one a date
+    bound to an id; ROAS has no dated rows); theLook 15 metrics over 6 of 7 tables. The explorer asks one model call for
+    "the 6-8 metrics that matter MOST"; the knowledge base's ~100 metric patterns with templates (`packs/*/kb/`) are read only
+    to answer questions, never to propose (the user spotted it); the gates check the SQL, not the figure.
+    Framework: a map of areas (generic + per-pack layer) → placement → coverage matrix → proposals per uncovered area
+    (recipes, ontology-derived, a scoped model call) → gates (moves · sane range · binding types) → people adopt.
+    Waves MC-0…MC-6. *✅ ADOPTED 2026-10-26 (ROADMAP §6 item 55): deprecate the two that read 1 (done the same day) ·
+    knowledge base + generic layer · MC-5 automatically when profiled · all proposals that pass, by area · the
+    Briefing's default raised to 24 · gates refuse at approval.* **BUILT 2026-10-26** at the user's word (*"Go ahead
+    and build entire arc mc"*), each wave behind its flag, off by default (the study's §9):
+    - [~] MC-0 `metrics.figure_gates` — moves · sane range · binding types, refused at approval and at the adopt door.
+      *Live 2026-10-26 (all six flags ON at the user's word, "Turn on all six"): on LuxExperience the gates found a
+      THIRD broken approved metric nobody had named — Markdown Penetration reads 1 in every month (price_history's first
+      month is the 8,600-row price load at 0%, every later row is a markdown: the share of price CHANGES that are
+      markdowns). Not changed — the user's call. The approval door's refusal is unit-tested; a live refusal needs a
+      person's approve click.*
+    - [~] MC-1 the map — `packs/*/areas.yaml`, area/kind/direction on 130 patterns, `semantic/metric_map.py`.
+    - [~] MC-2 `metrics.coverage_map` — placement with why, the matrix, the Metrics tab's Coverage card. *Live on
+      LuxExperience: 14 areas, 12 with data, 6 covered, 4 with no working metric (Fulfilment, Payments & risk, CRM &
+      consent, Service), 2 not checked (Marketing — ROAS's date only inside a filter; Inventory — 2 of 6 months have a
+      figure), 85 of the knowledge base's patterns no metric computes; every metric-read table placed; 6 reference
+      tables placed in no area, said. 14.5 s with figures read.*
+    - [~] MC-3/MC-4 `metrics.coverage_proposals` — bound recipes gated; ontology on-time rates, conversions, shares.
+      *Live: LuxExperience's return_rate and cart_to_order recipes, bound as they were, refused by binding, moves and
+      sane range, each said (the NRF and Baymard bases quoted). theLook: Order Fulfilment's dispatch on-time rate
+      (67,597 kept of 81,082) and delivery (39,510 of 43,969), three stage conversions and the completed-orders share,
+      each counted as the ontology counts it.*
+    - [~] MC-5 `metrics.coverage_writer` — one call per open area on profiling; area and pattern gates in code.
+      *Live on LuxExperience (the user's "Turn on all six"): 11 calls to claude-sonnet-5-5, one per open area, wrote 52
+      proposals; with the code's 2, 54 — **41 pass every gate** (cart abandonment 77%, the checkout funnel's steps,
+      CSAT 3.02, resolution 4.5 days, consent and email rates, stock-out 1.2%, NRR, first-to-second order 11.7% …),
+      13 refused with why. Reading them found three gaps, closed (`11e06549`): a year number taken for a date
+      (fiscal_year), unread figures offered as adoptable, and proposals that read one figure alike (three consent
+      rates at 0.6196). Re-checking took 240 s, so proposing by code runs on a thread (`f1c5eb93`). Nothing adopted —
+      adopting is the user's.*
+    - [~] MC-6 `metrics.blind_spot_proposals` + `briefing.metric_cap` — blind spots proposed; Briefing cap 24, by area.
+      *Live on theLook: two blind spots from the findings — one proposed, one refused for having no date. LuxExperience's
+      Briefing (a custom range, the no-narrative door) reads its eight figures by area, the statement's first.*
+    - *Found live and fixed (`0e26e6c4`): a recipe's band bound a metric that only matched an ALIAS — LuxExperience's
+      Item Return Rate (~31%, luxury fashion) would have been refused by retail's 0–30%; now only a metric made from
+      the recipe, or carrying its own name. Found live, NOT changed (the user's call): Markdown Penetration, approved,
+      reads 1 in every month — price_history logs price changes, and every one after the first month's load is a
+      markdown.*
+    - *Other industries (the user, 2026-10-26: "What about other industries?"):* coverage read every dataset of a
+      connection holding several as Olist's (fixed, `d170b7e1`; prewarm takes `?schema=`); the workspace's airlines,
+      zomato_data, bakehouse and amazon datasets are EMPTY — the airline data is in `main`, beside a bakery sample.
+      At the user's word the Curator was turned on (app scope) and `main` re-profiled: an airline, the airline pack;
+      the writer proposed 10 airline metrics, all passing (5 more over a text-chunk table in the generic area were
+      noise: the generic area is never written for, `926306c8`); the airline map's words now place every airline
+      table (`999cf5ee`) — Operations holds flights, crew and boarding, its on-time performance open for the next
+      writer run. The airline, SaaS, food-delivery, logistics and manufacturing packs carry 6 metric patterns each
+      against retail's 34; banking is a draft and not read.
+
+
+63. [~] **The Briefing adapts to any number of figures, and each reader chooses them** (the user, 2026-10-26: *"how can a
+    user choose what appears in the briefing and what not?"* and *"the longer the list gets the lower Trends and Gaps
+    get… no point of having such structure which doesn't adapt"*). Mocked (`design-mockups/briefing-figures.html`,
+    LuxExperience's week, 24 approved), approved (*"build the mockup"*), built: the front holds six beside the lead
+    (the default the first six in the map's order), so Trends · Gaps · Decide never move down; every other figure reads
+    under the desk in **Every figure, by area** (a figure that moved 10%+ brighter, stopped figures one line per day,
+    a blank figure with its reason and its fix); **Choose figures** — front · below · hidden, per reader per dataset
+    (`briefing_figures` in the person's preferences, beside the switches; every approved figure is still measured). A
+    Briefing whose figures fit on the front reads as it did. `web/lib/briefingFigures.ts`, `brief/BriefFigures.tsx`.
+    *Proven live 2026-10-26 on LuxExperience's Day edition (24 approved): six on the front, 11 below by area, 8 stopped
+    one line per day; hiding Gross Margin on Items stored `{"hidden": ["item_gross_margin_pct"]}` and Gross Margin %
+    took its place; "Back to the default" (added after driving it) returned it to `{}`. No model call to open it.*
+
+64. [~] **What Grist teaches — Arc SV, the platform's own state survives** (the user, 2026-10-26, on
+    `gristlabs/grist-core`: *"We have to get the most out of this - truly incredible repo"*) — **studied 2026-10-26**,
+    nothing built: `docs/GRIST_STUDY_2026-10-26.md`. Grist owns its data and Aughor reads data it does not own, so its
+    spreadsheet half (Python formulas, a sandboxed engine, forms that write rows, full-access widgets) is refused (§6);
+    its substrate is taken. Measured: 46 SQLite stores (1,109 MB) and no scheduled backup — the recovery recipe is
+    `.recover` from the damaged file; 17 stores migrate as they open inside the API and none copies itself first
+    (the 2026-08-14 half-committed ledger migration came back from a backup taken by hand); the migration test lists 5
+    of the 17 by hand. **SV-1** a labelled backup before every migration + the migration test enumerated from the code
+    (S, no flag — call 2) · **SV-2** rolling backups inside the API, kept by a port of Grist's `shouldKeepSnapshots`,
+    a restore that lists every removal it would undo (M, `state.backups`) · **SV-3** incremental equals rebuilt —
+    first on the API connectors' sync, where three defects were found and one REPRODUCED on a scratch DuckDB
+    (positional `INSERT … SELECT *` wrote deal 2 as `email='2', id=7`); latent, no API connector is configured.
+    Five disciplines go into planned work (study §4 — FA-5's *leaves*, stale row policies named when
+    `ontology.security` graduates, the App-as-widget's input mapping, *unknown* in a read under a past release, errors
+    as values). **Five calls are the user's (study §8).**
+    ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — ROADMAP §3.63, §6 item 56. Still open: the study's
+    §8 calls 2–4 (SV-1 without a flag; the backups' window; which stores), SV-3, and §10.5's breakdown piece.
+    ✅ *Calls 2–4 decided the same day, as recommended* (no flag · newest 5, hourly 24, daily 14, weekly 8 · every store but
+    `checkpoints.db`). **SV-1 BUILT 2026-10-27** (uncommitted on the session branch):
+    - a labelled, verified, single-file copy before every pending migration of a store with rows;
+    - a failed copy (including a damaged store) holds the migration back, named on `/health`;
+    - the 17 migrating stores enumerated from the code, each re-migrated with its rows;
+    - seven guards mutation-tested; proven on an isolated ledger;
+    - full unit suite 15,144 passed.
+
+    ✅ **SV-2 BUILT 2026-10-27** behind `state.backups`, off (local, not pushed — ROADMAP §3.63 "SV-2, built"): hourly
+    backups inside the API, only when something changed, unchanged sources hard-linked; Grist's retention ported with
+    its tests; `aughor restore` that refuses while serving, lists what comes back, asks, and puts the originals back on
+    any failure; never over the audit log, the model-call log carried. 45 tests, 30 mutants killed. **LIVE 2026-10-27**:
+    on, first backup 04:01 UTC (798 sources, 10.4 s, 396 MB), p95 did not rise during it (§3.63). **Open:** a week of
+    hourly backups read and one restore proven on a copy (its graduation receipt); an `aughor doctor` line.
+
+    ~~**Next: SV-2.**~~ *Extended 2026-10-26 at the user's "Do you not see this as an
+    addition to the Dashboard feature that we have?"* — study §10: piece by piece against the Dashboard vocabulary,
+    most of Grist's widget model is already here; it adds a **breakdown piece** (objects grouped by a property, a
+    measure per group, a click that narrows every piece — over `ObjectQuery.by`, which the object door already has;
+    `dashboard.breakdowns`, M), **rows marked by a declared rule** (`dashboard.marks`, S–M) and **comments on a figure
+    or an object as said claims** (recorded, not proposed). Mockup for approval: `design-mockups/dashboard-breakdown.html`
+    (three screens, every number theLook's through the object door). **Four more calls (study §10.5).**
+
+65. [x] **A spreadsheet section people make and then chat with — Teable** (the user, 2026-10-26: *"Chuck grist.. check
+    this: https://github.com/teableio/teable … all we need to do is push our chat experience there.. framework already
+    exists!"*) — **studied 2026-10-26**, nothing built or run: `docs/TEABLE_STUDY_2026-10-26.md`. The premise does
+    not hold: Teable's chat panel, App Builder and agent are NOT in its open code (the panel is commented out; the one
+    open AI route is a single prompt → text; chat ships only with three closed runtime images). What its open (AGPL)
+    code is: a spreadsheet whose every sheet is a real Postgres table, base = schema — which Aughor can read as an
+    ordinary connection. Recommended: **option A** — Teable unmodified beside Aughor, read-only as a Postgres
+    connection, a *Spreadsheets* page in the rail with Aughor's chat beside the sheet (the parked side assistant,
+    §3.61), proved first in one sitting (study §3). Option B (our own sheet section, MIT canvas grid) reverses the
+    §4.7 refusal of row editing; C (fork) and D (their chat calls us) not recommended / not possible. **Five calls are
+    the user's (study §4).**
+    *Decided 2026-10-27: Teable DROPPED* (the user: "chuck it.. within our platform users should be able to work with
+    spreadsheets the way screenshots suggest") — its chat and App Builder are self-hostable only as closed images, no
+    source, no licence file. Direction: spreadsheets built INSIDE Aughor (option B), Aughor writing its own sheets,
+    never a warehouse. Next: the arc written down and the Spreadsheets page mocked on real data, before any build.
+    *Closed 2026-10-27: Teable recorded as dropped (ROADMAP §4.12); the spreadsheet work continues as item 66.*
+
+66. [~] **Arc SH — Sheets: tables people make, edit and chat with** (the user, 2026-10-27, after Teable was dropped:
+    *"within our platform users should be able to work with spreadsheets the way screenshots suggest.. Is it really so
+    hard to incorporate it in our platform?"*, then *"write the spreadsheet arc (steps, sizes, the calls) and mock up the
+    Spreadsheets page on real data before anything is built"*) — **drafted, not adopted, nothing built**:
+    `docs/SPREADSHEETS_ARC_2026-10-27.md` + `design-mockups/spreadsheets.html` (four screens — a sheet with the chat
+    beside it, after Apply, a board, a new sheet from a file — every row the uploaded `olist_orders_dataset.csv`, read
+    with the upload door's reader). The model: a sheet = its source file + people's changes in the edit layer (row grain
+    added) + a definition on the lifecycle substrate; the table is a DuckDB projection rebuilt from both — no new store
+    of record. Waves SH-1 core (M–L) · SH-2 grid (L) · SH-4 chat that PROPOSES (M) · SH-3 views (M) · SH-6 everywhere
+    (S) · SH-5 model-written columns only on its call (M). Measured on the way: uploads are rebuilt in memory from their
+    files, so a sheet cannot live there; Olist's 1,729 "open" orders are a median 295 days past estimate — the mockup's
+    chat says they look abandoned, not late. **Eight calls are the user's (arc §5).**
+    *Extended 2026-10-27 at the user's "Is something missing?" → "fold the missing items in":* backups FIRST (Arc SV-1/SV-2
+    are SH-1's precondition — people's typing exists nowhere else); the Spreadsheets home; a sheet made by the chat from a
+    dropped file; SH-7 combining (link by a key with misses counted, totals of linked rows, a newer file as a keyed
+    merge, a query's rows kept as a sheet); totals at the foot, column descriptions, a row opened as a record; SH-8
+    sharing (workspace first, said on the Share button; then chosen people); the model column capped at the semantic
+    operators' 200 rows a fill, 25 a call. Mockup now ten screens on Olist orders, customers, payments and reviews (money
+    in R$). A figure corrected on the way: "late" compared a time with a midnight date — by calendar day it is 6,535
+    late (median 7 days), not 7,827 (1,292 were delivered ON the estimated day). **Ten calls now (arc §5).**
+    ✅ **ADOPTED 2026-10-27** — ROADMAP §3.64, §6 item 56, all ten calls as recommended (the user: *"The ten-screen
+    Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first)"*).
+    Nothing built; SH-1 waits for SV-1 and SV-2 (item 64).
+    ✅ **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** (the user: *"Take SV-2 till SH-7 in one go"*), behind
+    `sheets.core` · `sheets.grid` · `sheets.chat` · `sheets.combine`, all off; local on `claude/grist-core-exploration-df8c99`,
+    not pushed — ROADMAP §3.64 "SH-1 … SH-7, built". Every wave's falsifier is a test; live on a scratch API over the Olist
+    files the oracle held, an edit read back through the SQL Editor's route, and the linked *Paid* total equalled SQL over
+    the two sheets (R$16,008,872.12). Open: **the rail row's placement** (the rail already overflows 22 px at
+    1440×900 — call 7's fallback is a Catalog tab); the chat's model path proven only with the scripted model; SH-3,
+    SH-5, SH-6, SH-8 not built. **LIVE 2026-10-27**: `sheets.core`, `.grid`, `.combine` on (chat off); the four Olist
+    sheets made live, orders linked to customers and *Paid* totalled — oracle same, *Paid* = SQL on all 99,441 (§3.64).
+    ✅ **SH-3 BUILT 2026-10-27, and the built screens brought to the mockup** (the user: *"Fix the gaps on the built screens
+    first, then build SH-3"*): one scroll over every row, the cell's story under its cell, a plainer home, a counted
+    dialog, Combine's kept cards, the record as one page; grouped grids with group totals, boards, calendars, rules and
+    views kept to their maker, behind `sheets.views` (off). Every group, lane, day and rule count equals the grid's on
+    the Olist orders; a new view from the grid was refused (no id) and is fixed. SH-5, SH-6, SH-8 not built.
+    **LIVE 2026-10-27**: live checkout at `3f5e117a`, `sheets.views` on (57 flags); on the live Olist orders every group,
+    lane and day count equals the grid's (1,729 open orders, 2,001 due in September 2018) — no view or rule kept yet.

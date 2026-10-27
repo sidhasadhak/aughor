@@ -1,6 +1,9 @@
 [
   {
     "id": "revenue_drop_analysis",
+    "area": "revenue",
+    "kind": "analysis",
+    "direction": "either",
     "title": "Revenue Drop Analysis",
     "business_definition": "Revenue is the total monetary value of sales in a period. A drop means fewer orders, lower order values, or higher refunds — each requiring a different fix.",
     "intent_tags": ["revenue drop", "revenue decline", "revenue fell", "revenue decreased", "sales down"],
