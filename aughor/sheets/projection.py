@@ -386,21 +386,31 @@ def rename(sheet: Sheet, old_table: str, org: str = "") -> None:
 
 def check(sheet: Sheet, org: str = "") -> dict:
     """The oracle: the table as it stands against a fresh rebuild from source and changes. ``same`` is the falsifier of
-    SH-1 — a table that differs from its own rebuild is a projection that has drifted from its record."""
+    SH-1 — a table that differs from its own rebuild is a projection that has drifted from its record.
+
+    Compared by column name, never by position: every read of the table names its columns, so their order in it is not
+    part of what it holds — a column moved in the sheet is a change to the sheet's order, not to the table. Both must
+    hold the same columns, each of the same type, and every row of one must be a row of the other."""
     org = org or _org()
     con = database(org)
     with _lock(org):
         scratch = '"_check_rebuild"'
         _build(con, sheet, org, target=scratch)
         table = ident(sheet.table)
-        only_table = con.execute(f"SELECT COUNT(*) FROM (SELECT * FROM {table} EXCEPT ALL SELECT * FROM {scratch})"
-                                 ).fetchone()[0]
-        only_rebuild = con.execute(f"SELECT COUNT(*) FROM (SELECT * FROM {scratch} EXCEPT ALL SELECT * FROM {table})"
-                                   ).fetchone()[0]
+        shape = lambda t: {(r[0], str(r[1])) for r in con.execute(f"DESCRIBE {t}").fetchall()}  # noqa: E731
+        built = shape(scratch)
+        columns_same = shape(table) == built
+        names = ", ".join(ident(n) for n, _ in sorted(built))
+        only_table = only_rebuild = -1
+        if columns_same:
+            only_table = con.execute(f"SELECT COUNT(*) FROM (SELECT {names} FROM {table} EXCEPT ALL "
+                                     f"SELECT {names} FROM {scratch})").fetchone()[0]
+            only_rebuild = con.execute(f"SELECT COUNT(*) FROM (SELECT {names} FROM {scratch} EXCEPT ALL "
+                                       f"SELECT {names} FROM {table})").fetchone()[0]
         rows = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         con.execute(f"DROP TABLE IF EXISTS {scratch}")
-    return {"same": only_table == 0 and only_rebuild == 0, "rows": int(rows),
-            "only_in_table": int(only_table), "only_in_rebuild": int(only_rebuild)}
+    return {"same": columns_same and only_table == 0 and only_rebuild == 0, "rows": int(rows),
+            "columns_same": columns_same, "only_in_table": int(only_table), "only_in_rebuild": int(only_rebuild)}
 
 
 # ── reading ──────────────────────────────────────────────────────────────────────────────────────────────────────────

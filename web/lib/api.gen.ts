@@ -19144,6 +19144,8 @@ export interface components {
         };
         /** ColumnUpdate */
         ColumnUpdate: {
+            /** Before */
+            before?: string | null;
             /** Description */
             description?: string | null;
             /** Hidden */

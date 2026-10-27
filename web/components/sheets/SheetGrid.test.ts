@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { cellOrigin, navTarget, planClear, planPaste, rangeOf, rangeWords, width } from "./SheetGrid";
+import {
+  NUMBER_WIDTH, cellOrigin, edgeStep, layoutColumns, navTarget, planClear, planPaste, rangeOf, rangeWords, width,
+} from "./SheetGrid";
 import type { Sheet, SheetColumn } from "@/lib/sheets";
 
 const col = (over: Partial<SheetColumn>): SheetColumn => ({
@@ -127,5 +129,38 @@ describe("a width the person gave a column", () => {
     expect(width({ ...col({ kind: "text" }), width: 5 })).toBe(60);
     expect(width({ ...col({ kind: "text" }), width: 5000 })).toBe(800);
     expect(width(col({ kind: "yesno", name: "ok" }))).toBe(90);
+  });
+});
+
+describe("frozen columns", () => {
+  const cols = [col({ id: "a", kind: "text", name: "order_id" }), col({ id: "b", kind: "money", name: "Paid" }),
+    col({ id: "c", kind: "date", name: "due" })];
+  it("the first ones pinned after the row numbers, each where the last ends, the last of them marked", () => {
+    const shown = layoutColumns(cols, new Set(), { a: 200 }, 2);
+    expect(shown.map(c => c.left)).toEqual([NUMBER_WIDTH, NUMBER_WIDTH + 200, undefined]);
+    expect(shown.map(c => !!c.edge)).toEqual([false, true, false]);
+  });
+  it("counted among the columns shown, never more than there are", () => {
+    const shown = layoutColumns(cols, new Set(["a"]), {}, 9);
+    expect(shown.map(c => c.id)).toEqual(["b", "c"]);
+    expect(shown.every(c => c.left !== undefined)).toBe(true);
+    expect(layoutColumns(cols, new Set(), {}, 0).some(c => c.left !== undefined)).toBe(false);
+  });
+});
+
+describe("a drag at the grid's edge scrolls it", () => {
+  const rect = { left: 0, right: 1000, top: 0, bottom: 600 };
+  it("toward the edge it is near, faster the nearer, and not at all in the middle", () => {
+    expect(edgeStep(rect, 500, 300)).toEqual({ dx: 0, dy: 0 });
+    const near = edgeStep(rect, 500, 590);
+    const nearer = edgeStep(rect, 500, 599);
+    expect(near.dy).toBeGreaterThan(0);
+    expect(nearer.dy).toBeGreaterThan(near.dy);
+    expect(edgeStep(rect, 990, 300).dx).toBeGreaterThan(0);
+    expect(edgeStep(rect, 5, 300).dx).toBeLessThan(0);
+  });
+  it("the header and the row numbers count as the edge, not the box's own", () => {
+    expect(edgeStep(rect, 500, 40, { top: 30 }).dy).toBeLessThan(0);
+    expect(edgeStep(rect, 80, 300, { left: 64 }).dx).toBeLessThan(0);
   });
 });

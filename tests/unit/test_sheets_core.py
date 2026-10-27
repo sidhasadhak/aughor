@@ -359,3 +359,39 @@ def test_a_cell_an_undo_put_back_is_changed_again_at_the_version_its_page_reads(
     service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 2}],
                       by="user:ana")
     assert _cell(model.get(sheet.id), 3, "order_status") == "canceled"
+
+
+# ── a column moved (the grid's header dragged) ──────────────────────────────────────────────────────────────────────
+
+def test_a_column_moved_is_the_sheets_order_and_undo_puts_it_back(env):
+    """Dragging a header moves the column for everyone, as a spreadsheet's column order is — one change in the history,
+    undone whole; the rows still read under their own columns, and the table needs no rebuild for it."""
+    from aughor.sheets import model, projection, service
+    sheet = _orders(env)
+    names = lambda: [c.name for c in model.get(sheet.id).columns]          # noqa: E731
+    before = names()
+    price = sheet.column("price")
+    status = sheet.column("order_status")
+    first = (_cell(sheet, 1, "price"), _cell(sheet, 1, "order_status"))
+    service.update_column(sheet, price.id, by="user:ana", before=status.id)
+    now = names()
+    assert now.index("price") == now.index("order_status") - 1 and len(now) == len(before)
+    moved = model.get(sheet.id)
+    assert moved.change.what == "price moved before order_status"
+    page = projection.read_rows(moved, limit=1)
+    at = [c.id for c in moved.columns].index(price.id) + 1                             # after the row's number
+    assert page["rows"][0][at] == first[0]                                             # read under its own column
+    assert (_cell(moved, 1, "price"), _cell(moved, 1, "order_status")) == first
+    assert _same(moved)["same"]
+    service.update_column(moved, price.id, by="user:ana", before="")
+    assert names()[-1] == "price"
+    service.undo(model.get(sheet.id), by="user:ana")
+    assert names() == now                                                               # the move to the end undone
+    assert before[-1] == "price"
+    service.update_column(model.get(sheet.id), price.id, by="user:ana", before="")
+    assert names() == before                                                            # moved back to where it was
+    with pytest.raises(service.Refused, match="no column 'nope'"):
+        service.update_column(model.get(sheet.id), price.id, by="user:ana", before="nope")
+    unchanged = model.get(sheet.id)
+    service.update_column(unchanged, price.id, by="user:ana", before=price.id)            # in front of itself: nothing
+    assert names() == before and model.get(sheet.id).change.what == unchanged.change.what

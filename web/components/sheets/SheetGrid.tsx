@@ -54,8 +54,9 @@ export function choiceTone(column: Pick<SheetColumn, "choices">, value: unknown)
   return CHIP_TONES[at % CHIP_TONES.length];
 }
 
-/** A column as the grid lays it out: with the width the person dragged it to, where they did. */
-export type ShownColumn = SheetColumn & { width?: number };
+/** A column as the grid lays it out: with the width the person dragged it to, where they did — and, frozen, its place
+ *  at the left (`left`), the last of them with the line that ends them (`edge`). */
+export type ShownColumn = SheetColumn & { width?: number; left?: number; edge?: boolean };
 
 /** The widths a column may be dragged to. */
 export const MIN_WIDTH = 60;
@@ -86,9 +87,33 @@ export function cellStyle(c: ShownColumn): CSSProperties {
   const numeric = c.kind === "number" || c.kind === "money";
   return {
     width: width(c), minWidth: width(c), maxWidth: width(c), padding: "0 8px", overflow: "hidden",
-    borderRight: LINE, borderBottom: LINE, display: "flex", alignItems: "center",
+    borderRight: c.edge ? "2px solid var(--b3)" : LINE, borderBottom: LINE, display: "flex", alignItems: "center",
     justifyContent: numeric ? "flex-end" : "flex-start", height: ROW_HEIGHT, ...(numeric ? NUM : {}),
+    // a frozen column stays at the left as the rest scroll under it
+    ...(c.left !== undefined ? { position: "sticky", left: c.left, zIndex: 1, background: "var(--bg-0)" } : {}),
   };
+}
+
+/** The columns a grid shows, in the sheet's order: the hidden ones out, each at the width the person gave it, and the
+ *  first `frozen` of them pinned at the left after the row numbers. */
+export function layoutColumns(columns: SheetColumn[], hidden: Set<string>, widths: Record<string, number> = {},
+  frozen = 0): ShownColumn[] {
+  let left = NUMBER_WIDTH;
+  const shown = columns.filter(c => !hidden.has(c.id));
+  const count = Math.min(Math.max(0, frozen), shown.length);
+  return shown.map((c, i) => {
+    const sized: ShownColumn = widths[c.id] ? { ...c, width: widths[c.id] } : c;
+    if (i >= count) return sized;
+    const at = left;
+    left += width(sized);
+    return { ...sized, left: at, edge: i === count - 1 };
+  });
+}
+
+/** A cell's fill — over the page's own for a frozen column, so what scrolls under it never shows through. */
+function cellTone(c: ShownColumn, tone: string | undefined): string | undefined {
+  if (c.left === undefined) return tone;
+  return tone ? `linear-gradient(${tone}, ${tone}), var(--bg-0)` : "var(--bg-0)";
 }
 
 /** A value as its column shows it; a long one ends in "…" and is whole on hover. */
@@ -117,12 +142,38 @@ export function aboutColumn(sheet: Sheet, c: SheetColumn): string[] {
   return lines;
 }
 
+/** What a column's menu does — the grid keeps fitting a width; the view does the rest. */
+export type ColumnAction = "asc" | "desc" | "then-asc" | "then-desc" | "filter" | "hide" | "freeze" | "unfreeze" | "fit"
+  | "width";
+
+/** How far the pointer goes before a press on a header is a drag that moves the column, not a click that sorts. */
+const DRAG_PAST = 6;
+
+/** Near a scrolling box's edge while something is dragged: the box scrolls that way, faster the nearer. */
+export function edgeStep(rect: { left: number; right: number; top: number; bottom: number }, x: number, y: number,
+  inset: { top?: number; left?: number } = {}): { dx: number; dy: number } {
+  const zone = 36;
+  const speed = (d: number) => Math.ceil(((zone - Math.max(0, d)) / zone) * 24);
+  const top = rect.top + (inset.top ?? 0);
+  const left = rect.left + (inset.left ?? 0);
+  const dy = y < top + zone ? -speed(y - top) : y > rect.bottom - zone ? speed(rect.bottom - y) : 0;
+  const dx = x < left + zone ? -speed(x - left) : x > rect.right - zone ? speed(rect.right - x) : 0;
+  return { dx, dy };
+}
+
 /** The header: each column's kind, name and marks — and what a derived or described column is, a click away. A click on
- *  a column's name sorts by it: lowest first, then highest first, then back to the sheet's own order. Its right edge
- *  takes a drag to make it wider or narrower, a double-click to fit what it holds, and the arrows from the keyboard. */
-export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit }: {
-  sheet: Sheet; shown: ShownColumn[]; sort?: { column: string; desc: boolean }[]; onSort?: (column: string) => void;
+ *  a column's name sorts by it: lowest first, then highest first, then back to the sheet's own order; with Shift, after
+ *  the sorts there are. A press and a drag moves the column. Its ▾, or a right-click, opens its menu: sort, filter, hide,
+ *  freeze, fit. Its right edge takes a drag to make it wider or narrower, a double-click to fit, and the arrows. */
+export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, onAction, onMove }: {
+  sheet: Sheet; shown: ShownColumn[]; sort?: { column: string; desc: boolean }[];
+  /** A click sorts by the column; with Shift, as a further sort after the ones there are. */
+  onSort?: (column: string, add?: boolean) => void;
   onWidth?: (column: string, px: number | null) => void; onFit?: (column: string) => void;
+  /** The column's menu. */
+  onAction?: (action: ColumnAction, column: string) => void;
+  /** A column dragged to a new place: in front of `before` ("" — the end). */
+  onMove?: (column: string, before: string) => void;
 }) {
   const startResize = (e: ReactPointerEvent<HTMLElement>, c: ShownColumn) => {
     if (!onWidth || e.button !== 0) return;
@@ -131,7 +182,7 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit }: 
     const el = e.currentTarget;
     const x0 = e.clientX;
     const w0 = width(c);
-    el.setPointerCapture(e.pointerId);
+    try { el.setPointerCapture(e.pointerId); } catch { /* a pointer the browser no longer has: the drag ends */ }
     const move = (ev: PointerEvent) => onWidth(c.id, w0 + ev.clientX - x0);
     const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); };
     el.addEventListener("pointermove", move);
@@ -141,28 +192,108 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit }: 
   const aboutRef = useRef<HTMLDivElement>(null);
   const closeAbout = useCallback(() => setAbout(""), []);
   useCloseOutside(aboutRef, closeAbout);
+  const [menu, setMenu] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeMenu = useCallback(() => setMenu(""), []);
+  useCloseOutside(menuRef, closeMenu);
+  useEffect(() => { if (menu) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, [menu]);
+
+  // a header dragged to a new place: which, where it would go, and the click its letting go must not become
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ id: string; before: string } | null>(null);
+  const dragged = useRef(false);
+  const startDrag = (e: ReactPointerEvent<HTMLElement>, c: ShownColumn) => {
+    if (!onMove || e.button !== 0 || e.shiftKey) return;
+    const x0 = e.clientX;
+    let going = false;
+    let before = "";
+    let at = { x: e.clientX, y: e.clientY };
+    const grid = rowRef.current?.closest<HTMLElement>('[role="grid"]') ?? null;
+    const target = (x: number) => {
+      const heads = [...(rowRef.current?.querySelectorAll<HTMLElement>('[role="columnheader"]') ?? [])];
+      const over = heads.find(h => { const r = h.getBoundingClientRect(); return x < r.left + r.width / 2; });
+      return over?.dataset.column ?? "";
+    };
+    // dragged to the grid's edge, the grid scrolls across under it
+    const scroll = window.setInterval(() => {
+      if (!going || !grid) return;
+      const box = grid.getBoundingClientRect();
+      const { dx } = edgeStep({ left: box.left, top: box.top, right: box.left + grid.clientWidth, bottom: box.bottom },
+        at.x, at.y, { left: NUMBER_WIDTH });
+      if (dx) { grid.scrollLeft += dx; before = target(at.x); setDrag({ id: c.id, before }); }
+    }, 30);
+    const move = (ev: PointerEvent) => {
+      at = { x: ev.clientX, y: ev.clientY };
+      if (!going && Math.abs(ev.clientX - x0) < DRAG_PAST) return;
+      going = true;
+      before = target(ev.clientX);
+      setDrag({ id: c.id, before });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.clearInterval(scroll);
+      setDrag(null);
+      if (!going) return;
+      // the click a drag ends in, if the browser sends one, is not a sort — and the flag goes with this turn, so a drag
+      // that ended over another header leaves no click to swallow later
+      dragged.current = true;
+      window.setTimeout(() => { dragged.current = false; }, 0);
+      const order = shown.map(x => x.id);
+      const next = order[order.indexOf(c.id) + 1] ?? "";
+      if (before !== c.id && before !== next) onMove(c.id, before);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const at = (id: string) => NUMBER_WIDTH + shown.slice(0, shown.findIndex(c => c.id === id)).reduce((n, c) => n + width(c), 0);
   const open = shown.find(c => c.id === about);
+  const menuOn = shown.find(c => c.id === menu);
   const span = NUMBER_WIDTH + shown.reduce((n, c) => n + width(c), 0);
+  const frozen = shown.filter(c => c.left !== undefined).length;
+  const items: { action: ColumnAction; label: string }[] = menuOn ? [
+    { action: "asc", label: "Sort lowest first" },
+    { action: "desc", label: "Sort highest first" },
+    ...(sort.some(s => s.column !== menuOn.id) ? [
+      { action: "then-asc" as const, label: "Then by this, lowest first" },
+      { action: "then-desc" as const, label: "Then by this, highest first" }] : []),
+    { action: "filter", label: "Filter by this column…" },
+    { action: "hide", label: "Hide this column" },
+    { action: "freeze", label: "Freeze up to this column" },
+    ...(frozen ? [{ action: "unfreeze" as const, label: "Unfreeze the columns" }] : []),
+    ...(onFit ? [{ action: "fit" as const, label: "Fit the width to what it holds" }] : []),
+    ...(typeof menuOn.width === "number" ? [{ action: "width" as const, label: "Back to its own width" }] : []),
+  ] : [];
   return (
-    <div role="row" className="aug-fs-xs" style={{ display: "flex", position: "sticky", top: 0, zIndex: 3,
+    <div ref={rowRef} role="row" className="aug-fs-xs" style={{ display: "flex", position: "sticky", top: 0, zIndex: 3,
       background: "var(--bg-2)", color: "var(--t2)" }}>
       <div style={{ width: NUMBER_WIDTH, minWidth: NUMBER_WIDTH, height: ROW_HEIGHT, borderRight: LINE, borderBottom: LINE,
         position: "sticky", left: 0, zIndex: 4, background: "var(--bg-2)" }} />
       {shown.map(c => {
-        const by = sort[0]?.column === c.id ? sort[0] : undefined;
+        const rank = sort.findIndex(s => s.column === c.id);
+        const by = rank >= 0 ? sort[rank] : undefined;
         return (
-        <div key={c.id} role="columnheader" aria-label={`${c.name} · ${KIND_LABEL[c.kind]}`}
+        <div key={c.id} role="columnheader" aria-label={`${c.name} · ${KIND_LABEL[c.kind]}`} data-column={c.id}
           aria-sort={by ? (by.desc ? "descending" : "ascending") : "none"}
-          style={{ ...cellStyle(c), justifyContent: "flex-start", gap: 6, fontWeight: 600, position: "relative" }}>
-          <Button variant="ghost" size="xs" disabled={!onSort} onClick={() => onSort?.(c.id)} className="group"
-            title={by ? (by.desc ? "Highest first — click for the sheet's order" : "Lowest first — click for highest first")
-              : "Sort by this column"}
+          onContextMenu={e => { if (onAction) { e.preventDefault(); setMenu(c.id); } }}
+          style={{ ...cellStyle(c), justifyContent: "flex-start", gap: 6, fontWeight: 600,
+            ...(c.left !== undefined ? { background: "var(--bg-2)", zIndex: 2 } : { position: "relative" }),
+            opacity: drag?.id === c.id ? 0.45 : undefined }}>
+          <Button variant="ghost" size="xs" disabled={!onSort}
+            onPointerDown={e => startDrag(e, c)}
+            onClick={e => {
+              if (dragged.current) { dragged.current = false; return; }   // the end of a drag, not a click
+              onSort?.(c.id, e.shiftKey);
+            }}
+            className="group"
+            title={`${by ? (by.desc ? "Highest first — click for the sheet's order" : "Lowest first — click for highest first")
+              : "Sort by this column"} · Shift+click to sort by it after the others${onMove ? " · drag to move it" : ""}`}
             // the whole header sorts, as a spreadsheet's does — not only its name (the user: "I still cant sort the
             // sheet"); what explains the column keeps its own button beside it
             style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, minWidth: 0,
               flex: "1 1 auto", alignSelf: "stretch", padding: 0, height: "auto", borderRadius: 0, fontWeight: 600,
-              color: c.role === "lookup" ? "var(--blue4)" : "var(--t2)" }}>
+              color: c.role === "lookup" ? "var(--blue4)" : "var(--t2)", cursor: drag ? "grabbing" : undefined }}>
             <span style={MUTED}><Icon name={KIND_ICON[c.kind]} size={12} /></span>
             <span style={ELLIPSIS}>{c.name}</span>
             {/* the sort, at the header's end: the bars widest first for highest first, narrowest first for lowest first —
@@ -170,14 +301,26 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit }: 
             <span className={by ? undefined : "opacity-0 group-hover:opacity-60 transition-opacity"}
               style={{ marginLeft: "auto", display: "flex", color: by ? "var(--blue4)" : "var(--t3)" }}>
               <Icon name={by?.desc ? "sortdesc" : "sortasc"} size={14} />
+              {by && sort.length > 1 && (
+                // its place among the sorts, when there are more than one
+                <span className="aug-fs-xs" style={{ ...NUM, fontWeight: 600, marginLeft: 1 }}>{rank + 1}</span>
+              )}
             </span>
           </Button>
           {mark(c) && <Chip tone="accent">{mark(c)}</Chip>}
           {c.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
           {(c.description || c.role !== "stored") && (
             <Button variant="ghost" size="icon-xs" aria-label={`What ${c.name} is`} aria-expanded={about === c.id}
-              onClick={() => setAbout(about === c.id ? "" : c.id)} style={{ marginLeft: "auto", ...MUTED }}>
+              onClick={() => setAbout(about === c.id ? "" : c.id)} style={{ ...MUTED }}>
               <Icon name="info" size={11} />
+            </Button>
+          )}
+          {onAction && (
+            <Button variant="ghost" size="icon-xs" aria-label={`The ${c.name} column's menu`} aria-haspopup="menu"
+              aria-expanded={menu === c.id} onClick={() => setMenu(menu === c.id ? "" : c.id)}
+              className={menu === c.id ? undefined : "opacity-0 hover:opacity-100 focus-visible:opacity-100 transition-opacity"}
+              style={{ ...MUTED, marginRight: 4 }}>
+              <Icon name="chevd" size={12} />
             </Button>
           )}
           {onWidth && (
@@ -201,6 +344,11 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit }: 
         </div>
         );
       })}
+      {drag && (
+        // where the dragged column would go
+        <div aria-hidden style={{ position: "absolute", top: 0, height: ROW_HEIGHT, width: 2, zIndex: 6,
+          left: (drag.before ? at(drag.before) : span) - 1, background: "var(--blue3)" }} />
+      )}
       {open && (
         <div ref={aboutRef} role="dialog" aria-label={`What ${open.name} is`} className="aug-fs-sm" style={{ position: "absolute",
           top: ROW_HEIGHT + 2, left: Math.max(0, Math.min(at(open.id) - 40, span - 304)), width: 300, zIndex: 12,
@@ -211,6 +359,30 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit }: 
           {aboutColumn(sheet, open).map((line, i) => (
             // the lines of one column's account, in their order
             <span key={i} className={i === 0 ? "aug-fs-xs" : undefined} style={i === 0 ? MUTED : undefined}>{line}</span>
+          ))}
+        </div>
+      )}
+      {menuOn && onAction && (
+        <div ref={menuRef} role="menu" aria-label={`The ${menuOn.name} column`} className="aug-fs-sm"
+          onKeyDown={e => {
+            const list = [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+            const i = list.indexOf(document.activeElement as HTMLElement);
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              e.stopPropagation();
+              list[(i + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length]?.focus();
+            }
+          }}
+          style={{ position: "absolute", top: ROW_HEIGHT + 2, zIndex: 12, width: 240,
+            left: Math.max(0, Math.min(at(menuOn.id) + width(menuOn) - 240, span - 244)),
+            background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 4,
+            display: "flex", flexDirection: "column", fontWeight: 400, color: "var(--t1)" }}>
+          {items.map(it => (
+            <Button key={it.action} role="menuitem" variant="ghost" size="xs"
+              onClick={() => { setMenu(""); onAction(it.action, menuOn.id); }}
+              style={{ justifyContent: "flex-start", width: "100%", fontWeight: 400 }}>
+              {it.label}
+            </Button>
           ))}
         </div>
       )}
@@ -230,7 +402,8 @@ export function GridFoot({ shown, totals, rows, label = "total" }: {
         alignItems: "center", borderRight: LINE, ...MUTED, position: "sticky", left: 0, zIndex: 3,
         background: "var(--bg-2)" }}>{label}</div>
       {shown.map(c => (
-        <div key={c.id} style={{ ...cellStyle(c), justifyContent: "flex-start" }}>
+        <div key={c.id} style={{ ...cellStyle(c), justifyContent: "flex-start",
+          ...(c.left !== undefined ? { background: "var(--bg-2)", zIndex: 2 } : {}) }}>
           <span style={ELLIPSIS} title={totalWords(totals[c.id], c, rows)}>{totalWords(totals[c.id], c, rows)}</span>
         </div>
       ))}
@@ -508,7 +681,7 @@ export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUn
     setEditing({ row, column: c.id, text: typed ?? text, original: text, typed: typed !== undefined });
   };
 
-  const cell = (row: number, c: SheetColumn, v: unknown, set: boolean, index?: number) => {
+  const cell = (row: number, c: ShownColumn, v: unknown, set: boolean, index?: number) => {
     // the active cell by its place in the view where the grid has one — a key can reach a row not read yet
     const isSel = !!selected && selected.column === c.id
       && (selected.index !== undefined && index !== undefined ? selected.index === index : selected.row === row);
@@ -525,8 +698,9 @@ export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUn
         }}
         onPointerEnter={() => { if (dragging.current && index !== undefined) select({ row, column: c.id, index }, true); }}
         onDoubleClick={() => { select({ row, column: c.id, index }); startEdit(row, c); }}
+        data-row={row} data-column={c.id} data-index={index}
         style={{ ...cellStyle(c), cursor: "default",
-          background: filled ? "var(--bg-sel)" : set ? "var(--blue1)" : undefined,
+          background: cellTone(c, filled ? "var(--bg-sel)" : set ? "var(--blue1)" : undefined),
           // the active cell is its border alone; a fill is for a range of more than one
           boxShadow: isSel ? "inset 0 0 0 2px var(--blue3)" : undefined }}>
         {isEdit ? (
@@ -679,7 +853,9 @@ export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUn
     if (selected?.index === index && selected.row === -1) setSelected({ ...selected, row });
     if (anchor?.index === index && anchor.row === -1) setAnchor({ ...anchor, row });
   };
-  return { cell, bar, keys, paste, selected, select, span, settle, reset };
+  /** Whether a press on a cell is being dragged over others — the grid scrolls at its edges meanwhile. */
+  const isDragging = () => dragging.current;
+  return { cell, bar, keys, paste, selected, select, span, settle, reset, isDragging };
 }
 
 /** A range in words for the bar: its size, and — where every column in it holds numbers — their sum over the rows read. */
@@ -708,7 +884,13 @@ export function rangeWords(r: Range, got: { cols: SheetColumn[]; rows: unknown[]
 
 /** The flat grid: every row of the view in one scroll, read a block at a time as it comes into sight. */
 export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, onUndo, onRedo, onOpenRow, footer, sort,
-  onSort, reading = "", widths, onWidth }: {
+  onSort, reading = "", widths, onWidth, frozen = 0, onColumnAction, onMoveColumn }: {
+  /** How many of the columns shown stay at the left. */
+  frozen?: number;
+  /** A column's menu — all but fitting its width, which the grid does itself. */
+  onColumnAction?: (action: ColumnAction, column: string) => void;
+  /** A header dragged to a new place: the column, in front of `before` ("" — the end). */
+  onMoveColumn?: (column: string, before: string) => void;
   sheet: Sheet;
   rows: RowBlocks;
   /** Many cells as one change — a paste, a range cleared. */
@@ -727,15 +909,14 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, o
   editable: boolean;
   /** The view's sort as it stands, and what a click on a column's header does with it. */
   sort?: { column: string; desc: boolean }[];
-  onSort?: (column: string) => void;
+  onSort?: (column: string, add?: boolean) => void;
   /** Set a cell; the version is the one read (0 for a cell never set). */
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
   /** Said after the rows in sight: the view, its order. */
   footer?: string;
 }) {
-  const shown: ShownColumn[] = sheet.columns.filter(c => !hidden.has(c.id))
-    .map(c => (widths?.[c.id] ? { ...c, width: widths[c.id] } : c));
+  const shown = layoutColumns(sheet.columns, hidden, widths, frozen);
   const index = Object.fromEntries(rows.columns.map((id, i) => [id, i + 1]));
   const scrollRef = useRef<HTMLDivElement>(null);
   const total = rows.total ?? 0;
@@ -778,14 +959,46 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, o
     work.select({ row: r ? Number(r[0]) : -1, column: cols[ci], index: i }, extend);
     virtualizer.scrollToIndex(i, { align: "auto" });
     const el = scrollRef.current;
-    if (el) {
-      // the row numbers stay at the left, so a column is in sight when it clears them
+    if (el && shown[ci]?.left === undefined) {
+      // the row numbers and the frozen columns stay at the left, so a column is in sight when it clears them
+      const fixed = shown.filter(c => c.left !== undefined).reduce((n, c) => n + width(c), NUMBER_WIDTH);
       const left = NUMBER_WIDTH + shown.slice(0, ci).reduce((n, c) => n + width(c), 0);
       const right = left + width(shown[ci]);
-      if (left - NUMBER_WIDTH < el.scrollLeft) el.scrollLeft = left - NUMBER_WIDTH;
+      if (left - fixed < el.scrollLeft) el.scrollLeft = left - fixed;
       else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth;
     }
   };
+
+  // a range dragged to the grid's edge: the grid scrolls on under the pointer, and the range follows it — set up once,
+  // reading the cell work as it is at each step
+  const live = useRef(work);
+  live.current = work;
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const at = (e: PointerEvent) => { pointer.current = live.current.isDragging() ? { x: e.clientX, y: e.clientY } : null; };
+    window.addEventListener("pointermove", at);
+    const tick = window.setInterval(() => {
+      const el = scrollRef.current;
+      const p = pointer.current;
+      if (!el || !p || !live.current.isDragging()) return;
+      // the box inside its scroll bars, and the rows between the header and the totals at its foot
+      const box = el.getBoundingClientRect();
+      const rect = { left: box.left, top: box.top, right: box.left + el.clientWidth, bottom: box.top + el.clientHeight };
+      const { dx, dy } = edgeStep(rect, p.x, p.y, { top: ROW_HEIGHT, left: NUMBER_WIDTH });
+      if (!dx && !dy) return;
+      el.scrollTop += dy;
+      el.scrollLeft += dx;
+      // the cell now under the pointer, held inside the rows and columns shown
+      const x = Math.min(Math.max(p.x, rect.left + NUMBER_WIDTH + 2), rect.right - 4);
+      const y = Math.min(Math.max(p.y, rect.top + ROW_HEIGHT + 2), rect.bottom - ROW_HEIGHT - 4);
+      const under = document.elementFromPoint(x, y)?.closest<HTMLElement>('[role="gridcell"]');
+      if (under?.dataset.index !== undefined && under.dataset.column) {
+        live.current.select({ row: Number(under.dataset.row), column: under.dataset.column,
+          index: Number(under.dataset.index) }, true);
+      }
+    }, 30);
+    return () => { window.removeEventListener("pointermove", at); window.clearInterval(tick); };
+  }, []);
   nav.current = {
     go: (key, mod, extend) => {
       const cols = shown.map(c => c.id);
@@ -847,7 +1060,9 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, o
         aria-multiselectable onKeyDown={work.keys} onPaste={work.paste}
         style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
-          <GridHeader sheet={sheet} shown={shown} sort={sort} onSort={onSort} onWidth={onWidth} onFit={fit} />
+          <GridHeader sheet={sheet} shown={shown} sort={sort} onSort={onSort} onWidth={onWidth} onFit={fit}
+            onAction={onColumnAction ? (a, col) => (a === "fit" ? fit(col) : onColumnAction(a, col)) : undefined}
+            onMove={onMoveColumn} />
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {items.map(item => {
               const r = rows.rowAt(item.index);

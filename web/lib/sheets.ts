@@ -385,7 +385,7 @@ export const addColumn = (id: string, name: string, kind: Kind, description = ""
   call<Sheet>(`/${id}/columns`, json("POST", { name, kind, description }), "Adding the column");
 
 export const updateColumn = (id: string, column: string,
-  change: { name?: string; description?: string; kind?: Kind; hidden?: boolean }) =>
+  change: { name?: string; description?: string; kind?: Kind; hidden?: boolean; before?: string }) =>
   call<Sheet>(`/${id}/columns/${encodeURIComponent(column)}`, json("PATCH", change), "Changing the column");
 
 export const removeColumn = (id: string, column: string) =>

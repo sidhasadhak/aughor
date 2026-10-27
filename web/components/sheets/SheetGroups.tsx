@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MUTED, NUM } from "@/components/clarity/kit";
 import {
   CellValue, GridFoot, GridHeader, LINE, NUMBER_WIDTH, ROW_HEIGHT, RowNumber, useCellWork, width, type EditResult,
-  type ShownColumn,
+  layoutColumns, type ColumnAction, type ShownColumn,
 } from "@/components/sheets/SheetGrid";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -31,13 +31,18 @@ const OPEN_FIRST = 3;
 
 const keyOf = (v: unknown) => JSON.stringify(v ?? null);
 
-export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdit, onOpenRow, onSort, widths, onWidth }: {
+export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdit, onOpenRow, onSort, widths, onWidth,
+  frozen = 0, onColumnAction, onMoveColumn }: {
+  /** How many of the columns shown stay at the left; a column's menu; a header dragged to a new place. */
+  frozen?: number;
+  onColumnAction?: (action: ColumnAction, column: string) => void;
+  onMoveColumn?: (column: string, before: string) => void;
   sheet: Sheet; query: RowsQuery; group: string; hidden: Set<string>; editable: boolean; tick: number;
   /** The widths the person gave the columns — the flat grid's, the same here — and the door to give one. */
   widths?: Record<string, number>;
   onWidth?: (column: string, px: number | null) => void;
   /** What a click on a column's header does with the view's sort — the rows within each group follow it. */
-  onSort?: (column: string) => void;
+  onSort?: (column: string, add?: boolean) => void;
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
 }) {
@@ -63,8 +68,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   useEffect(() => { read(); }, [read, tick]);
 
   const gcol = sheet.columns.find(c => c.id === group);
-  const shown: ShownColumn[] = sheet.columns.filter(c => !hidden.has(c.id))
-    .map(c => (widths?.[c.id] ? { ...c, width: widths[c.id] } : c));
+  const shown: ShownColumn[] = layoutColumns(sheet.columns, hidden, widths, frozen);
   const index = useMemo(() => Object.fromEntries((page?.columns ?? []).map((id, i) => [id, i + 1])), [page]);
 
   const rowsOf = (value: unknown) => [...(page?.groups.find(g => keyOf(g.value) === keyOf(value))?.shown ?? []),
@@ -120,7 +124,8 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
         onKeyDown={e => work.keys(e)}
         style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
-          <GridHeader sheet={sheet} shown={shown} sort={query.sort} onSort={onSort} onWidth={onWidth} />
+          <GridHeader sheet={sheet} shown={shown} sort={query.sort} onSort={onSort} onWidth={onWidth}
+            onAction={onColumnAction} onMove={onMoveColumn} />
           {page.groups.map(g => {
             const k = keyOf(g.value);
             const isOpen = !!open[k];

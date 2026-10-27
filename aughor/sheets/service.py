@@ -351,12 +351,28 @@ def add_column(sheet: Sheet, *, name: str, kind: str, by: str, description: str 
 
 
 def update_column(sheet: Sheet, ref: str, *, by: str, name: Optional[str] = None, description: Optional[str] = None,
-                  kind: Optional[str] = None, hidden: Optional[bool] = None, cid: str = "") -> Sheet:
-    """Rename a column, describe it, hide it, or change its kind — only to a kind every value it holds reads as."""
+                  kind: Optional[str] = None, hidden: Optional[bool] = None, before: Optional[str] = None,
+                  cid: str = "") -> Sheet:
+    """Rename a column, describe it, hide it, change its kind — only to a kind every value it holds reads as — or move
+    it: ``before`` names the column it goes in front of, ``""`` the end. A move is the sheet's, as a spreadsheet's
+    column order is: everyone who reads the sheet sees it, and undo puts it back."""
     c = sheet.column(ref)
     if c is None:
         raise Refused(f"{sheet.name} has no column {ref!r}")
     said = []
+    moved = False
+    if before is not None:
+        target = sheet.column(before) if before else None
+        if before and target is None:
+            raise Refused(f"{sheet.name} has no column {before!r} to put {c.name} before")
+        if target is None or target.id != c.id:
+            rest = [x for x in sheet.columns if x.id != c.id]
+            at = rest.index(target) if target is not None else len(rest)
+            order = rest[:at] + [c] + rest[at:]
+            if [x.id for x in order] != [x.id for x in sheet.columns]:
+                sheet.columns = order
+                moved = True
+                said.append(f"{c.name} moved " + (f"before {target.name}" if target is not None else "to the end"))
     if name is not None and name.strip() and name.strip() != c.name:
         said.append(f"{c.name} renamed {name.strip()}")
         c.name = unique_name(name, sheet, but=c.id)
@@ -379,7 +395,9 @@ def update_column(sheet: Sheet, ref: str, *, by: str, name: Optional[str] = None
     if not said:
         return sheet
     model.save(sheet, what="; ".join(said), by=by, change_id=cid or change_id())
-    projection.rebuild(sheet)
+    # the table reads its columns by name, in the sheet's order — a move alone changes nothing in it
+    if len(said) > 1 or not moved:
+        projection.rebuild(sheet)
     return sheet
 
 

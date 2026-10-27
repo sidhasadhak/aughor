@@ -18,7 +18,7 @@ import { SheetCalendar } from "@/components/sheets/SheetCalendar";
 import { SheetChat } from "@/components/sheets/SheetChat";
 import { SheetCombine } from "@/components/sheets/SheetCombine";
 import { SheetDashboard } from "@/components/sheets/SheetDashboard";
-import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type EditResult } from "@/components/sheets/SheetGrid";
+import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type ColumnAction, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
 import { SharePop } from "@/components/sheets/SheetsHome";
@@ -65,6 +65,19 @@ function readWidths(sheetId: string): Record<string, number> {
 }
 function keepWidths(sheetId: string, widths: Record<string, number>) {
   try { window.localStorage.setItem(WIDTHS_KEY(sheetId), JSON.stringify(widths)); } catch { /* the widths stay for this visit */ }
+}
+/** How many columns the person froze at the left of a sheet, on this browser — as the widths are. */
+const FROZEN_KEY = (sheetId: string) => `aughor.sheets.frozen.${sheetId}`;
+function readFrozen(sheetId: string): number {
+  try {
+    const n = Number(window.localStorage.getItem(FROZEN_KEY(sheetId)) ?? 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+function keepFrozen(sheetId: string, n: number) {
+  try { window.localStorage.setItem(FROZEN_KEY(sheetId), String(n)); } catch { /* frozen for this visit */ }
 }
 
 const KIND_OF_VIEW: Record<ViewKind | "grouped", IconName> = { grid: "table", grouped: "list", board: "column", calendar: "date" };
@@ -192,6 +205,27 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   // the columns' widths, as the person dragged them — kept on this browser, per sheet
   const [widths, setWidths] = useState<Record<string, number>>(() => readWidths(sheetId));
   useEffect(() => { setWidths(readWidths(sheetId)); }, [sheetId]);
+  // the columns frozen at the left, and the column a filter is being added for from its header's menu
+  const [frozen, setFrozen] = useState(() => readFrozen(sheetId));
+  useEffect(() => { setFrozen(readFrozen(sheetId)); }, [sheetId]);
+  const freeze = useCallback((n: number) => { setFrozen(n); keepFrozen(sheetId, n); }, [sheetId]);
+  const [filterFor, setFilterFor] = useState("");
+
+  // Cmd or Ctrl+F: the sheet's own search — the browser's find sees only the rows on screen, never the rest of the view
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const find = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f" || e.shiftKey || e.altKey) return;
+      const box = rootRef.current?.querySelector<HTMLInputElement>('input[aria-label="Search this sheet"]');
+      if (!box) return;
+      e.preventDefault();
+      box.focus();
+      box.select();
+    };
+    window.addEventListener("keydown", find);
+    return () => window.removeEventListener("keydown", find);
+  }, []);
+
   const onWidth = useCallback((column: string, px: number | null) => {
     setWidths(old => {
       const next = { ...old };
@@ -287,10 +321,35 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
 
   /** A click on a column's header: lowest first, then highest first, then the sheet's own order — the person's own
    *  until they keep it in the view. */
-  const sortBy = (column: string) => {
+  const sortBy = (column: string, add = false) => {
+    if (add) {
+      // Shift+click: a further sort — added lowest first, then highest first, then taken out; the others kept
+      const i = query.sort.findIndex(s => s.column === column);
+      setQ({ sort: i < 0 ? [...query.sort, { column, desc: false }]
+        : !query.sort[i].desc ? query.sort.map((s, j) => (j === i ? { ...s, desc: true } : s))
+          : query.sort.filter((_, j) => j !== i) });
+      return;
+    }
     const now = query.sort[0]?.column === column ? query.sort[0] : undefined;
     setQ({ sort: !now ? [{ column, desc: false }] : !now.desc ? [{ column, desc: true }] : [] });
   };
+
+  /** A column's menu, from its header: sort by it, or after the sorts there are; filter by it; hide it from what is
+   *  shown (the person's own until kept in the view); freeze the columns up to it; put its width back. */
+  const onColumnAction = (action: ColumnAction, column: string) => {
+    if (action === "asc" || action === "desc") setQ({ sort: [{ column, desc: action === "desc" }] });
+    else if (action === "then-asc" || action === "then-desc") {
+      setQ({ sort: [...query.sort.filter(s => s.column !== column), { column, desc: action === "then-desc" }] });
+    } else if (action === "filter") { setFilterFor(column); setPop("filter"); }
+    else if (action === "hide") setQ({ hidden: [...query.hidden, column] });
+    else if (action === "freeze") freeze(sheet.columns.filter(c => !hidden.has(c.id)).findIndex(c => c.id === column) + 1);
+    else if (action === "unfreeze") freeze(0);
+    else if (action === "width") onWidth(column, null);
+  };
+
+  /** A header dragged to a new place: the sheet's column order, for everyone — one change, undone whole. */
+  const moveColumn = (column: string, before: string) => void run(() => updateColumn(sheet.id, column, { before }),
+    `${colName(column)} moved ${before ? `before ${colName(before)}` : "to the end"}`);
 
   /** Take a view off the sheet — undo puts it back — and read the sheet on its first view. */
   const takeOff = async (v: View) => {
@@ -347,7 +406,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   );
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+    <div ref={rootRef} style={{ flex: 1, minHeight: 0, display: "flex" }}>
       <div ref={mainRef} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
         {/* the sheet's bar: where it is too narrow for one line, the source gives way first, then the buttons take a
             line of their own, and only then the name and the count shorten — never drawn past the sheet, under what
@@ -473,7 +532,13 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           {toolbar}
           <div style={{ flex: "1 1 110px", maxWidth: 220, minWidth: 110, marginLeft: 8 }}>
             <Input value={query.search} placeholder="Search this sheet" aria-label="Search this sheet"
-              onChange={e => setQ({ search: e.target.value })} />
+              title="Cmd or Ctrl+F · Escape goes back to the grid"
+              onChange={e => setQ({ search: e.target.value })}
+              onKeyDown={e => {
+                if (e.key !== "Escape") return;
+                (e.target as HTMLInputElement).blur();
+                rootRef.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();
+              }} />
           </div>
           <span style={{ marginLeft: "auto", display: "flex", gap: 2, flex: "0 0 auto" }}>
             {waves.grid && (
@@ -503,8 +568,9 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
               onClose={() => setPop("")} run={run} />
           )}
           {pop === "filter" && (
-            <FilterPop sheet={sheet} conditions={query.filter} onApply={f => { setQ({ filter: f }); setPop(""); }}
-              onClose={() => setPop("")} />
+            <FilterPop sheet={sheet} conditions={query.filter} adding={filterFor}
+              onApply={f => { setQ({ filter: f }); setPop(""); setFilterFor(""); }}
+              onClose={() => { setPop(""); setFilterFor(""); }} />
           )}
           {pop === "sort" && (
             <SortPop sheet={sheet} sort={query.sort} onApply={s => { setQ({ sort: s }); setPop(""); }} onClose={() => setPop("")} />
@@ -561,12 +627,14 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           <SheetCalendar sheet={sheet} query={viewQuery} column={query.date} card={query.card} tick={tick} onOpenRow={openRow} />
         ) : query.group ? (
           <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={waves.grid} tick={tick}
-            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} widths={widths} onWidth={onWidth} />
+            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} widths={widths} onWidth={onWidth} frozen={frozen}
+            onColumnAction={onColumnAction} onMoveColumn={waves.grid ? moveColumn : undefined} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
             <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
               onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
-              widths={widths} onWidth={onWidth}
+              widths={widths} onWidth={onWidth} frozen={frozen} onColumnAction={onColumnAction}
+              onMoveColumn={waves.grid ? moveColumn : undefined}
               onUndo={waves.grid ? () => history?.can_undo ? void run(() => undo(sheet.id), "Undone", "redo")
                 : setSaid({ text: "Nothing to undo", tone: "ok" }) : undefined}
               onRedo={waves.grid ? () => history?.can_redo ? void run(() => redo(sheet.id), "Redone")
@@ -885,14 +953,19 @@ function ConditionRows({ sheet, rows, setRows }: {
   );
 }
 
-function FilterPop({ sheet, conditions, onApply, onClose }: {
-  sheet: Sheet; conditions: Condition[]; onApply: (f: Condition[]) => void; onClose: () => void;
+function FilterPop({ sheet, conditions, adding = "", onApply, onClose }: {
+  sheet: Sheet; conditions: Condition[];
+  /** A column whose header's menu asked to filter by it: a condition on it, ready to fill. */
+  adding?: string;
+  onApply: (f: Condition[]) => void; onClose: () => void;
 }) {
   // a rule's marks are kept as they are; the conditions on columns are written here
   const marks = conditions.filter(c => c.op === "marked" || c.op === "not_marked");
   const [rows, setRows] = useState<Condition[]>(() => {
     const own = conditions.filter(c => c.op !== "marked" && c.op !== "not_marked");
-    return own.length ? own : [{ column: sheet.columns[0]?.id ?? "", op: "is", value: "" }];
+    const col = sheet.columns.find(c => c.id === adding);
+    const added = col ? [{ column: col.id, op: opsFor(col.kind)[0], value: "" }] : [];
+    return own.length || added.length ? [...own, ...added] : [{ column: sheet.columns[0]?.id ?? "", op: "is", value: "" }];
   });
   return (
     <Popover onClose={onClose} left={150} width={560}>

@@ -355,6 +355,8 @@ class ColumnUpdate(BaseModel):
     description: Optional[str] = None
     kind: Optional[str] = None
     hidden: Optional[bool] = None
+    #: move the column in front of this one ("" to the end)
+    before: Optional[str] = None
 
 
 @router.patch("/{sheet_id}/columns/{column_id}")
@@ -363,7 +365,8 @@ def update_column(sheet_id: str, column_id: str, req: ColumnUpdate, request: Req
     from aughor.sheets import service
     try:
         return _definition(service.update_column(_sheet(sheet_id), column_id, by=_who(request), name=req.name,
-                                                 description=req.description, kind=req.kind, hidden=req.hidden),
+                                                 description=req.description, kind=req.kind, hidden=req.hidden,
+                                                 before=req.before),
                            _who(request))
     except service.Refused as exc:
         raise _refused(exc) from None
