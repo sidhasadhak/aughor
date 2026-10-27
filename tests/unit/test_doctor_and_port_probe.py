@@ -125,3 +125,48 @@ class TestTheModelCheckTouchesNoStore:
         monkeypatch.setenv("AUGHOR_BACKEND", "ollama")
         check = doctor._model()
         assert check.ok and "ollama" in check.found
+
+
+class TestTheBackupsCheck:
+    """Arc SV, SV-2 — the doctor's backups line, read from the backups folder and its last-run note only."""
+
+    def _state(self, tmp_path):
+        import sqlite3
+        root = tmp_path / "state"
+        root.mkdir()
+        c = sqlite3.connect(root / "system.db")
+        c.execute("CREATE TABLE t (x)")
+        c.execute("INSERT INTO t VALUES (1)")
+        c.commit()
+        c.close()
+        return root
+
+    def test_none_taken_is_a_warning_that_says_how_to_turn_them_on(self, tmp_path):
+        check = doctor._backups(self._state(tmp_path))
+        assert check.status == doctor.WARN and check.found == "none taken"
+        assert "Settings ▸ System" in check.fix
+
+    def test_a_backup_checked_lately_is_ok_and_an_old_one_is_said(self, tmp_path):
+        from datetime import timedelta
+
+        from aughor.db import backups
+        root = self._state(tmp_path)
+        out = backups.take(root=root, force=True, reason="test")
+        assert out.status == "taken", out
+        fresh = doctor._backups(root)
+        assert fresh.status == doctor.OK and fresh.found.startswith("1 kept, the newest ")
+        later = doctor._backups(root, now=backups._now() + timedelta(hours=3))
+        assert later.status == doctor.WARN and "3.0 hours ago" in later.found and later.fix
+
+    def test_a_failed_last_backup_fails_and_names_the_newest_whole_copy(self, tmp_path):
+        import json
+
+        from aughor.db import backups
+        root = self._state(tmp_path)
+        backups.take(root=root, force=True, reason="test")
+        note = backups.backups_dir(root) / backups.LAST_RUN
+        last = json.loads(note.read_text())
+        note.write_text(json.dumps({**last, "outcome": "failed", "reason": "disk full"}))
+        check = doctor._backups(root)
+        assert check.status == doctor.FAIL and "disk full" in check.found
+        assert check.reason.startswith("the newest whole copy is ") and check.fix

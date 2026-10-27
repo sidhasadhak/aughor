@@ -26,6 +26,7 @@ import os
 import shutil
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 #: A check that cannot answer says so. `unknown` is not `fail` — a missing `lsof` is not a
@@ -157,6 +158,47 @@ def _model() -> Check:
                  wanted="a backend chosen in Settings, or AUGHOR_BACKEND")
 
 
+def _backups(root: Path | None = None, now: datetime | None = None) -> Check:
+    """Arc SV, SV-2 — whether this install's own state has a recent backup. Answered from the backups folder and its
+    last-run note, the two plain files `/health`'s backups block reads — never through the flag store, which would open
+    `system.db`; and not through that block itself, which answers for the API's process, not this one."""
+    from aughor.db import backups
+    wanted = "a backup of this install's own state, checked within the last two hours"
+    try:
+        kept = backups.list_backups(root)
+        last = backups.read_last_run(root)
+    except Exception as exc:  # noqa: BLE001 — unreadable is not "none": said as unknown, with what failed
+        return Check("backups", UNKNOWN, found=f"could not be read ({exc})", wanted=wanted,
+                     fix="`aughor backups` lists what it can read")
+    if not kept:
+        return Check("backups", WARN, found="none taken", wanted=wanted,
+                     reason="a damaged store has nothing to come back from",
+                     fix="turn on “Back up Aughor's own state every hour” in Settings ▸ System; the API takes the first "
+                         "a few minutes after it starts")
+    now = now or datetime.now(timezone.utc)
+    newest = kept[0]
+    try:
+        checked = datetime.fromisoformat(str((last or {}).get("at")))
+    except ValueError:
+        checked = newest.taken_at
+    hours = (now - checked).total_seconds() / 3600
+    outcome = (last or {}).get("outcome")
+    found = f"{len(kept)} kept, the newest {newest.name}; checked {hours:.1f} hours ago"
+    if outcome == "failed":
+        return Check("backups", FAIL, found=f"the last backup failed: {(last or {}).get('reason')}", wanted=wanted,
+                     reason=f"the newest whole copy is {newest.name}",
+                     fix="read the API log for the backup's error; `aughor backups` lists what is kept")
+    if outcome == "skipped_space":
+        return Check("backups", WARN, found=f"the last backup was skipped for space: {(last or {}).get('reason')}",
+                     wanted=wanted, reason=f"the newest whole copy is {newest.name}",
+                     fix="free some disk; old copies are thinned out on their own")
+    if now - checked > backups.STALE_AFTER:
+        return Check("backups", WARN, found=found, wanted=wanted,
+                     reason="backups are taken only while the API runs with them on",
+                     fix="start the API, and check “Back up Aughor's own state every hour” is on in Settings ▸ System")
+    return Check("backups", OK, found=found, wanted=wanted)
+
+
 def run(repo: Path, *, api_port: int, web_port: int) -> list[Check]:
     """Every check, in the order a person reads them. Pure: nothing here writes."""
     return [
@@ -168,6 +210,7 @@ def run(repo: Path, *, api_port: int, web_port: int) -> list[Check]:
         _state_writable(),
         _launcher(),
         _model(),
+        _backups(),
     ]
 
 
