@@ -900,4 +900,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     The chat beside a sheet stays closed until opened — **LIVE 2026-10-27** at `c4df75b9`.
     A sort keeps the scroll across — **LIVE 2026-10-27** at `ad1718f2`. The first-minute basics of a spreadsheet
     (keys, Enter/Tab after an edit, Delete, undo keys, paste, drag, Cmd+A, pinned row numbers, column widths) — BUILT
-    2026-10-27 at `9a1d4384`, not live. Next tier open: header menu, second sort, reorder, Cmd+F, edge-scroll on drag.
+    2026-10-27 at `9a1d4384` — **LIVE 2026-10-27** at `2a934270`. Next tier open: header menu, second sort, reorder, Cmd+F,
+    edge-scroll on drag.

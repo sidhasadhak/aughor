@@ -12569,7 +12569,12 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   Shift+Z undo and redo from the keys; a paste lays a copied block from the active cell (one change, refused whole with
   the reason, what it left out said); a drag selects a range and Cmd+A every cell; the row numbers stay at the left;
   a column's edge drags, double-clicks to fit and takes the arrows, the widths kept per sheet on this browser. Each
-  proven in a real browser on the scratch copy. Not live yet. Not built of the next tier: a menu on each header (sort,
+  proven in a real browser on the scratch copy. **LIVE 2026-10-27** at `2a934270`, web only, no restart; on the live
+  Olist orders, nothing changed: Tab → column 3, End → 10, Home → 0, Page Down → row 23, Cmd+Home → row 1; a paced drag
+  → 4 rows × 3 columns; Cmd+A → 99,441 rows × 11 columns; scrolled across, the row number at the left; a real drag on
+  order_id's edge 160 → 261 px, put back after. Delete, paste, edits and the undo keys were proven on the scratch copy
+  only — pressed on the live sheet they would change or undo the user's own data. Not built of the next tier: a menu
+  on each header (sort,
   filter by this column, hide, freeze), Shift+click for a second sort, dragging a header to reorder, Cmd+F to the
   sheet's own search, a drag that scrolls the grid at its edge.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
