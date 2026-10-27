@@ -18,7 +18,7 @@ import { SheetCalendar } from "@/components/sheets/SheetCalendar";
 import { SheetChat } from "@/components/sheets/SheetChat";
 import { SheetCombine } from "@/components/sheets/SheetCombine";
 import { SheetDashboard } from "@/components/sheets/SheetDashboard";
-import { RULE_COLOR, SheetGrid, type EditResult } from "@/components/sheets/SheetGrid";
+import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
 import { SharePop } from "@/components/sheets/SheetsHome";
@@ -51,6 +51,21 @@ const BAR: CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", borderBottom: "1px solid var(--b1)",
   background: "var(--bg-1)", flexWrap: "nowrap", minWidth: 0,
 };
+
+/** The widths a person gave a sheet's columns, on this browser — a convenience of theirs, so it lives in the browser and
+ *  a page that cannot read it lays the columns out by their kinds. */
+const WIDTHS_KEY = (sheetId: string) => `aughor.sheets.widths.${sheetId}`;
+function readWidths(sheetId: string): Record<string, number> {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(WIDTHS_KEY(sheetId)) ?? "{}");
+    return v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([, n]) => typeof n === "number")) as Record<string, number> : {};
+  } catch {
+    return {};
+  }
+}
+function keepWidths(sheetId: string, widths: Record<string, number>) {
+  try { window.localStorage.setItem(WIDTHS_KEY(sheetId), JSON.stringify(widths)); } catch { /* the widths stay for this visit */ }
+}
 
 const KIND_OF_VIEW: Record<ViewKind | "grouped", IconName> = { grid: "table", grouped: "list", board: "column", calendar: "date" };
 
@@ -159,6 +174,33 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       return false;
     }
   }, [changed]);
+
+  /** Many cells as one change — a paste, a range cleared: one entry in the history, undone whole. */
+  const onEditMany = useCallback(async (cells: { row: number; column: string; value: unknown; version: number }[],
+    words: string): Promise<EditResult> => {
+    if (!sheet) return { ok: false };
+    try {
+      await setCells(sheet.id, cells);
+      setTick(t => t + 1);
+      setSaid({ text: words, tone: "ok", offer: "undo" });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [sheet]);
+
+  // the columns' widths, as the person dragged them — kept on this browser, per sheet
+  const [widths, setWidths] = useState<Record<string, number>>(() => readWidths(sheetId));
+  useEffect(() => { setWidths(readWidths(sheetId)); }, [sheetId]);
+  const onWidth = useCallback((column: string, px: number | null) => {
+    setWidths(old => {
+      const next = { ...old };
+      if (px === null) delete next[column];
+      else next[column] = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, px)));
+      keepWidths(sheetId, next);
+      return next;
+    });
+  }, [sheetId]);
 
   const onEdit = useCallback(async (row: number, c: SheetColumn, value: unknown, version: number): Promise<EditResult> => {
     if (!sheet) return { ok: false };
@@ -519,11 +561,16 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           <SheetCalendar sheet={sheet} query={viewQuery} column={query.date} card={query.card} tick={tick} onOpenRow={openRow} />
         ) : query.group ? (
           <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={waves.grid} tick={tick}
-            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} />
+            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} widths={widths} onWidth={onWidth} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
             <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
-              onEdit={onEdit} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
+              onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
+              widths={widths} onWidth={onWidth}
+              onUndo={waves.grid ? () => history?.can_undo ? void run(() => undo(sheet.id), "Undone", "redo")
+                : setSaid({ text: "Nothing to undo", tone: "ok" }) : undefined}
+              onRedo={waves.grid ? () => history?.can_redo ? void run(() => redo(sheet.id), "Redone")
+                : setSaid({ text: "Nothing to redo", tone: "ok" }) : undefined}
               footer={`${view ? view.name : "the sheet"}${query.sort.length
                 ? ` · sorted by ${query.sort.map(s => colName(s.column)).join(", ")}` : " · in the sheet's order"}`} />
           )}
