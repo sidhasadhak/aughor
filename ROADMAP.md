@@ -12583,7 +12583,11 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   held after the row numbers; a header dragged to move the column for everyone (`before` on a column's PATCH, one
   change, undone whole, no rebuild — the SH-1 oracle now compares the table with its rebuild by column name, the same
   columns of the same types required); Cmd+F to the sheet's search; a drag at the grid's edge scrolls it, the range
-  following. Each proven in a real browser on the scratch copy. Not live yet (the server changed: a restart). Seen,
+  following. Each proven in a real browser on the scratch copy. **LIVE 2026-10-27** at `773d5041` (API restarted with
+  its twelve settings, the fingerprint the same); on the live Olist orders, nothing changed: order_status then Paid
+  ("approved R$61.62, approved R$179.46" first), the menu by a right-click and its sort, two columns frozen at 64 px and
+  put back, Cmd+F, a range held at the edge scrolling 960 px to 34 rows. A header drag would reorder the live sheet for
+  everyone, so it was proven on the scratch copy only. Seen,
   not changed: undo cannot take back two changes to a sheet's definition in a row — the second is refused.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
