@@ -92,14 +92,22 @@ def client():
         yield c
 
 
-def test_header_binds_the_workspace_for_the_request(client):
-    """The middleware is the whole point: without it the gate is opt-in per handler."""
+def _ambient_probe() -> None:
+    """The route these tests read the request's workspace through — registered once, by whichever test runs first. Each
+    test registering it for itself left the second unable to run alone: it read a route only the first had made."""
     from aughor.api import app
+
+    if any(getattr(r, "path", "") == "/_test/ambient-workspace" for r in app.routes):
+        return
 
     @app.get("/_test/ambient-workspace")
     def _probe():
         return {"workspace": current_workspace_id()}
 
+
+def test_header_binds_the_workspace_for_the_request(client):
+    """The middleware is the whole point: without it the gate is opt-in per handler."""
+    _ambient_probe()
     assert client.get("/_test/ambient-workspace").json()["workspace"] is None
     r = client.get("/_test/ambient-workspace", headers={"X-Aughor-Workspace": "ws_hdr"})
     assert r.json()["workspace"] == "ws_hdr"
@@ -110,6 +118,7 @@ def test_header_binds_the_workspace_for_the_request(client):
 def test_query_param_still_binds_so_legacy_callers_agree(client):
     """The handlers that already pass `?workspace_id=` must see the same ambient value,
     or the two sources could disagree within one request."""
+    _ambient_probe()
     r = client.get("/_test/ambient-workspace?workspace_id=ws_qs")
     assert r.json()["workspace"] == "ws_qs"
 
