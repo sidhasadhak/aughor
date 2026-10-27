@@ -109,7 +109,9 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [query, setQuery] = useState<Query | null>(null);
-  const [panel, setPanel] = useState<Panel>(waves.chat ? "chat" : "");
+  // nothing opens beside the sheet until the person opens it — the chat too (the user, 2026-10-27: "Chat window shall
+  // remain collapsed by default")
+  const [panel, setPanel] = useState<Panel>("");
   const [pop, setPop] = useState<Pop>("");
   const [recordRow, setRecordRow] = useState<number | null>(null);
   // what was just done, and the one step back (or forward, after an undo) offered beside it
