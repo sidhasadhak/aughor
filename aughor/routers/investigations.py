@@ -3681,6 +3681,12 @@ async def _stream_converse(
         # cells are citable, so they pool.
         turn: dict = {"steps": 0, "sql": False, "inv_id": "", "has_receipt": False,
                       "rows": []}
+        if sheet:
+            # Arc SH — the sheet's own counts, which the conversation is handed in its grounding (the rows the sheet
+            # holds, the rows the view on screen shows), are citable like any result: without them the check rewrote
+            # a correct "1,783 of the 99,441 orders" down to the breakdown alone (live, trace 58a155c0).
+            from aughor.sheets.answer import citable_counts
+            turn["rows"].extend(citable_counts(sheet))
 
         def _forward(_frame_type: str, _frame_payload: dict) -> None:
             """The tools' frames, minus the lifecycle. Named ``_frame_type`` on purpose:
@@ -3733,9 +3739,12 @@ async def _stream_converse(
         # this session's turns, and what this question was answered before elsewhere.
         # CI-4 adds the third: the origin finding a seeded/dossier turn is ABOUT,
         # rendered by the same code the deep path anchors on.
-        _memory = (build_history_section(history)
-                   + build_prior_answers_section(
-                       resolve_prior_answers(question, connection_id, session_id)))
+        # Arc SH — a question asked beside a sheet keeps its own conversation and is NOT handed what the same question
+        # was answered before elsewhere: the sheet on screen is its grounding, an earlier answer may predate the edits
+        # people made since, and earlier answers' shape pulled the model back to it — a breakdown after the rows card,
+        # and "The earlier answers in this session…" in a conversation that had none (live, trace bf4d145e).
+        _memory = build_history_section(history) + ("" if sheet else build_prior_answers_section(
+            resolve_prior_answers(question, connection_id, session_id)))
         if origin_prose:
             _memory = origin_prose + "\n\n" + _memory if _memory else origin_prose
         # Summon surface (SP-2, §3.11) — same one-line orientation the quick path

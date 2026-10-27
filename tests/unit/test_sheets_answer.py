@@ -129,6 +129,7 @@ def test_the_sheet_tells_the_conversation_how_to_answer_before_its_columns(env):
     assert keys.index("how_to_answer") < keys.index("columns")       # a wide sheet's columns cannot cut it off
     rules = " ".join(told["how_to_answer"])
     assert "show_rows" in rules and "of what whole" in rules and "every group" in rules
+    assert "show_rows for them too" in rules                           # a breakdown of some rows opens on their count
     assert "orders" in rules                                           # the sheet's own word for its rows
 
 
@@ -177,3 +178,66 @@ def test_the_stream_hands_the_sheet_to_the_conversation_and_the_card_to_the_numb
     assert inv._sheet_ref(focus) == "s1:v1"
     assert inv._sheet_ref(types.SimpleNamespace(focus=types.SimpleNamespace(kind="metric", id="m"))) == ""
     assert inv._sheet_ref(types.SimpleNamespace(focus=None)) == ""
+
+
+def _drive_converse(monkeypatch, sheet: str):
+    """One turn through the REAL `_stream_converse`, `converse()` stubbed: what it was handed, and the cells the
+    numbers check was given."""
+    import asyncio
+    import json
+    import types
+
+    from aughor.routers import investigations as inv
+    held: dict = {"prior_asked": 0}
+    monkeypatch.setattr(inv, "build_history_section", lambda h: "THIS CONVERSATION\n")
+
+    def _prior(*a, **k):
+        held["prior_asked"] += 1
+        return ["an answer from another conversation"]
+    monkeypatch.setattr(inv, "resolve_prior_answers", _prior)
+    monkeypatch.setattr(inv, "build_prior_answers_section", lambda a: "ANSWERED BEFORE ELSEWHERE\n" if a else "")
+
+    def _ground(answer, rows, question=""):
+        held["rows"] = list(rows)
+        return answer, None
+    monkeypatch.setattr("aughor.agent.converse_tools.ground_answer_numbers", _ground)
+
+    def _converse(conn, q, *, extra_context=None, **k):
+        held["context"] = extra_context or ""
+        return types.SimpleNamespace(answer="An answer.", steps=[], stop_reason="answered",
+                                     injected_chars=0, reinjection_ratio=0.0)
+    monkeypatch.setattr("aughor.agent.converse_tools.converse", _converse)
+
+    async def _go():
+        return [json.loads(c.split("data: ", 1)[1]) async for c in inv._stream_converse(
+            "which orders?", "sheets", [], session_id="sheet-test-2", sheet=sheet) if c.startswith("data: ")]
+    asyncio.run(_go())
+    return held
+
+
+def test_a_sheet_question_keeps_its_conversation_but_not_answers_from_elsewhere(env, monkeypatch):
+    """Live (trace bf4d145e): handed what the same question was answered before in other conversations, the model ran
+    their breakdown again after the card and wrote "The earlier answers in this session…" in a fresh conversation."""
+    sheet = _orders(env)
+    beside = _drive_converse(monkeypatch, sheet.id)
+    assert "THIS CONVERSATION" in beside["context"] and "ANSWERED BEFORE ELSEWHERE" not in beside["context"]
+    assert beside["prior_asked"] == 0
+    off = _drive_converse(monkeypatch, "")
+    assert "ANSWERED BEFORE ELSEWHERE" in off["context"] and off["prior_asked"] == 1   # every other turn as it was
+
+
+def test_the_sheets_own_counts_are_citable_by_the_answer(env, monkeypatch):
+    """Live (trace 58a155c0): the check rewrote a correct "1,783 of the 99,441 orders" away — 99,441 is the sheet's
+    own count, handed to the conversation, and it was not among the cells the prose is held to."""
+    from aughor.sheets import service
+    from aughor.sheets.answer import citable_counts
+    from aughor.sheets.model import Condition, View
+    sheet = _orders(env)
+    assert [6] in _drive_converse(monkeypatch, sheet.id)["rows"]
+    assert _drive_converse(monkeypatch, "")["rows"] == []                            # off a sheet: as it was
+    sheet = service.save_view(sheet, View(id="", name="Delivered", filter=[
+        Condition(column=sheet.column("order_status").id, op="is", value="delivered")]), by="user:ana")
+    assert citable_counts(f"{sheet.id}:{sheet.views[-1].id}") == [[6], [3]]       # the view's own count too
+    assert citable_counts("no-such-sheet") == []
+    with flag_overrides({"sheets.chat": False}):
+        assert citable_counts(sheet.id) == []

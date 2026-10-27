@@ -111,8 +111,10 @@ def how_to_answer(sheet: Sheet) -> list[str]:
         "counts them as the grid does and puts them under your answer, to open in the grid. Say how many there are "
         f"of what whole (\"312 of 4,800 {noun} have no due date.\") — never list the rows or their ids.",
         "Asked how many: lead with the number and its whole, and the share where it helps.",
-        "Break the rows down only when asked by or per something; then give every group the query returned, or say "
-        "how many you left out. Name what stands out only from what a query returned.",
+        "Break the rows down only when asked by or per something: run_sql for the groups and — when the rows broken "
+        "down are some of the sheet's, not all — show_rows for them too, so the answer opens on how many of what whole. "
+        "Give every group the query returned, or say how many you left out. Name what stands out only from what a "
+        "query returned.",
         f"Query the table {sheet.table} on this connection with run_sql — answer_question does not know the sheet. "
         "Quote every column name in double quotes. Compare a Date column by day; never compare it with a timestamp.",
     ]

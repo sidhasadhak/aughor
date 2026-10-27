@@ -176,6 +176,26 @@ def show_rows(ref: str, args: dict, *, emit: Optional[Callable[[str, dict], None
     }
 
 
+def citable_counts(ref: str) -> list[list]:
+    """The sheet's own counts the conversation is handed in its grounding — the rows the sheet holds, and the rows the
+    view on screen shows when it has a filter — as result rows the answer's numbers may be held to. Counted as the
+    grounding counts them; none when the sheet cannot be read, which only leaves the check as strict as it was."""
+    from aughor import sheets
+    if not ref or not sheets.on(sheets.CHAT):
+        return []
+    try:
+        sheet, view = _sheet_and_view(ref)
+        out = [[projection.count(sheet)]]
+        if view is not None and (view.filter or view.search):
+            out.append([_count(sheet, list(view.filter), view.search)])
+        return out
+    except (RowsRefused, projection.FilterRefused) as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the sheet's own counts could not be read; the answer is held to its queries alone",
+                 counter="sheets.answer.citable_counts")
+        return []
+
+
 def sheet_tools(ref: str, *, emit: Optional[Callable[[str, dict], None]] = None) -> list[ToolSpec]:
     """The tools a question summoned from a sheet gets beside the conversation's own — none while the chat beside a
     sheet is off, so every other turn is handed exactly the tools it was."""
