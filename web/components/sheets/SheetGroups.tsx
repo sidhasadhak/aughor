@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MUTED, NUM } from "@/components/clarity/kit";
 import {
-  CellValue, GridFoot, GridHeader, NUMBER_WIDTH, ROW_HEIGHT, RowNumber, useCellWork, width, type EditResult,
+  CellValue, GridFoot, GridHeader, LINE, NUMBER_WIDTH, ROW_HEIGHT, RowNumber, useCellWork, width, type EditResult,
 } from "@/components/sheets/SheetGrid";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -30,8 +30,10 @@ const OPEN_FIRST = 3;
 
 const keyOf = (v: unknown) => JSON.stringify(v ?? null);
 
-export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdit, onOpenRow }: {
+export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdit, onOpenRow, onSort }: {
   sheet: Sheet; query: RowsQuery; group: string; hidden: Set<string>; editable: boolean; tick: number;
+  /** What a click on a column's header does with the view's sort — the rows within each group follow it. */
+  onSort?: (column: string) => void;
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
 }) {
@@ -77,7 +79,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   };
 
   const work = useCellWork({
-    sheet, editable, onEdit, onOpenRow,
+    sheet, editable, onEdit, onOpenRow, columns: shown.map(c => c.id),
     valueOf: (row, column) => rowByNumber(row)?.[index[column]],
     changedOf,
     versionOf,
@@ -113,7 +115,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
         onKeyDown={e => work.keys(e)}
         style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
-          <GridHeader sheet={sheet} shown={shown} />
+          <GridHeader sheet={sheet} shown={shown} sort={query.sort} onSort={onSort} />
           {page.groups.map(g => {
             const k = keyOf(g.value);
             const isOpen = !!open[k];
@@ -122,7 +124,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
             return (
               <div key={k} role="rowgroup">
                 <div role="row" className="aug-fs-sm" style={{ display: "flex", height: ROW_HEIGHT + 4,
-                  background: "var(--bg-1)", borderBottom: "1px solid var(--b0)", alignItems: "center" }}>
+                  background: "var(--bg-1)", borderBottom: LINE, alignItems: "center" }}>
                   <div style={{ width: leadWidth, minWidth: leadWidth, display: "flex", alignItems: "center", gap: 8,
                     padding: "0 8px", overflow: "hidden" }}>
                     <Button variant="ghost" size="icon-xs" aria-expanded={isOpen}
@@ -146,14 +148,14 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
                   const rowNo = Number(r[0]);
                   return (
                     <div key={rowNo} role="row" className="aug-fs-sm" style={{ display: "flex", width: span,
-                      minWidth: "100%", borderBottom: "1px solid var(--b0)" }}>
+                      minWidth: "100%" }}>
                       <RowNumber row={rowNo} marks={marksOf(rowNo)} rules={sheet.rules} onOpen={() => onOpenRow(rowNo)} />
                       {shown.map(c => work.cell(rowNo, c, r[index[c.id]], !!changedOf(rowNo, c.id)))}
                     </div>
                   );
                 })}
                 {isOpen && left > 0 && (
-                  <div style={{ padding: "2px 8px 2px 36px", borderBottom: "1px solid var(--b0)" }}>
+                  <div style={{ padding: "2px 8px 2px 36px", borderBottom: LINE }}>
                     <Button variant="ghost" size="xs" onClick={() => readMore(g.value)} style={MUTED}>
                       + {formatCount(left)} more in {String(g.value ?? "empty")}
                       {left > MORE ? ` — show ${formatCount(MORE)}` : ""}

@@ -68,11 +68,15 @@ function mark(c: SheetColumn): string {
 
 const ELLIPSIS: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
 
+/** The grid's lines. Each cell draws its own right and bottom line inside its 30px: a row drawn with a line below it
+ *  would be 31px tall in a 30px place, and the next row would paint over the line. */
+export const LINE = "1px solid var(--b2)";
+
 export function cellStyle(c: SheetColumn): CSSProperties {
   const numeric = c.kind === "number" || c.kind === "money";
   return {
     width: width(c), minWidth: width(c), maxWidth: width(c), padding: "0 8px", overflow: "hidden",
-    borderRight: "1px solid var(--b0)", display: "flex", alignItems: "center",
+    borderRight: LINE, borderBottom: LINE, display: "flex", alignItems: "center",
     justifyContent: numeric ? "flex-end" : "flex-start", height: ROW_HEIGHT, ...(numeric ? NUM : {}),
   };
 }
@@ -103,8 +107,11 @@ export function aboutColumn(sheet: Sheet, c: SheetColumn): string[] {
   return lines;
 }
 
-/** The header: each column's kind, name and marks — and what a derived or described column is, a click away. */
-export function GridHeader({ sheet, shown }: { sheet: Sheet; shown: SheetColumn[] }) {
+/** The header: each column's kind, name and marks — and what a derived or described column is, a click away. A click on
+ *  a column's name sorts by it: lowest first, then highest first, then back to the sheet's own order. */
+export function GridHeader({ sheet, shown, sort = [], onSort }: {
+  sheet: Sheet; shown: SheetColumn[]; sort?: { column: string; desc: boolean }[]; onSort?: (column: string) => void;
+}) {
   const [about, setAbout] = useState("");
   const aboutRef = useRef<HTMLDivElement>(null);
   const closeAbout = useCallback(() => setAbout(""), []);
@@ -114,13 +121,23 @@ export function GridHeader({ sheet, shown }: { sheet: Sheet; shown: SheetColumn[
   const span = NUMBER_WIDTH + shown.reduce((n, c) => n + width(c), 0);
   return (
     <div role="row" className="aug-fs-xs" style={{ display: "flex", position: "sticky", top: 0, zIndex: 3,
-      background: "var(--bg-2)", borderBottom: "1px solid var(--b1)", color: "var(--t2)" }}>
-      <div style={{ width: NUMBER_WIDTH, minWidth: NUMBER_WIDTH, height: ROW_HEIGHT, borderRight: "1px solid var(--b0)" }} />
-      {shown.map(c => (
+      background: "var(--bg-2)", color: "var(--t2)" }}>
+      <div style={{ width: NUMBER_WIDTH, minWidth: NUMBER_WIDTH, height: ROW_HEIGHT, borderRight: LINE, borderBottom: LINE }} />
+      {shown.map(c => {
+        const by = sort[0]?.column === c.id ? sort[0] : undefined;
+        return (
         <div key={c.id} role="columnheader" aria-label={`${c.name} · ${KIND_LABEL[c.kind]}`}
+          aria-sort={by ? (by.desc ? "descending" : "ascending") : "none"}
           style={{ ...cellStyle(c), justifyContent: "flex-start", gap: 6, fontWeight: 600 }}>
-          <span style={MUTED}><Icon name={KIND_ICON[c.kind]} size={12} /></span>
-          <span style={{ ...ELLIPSIS, color: c.role === "lookup" ? "var(--blue4)" : undefined }} title={c.name}>{c.name}</span>
+          <Button variant="ghost" size="xs" disabled={!onSort} onClick={() => onSort?.(c.id)}
+            title={by ? (by.desc ? "Highest first — click for the sheet's order" : "Lowest first — click for highest first")
+              : "Sort by this column"}
+            style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: "0 1 auto", padding: 0, height: "auto",
+              fontWeight: 600, color: c.role === "lookup" ? "var(--blue4)" : "var(--t2)" }}>
+            <span style={MUTED}><Icon name={KIND_ICON[c.kind]} size={12} /></span>
+            <span style={ELLIPSIS}>{c.name}</span>
+            {by && <span style={{ color: "var(--blue4)" }}><Icon name={by.desc ? "chevd" : "chevu"} size={12} /></span>}
+          </Button>
           {mark(c) && <Chip tone="accent">{mark(c)}</Chip>}
           {c.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
           {(c.description || c.role !== "stored") && (
@@ -130,7 +147,8 @@ export function GridHeader({ sheet, shown }: { sheet: Sheet; shown: SheetColumn[
             </Button>
           )}
         </div>
-      ))}
+        );
+      })}
       {open && (
         <div ref={aboutRef} role="dialog" aria-label={`What ${open.name} is`} className="aug-fs-sm" style={{ position: "absolute",
           top: ROW_HEIGHT + 2, left: Math.max(0, Math.min(at(open.id) - 40, span - 304)), width: 300, zIndex: 12,
@@ -157,7 +175,7 @@ export function GridFoot({ shown, totals, rows, label = "total" }: {
       background: "var(--bg-2)", borderTop: "1px solid var(--b1)", color: "var(--t2)" }}
       title="Totals are over every row this view shows, not only the rows in sight">
       <div style={{ width: NUMBER_WIDTH, minWidth: NUMBER_WIDTH, height: ROW_HEIGHT, padding: "0 8px", display: "flex",
-        alignItems: "center", borderRight: "1px solid var(--b0)", ...MUTED }}>{label}</div>
+        alignItems: "center", borderRight: LINE, ...MUTED }}>{label}</div>
       {shown.map(c => (
         <div key={c.id} style={{ ...cellStyle(c), justifyContent: "flex-start" }}>
           <span style={ELLIPSIS} title={totalWords(totals[c.id], c, rows)}>{totalWords(totals[c.id], c, rows)}</span>
@@ -167,8 +185,6 @@ export function GridFoot({ shown, totals, rows, label = "total" }: {
   );
 }
 
-export interface EditResult { ok: boolean; error?: string }
-
 /** A row's number, with the rules marking it as a bar at its start, and the button that opens it as a record. */
 export function RowNumber({ row, marks, rules, onOpen }: {
   row: number; marks: string[]; rules: SheetRule[]; onOpen: () => void;
@@ -177,7 +193,7 @@ export function RowNumber({ row, marks, rules, onOpen }: {
   return (
     <div className="aug-fs-xs" style={{ width: NUMBER_WIDTH, minWidth: NUMBER_WIDTH, height: ROW_HEIGHT, display: "flex",
       alignItems: "center", justifyContent: "space-between", padding: "0 4px 0 8px", ...MUTED, ...NUM,
-      borderRight: "1px solid var(--b0)", position: "relative",
+      borderRight: LINE, borderBottom: LINE, position: "relative",
       boxShadow: marking.length ? `inset 3px 0 0 ${RULE_COLOR[marking[0].tone]}` : undefined }}
       title={marking.length ? `row ${row} · marked: ${marking.map(r => r.name).join(", ")}` : `row ${row} of the sheet`}>
       {row}
@@ -213,32 +229,67 @@ export interface EditResult { ok: boolean; error?: string }
 /** A selected cell: its row, its column, and — in the flat grid — its place among the view's rows. */
 export interface Selected { row: number; column: string; index?: number }
 
+/** A range of cells: from where Shift began to the active cell, in the view's rows and the columns shown. */
+export interface Range { rows: [number, number]; cols: [number, number] }
+
 const ARROWS: Record<string, [number, number]> = {
   ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
 };
 
+/** The range from an anchor to the active cell — null when they are one cell, or when the grid cannot place rows (the
+ *  grouped grid, where a range is never more than a cell). */
+export function rangeOf(anchor: Selected | null, at: Selected | null, columns: string[]): Range | null {
+  if (!anchor || !at || anchor.index === undefined || at.index === undefined) return null;
+  const a = columns.indexOf(anchor.column);
+  const b = columns.indexOf(at.column);
+  if (a < 0 || b < 0) return null;
+  const r: Range = { rows: [Math.min(anchor.index, at.index), Math.max(anchor.index, at.index)],
+    cols: [Math.min(a, b), Math.max(a, b)] };
+  return r.rows[0] === r.rows[1] && r.cols[0] === r.cols[1] ? null : r;
+}
+
 /**
- * Selecting a cell, editing it, and the cell bar — the same in the flat grid and the grouped one. A click only selects:
- * the bar above the grid says the selected cell's value and where it came from, with Change and Open row beside it, and
- * nothing opens over the rows. Double-click, Enter or typing edits; Escape leaves; the arrows move (the flat grid).
+ * Selecting cells, editing one, and the cell bar — the same in the flat grid and the grouped one. A click selects one
+ * cell, drawn by its border alone; Shift with a click or an arrow selects a range, drawn filled, and the bar counts it
+ * (and sums it, where it holds numbers). The bar above the grid says the active cell's value and where it came from,
+ * with Change and Open row beside it; nothing opens over the rows. Double-click, Enter or typing edits; Escape leaves;
+ * the arrows move (the flat grid); Cmd or Ctrl+C copies the cell or the range.
  */
-export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, changedOf, versionOf, focus }: {
+export function useCellWork({ sheet, editable, columns, onEdit, onOpenRow, valueOf, changedOf, versionOf, rowAt, focus }: {
   sheet: Sheet; editable: boolean;
+  /** The columns shown, in order — what a range spans. */
+  columns: string[];
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
   valueOf: (row: number, column: string) => unknown;
   changedOf: (row: number, column: string) => { by: string; at: string; version: number } | undefined;
   /** The version a change must name: set, or put back by an undo — never only the cells holding an edit. */
   versionOf: (row: number, column: string) => number;
+  /** The flat grid's row at a place in the view, where it has been read — what a range copies and sums. */
+  rowAt?: (index: number) => unknown[] | undefined;
   /** Put the keyboard back on the grid — after a click, and once an edit is kept or left. */
   focus: () => void;
 }) {
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [anchor, setAnchor] = useState<Selected | null>(null);
   const [editing, setEditing] = useState<{ row: number; column: string; text: string; original: string; typed: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [said, setSaid] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const select = (s: Selected | null) => { setSelected(s); setError(null); };
+  /** Select a cell; with `extend`, keep where the range began and move its other end here. */
+  const select = (s: Selected | null, extend = false) => {
+    setSelected(s);
+    if (!extend || !anchor) setAnchor(s);
+    setError(null);
+    setSaid(null);
+  };
+  const range = rangeOf(anchor, selected, columns);
+  const inRange = (index: number | undefined, column: string) => {
+    if (!range || index === undefined) return false;
+    const ci = columns.indexOf(column);
+    return index >= range.rows[0] && index <= range.rows[1] && ci >= range.cols[0] && ci <= range.cols[1];
+  };
 
   const save = async (row: number, c: SheetColumn, value: unknown) => {
     setSaving(true);
@@ -254,19 +305,22 @@ export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, chang
     const v = valueOf(row, c.id);
     if (c.kind === "yesno") { void save(row, c, !(v === true || v === "true")); return; }
     const text = v === null || v === undefined ? "" : String(v);
+    setAnchor(selected);
     setEditing({ row, column: c.id, text: typed ?? text, original: text, typed: typed !== undefined });
   };
 
   const cell = (row: number, c: SheetColumn, v: unknown, set: boolean, index?: number) => {
     const isSel = selected?.row === row && selected.column === c.id;
+    const filled = !isSel && inRange(index, c.id);
     const isEdit = editing?.row === row && editing.column === c.id;
     return (
-      <div key={c.id} role="gridcell" aria-selected={isSel}
-        onClick={() => { if (!isEdit) { select({ row, column: c.id, index }); focus(); } }}
+      <div key={c.id} role="gridcell" aria-selected={isSel || filled}
+        onClick={e => { if (!isEdit) { select({ row, column: c.id, index }, e.shiftKey); focus(); } }}
         onDoubleClick={() => { select({ row, column: c.id, index }); startEdit(row, c); }}
         style={{ ...cellStyle(c), cursor: "default",
-          background: isSel ? "var(--bg-sel)" : set ? "var(--blue1)" : undefined,
-          outline: isSel ? "1px solid var(--blue3)" : undefined, outlineOffset: -1 }}>
+          background: filled ? "var(--bg-sel)" : set ? "var(--blue1)" : undefined,
+          // the active cell is its border alone; a fill is for a range of more than one
+          boxShadow: isSel ? "inset 0 0 0 2px var(--blue3)" : undefined }}>
         {isEdit ? (
           <CellEditor column={c} text={editing.text} original={editing.original} saving={saving} typed={editing.typed}
             onChange={text => setEditing({ ...editing, text })}
@@ -277,11 +331,48 @@ export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, chang
     );
   };
 
-  /** The grid's keys: the arrows (where the grid can move), Enter or F2 to change, a character to type over, Escape. */
-  const keys = (e: ReactKeyboardEvent<HTMLElement>, move?: (dRow: number, dCol: number) => void) => {
-    if (editing || e.metaKey || e.ctrlKey || e.altKey) return;
+  /** The cells a range holds, as the grid shows them — from the rows it has read; how many it has not. */
+  const rangeCells = (r: Range) => {
+    const cols = columns.slice(r.cols[0], r.cols[1] + 1).map(id => sheet.columns.find(c => c.id === id)!).filter(Boolean);
+    const rows: unknown[][] = [];
+    let unread = 0;
+    for (let i = r.rows[0]; i <= r.rows[1]; i++) {
+      const got = rowAt?.(i);
+      if (!got) { unread += 1; continue; }
+      rows.push(cols.map(c => valueOf(Number(got[0]), c.id)));
+    }
+    return { cols, rows, unread };
+  };
+
+  /** Writes the text and says so — or says the browser refused, never "copied" for a copy that did not happen. */
+  const toClipboard = (text: string, done: string) => {
+    if (!navigator.clipboard) { setSaid("Not copied — this browser gives the page no clipboard"); return; }
+    navigator.clipboard.writeText(text).then(() => setSaid(done),
+      () => setSaid("Not copied — the browser refused the page its clipboard"));
+  };
+
+  const copy = () => {
+    if (!selected) return;
+    const c = sheet.columns.find(x => x.id === selected.column);
+    if (!range) {
+      if (!c) return;
+      toClipboard(showValue(valueOf(selected.row, selected.column), c), "Copied the cell");
+      return;
+    }
+    const { cols, rows, unread } = rangeCells(range);
+    const lines = rows.map(r => r.map((v, j) => showValue(v, cols[j])).join("\t"));
+    toClipboard(lines.join("\n"),
+      `Copied ${formatCount(rows.length * cols.length)} cells${unread ? ` — ${formatCount(unread)} rows not read yet were left out` : ""}`);
+  };
+
+  /** The grid's keys: the arrows (Shift extends), Enter or F2 to change, a character to type over, Cmd or Ctrl+C to copy,
+   *  Escape. */
+  const keys = (e: ReactKeyboardEvent<HTMLElement>, move?: (dRow: number, dCol: number, extend: boolean) => void) => {
+    if (editing) return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && selected) { e.preventDefault(); copy(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const arrow = ARROWS[e.key];
-    if (arrow && move) { e.preventDefault(); move(arrow[0], arrow[1]); return; }
+    if (arrow && move) { e.preventDefault(); move(arrow[0], arrow[1], e.shiftKey); return; }
     if (!selected) return;
     const c = sheet.columns.find(x => x.id === selected.column);
     if (!c) return;
@@ -295,7 +386,8 @@ export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, chang
 
   const column = selected ? sheet.columns.find(c => c.id === selected.column) : undefined;
   const bar: ReactNode = (
-    <CellBar sheet={sheet} selected={selected} column={column} editable={editable} error={error}
+    <CellBar sheet={sheet} selected={selected} column={column} editable={editable} error={error} said={said}
+      range={range ? rangeWords(range, rangeCells(range)) : null}
       value={selected ? valueOf(selected.row, selected.column) : undefined}
       set={selected ? changedOf(selected.row, selected.column) : undefined}
       onChange={() => { if (selected && column) startEdit(selected.row, column); }}
@@ -304,12 +396,39 @@ export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, chang
   return { cell, bar, keys, selected, select };
 }
 
+/** A range in words for the bar: its size, and — where every column in it holds numbers — their sum over the rows read. */
+export function rangeWords(r: Range, got: { cols: SheetColumn[]; rows: unknown[][]; unread: number }): string {
+  const height = r.rows[1] - r.rows[0] + 1;
+  const width = r.cols[1] - r.cols[0] + 1;
+  const parts = [`${formatCount(height)} row${height === 1 ? "" : "s"} × ${formatCount(width)} column${width === 1 ? "" : "s"}`,
+    `${formatCount(height * width)} cells`];
+  const numeric = got.cols.length > 0 && got.cols.every(c => c.kind === "number" || c.kind === "money");
+  if (numeric && got.rows.length) {
+    let sum = 0;
+    let n = 0;
+    for (const row of got.rows) {
+      for (const v of row) {
+        const x = Number(v);
+        if (v !== null && v !== undefined && v !== "" && !isNaN(x)) { sum += x; n += 1; }
+      }
+    }
+    const one = got.cols.length === 1 || got.cols.every(c => c.kind === got.cols[0].kind && c.currency === got.cols[0].currency);
+    if (n) parts.push(`sum ${one ? showValue(Math.round(sum * 100) / 100, got.cols[0]) : formatCount(sum)} of `
+      + `${formatCount(n)} value${n === 1 ? "" : "s"}`
+      + (got.unread ? ` in the ${formatCount(got.rows.length)} row${got.rows.length === 1 ? "" : "s"} read` : ""));
+  }
+  return parts.join(" · ");
+}
+
 /** The flat grid: every row of the view in one scroll, read a block at a time as it comes into sight. */
-export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, footer }: {
+export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, footer, sort, onSort }: {
   sheet: Sheet;
   rows: RowBlocks;
   hidden: Set<string>;
   editable: boolean;
+  /** The view's sort as it stands, and what a click on a column's header does with it. */
+  sort?: { column: string; desc: boolean }[];
+  onSort?: (column: string) => void;
   /** Set a cell; the version is the one read (0 for a cell never set). */
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
@@ -322,7 +441,7 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   const total = rows.total ?? 0;
 
   const work = useCellWork({
-    sheet, editable, onEdit, onOpenRow,
+    sheet, editable, onEdit, onOpenRow, columns: shown.map(c => c.id), rowAt: rows.rowAt,
     valueOf: (row, column) => rows.rowByNumber(row)?.[index[column]],
     changedOf: (row, column) => rows.changedOf(row, column),
     versionOf: (row, column) => rows.versionOf(row, column),
@@ -341,8 +460,8 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   const span = shown.reduce((n, c) => n + width(c), 0) + NUMBER_WIDTH;
   const sight = virtualizer.range;
 
-  /** The arrows: the next row in the view, or the next column shown — scrolled into sight. */
-  const move = (dRow: number, dCol: number) => {
+  /** The arrows: the next row in the view, or the next column shown — scrolled into sight; with Shift, the range grows. */
+  const move = (dRow: number, dCol: number, extend: boolean) => {
     const cols = shown.map(c => c.id);
     if (!cols.length || !total) return;
     const at = work.selected;
@@ -350,7 +469,7 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
     const ci = at ? Math.max(0, Math.min(cols.length - 1, cols.indexOf(at.column) + dCol)) : 0;
     const r = rows.rowAt(i);
     if (!r) return;
-    work.select({ row: Number(r[0]), column: cols[ci], index: i });
+    work.select({ row: Number(r[0]), column: cols[ci], index: i }, extend);
     virtualizer.scrollToIndex(i, { align: "auto" });
     const el = scrollRef.current;
     if (el) {
@@ -368,22 +487,21 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
         onKeyDown={e => work.keys(e, move)}
         style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
-          <GridHeader sheet={sheet} shown={shown} />
+          <GridHeader sheet={sheet} shown={shown} sort={sort} onSort={onSort} />
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {items.map(item => {
               const r = rows.rowAt(item.index);
               if (!r) {
                 return (
                   <div key={`wait-${item.index}`} aria-busy="true" style={{ position: "absolute", top: item.start, left: 0,
-                    width: span, minWidth: "100%", height: ROW_HEIGHT, borderBottom: "1px solid var(--b0)",
+                    width: span, minWidth: "100%", height: ROW_HEIGHT, borderBottom: LINE,
                     background: "var(--bg-1)" }} />
                 );
               }
               const rowNo = Number(r[0]);
               return (
                 <div key={rowNo} role="row" className="aug-fs-sm" style={{ position: "absolute", top: item.start, left: 0,
-                  display: "flex", width: span, minWidth: "100%", borderBottom: "1px solid var(--b0)",
-                  background: "var(--bg-0)" }}>
+                  display: "flex", width: span, minWidth: "100%", height: ROW_HEIGHT, background: "var(--bg-0)" }}>
                   <RowNumber row={rowNo} marks={rows.marksOf(rowNo)} rules={sheet.rules} onOpen={() => onOpenRow(rowNo)} />
                   {shown.map(c => work.cell(rowNo, c, r[index[c.id]], !!rows.changedOf(rowNo, c.id), item.index))}
                 </div>
@@ -451,9 +569,13 @@ function CellEditor({ column, text, original, saving, typed, onChange, onSave, o
  * and where it came from — a file's row, who set it and when, what it is computed from — with Change and Open row. One
  * line that is always there, so selecting a cell never moves the grid and nothing opens over the rows.
  */
-function CellBar({ sheet, selected, column, value, set, editable, error, onChange, onOpenRow }: {
+function CellBar({ sheet, selected, column, value, set, editable, error, said, range, onChange, onOpenRow }: {
   sheet: Sheet; selected: Selected | null; column?: SheetColumn; value: unknown;
   set?: { by: string; at: string; version: number }; editable: boolean; error: string | null;
+  /** What was just done here — a copy. */
+  said: string | null;
+  /** A range selected, in words — its size, and its sum where it holds numbers. */
+  range: string | null;
   onChange: () => void; onOpenRow: () => void;
 }) {
   const empty = value === null || value === undefined || value === "";
@@ -463,7 +585,12 @@ function CellBar({ sheet, selected, column, value, set, editable, error, onChang
       borderBottom: "1px solid var(--b0)", background: "var(--bg-1)", color: "var(--t3)" }}>
       {!selected || !column ? (
         <span style={ELLIPSIS}>Select a cell to see where its value came from · double-click, Enter or type to change it ·
-          the arrows move</span>
+          the arrows move · Shift selects a range</span>
+      ) : range ? (
+        <>
+          <span className="aug-fs-sm" style={{ ...ELLIPSIS, ...NUM, color: "var(--t1)", fontWeight: 600 }} title={range}>{range}</span>
+          <span style={{ ...ELLIPSIS, color: said ? "var(--grn4)" : undefined }}>{said ?? "Cmd or Ctrl+C copies it"}</span>
+        </>
       ) : (
         <>
           <span style={{ ...NUM, whiteSpace: "nowrap" }}>{column.name} · row {formatCount(selected.row)}</span>
@@ -472,7 +599,8 @@ function CellBar({ sheet, selected, column, value, set, editable, error, onChang
             {empty ? "empty" : showValue(value, column) || String(value)}
           </span>
           {error ? <span role="alert" style={{ ...ELLIPSIS, color: "var(--red4)" }} title={error}>{error}</span>
-            : <span style={ELLIPSIS} title={cellOrigin(sheet, column, selected.row, set)}>{cellOrigin(sheet, column, selected.row, set)}</span>}
+            : said ? <span style={{ ...ELLIPSIS, color: "var(--grn4)" }}>{said}</span>
+              : <span style={ELLIPSIS} title={cellOrigin(sheet, column, selected.row, set)}>{cellOrigin(sheet, column, selected.row, set)}</span>}
           <span style={{ marginLeft: "auto", display: "flex", gap: 2, flex: "0 0 auto" }}>
             {editable && column.role === "stored" && (
               <Button variant="ghost" size="xs" onClick={onChange}>{column.kind === "yesno" ? "Switch" : "Change"}</Button>

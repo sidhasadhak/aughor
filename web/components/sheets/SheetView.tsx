@@ -35,7 +35,8 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount } from "@/lib/format";
 import {
   KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, opWords, opsFor, readChanges,
-  readRows, readSheet, redo, removeColumn, removeRule, renameSheet, saveRule, saveView, setCells, showValue, undo,
+  readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, showValue,
+  undo,
   updateColumn, type Condition, type Kind, type RowsQuery, type RuleTone, type Sheet, type SheetColumn, type SheetView as View,
   type ViewKind,
 } from "@/lib/sheets";
@@ -187,9 +188,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       const idx = Object.fromEntries(p.columns.map((id, i) => [id, i + 1]));
       const lines = [shown.map(c => c.name).join("\t"),
         ...p.rows.map(r => shown.map(c => showValue(r[idx[c.id]], c)).join("\t"))];
-      void navigator.clipboard?.writeText(lines.join("\n"));
-      setSaid({ text: p.total > p.rows.length ? `Copied the first ${formatCount(p.rows.length)} of ${formatCount(p.total)} rows — the CSV holds them all`
-        : `Copied ${formatCount(p.rows.length)} rows`, tone: "ok" });
+      if (!navigator.clipboard) throw new Error("Not copied — this browser gives the page no clipboard");
+      return navigator.clipboard.writeText(lines.join("\n")).then(
+        () => setSaid({ text: p.total > p.rows.length ? `Copied the first ${formatCount(p.rows.length)} of ${formatCount(p.total)} rows — the CSV holds them all`
+          : `Copied ${formatCount(p.rows.length)} rows`, tone: "ok" }),
+        () => { throw new Error("Not copied — the browser refused the page its clipboard"); });
     }).catch(e => setSaid({ text: e instanceof Error ? e.message : String(e), tone: "bad" }));
   };
 
@@ -214,6 +217,24 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       setQuery(fromView(s, madeId || s.views[s.views.length - 1]?.id || ""));
     }
   };
+
+  /** A click on a column's header: lowest first, then highest first, then the sheet's own order — the person's own
+   *  until they keep it in the view. */
+  const sortBy = (column: string) => {
+    const now = query.sort[0]?.column === column ? query.sort[0] : undefined;
+    setQ({ sort: !now ? [{ column, desc: false }] : !now.desc ? [{ column, desc: true }] : [] });
+  };
+
+  /** Take a view off the sheet — undo puts it back — and read the sheet on its first view. */
+  const takeOff = async (v: View) => {
+    const ok = await run(() => removeView(sheet.id, v.id), `View ${v.name} taken off`);
+    if (ok) {
+      const s = await readSheet(sheet.id);
+      setQuery(fromView(s, s.views[0]?.id ?? ""));
+    }
+  };
+  // a sheet keeps one shared view; a view of someone else's own is never listed here
+  const canTakeOff = (v: View) => waves.grid && (!v.shared || sheet.views.filter(x => x.shared).length > 1);
 
   const updateThisView = () => view && run(() => saveView(sheet.id, { ...view, ...kept() }), `View ${view.name} changed`);
 
@@ -316,17 +337,26 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           {sheet.views.map(v => {
             const n = sheet.view_rows?.[v.id];
             const narrowed = v.filter.length > 0 || !!v.search;
+            const on = v.id === query.view;
             return (
-              <Button key={v.id} role="tab" aria-selected={v.id === query.view} variant="ghost" size="sm"
-                onClick={() => setQuery(fromView(sheet, v.id))}
-                title={v.shared ? undefined : "Your own view — only you see it"}
-                style={{ borderBottom: v.id === query.view ? "2px solid var(--blue3)" : "2px solid transparent", flex: "0 0 auto",
-                  borderRadius: 0, color: v.id === query.view ? "var(--t1)" : "var(--t2)", height: 34 }}>
-                <Icon name={KIND_OF_VIEW[v.kind === "grid" && v.group ? "grouped" : v.kind]} size={12} /> {v.name}
-                {!v.shared && <Icon name="user" size={11} />}
-                {narrowed && n !== null && n !== undefined && <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{formatCount(n)}</span>}
-                {v.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
-              </Button>
+              <span key={v.id} style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto",
+                borderBottom: on ? "2px solid var(--blue3)" : "2px solid transparent" }}>
+                <Button role="tab" aria-selected={on} variant="ghost" size="sm"
+                  onClick={() => setQuery(fromView(sheet, v.id))}
+                  title={v.shared ? undefined : "Your own view — only you see it"}
+                  style={{ borderRadius: 0, color: on ? "var(--t1)" : "var(--t2)", height: 32 }}>
+                  <Icon name={KIND_OF_VIEW[v.kind === "grid" && v.group ? "grouped" : v.kind]} size={12} /> {v.name}
+                  {!v.shared && <Icon name="user" size={11} />}
+                  {narrowed && n !== null && n !== undefined && <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{formatCount(n)}</span>}
+                  {v.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
+                </Button>
+                {on && canTakeOff(v) && (
+                  <Button variant="ghost" size="icon-xs" aria-label={`Take off the view ${v.name}`}
+                    title="Take off this view — Undo puts it back" onClick={() => void takeOff(v)} style={MUTED}>
+                    <Icon name="close" size={11} />
+                  </Button>
+                )}
+              </span>
             );
           })}
           </span>
@@ -457,11 +487,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           <SheetCalendar sheet={sheet} query={viewQuery} column={query.date} card={query.card} tick={tick} onOpenRow={openRow} />
         ) : query.group ? (
           <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={waves.grid} tick={tick}
-            onEdit={onEdit} onOpenRow={openRow} />
+            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
             <SheetGrid key={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
-              onEdit={onEdit} onOpenRow={openRow}
+              onEdit={onEdit} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
               footer={`${view ? view.name : "the sheet"}${query.sort.length
                 ? ` · sorted by ${query.sort.map(s => colName(s.column)).join(", ")}` : " · in the sheet's order"}`} />
           )}

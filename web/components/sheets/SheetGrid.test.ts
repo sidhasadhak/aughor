@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cellOrigin } from "./SheetGrid";
+import { cellOrigin, rangeOf, rangeWords } from "./SheetGrid";
 import type { Sheet, SheetColumn } from "@/lib/sheets";
 
 const col = (over: Partial<SheetColumn>): SheetColumn => ({
@@ -30,5 +30,28 @@ describe("the cell bar says where a value came from, from what the grid holds", 
     expect(cellOrigin(SHEET, col({ role: "lookup", via: "c2" }), 1)).toBe("Read from another sheet through customer_id");
     expect(cellOrigin(SHEET, col({ role: "total", description: "the sum of payment_value" }), 1)).toBe("The sum of payment_value");
     expect(cellOrigin(SHEET, col({}), 99442)).toBe("Typed in");
+  });
+});
+
+describe("a range of cells", () => {
+  const cols = ["c1", "c2", "c3"];
+  it("runs from where Shift began to the active cell, in either direction, and one cell is no range", () => {
+    expect(rangeOf({ row: 9, column: "c3", index: 8 }, { row: 3, column: "c1", index: 2 }, cols))
+      .toEqual({ rows: [2, 8], cols: [0, 2] });
+    expect(rangeOf({ row: 3, column: "c2", index: 2 }, { row: 3, column: "c2", index: 2 }, cols)).toBeNull();
+    // the grouped grid places no row in the view, so its selection is one cell
+    expect(rangeOf({ row: 3, column: "c1" }, { row: 9, column: "c3" }, cols)).toBeNull();
+  });
+
+  it("says its size, and sums money in its currency over the rows read — saying when some were not", () => {
+    const price = col({ id: "c2", name: "price", kind: "money", currency: "BRL" });
+    const range = { rows: [0, 2] as [number, number], cols: [1, 1] as [number, number] };
+    expect(rangeWords(range, { cols: [price], rows: [["10.00"], ["20.50"], [null]], unread: 0 }))
+      .toBe("3 rows × 1 column · 3 cells · sum R$30.50 of 2 values");
+    expect(rangeWords(range, { cols: [price], rows: [["10.00"]], unread: 2 }))
+      .toBe("3 rows × 1 column · 3 cells · sum R$10.00 of 1 value in the 1 row read");
+    const status = col({ id: "c1", kind: "choice" });
+    expect(rangeWords({ rows: [0, 1], cols: [0, 1] }, { cols: [status, price], rows: [["a", "1"], ["b", "2"]], unread: 0 }))
+      .toBe("2 rows × 2 columns · 4 cells");
   });
 });
