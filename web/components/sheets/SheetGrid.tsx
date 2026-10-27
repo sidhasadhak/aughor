@@ -132,8 +132,11 @@ export function GridHeader({ sheet, shown, sort = [], onSort }: {
           <Button variant="ghost" size="xs" disabled={!onSort} onClick={() => onSort?.(c.id)}
             title={by ? (by.desc ? "Highest first — click for the sheet's order" : "Lowest first — click for highest first")
               : "Sort by this column"}
-            style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: "0 1 auto", padding: 0, height: "auto",
-              fontWeight: 600, color: c.role === "lookup" ? "var(--blue4)" : "var(--t2)" }}>
+            // the whole header sorts, as a spreadsheet's does — not only its name (the user: "I still cant sort the
+            // sheet"); what explains the column keeps its own button beside it
+            style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, minWidth: 0,
+              flex: "1 1 auto", alignSelf: "stretch", padding: 0, height: "auto", borderRadius: 0, fontWeight: 600,
+              color: c.role === "lookup" ? "var(--blue4)" : "var(--t2)" }}>
             <span style={MUTED}><Icon name={KIND_ICON[c.kind]} size={12} /></span>
             <span style={ELLIPSIS}>{c.name}</span>
             {by && <span style={{ color: "var(--blue4)" }}><Icon name={by.desc ? "chevd" : "chevu"} size={12} /></span>}
