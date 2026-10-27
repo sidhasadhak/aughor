@@ -12515,6 +12515,25 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   toolbar now wrap, the source giving way first, then the buttons taking a line of their own. **LIVE 2026-10-27** at
   `ec73d4c1` (the user: *"Put ec73d4c1 on the live install"*), no restart: at 1,280 px on the live Olist orders the
   buttons end at 844, the sheet at 860.
+- **The chat beside a sheet answers as the sheet would, 2026-10-27** (`120cffd3`, `1a2af818`; the user, on the live
+  answer to *"Which records do not have order delivered carrier date?"*: *"it has no clue how it is supposed to
+  answer"*). Measured first (trace d77fd873): the question went to the general quick chat, which ran one breakdown by
+  status, never counted the 1,783 rows asked about (*"a small share"*), dropped one of its own seven groups — the two
+  delivered orders with no carrier date, the one that mattered — and drew a chart. Built: `show_rows`
+  (`aughor/sheets/answer.py`), offered only to a question asked beside a sheet, bound to it by closure — the rows as the
+  grid's filter, checked and counted by the grid's own reading, under the answer as a card (*Show in the grid*, the
+  person's own until kept; *Keep as a view*); the sheet's answer rules handed ahead of its columns. Live, the first
+  run showed a defect in the shared numbers check (trace 062247c1): the model wrote the right answer and the check
+  withheld it as `delivered=1783`, its label check matching the status *delivered* inside
+  `order_delivered_carrier_date` — labels are now matched as words. **LIVE 2026-10-27** at `1a2af818` (API restarted
+  twice with its twelve settings, the fingerprint the same each time), three questions on the live Olist orders, 18
+  model calls: *which records* → *1,783 of 99,441 orders (1.8%)* and the card, which opened exactly those rows in the
+  grid; *how many canceled* → *625 of 99,441*, the grid's count; *by status* → all seven groups, *delivered: 2* named
+  as the odd one. Still wrong, and said: the which-rows answer still runs a breakdown of its own after the card, and
+  writes *"The earlier answers in this session…"* — the platform's prior answers to the same question, from other
+  sessions, are handed to the model and pull it back to their shape; and the numbers check cannot cite the sheet's own
+  count (99,441, in what the chat is handed) or an earlier turn's card, so it rewrote the breakdown's correct lead
+  *"1,783 of the 99,441 orders…"* away.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
