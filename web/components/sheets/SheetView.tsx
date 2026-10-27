@@ -522,7 +522,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
             onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
-            <SheetGrid key={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
+            <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
               onEdit={onEdit} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
               footer={`${view ? view.name : "the sheet"}${query.sort.length
                 ? ` · sorted by ${query.sort.map(s => colName(s.column)).join(", ")}` : " · in the sheet's order"}`} />

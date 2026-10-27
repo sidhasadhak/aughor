@@ -401,7 +401,15 @@ export function useCellWork({ sheet, editable, columns, onEdit, onOpenRow, value
       onChange={() => { if (selected && column) startEdit(selected.row, column); }}
       onOpenRow={() => { if (selected) onOpenRow(selected.row); }} />
   );
-  return { cell, bar, keys, selected, select };
+  /** A new reading of the view (a sort, a filter): what was selected or being changed named rows of the last order. */
+  const reset = () => {
+    setSelected(null);
+    setAnchor(null);
+    setEditing(null);
+    setError(null);
+    setSaid(null);
+  };
+  return { cell, bar, keys, selected, select, reset };
 }
 
 /** A range in words for the bar: its size, and — where every column in it holds numbers — their sum over the rows read. */
@@ -429,9 +437,14 @@ export function rangeWords(r: Range, got: { cols: SheetColumn[]; rows: unknown[]
 }
 
 /** The flat grid: every row of the view in one scroll, read a block at a time as it comes into sight. */
-export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, footer, sort, onSort }: {
+export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, footer, sort, onSort, reading = "" }: {
   sheet: Sheet;
   rows: RowBlocks;
+  /** Which reading of the view the rows are. A new one — a sort, a filter, a search — starts at the first row with
+   *  nothing selected, and keeps the scroll across: the grid is the same grid, not a new one (a new one each sort sent
+   *  the person back to the first column — the user: "I sorted the last column … and my sheet moves back to left
+   *  extreme scroll each time"). */
+  reading?: string;
   hidden: Set<string>;
   editable: boolean;
   /** The view's sort as it stands, and what a click on a column's header does with it. */
@@ -459,6 +472,15 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   const virtualizer = useVirtualizer({
     count: total, getScrollElement: () => scrollRef.current, estimateSize: () => ROW_HEIGHT, overscan: 12,
   });
+
+  const lastReading = useRef(reading);
+  const { reset } = work;
+  useEffect(() => {
+    if (reading === lastReading.current) return;
+    lastReading.current = reading;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    reset();
+  }, [reading, reset]);
   const items = virtualizer.getVirtualItems();
   const first = items.length ? items[0].index : 0;
   const last = items.length ? items[items.length - 1].index : 0;
