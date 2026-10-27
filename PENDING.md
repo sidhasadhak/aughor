@@ -879,4 +879,6 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     first, then build SH-3"*): one scroll over every row, the cell's story under its cell, a plainer home, a counted
     dialog, Combine's kept cards, the record as one page; grouped grids with group totals, boards, calendars, rules and
     views kept to their maker, behind `sheets.views` (off). Every group, lane, day and rule count equals the grid's on
-    the Olist orders; a new view from the grid was refused (no id) and is fixed. Not live yet; SH-5, SH-6, SH-8 not built.
+    the Olist orders; a new view from the grid was refused (no id) and is fixed. SH-5, SH-6, SH-8 not built.
+    **LIVE 2026-10-27**: live checkout at `3f5e117a`, `sheets.views` on (57 flags); on the live Olist orders every group,
+    lane and day count equals the grid's (1,729 open orders, 2,001 due in September 2018) — no view or rule kept yet.

@@ -12459,6 +12459,12 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   an edit by the person, and *Undo* put it back.
 - **Not built, and said.** *Make a dashboard from this sheet* is SH-6's. The chat's proposals do not yet include a rule.
   A board moves cards by dragging only (no keyboard move yet).
+- **LIVE 2026-10-27** (the user: *"Commit locally, then put it on the live install and turn on sheets.views"*): the live
+  checkout moved to `3f5e117a` and the API restarted with its twelve settings — the fingerprint the same before and
+  after — then `sheets.views` turned on (57 flags on). Read on the live Olist orders, nothing kept: 8 groups (delivered
+  96,478, R$15,422,461.77, avg R$159.86), the open-orders board's 5 lanes holding 1,729, and September 2018's 19 days
+  holding 2,001 — each count equal to the grid's own, 0 differing; the grid grouped by status shows each group's totals
+  in R$ on the user's :3000. No view or rule has been kept on the live sheets yet.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
