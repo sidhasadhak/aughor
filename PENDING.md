@@ -815,8 +815,9 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     ✅ **SV-2 BUILT 2026-10-27** behind `state.backups`, off (local, not pushed — ROADMAP §3.63 "SV-2, built"): hourly
     backups inside the API, only when something changed, unchanged sources hard-linked; Grist's retention ported with
     its tests; `aughor restore` that refuses while serving, lists what comes back, asks, and puts the originals back on
-    any failure; never over the audit log, the model-call log carried. 45 tests, 30 mutants killed. **Open:** the live
-    p95 while a backup runs (its graduation receipt); an `aughor doctor` line.
+    any failure; never over the audit log, the model-call log carried. 45 tests, 30 mutants killed. **LIVE 2026-10-27**:
+    on, first backup 04:01 UTC (798 sources, 10.4 s, 396 MB), p95 did not rise during it (§3.63). **Open:** a week of
+    hourly backups read and one restore proven on a copy (its graduation receipt); an `aughor doctor` line.
 
     ~~**Next: SV-2.**~~ *Extended 2026-10-26 at the user's "Do you not see this as an
     addition to the Dashboard feature that we have?"* — study §10: piece by piece against the Dashboard vocabulary,
@@ -872,4 +873,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     files the oracle held, an edit read back through the SQL Editor's route, and the linked *Paid* total equalled SQL over
     the two sheets (R$16,008,872.12). Open: **the rail row's placement** (the rail already overflows 22 px at
     1440×900 — call 7's fallback is a Catalog tab); the chat's model path proven only with the scripted model; SH-3,
-    SH-5, SH-6, SH-8 not built.
+    SH-5, SH-6, SH-8 not built. **LIVE 2026-10-27**: `sheets.core`, `.grid`, `.combine` on (chat off); the four Olist
+    sheets made live, orders linked to customers and *Paid* totalled — oracle same, *Paid* = SQL on all 99,441 (§3.64).

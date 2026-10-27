@@ -12308,6 +12308,14 @@ graduation queue — receipt: a week of the live install's backups read and one 
 - **Found in review, across the two arcs:** the sheets' projection stamps (`projection.marks.json`) were first backed
   up beside the files. Restored, they would match the restored stores and leave the live — newer — projection
   standing. They are left out with the projection now, so a restore always rebuilds the sheets.
+- **LIVE 2026-10-27** (the user: *"Turn on state.backups, then sheets.core, sheets.grid and sheets.combine on the live
+  install"*). The live checkout runs this branch merged with `claude/after-arc-fa` (`ba822b34`). `state.backups` on as a
+  runtime override, the API restarted with its twelve settings; the first backup at 04:01:42 UTC — 52 stores and 746
+  files, complete, none failed, 10.4 s, 396 MB on disk (`system.db` 400 → 71 MB, `audit.db` 369 → 34 MB), 110 sources
+  named as not copied. The falsifier, measured live: `/health` p95 3.6 ms during it against 7.3 ms outside, `/catalog/tree`
+  p95 1.80 s against 2.07 s — no rise, though only seven samples of each fell inside a ten-second backup. SV-1 too: the
+  edit layer's v4 → v5 migration was copied first (`backups/overlay_ledger.db.2026-10-26.v4-before-v5.bak`) and `/health`
+  named it. Graduation still wants its week of hourly backups read and one restore proven on a copy.
 
 ### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below)
 
@@ -12407,6 +12415,12 @@ nothing is written.
     midnight. The lossless rule keeps the column a Date & time, and the import says why.
 - **The order to turn them on:** `state.backups` (§3.63, SV-2) first, then `sheets.core` — the arc's SH-0 falsifier:
   a sheet's change written with no backup taken within the hour stops SH-1's release.
+- **LIVE 2026-10-27, in that order** (backups first, its first backup taken and read): `sheets.core`, `sheets.grid` and
+  `sheets.combine` on; `sheets.chat` off. At the user's word the four Olist sheets were made from the uploaded files — orders
+  99,441, customers 99,441, payments 103,886 (`payment_value` Money in BRL, the dataset's confirmed currency), reviews
+  99,224 — about 3 s each; orders linked to customers by `customer_id` (99,441 matched, 0 missed, city and state
+  brought) and payments totalled as *Paid* (R$16,008,872.12, the one order with none empty). On the live install the
+  orders table equals its rebuild, and *Paid* differs from SQL over the two sheets on 0 of 99,441 orders.
 - **Not built, and said.** SH-3, SH-5, SH-6, SH-8. Excel's binary `.xls` (DuckDB reads `.xlsx` only — the import says
   "save it as .xlsx"). A sheet's files are local: they do not ride object-store mirroring as uploads do. The grid pages
   500 rows at a time rather than scrolling the whole sheet.
