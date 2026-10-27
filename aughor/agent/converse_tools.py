@@ -512,7 +512,7 @@ _QUESTION_PARAMS = {
 def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                    session_id: str = "", canvas_id: Optional[str] = None,
                    user_question: str = "", agent: Any = None,
-                   schema_scope: Optional[str] = None) -> list[ToolSpec]:
+                   schema_scope: Optional[str] = None, sheet: str = "") -> list[ToolSpec]:
     """The tool set for one connection.
 
     Bound to the connection by closure rather than taking it as a model-supplied
@@ -535,12 +535,17 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     been granted named actions. An agent with no grants gets no write tool at all rather
     than one that always refuses — the model picks from what it can see, and a tool it
     can see is one it will spend a turn trying.
+
+    ``sheet`` (Arc SH, SH-4) is the sheet a question was summoned from, ``<sheet id>`` or
+    ``<sheet id>:<view id>``, bound the same way: it adds ``show_rows``, which puts the rows
+    asked about on that sheet's grid. Empty for every other turn, whose tools are unchanged.
     """
     from aughor.agent.action_tools import action_tools
     from aughor.agent.delegate_tool import delegation_tools
     from aughor.agent.platform_tools import platform_tools
     from aughor.agent.present_tool import present_tools
     from aughor.agent.spotlight_roster import spotlight_roster
+    from aughor.sheets.answer import sheet_tools
 
     return [
         ToolSpec(
@@ -613,7 +618,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ),
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_roster(
         connection_id, session_id=session_id, emit=emit) + present_tools(emit=emit) + delegation_tools(
-        connection_id, emit=emit, session_id=session_id)
+        connection_id, emit=emit, session_id=session_id) + sheet_tools(sheet, emit=emit)
 
 
 class _Regrounded(BaseModel):
@@ -793,7 +798,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
              on_step=None, tool_emit: Optional[Emit] = None,
              session_id: str = "", canvas_id: Optional[str] = None, agent: Any = None,
              trace_id: str = "", schema_scope: Optional[str] = None,
-             shape: Optional[str] = None):
+             shape: Optional[str] = None, sheet: str = ""):
     """Answer one question as a conversation rather than a compiled query spec.
 
     The whole body in one place: state-not-instructions prompt, the connection's tools,
@@ -816,7 +821,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
         question,
         converse_tools(connection_id, emit=tool_emit, session_id=session_id,
                        canvas_id=canvas_id, user_question=question, agent=agent,
-                       schema_scope=schema_scope),
+                       schema_scope=schema_scope, sheet=sheet),
         max_steps=max_steps,
         on_step=on_step,
         conn_id=connection_id or "",

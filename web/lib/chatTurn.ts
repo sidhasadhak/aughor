@@ -165,6 +165,25 @@ export interface StagedProposalRef {
   actionId: string;
 }
 
+/** Arc SH, SH-4 — the rows a question asked beside a sheet is about, as the `show_rows` tool checked and counted them
+ *  by the grid's own filter. The sheet's chat renders it as a card that opens them in the grid or keeps them as a view. */
+export interface SheetRowsRef {
+  sheet: string;
+  view: string;
+  withinView: boolean;
+  /** The whole filter the grid applies — the view's own first, when it was asked "of these". */
+  filter: { column: string; op: string; value?: unknown }[];
+  /** The answer's own conditions, for saying what the rows are. */
+  conditions: { column: string; op: string; value?: unknown }[];
+  sort: { column: string; desc: boolean }[];
+  search: string;
+  about: string;
+  rows: number;
+  of: number;
+  share: number | null;
+  said: string;
+}
+
 /** AV-1 — one part of an answer's structured half (§3.11, third movement). The
  *  vocabulary is CLOSED and validated server-side; the union here mirrors it, and a
  *  kind the client does not know renders as its label, never as raw JSON. */
@@ -218,6 +237,8 @@ export interface ChatTurn {
   converseSteps: ConverseStep[];
   /** SP-9 — proposals this turn staged, in arrival order. Empty for most turns. */
   stagedProposals: StagedProposalRef[];
+  /** Arc SH — the rows a sheet question put on the grid, in arrival order. Empty off a sheet. */
+  sheetRows: SheetRowsRef[];
   /** AV-2 — the answer's structured half. Each `present` call REPLACES the set, so a
    *  corrected re-present never doubles the parts. */
   answerParts: AnswerPart[];
@@ -351,6 +372,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   delegations: [],
   converseSteps: [],
   stagedProposals: [],
+  sheetRows: [],
   answerParts: [],
   scanItems: [], scanProgress: null,
   chainState: null,
@@ -478,6 +500,23 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
       kind: (d.kind as string) ?? "",
       connectionId: (d.connection_id as string) ?? "",
       actionId: (d.action_id as string) ?? "",
+    }];
+  },
+  sheet_rows: (t, d) => {
+    const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+    t.sheetRows = [...t.sheetRows, {
+      sheet: (d.sheet as string) ?? "",
+      view: (d.view as string) ?? "",
+      withinView: d.within_view === true,
+      filter: list<SheetRowsRef["filter"][number]>(d.filter),
+      conditions: list<SheetRowsRef["conditions"][number]>(d.conditions),
+      sort: list<SheetRowsRef["sort"][number]>(d.sort),
+      search: (d.search as string) ?? "",
+      about: (d.about as string) ?? "",
+      rows: Number(d.rows ?? 0),
+      of: Number(d.of ?? 0),
+      share: typeof d.share === "number" ? d.share : null,
+      said: (d.said as string) ?? "",
     }];
   },
   columns: (t, d) => { t.columns = (d.columns as string[]) ?? []; },

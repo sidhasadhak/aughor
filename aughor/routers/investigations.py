@@ -3647,6 +3647,7 @@ async def _stream_converse(
     schema_scope: Optional[str] = None,
     brief_period: str = "",
     shape: Optional[str] = None,
+    sheet: str = "",
 ) -> AsyncGenerator[str, None]:
     """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
 
@@ -3699,6 +3700,11 @@ async def _stream_converse(
                 turn["sql"] = True
             if _frame_type == "rows":
                 turn["rows"].extend(_frame_payload.get("rows") or [])
+            if _frame_type == "sheet_rows":
+                # Arc SH — the rows a sheet question put on the grid, counted by the grid: citable like
+                # any result, so "1,783 of 99,441" is held to the count the card shows.
+                turn["rows"].append([_frame_payload.get("rows"), _frame_payload.get("of"),
+                                     _frame_payload.get("share")])
             emit(_frame_type, _frame_payload)
 
         def _on_step(step) -> None:
@@ -3796,7 +3802,8 @@ async def _stream_converse(
                               extra_context=_memory,
                               on_step=_on_step, tool_emit=_forward,
                               session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
-                              trace_id=_decision_trace, schema_scope=schema_scope, shape=shape)
+                              trace_id=_decision_trace, schema_scope=schema_scope, shape=shape,
+                              sheet=sheet)
         except _CoreCancelled:
             raise
         except Exception as _exc:
@@ -5380,6 +5387,12 @@ async def _ask_subject_for(req, conn_id: str, request) -> Any:
     return await asyncio.to_thread(resolve, focus, conn_id, req.schema_name, person=person_of(request))
 
 
+def _sheet_ref(req) -> str:
+    """Arc SH, SH-4 — the sheet a question was asked beside (``<sheet id>`` or ``<sheet id>:<view id>``), or ''."""
+    focus = getattr(req, "focus", None)
+    return str(getattr(focus, "id", "") or "") if focus is not None and getattr(focus, "kind", "") == "sheet" else ""
+
+
 def _focus_prose_for(req, conn_id: str, subject=None) -> str:
     """SP-15 — the object the palette was summoned from, explained for the conversation.
 
@@ -5869,6 +5882,9 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
                              surface=req.surface, schema_scope=req.schema_name,
                              brief_period=req.brief_period,
                              shape=route.shape,   # a check answers as a verdict and its counts
+                             # Arc SH — a question asked beside a sheet gets the tool that puts
+                             # the rows it asks about on that sheet's grid.
+                             sheet=_sheet_ref(req),
                              # CI-4 — a seeded/dossier turn hands its finding to the
                              # conversation instead of bypassing it; SP-15 — a turn
                              # summoned from an object hands that object's live state.

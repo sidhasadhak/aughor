@@ -98,6 +98,26 @@ def _column_line(c: Column, sheet: Sheet) -> dict:
     return line
 
 
+def how_to_answer(sheet: Sheet) -> list[str]:
+    """How a question asked beside a sheet is answered — the mockup's answers (a count of what was asked of its whole;
+    the rows themselves on the grid), said to the conversation, which otherwise answers as an analyst would anywhere:
+    a breakdown nobody asked for, a chart, no count of the rows asked about (live, trace d77fd873)."""
+    from aughor.sheets.dashboard import rows_noun
+    noun = rows_noun(sheet.name)
+    return [
+        "The person is looking at this sheet's grid; answer as the sheet would, in one or two sentences.",
+        f"Asked which {noun}, or to show, find or list some (\"which {noun} have…\", \"the ones that…\"): call "
+        "show_rows with them as the grid's filter. It counts them as the grid does and puts them under your answer, "
+        f"to open in the grid. Say how many there are of what whole (\"312 of 4,800 {noun} have no due date.\") "
+        "— never list the rows or their ids.",
+        "Asked how many: lead with the number and its whole, and the share where it helps.",
+        "Break the rows down only when asked by or per something; then give every group the query returned, or say "
+        "how many you left out. Name what stands out only from what a query returned.",
+        f"Query the table {sheet.table} on this connection with run_sql — answer_question does not know the sheet. "
+        "Quote every column name in double quotes. Compare a Date column by day; never compare it with a timestamp.",
+    ]
+
+
 def explain_sheet(ref: str) -> dict:
     """The sheet on screen as the conversation is handed it (``ref`` is ``<sheet id>`` or ``<sheet id>:<view id>``):
     the table to query, its columns, and the view's filter as SQL with the grid's own count of its rows."""
@@ -112,9 +132,9 @@ def explain_sheet(ref: str) -> dict:
     total = projection.count(sheet)
     out: dict[str, Any] = {
         "found": True, "kind": "sheet", "id": ref, "name": sheet.name, "table": sheet.table, "rows": total,
+        # before the columns: the conversation is handed this capped, and a wide sheet's columns must not cut it off
+        "how_to_answer": how_to_answer(sheet),
         "columns": [_column_line(c, sheet) for c in sheet.columns],
-        "how_to_answer": (f"Query the table {sheet.table} on this connection. Quote every column name in double "
-                          "quotes. Compare a Date column by day; never compare it with a timestamp."),
     }
     if view is not None and (view.filter or view.search):
         where = where_text(sheet, view.filter, view.search)

@@ -25,11 +25,11 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { newSessionId, projectThread } from "@/lib/chatTurn";
+import { newSessionId, projectThread, type SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
-  KIND_LABEL, RULE_TONES, applyProposal, asksForAChange, propose, proposeNewSheet, readGrounding, stageFile, undo,
-  type Grounding, type Proposal, type ProposeOutcome, type RuleTone, type Sheet,
+  KIND_LABEL, RULE_TONES, applyProposal, asksForAChange, filterWords, propose, proposeNewSheet, readGrounding, rowsWord,
+  stageFile, undo, type Grounding, type Proposal, type ProposeOutcome, type RuleTone, type Sheet,
 } from "@/lib/sheets";
 import { useAughorChat } from "@/lib/useAughorChat";
 
@@ -41,9 +41,14 @@ type Entry =
 let seq = 0;
 const nextId = () => `e${++seq}`;
 
-export function SheetChat({ sheet, viewId, viewRows, onClose, onApplied, onOpenSheet, onAsk, onOpenView }: {
+export function SheetChat({ sheet, viewId, viewRows, onClose, onApplied, onOpenSheet, onAsk, onOpenView, onShowRows,
+  onKeepRows }: {
   sheet: Sheet; viewId: string; viewRows: number | null; onClose: () => void; onApplied: () => void;
   onOpenSheet: (id: string) => void; onAsk?: (q: string) => void; onOpenView: (name: string) => void;
+  /** The rows an answer is about, on the grid as the person's own until they keep them. */
+  onShowRows: (r: SheetRowsRef) => void;
+  /** The same rows kept as a view of the answer's name — true when it was kept. */
+  onKeepRows: (r: SheetRowsRef) => Promise<boolean>;
 }) {
   const [sessionId] = useState(() => newSessionId());
   const focus = useMemo(() => ({ kind: "sheet", id: viewId ? `${sheet.id}:${viewId}` : sheet.id }), [sheet.id, viewId]);
@@ -149,6 +154,10 @@ export function SheetChat({ sheet, viewId, viewRows, onClose, onApplied, onOpenS
                       <PartsMessage turn={t.turn} message={t.assistantMsg} connectionId="sheets"
                         onFollowUp={(q: string) => ask(q)} onDeeper={(q: string) => onAsk?.(q)} />
                     ) : <div className="aug-fs-sm">{en.words}</div>}
+                    {t?.turn.sheetRows.filter(r => r.sheet === sheet.id).map((r, i) => (
+                      <RowsCard key={`${r.about}-${i}`} rows={r} sheet={sheet} onShow={() => onShowRows(r)}
+                        onKeep={() => onKeepRows(r)} />
+                    ))}
                     <div className="aug-fs-xs" style={{ ...MUTED, marginTop: 4 }}>
                       Answered as a question ·{" "}
                       <Button variant="link" size="xs" onClick={() => proposeChange(en.words)}>propose a change instead</Button>
@@ -195,6 +204,40 @@ export function SheetChat({ sheet, viewId, viewRows, onClose, onApplied, onOpenS
         <Button onClick={send} disabled={!draft.trim() || streaming} aria-label="Send"><Icon name="send" /></Button>
       </div>
     </aside>
+  );
+}
+
+/** The rows an answer beside the sheet is about (SH-4): how many of what whole, the filter in the grid's words, and the
+ *  two things to do with them — see them in the grid, or keep them as a view. Nothing changes until one is clicked. */
+export function RowsCard({ rows: r, sheet, onShow, onKeep }: {
+  rows: SheetRowsRef; sheet: Sheet; onShow: () => void; onKeep: () => Promise<boolean>;
+}) {
+  const [did, setDid] = useState<"" | "shown" | "kept">("");
+  const [busy, setBusy] = useState(false);
+  const said = filterWords(r.conditions, sheet.columns, sheet.rules) || r.said;
+  return (
+    <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-2)", padding: "10px 12px",
+      display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <Icon name="table" size={14} />
+        <span className="aug-fs-sm" style={{ fontWeight: 600, ...NUM }}>
+          {rowsWord(r.rows, sheet.name)} <span style={{ ...MUTED, fontWeight: 400 }}>of {formatCount(r.of)}
+            {r.withinView ? " in this view" : ""}{r.share !== null && r.rows ? ` · ${r.share}%` : ""}</span>
+        </span>
+      </div>
+      <span className="aug-fs-xs" style={MUTED}>{said}</span>
+      {r.rows > 0 && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <Button size="xs" variant={did === "shown" ? "secondary" : "default"} onClick={() => { onShow(); setDid("shown"); }}>
+            {did === "shown" ? "Shown in the grid" : "Show in the grid"}
+          </Button>
+          <Button size="xs" variant="outline" disabled={busy || did === "kept"} onClick={() => {
+            setBusy(true);
+            void onKeep().then(ok => { if (ok) setDid("kept"); }).finally(() => setBusy(false));
+          }}>{did === "kept" ? `Kept as the view ${r.about}` : `Keep as a view · ${r.about}`}</Button>
+        </div>
+      )}
+    </div>
   );
 }
 

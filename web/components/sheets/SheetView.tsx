@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import type { SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
   KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, opWords, opsFor, readChanges,
@@ -218,6 +219,26 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       const s = await readSheet(sheet.id);
       setQuery(fromView(s, madeId || s.views[s.views.length - 1]?.id || ""));
     }
+  };
+
+  /** The rows an answer beside the sheet is about (SH-4), on the grid as the person's own until they keep them — the
+   *  filter the answer counted, so the grid shows the count the answer gave. */
+  const showRows = (r: SheetRowsRef) => setQ({ filter: r.filter, sort: r.sort.length ? r.sort : query.sort, search: r.search,
+    kind: "grid", group: "" });
+
+  /** The same rows kept as a view named as the answer named them, and opened. */
+  const keepRows = async (r: SheetRowsRef) => {
+    let madeId = "";
+    const ok = await run(async () => {
+      const s = await saveView(sheet.id, { filter: r.filter, sort: r.sort, search: r.search, hidden: [], name: r.about,
+        shared: true });
+      madeId = s.views[s.views.length - 1]?.id ?? "";
+    }, `View ${r.about} kept`);
+    if (ok) {
+      const s = await readSheet(sheet.id);
+      setQuery(fromView(s, madeId || s.views[s.views.length - 1]?.id || ""));
+    }
+    return ok;
   };
 
   /** A click on a column's header: lowest first, then highest first, then the sheet's own order — the person's own
@@ -514,7 +535,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
             setSheet(s);
             const v = [...s.views].reverse().find(x => x.name === name);
             if (v) setQuery(fromView(s, v.id));
-          }); }} />
+          }); }} onShowRows={showRows} onKeepRows={keepRows} />
       )}
       {panel === "combine" && waves.combine && (
         <SheetCombine sheet={sheet} onClose={() => setPanel("")} onChanged={words => void changed(words)} />
