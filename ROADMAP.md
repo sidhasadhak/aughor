@@ -12577,6 +12577,14 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   on each header (sort,
   filter by this column, hide, freeze), Shift+click for a second sort, dragging a header to reorder, Cmd+F to the
   sheet's own search, a drag that scrolls the grid at its edge.
+- **The next tier of a spreadsheet's grid, 2026-10-27** (`de10afca`; the user: *"Build the next tier"*): a menu on
+  each header (its ▾ or a right-click — sort either way, then by this, filter by this column, hide it, freeze up to it,
+  fit or put back its width); Shift+click for a further sort, each sorted header showing its place; frozen columns
+  held after the row numbers; a header dragged to move the column for everyone (`before` on a column's PATCH, one
+  change, undone whole, no rebuild — the SH-1 oracle now compares the table with its rebuild by column name, the same
+  columns of the same types required); Cmd+F to the sheet's search; a drag at the grid's edge scrolls it, the range
+  following. Each proven in a real browser on the scratch copy. Not live yet (the server changed: a restart). Seen,
+  not changed: undo cannot take back two changes to a sheet's definition in a row — the second is refused.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
