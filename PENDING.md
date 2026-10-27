@@ -892,5 +892,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     buttons no longer run under the open chat — **LIVE 2026-10-27** at `ec73d4c1`.
     The chat beside a sheet: a which-rows question gets the count of its whole and a card that opens the rows in the
     grid (`show_rows`), and the numbers check matches labels as words — **LIVE 2026-10-27** at `1a2af818`, three
-    questions proven. Open: other sessions' answers to the same question pull the model to their shape; the numbers
-    check cannot cite the sheet's own count.
+    questions proven. Both of what stayed open fixed — **LIVE 2026-10-27** at `580e31f4` (one-step answers; the whole
+    header sorts). Open: a breakdown's chart can be titled "Daily …" when nothing is daily.

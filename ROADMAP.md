@@ -12534,6 +12534,15 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   sessions, are handed to the model and pull it back to their shape; and the numbers check cannot cite the sheet's own
   count (99,441, in what the chat is handed) or an earlier turn's card, so it rewrote the breakdown's correct lead
   *"1,783 of the 99,441 orders…"* away.
+  Both fixed in `5548a058` — a sheet question keeps its own conversation and is no longer handed other
+  conversations' answers; the sheet's own counts are citable; a breakdown of some rows also calls `show_rows` — and the
+  whole column header now sorts (`580e31f4`; the user: *"I still cant sort the sheet"* — the button was as wide as the
+  name). **LIVE 2026-10-27** at `580e31f4`, the three questions asked again, 11 model calls: *which records* → one step,
+  `show_rows` alone, *"1,783 of 99,441 orders (1.8%) have no order_delivered_carrier_date. You can open them in the grid
+  from the card below, or keep them as a view."* — no breakdown, no chart, no guard; *how many canceled* → *625 of
+  99,441 (about 0.63%)*; *by status* → opens on *1,783 of 99,441*, all seven groups, the card under it, no guard. A click
+  past order_status's name sorts it. Seen, not fixed: the breakdown's chart is titled *"Daily Orders Without Carrier
+  Date…"*, though nothing is daily.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
