@@ -653,6 +653,12 @@ def redo(sheet: Sheet, *, by: str) -> dict:
     return _reverse(sheet, undo_change, by=by, origin=f"redo:{undo_change['id']}", what=f"redid: {target['what']}")
 
 
+def _holds(definition: Sheet) -> dict:
+    """What a version of a sheet's definition holds — its name, columns, views, rules and source — without the record of
+    who kept it, when, and as which version."""
+    return definition.model_dump(exclude={"version", "state", "change"})
+
+
 def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> dict:
     """A change that puts back what ``change`` replaced — its values and its definition — refused when someone has
     changed over it since."""
@@ -685,7 +691,13 @@ def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> 
         # every version the change kept (making a sheet and folding in what was proposed for it is one change)
         mine = [i for i, v in enumerate(versions) if v.change.id == change["id"]]
         if mine:
-            if mine[0] != 0:
+            # Undone only where the sheet's definition is still what this change left: putting back the version before
+            # it then loses nothing. That holds after newer changes that were themselves undone — so undo steps back
+            # through several changes in a row, and redo forward again — and fails after a change still standing over
+            # it, which this would silently discard. Compared by what a definition holds, never by which version is
+            # newest: an undo is a newer version that holds an older definition (two renames undone in a row were
+            # refused at the second, "undo that first", when the first had been).
+            if mine[0] != 0 and _holds(versions[0]) != _holds(versions[mine[0]]):
                 newer = versions[0].change
                 raise Refused(f"the sheet was changed since — {newer.what} by {newer.by} — so this cannot be undone "
                               "on its own; undo that first")

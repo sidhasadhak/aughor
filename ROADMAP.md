@@ -12587,8 +12587,15 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   its twelve settings, the fingerprint the same); on the live Olist orders, nothing changed: order_status then Paid
   ("approved R$61.62, approved R$179.46" first), the menu by a right-click and its sort, two columns frozen at 64 px and
   put back, Cmd+F, a range held at the edge scrolling 960 px to 34 rows. A header drag would reorder the live sheet for
-  everyone, so it was proven on the scratch copy only. Seen,
-  not changed: undo cannot take back two changes to a sheet's definition in a row — the second is refused.
+  everyone, so it was proven on the scratch copy only. Seen
+  then, and fixed after (below): undo could not take back two changes to a sheet's definition in a row.
+- **Undo steps back through several changes to a sheet's definition, 2026-10-27** (the user: *"Fix undo so it steps
+  back through several changes to a sheet's definition in a row"*). Two renames, or two moved columns, undone in a
+  row: the second was refused, *"undo that first"*, though the first had been undone. The guard asked whether the change
+  was the newest version of the definition; an undo is a newer version holding an older definition. It asks now
+  whether the definition is still what the change left — true after newer changes that were themselves undone, so undo
+  steps back and redo forward again; false after a change still standing over it, which stays refused. Proven on the
+  scratch copy: two headers dragged, Cmd+Z twice back to the start, Cmd+Shift+Z twice forward. Not live yet (a restart).
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
