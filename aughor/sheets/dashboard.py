@@ -57,7 +57,9 @@ def source_sql(sheet: Sheet, view: Optional[View]) -> tuple[str, str]:
 
 def _pieces(sheet: Sheet, view: Optional[View]) -> list[dict]:
     noun = rows_noun(sheet.name)
-    shown_cols = [c for c in sheet.columns if not (view and c.id in view.hidden) and not c.hidden]
+    # SH-5: a column a model writes is never a card's figure
+    shown_cols = [c for c in sheet.columns if not (view and c.id in view.hidden) and not c.hidden
+                  and c.model_writes is None]
     dates = [c for c in shown_cols if c.kind in (kinds.DATE, kinds.DATETIME)]
     out: list[dict] = [{"key": "rows", "title": noun.capitalize(), "kind": "figure", "size": "small",
                         "why": f"how many {noun} {'the view shows' if view and view.filter else 'the sheet holds'}",

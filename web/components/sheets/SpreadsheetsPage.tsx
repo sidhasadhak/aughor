@@ -23,6 +23,8 @@ export interface SheetsWaves {
   dashboard: boolean;
   /** SH-8: a sheet shared with chosen people and groups, each to read or to edit it. */
   sharing?: boolean;
+  /** SH-5: a column a model writes, filled for the rows of a view. */
+  modelColumns?: boolean;
 }
 
 /** The sheet in the address, so a sheet is linkable and the back button leaves it. */
@@ -52,7 +54,7 @@ export function SpreadsheetsPage({ onAsk }: { onAsk?: (question: string) => void
       setWaves({ grid: on("sheets.grid"), chat: on("sheets.chat"), combine: on("sheets.combine"),
         views: on("sheets.views"),
         dashboard: on("sheets.everywhere") && on("dashboard.composed") && on("dashboard.queries"),
-        sharing: on("sheets.sharing") });
+        sharing: on("sheets.sharing"), modelColumns: on("sheets.model_columns") });
     }).catch(() => { if (live) { setCore(false); setWaves({ grid: false, chat: false, combine: false, views: false, dashboard: false, sharing: false }); } });
     return () => { live = false; };
   }, []);

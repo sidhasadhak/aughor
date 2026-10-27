@@ -16745,6 +16745,48 @@ export interface paths {
         patch: operations["update_column_sheets__sheet_id__columns__column_id__patch"];
         trace?: never;
     };
+    "/sheets/{sheet_id}/columns/{column_id}/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fill Column
+         * @description Fill the column for the view's rows not filled yet — at most 200, 25 a call — as one change kept under the
+         *     person signed in, said as written by a model. This route calls a model.
+         */
+        post: operations["fill_column_sheets__sheet_id__columns__column_id__fill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/columns/{column_id}/fill/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fill Preview
+         * @description What filling the column for the view's rows would do, before it runs: the rows it takes (at most 200), the model
+         *     calls (25 rows a call), and what they cost — or that the model's price is not set. No model is called.
+         */
+        post: operations["fill_preview_sheets__sheet_id__columns__column_id__fill_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/csv": {
         parameters: {
             query?: never;
@@ -19165,6 +19207,10 @@ export interface components {
              * @default text
              */
             kind: string;
+            /** Model */
+            model?: {
+                [key: string]: unknown;
+            } | null;
             /** Name */
             name: string;
         };
@@ -20101,6 +20147,27 @@ export interface components {
              * @default
              */
             url: string;
+        };
+        /** FillRequest */
+        FillRequest: {
+            /** Filter */
+            filter?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Search
+             * @default
+             */
+            search: string;
+            /** Sort */
+            sort?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * View
+             * @default
+             */
+            view: string;
         };
         /**
          * FixAllRequest
@@ -54079,6 +54146,82 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ColumnUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fill_column_sheets__sheet_id__columns__column_id__fill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+                column_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fill_preview_sheets__sheet_id__columns__column_id__fill_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+                column_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FillRequest"];
             };
         };
         responses: {

@@ -83,6 +83,9 @@ def _column_line(c: Column, sheet: Sheet) -> dict:
         line["currency"] = c.currency or "not confirmed — say amounts plainly"
     if c.kind == kinds.DATE:
         line["compare"] = "by calendar day — never against a timestamp's time of day"
+    if c.model_writes is not None:
+        line["written_by_a_model"] = ("each value is a model's reading, not a fact: never count by it, never total it, "
+                                      "and never state its values as findings; empty means not filled yet")
     if c.role == "computed":
         line["computed_from"] = c.expression
     elif c.role == "lookup":

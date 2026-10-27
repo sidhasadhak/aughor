@@ -44,6 +44,8 @@ export interface SheetColumn {
   by: string;
   how: string;
   made_by: string;
+  /** SH-5 — set on a column a model writes: its instruction, and the columns of each row it reads. */
+  model_writes?: { instruction: string; reads: string[] } | null;
 }
 
 export interface Condition { column: string; op: string; value?: unknown }
@@ -172,7 +174,7 @@ export interface ColumnTotals {
   earliest?: string | null; latest?: string | null; yes?: number; distinct?: number;
 }
 
-export type Changed = Record<string, Record<string, { by: string; at: string; version: number }>>;
+export type Changed = Record<string, Record<string, { by: string; at: string; version: number; origin?: string }>>;
 /** Row → column → the version a change to that cell must name: set, or put back by an undo (then not in `changed`). */
 export type Versions = Record<string, Record<string, number>>;
 
@@ -435,8 +437,32 @@ export const addRow = (id: string, values: Record<string, unknown> = {}) =>
 export const removeRows = (id: string, rows: number[]) =>
   call<{ change_id: string }>(`/${id}/rows/remove`, json("POST", { rows }), "Removing the row");
 
-export const addColumn = (id: string, name: string, kind: Kind, description = "") =>
-  call<Sheet>(`/${id}/columns`, json("POST", { name, kind, description }), "Adding the column");
+export const addColumn = (id: string, name: string, kind: Kind, description = "",
+  model?: { instruction: string; reads: string[] }) =>
+  call<Sheet>(`/${id}/columns`, json("POST", { name, kind, description, ...(model ? { model } : {}) }), "Adding the column");
+
+/** SH-5 — what filling a column a model writes would do for a view's rows, said before it runs. */
+export interface FillPlan {
+  column: string; name: string; instruction: string;
+  /** The rows this fill takes (at most `cap`), how many of the view's rows are not filled, and how many it holds. */
+  rows: number; unfilled: number; of: number;
+  calls: number; batch: number; cap: number; model: string;
+  /** null when the model's price is not set — `cost` then says so. */
+  cost_usd: number | null; cost: string; said: string;
+}
+
+export interface FillResult {
+  change_id: string; filled: number; calls: number; asked: number; left_empty: number; failed: number;
+  unfilled: number; of: number; notes: string[]; model: string;
+}
+
+export interface FillQuery { view?: string; filter?: Condition[]; sort?: { column: string; desc: boolean }[]; search?: string }
+
+export const fillPreview = (id: string, column: string, q: FillQuery) =>
+  call<FillPlan>(`/${id}/columns/${column}/fill/preview`, json("POST", q), "Reading what the fill would do");
+
+export const fillColumn = (id: string, column: string, q: FillQuery) =>
+  call<FillResult>(`/${id}/columns/${column}/fill`, json("POST", q), "Filling the column");
 
 export const updateColumn = (id: string, column: string,
   change: { name?: string; description?: string; kind?: Kind; hidden?: boolean; before?: string }) =>

@@ -260,7 +260,8 @@ def _changed(sheet, on_page: set[int]) -> dict[str, dict[str, dict]]:
     changed: dict[str, dict[str, dict]] = {}
     for e in overlay.sheet_values(sheet.id):
         if e.kind == overlay.SHEET_CELL and int(e.row_key) in on_page:
-            changed.setdefault(e.row_key, {})[e.column] = {"by": e.actor, "at": e.created_at, "version": e.version}
+            changed.setdefault(e.row_key, {})[e.column] = {"by": e.actor, "at": e.created_at, "version": e.version,
+                                                          "origin": e.origin}
     return changed
 
 
@@ -370,17 +371,71 @@ class ColumnRequest(BaseModel):
     name: str
     kind: str = "text"
     description: str = ""
+    #: SH-5 — a column a model writes: ``{instruction, reads: [column ids]}`` (needs ``sheets.model_columns``)
+    model: Optional[dict[str, Any]] = None
 
 
 @router.post("/{sheet_id}/columns")
 def add_column(sheet_id: str, req: ColumnRequest, request: Request) -> dict:
     _on("sheets.grid")
     from aughor.sheets import service
+    if req.model is not None:
+        _on("sheets.model_columns")
     sheet = _sheet(sheet_id, request, EDIT)
     try:
+        if req.model is not None:
+            from aughor.sheets import model_columns
+            kept = model_columns.add(sheet, name=req.name, instruction=str(req.model.get("instruction") or ""),
+                                     reads=[str(r) for r in req.model.get("reads") or []], by=_who(request))
+            return _definition(kept, _who(request))
         return _definition(service.add_column(sheet, name=req.name, kind=req.kind, by=_who(request),
                                               description=req.description), _who(request))
     except service.Refused as exc:
+        raise _refused(exc) from None
+
+
+# ── SH-5 — a column a model writes, filled for a view's rows ────────────────────────────────────────────────────────
+
+class FillRequest(BaseModel):
+    #: The view whose rows are filled, and the filter, sort and search on screen (each read as the grid reads them).
+    view: str = ""
+    filter: list[dict[str, Any]] = Field(default_factory=list)
+    sort: list[dict[str, Any]] = Field(default_factory=list)
+    search: str = ""
+
+
+def _fill_args(sheet, req: FillRequest, request: Request) -> dict:
+    return _view_args(sheet, req.view, json.dumps(req.filter) if req.filter else "",
+                      json.dumps(req.sort) if req.sort else "", req.search, _who(request))
+
+
+@router.post("/{sheet_id}/columns/{column_id}/fill/preview")
+def fill_preview(sheet_id: str, column_id: str, req: FillRequest, request: Request) -> dict:
+    """What filling the column for the view's rows would do, before it runs: the rows it takes (at most 200), the model
+    calls (25 rows a call), and what they cost — or that the model's price is not set. No model is called."""
+    _on("sheets.model_columns")
+    from aughor.sheets import model_columns, projection, service
+    sheet = _sheet(sheet_id, request, EDIT)
+    args = _fill_args(sheet, req, request)
+    try:
+        return model_columns.plan(sheet, column_id, conditions=args["conditions"], sort=args["sort"],
+                                  search=args["search"])
+    except (service.Refused, projection.FilterRefused) as exc:
+        raise _refused(exc) from None
+
+
+@router.post("/{sheet_id}/columns/{column_id}/fill")
+def fill_column(sheet_id: str, column_id: str, req: FillRequest, request: Request) -> dict:
+    """Fill the column for the view's rows not filled yet — at most 200, 25 a call — as one change kept under the
+    person signed in, said as written by a model. This route calls a model."""
+    _on("sheets.model_columns")
+    from aughor.sheets import model_columns, projection, service
+    sheet = _sheet(sheet_id, request, EDIT)
+    args = _fill_args(sheet, req, request)
+    try:
+        return model_columns.fill(sheet, column_id, conditions=args["conditions"], sort=args["sort"],
+                                  search=args["search"], by=_who(request))
+    except (service.Refused, projection.FilterRefused) as exc:
         raise _refused(exc) from None
 
 

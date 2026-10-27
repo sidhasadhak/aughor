@@ -35,10 +35,12 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import type { SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
-  KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, isStale, opWords, opsFor, readChanges,
+  KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, fillColumn, fillPreview, filterWords, isStale,
+  opWords, opsFor, readChanges,
   readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, sharedWords,
   showValue, undo, who,
-  updateColumn, type Condition, type Kind, type RowsQuery, type RuleTone, type Sheet, type SheetColumn, type SheetView as View,
+  updateColumn, type Condition, type FillPlan, type FillResult, type Kind, type RowsQuery, type RuleTone, type Sheet,
+  type SheetColumn, type SheetView as View,
   type ViewKind,
 } from "@/lib/sheets";
 
@@ -83,7 +85,7 @@ function keepFrozen(sheetId: string, n: number) {
 const KIND_OF_VIEW: Record<ViewKind | "grouped", IconName> = { grid: "table", grouped: "list", board: "column", calendar: "date" };
 
 type Panel = "" | "chat" | "combine" | "record" | "history";
-type Pop = "" | "fields" | "filter" | "sort" | "group" | "share" | "view" | "rules" | "lanes" | "card" | "by";
+type Pop = "" | "fields" | "filter" | "sort" | "group" | "share" | "view" | "rules" | "lanes" | "card" | "by" | "fill";
 
 interface Query {
   view: string;
@@ -222,6 +224,8 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
   useEffect(() => { setFrozen(readFrozen(sheetId)); }, [sheetId]);
   const freeze = useCallback((n: number) => { setFrozen(n); keepFrozen(sheetId, n); }, [sheetId]);
   const [filterFor, setFilterFor] = useState("");
+  // the column a model writes being filled, from its header's menu (SH-5)
+  const [fillFor, setFillFor] = useState("");
 
   // Cmd or Ctrl+F: the sheet's own search — the browser's find sees only the rows on screen, never the rest of the view
   const rootRef = useRef<HTMLDivElement>(null);
@@ -368,6 +372,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
     else if (action === "freeze") freeze(sheet.columns.filter(c => !hidden.has(c.id)).findIndex(c => c.id === column) + 1);
     else if (action === "unfreeze") freeze(0);
     else if (action === "width") onWidth(column, null);
+    else if (action === "fill") { setFillFor(column); setPop("fill"); }
   };
 
   /** A header dragged to a new place: the sheet's column order, for everyone — one change, undone whole. */
@@ -593,7 +598,8 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
             )}
           </span>
           {pop === "fields" && (
-            <FieldsPop sheet={sheet} hidden={hidden} editable={waves.grid} onHidden={h => setQ({ hidden: h })}
+            <FieldsPop sheet={sheet} hidden={hidden} editable={waves.grid} byModel={!!waves.modelColumns}
+              onHidden={h => setQ({ hidden: h })}
               onClose={() => setPop("")} run={run} />
           )}
           {pop === "filter" && (
@@ -621,6 +627,9 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
           )}
           {pop === "card" && (
             <CardPop sheet={sheet} card={query.card} onApply={c => setQ({ card: c })} onClose={() => setPop("")} />
+          )}
+          {pop === "fill" && fillFor && (
+            <FillPop sheet={sheet} column={fillFor} query={query} run={run} onClose={() => setPop("")} />
           )}
           {pop === "rules" && (
             <RulesPop sheet={sheet} run={run} onClose={() => setPop("")} editable={!reader}
@@ -661,6 +670,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
             <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
+              canFill={!!waves.modelColumns && waves.grid}
               onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
               widths={widths} onWidth={onWidth} frozen={frozen} onColumnAction={onColumnAction}
               onMoveColumn={waves.grid ? moveColumn : undefined}
@@ -863,10 +873,17 @@ function RulesPop({ sheet, run, onShow, onClose, editable = true }: {
   );
 }
 
-function FieldsPop({ sheet, hidden, editable, onHidden, onClose, run }: {
+function FieldsPop({ sheet, hidden, editable, byModel = false, onHidden, onClose, run }: {
   sheet: Sheet; hidden: Set<string>; editable: boolean; onHidden: (h: string[]) => void; onClose: () => void;
   run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>;
+  /** SH-5: a new column may be one a model writes. */
+  byModel?: boolean;
 }) {
+  // a new column a model writes: what it writes for each row, and the row's columns it reads
+  const [modelWrites, setModelWrites] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [reads, setReads] = useState<string[]>([]);
+  const readable = sheet.columns.filter(c => c.role === "stored" && !c.model_writes && c.kind !== "link");
   const [editing, setEditing] = useState<string>("");
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
@@ -918,15 +935,96 @@ function FieldsPop({ sheet, hidden, editable, onHidden, onClose, run }: {
       {editable && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
           <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="A new column" aria-label="New column" style={{ flex: 1 }} />
-          <div style={{ width: 130 }}>
-            <Select value={newKind} onValueChange={v => setNewKind(v as Kind)}>
-              <SelectTrigger aria-label="New column's kind" />
-              <SelectContent>{NEW_COLUMN_KINDS.map(k => <SelectItem key={k} value={k}>{KIND_LABEL[k]}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <Button size="xs" disabled={!newName.trim()} onClick={() => void run(() => addColumn(sheet.id, newName, newKind),
-            `${newName} added`).then(ok => { if (ok) setNewName(""); })}>Add</Button>
+          {!modelWrites && (
+            <div style={{ width: 130 }}>
+              <Select value={newKind} onValueChange={v => setNewKind(v as Kind)}>
+                <SelectTrigger aria-label="New column's kind" />
+                <SelectContent>{NEW_COLUMN_KINDS.map(k => <SelectItem key={k} value={k}>{KIND_LABEL[k]}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
+          <Button size="xs" disabled={!newName.trim() || (modelWrites && (!instruction.trim() || reads.length === 0))}
+            onClick={() => void run(() => addColumn(sheet.id, newName, modelWrites ? "text" : newKind, "",
+              modelWrites ? { instruction, reads } : undefined),
+            `${newName} added${modelWrites ? ", written by a model" : ""}`).then(ok => {
+              if (ok) { setNewName(""); setInstruction(""); setReads([]); setModelWrites(false); }
+            })}>Add</Button>
         </div>
+      )}
+      {editable && byModel && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Checkbox checked={modelWrites} onChange={e => setModelWrites(e.target.checked)} aria-label="Written by a model" />
+            Written by a model — it fills a view you pick, at most 200 rows a fill, and nothing is counted from it
+          </label>
+          {modelWrites && (
+            <>
+              <Input value={instruction} onChange={e => setInstruction(e.target.value)} aria-label="What the model writes"
+                placeholder="What it writes for each row — e.g. the complaint, in two or three words" />
+              <span className="aug-fs-xs" style={MUTED}>It reads, for each row:</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                {readable.map(c => (
+                  <label key={c.id} className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Checkbox checked={reads.includes(c.id)} aria-label={`It reads ${c.name}`}
+                      onChange={e => setReads(e.target.checked ? [...reads, c.id] : reads.filter(x => x !== c.id))} />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+/** Fill a column a model writes for the rows of the view on screen (SH-5): what it would do is said first — the rows,
+ *  the calls and their cost — and nothing runs until Fill is pressed. */
+function FillPop({ sheet, column, query, run, onClose }: {
+  sheet: Sheet; column: string; query: Query;
+  run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>; onClose: () => void;
+}) {
+  const [plan, setPlan] = useState<FillPlan | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [done, setDone] = useState<FillResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const c = sheet.columns.find(x => x.id === column);
+  const q = useMemo(() => ({ view: query.view, filter: query.filter, sort: query.sort, search: query.search }), [query]);
+  useEffect(() => {
+    let live = true;
+    fillPreview(sheet.id, column, q).then(p => { if (live) setPlan(p); })
+      .catch(e => { if (live) setFailed(e instanceof Error ? e.message : String(e)); });
+    return () => { live = false; };
+  }, [sheet.id, column, q, done]);
+  const fill = async () => {
+    setBusy(true);
+    await run(() => fillColumn(sheet.id, column, q).then(r => setDone(r)), `${c?.name ?? "The column"} filled`);
+    setBusy(false);
+  };
+  return (
+    <Popover onClose={onClose} left={300} width={460}>
+      <span className="aug-fs-xs" style={MUTED}>Fill {c?.name} · written by a model{c?.model_writes ? ` — ${c.model_writes.instruction}` : ""}</span>
+      {failed && <span role="alert" style={{ color: "var(--red4)" }}>{failed}</span>}
+      {!plan && !failed && <span className="aug-fs-xs" style={MUTED}>Reading what the fill would do…</span>}
+      {done && (
+        <span role="status">
+          Filled {formatCount(done.filled)} row{done.filled === 1 ? "" : "s"} with {done.calls} model call{done.calls === 1 ? "" : "s"}
+          {done.left_empty ? `; the model found nothing to write for ${formatCount(done.left_empty)}` : ""}
+          {done.failed ? `; ${formatCount(done.failed)} were not filled — a call failed` : ""}.
+        </span>
+      )}
+      {plan && !done && <span>{plan.said}</span>}
+      {plan && (
+        <span className="aug-fs-xs" style={MUTED}>
+          Each value is a model&apos;s reading, not a fact: no total, group, rule or card counts from it. A fill is one
+          change; undo takes it back whole.
+        </span>
+      )}
+      {plan && plan.rows > 0 && (
+        <Button size="xs" disabled={busy || !plan.model} style={{ alignSelf: "flex-end" }} onClick={() => void fill()}>
+          {busy ? "Filling…" : `Fill ${formatCount(plan.rows)} row${plan.rows === 1 ? "" : "s"}`}
+        </Button>
       )}
     </Popover>
   );

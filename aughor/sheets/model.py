@@ -41,6 +41,13 @@ class Link(BaseModel):
     missed: int = 0
 
 
+class ModelWrites(BaseModel):
+    """SH-5 — what a model writes in a column: the instruction a person gave it, and the columns of each row it reads.
+    Its values are a model's, never a fact: no figure is counted from them (`model_columns.py`)."""
+    instruction: str
+    reads: list[str] = Field(default_factory=list)   # column ids
+
+
 class Column(BaseModel):
     id: str
     name: str
@@ -65,6 +72,8 @@ class Column(BaseModel):
     by: str = ""                  # total: this sheet's column holding the key
     how: str = ""                 # total: sum | count | latest | earliest | average | min | max
     made_by: str = ""             # "the assistant" when a model proposed it (a person applied it)
+    #: SH-5 — set for a column a model writes; kept in the definition only on such a column (`save`).
+    model_writes: Optional[ModelWrites] = None
 
 
 class Condition(BaseModel):
@@ -270,6 +279,9 @@ def save(sheet: Sheet, *, what: str, by: str, origin: str = "", change_id: str =
     sheet.change = Change(id=change_id or uuid.uuid4().hex[:12], what=what[:300], by=by, at=now(), origin=origin)
     plain = sheet.sharing == "workspace" and not sheet.shared_with
     body = sheet.model_dump(exclude={"version", "state", *(("sharing", "shared_with") if plain else ())})
+    for col in body.get("columns") or []:
+        if col.get("model_writes") is None:
+            col.pop("model_writes", None)           # a column no model writes is stored as it was before SH-5
     note = f"proposed by the assistant ({origin.split(':', 1)[1]}), applied by {by}" if origin.startswith("proposal:") else ""
     rev = lifecycle.record(KIND, natural_key(sheet.id, _org()), body, state, by=by, note=note,
                            conn_id=SHEETS_CONNECTION)

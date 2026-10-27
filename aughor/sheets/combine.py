@@ -37,11 +37,13 @@ def _other(sheet_id: str) -> Sheet:
 
 
 def _stored_of(sheet: Sheet, ref: str, what: str) -> Column:
+    from aughor.sheets.model_columns import refuse_counting
     c = sheet.column(ref)
     if c is None:
         raise Refused(f"{sheet.name} has no column {ref!r}")
     if c.role != "stored":
         raise Refused(f"{c.name} in {sheet.name} is itself read from elsewhere; {what} reads a column kept in the sheet")
+    refuse_counting(c, what)                # SH-5: never a key, a total or a value brought by a link
     return c
 
 
