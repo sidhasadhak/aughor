@@ -12225,7 +12225,7 @@ area thin on metrics (LuxExperience's Traffic & conversion: one metric, 22 patte
 
 ---
 
-### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
+### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted — **SV-3 BUILT 2026-10-28** at the user's *"proceed with the rest"* · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
 **The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
 make up 1,085 MB: system, audit, checkpoints and automations. None is backed up on a schedule. The recovery recipe is
@@ -12316,8 +12316,29 @@ graduation queue — receipt: a week of the live install's backups read and one 
   p95 1.80 s against 2.07 s — no rise, though only seven samples of each fell inside a ten-second backup. SV-1 too: the
   edit layer's v4 → v5 migration was copied first (`backups/overlay_ledger.db.2026-10-26.v4-before-v5.bak`) and `/health`
   named it. Graduation still wants its week of hourly backups read and one restore proven on a copy.
+- **A restore, proven on copies of two live backups, 2026-10-28** (the user: *"proceed with the rest"*). Real copies (no
+  hard link, so nothing could write back into the live backups) of `2026-10-27T183808Z` and `2026-10-27T121237Z`, in a
+  scratch folder, restored with `backups.restore(root=…)` from a test the suite's conftest isolates — nothing reached
+  `~/.aughor`. The newest into an empty state: 810 restored, no problem. Back to midday over it: 807 restored, the three
+  files of the sheet made at 13:20 set aside (not deleted), the model-call log kept with the present's rows carried in, a
+  `before-restore` backup taken each time. An oracle of its own, not the restore's: all 51 stores' rows per table equal
+  what the backup recorded, all 756 files byte for byte. Graduation now wants only its week of hourly backups read
+  (from 2026-11-03).
+- **`aughor doctor` says the backups** (`doctor._backups`): read from the backups folder and its last-run note — never
+  the flag store, never `/health`'s block, which answers for the API's process. On the live install: *"13 kept, the
+  newest 2026-10-27T183808Z; checked 0.6 hours ago"*. None taken, a failed one, one skipped for space, and one not
+  checked for two hours each say so, with what to do.
+- **SV-3, built 2026-10-28** (`connectors/api/base_sync.py`, `tests/unit/test_api_sync_rebuild.py`) — incremental equals
+  rebuilt, the oracle a test: an incremental mirror compared with a fresh full sync, column by named column. Its three
+  defects fixed — values inserted by name over the union of columns (a page that dropped one field and added another
+  wrote deal 2 as `email='2', id='Bob'`), the watermark taken at the fetch's start, an object with no key synced in
+  full and a full sync replacing the table so a deletion is seen — and a fourth beneath them: on the installed DuckDB
+  (1.5.2) `register(tmp, list_of_dicts)` raises, so **the API sync had never written a row**; the records load as a
+  temp table now. Each fix fails its test when reverted (seven mutants, all killed). Not run live: no API connector is
+  configured here. Found, not fixed: HubSpot keys by `hs_object_id` (so it syncs in full), Stripe filters on `created`
+  (an edit is never fetched incrementally), and the schema prints a sync's fetched count as the table's rows.
 
-### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below · **SH-3 BUILT 2026-10-27** behind `sheets.views`, off, with the built screens brought to the mockup — "SH-3, built" below · **SH-8 BUILT 2026-10-28** behind `sheets.sharing`, off — "SH-8, built" below)
+### 3.64 · Arc SH — Sheets: tables people make, edit, combine and chat with (DRAFTED 2026-10-27 as `docs/SPREADSHEETS_ARC_2026-10-27.md` with `design-mockups/spreadsheets.html`, after Teable was dropped — §4.12 · ✅ **ADOPTED 2026-10-27**, the user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap"* — §6 item 56 · **SH-1, SH-2, SH-4 and SH-7 BUILT 2026-10-27** behind their flags, all off — "SH-1 … SH-7, built" below · **SH-3 BUILT 2026-10-27** behind `sheets.views`, off, with the built screens brought to the mockup — "SH-3, built" below · **SH-8 BUILT 2026-10-28** behind `sheets.sharing`, off — "SH-8, built" below · **SH-5 BUILT 2026-10-28** behind `sheets.model_columns`, off — "SH-5, built" below)
 
 **What the user asked for.** *"within our platform users should be able to work with spreadsheets the way screenshots
 suggest"*:
@@ -12642,12 +12663,46 @@ or groups as readers or editors, and when a stale write is refused, say who chan
   its twelve settings, pid 96495, no exploration resumed, the fingerprint the same; `sheets.sharing` on, 60 flags): the
   five live sheets read as the user's own, all still the workspace's, and another person still edits them; a sheet's
   query run twice with the cache on came back fresh both times; the Share pop-up offers *Only people chosen* on :3000.
-  Nothing was shared on the live install — the three-person receipt is the user's to make.
+  **The receipt, live 2026-10-28** (the user: *"proceed with the rest"*), over HTTP on the second Olist orders sheet
+  (`olist_orders_2`, never changed), with stand-ins `receipt-reader`, `receipt-editor` and `receipt-outsider`: the
+  reader opened it (99,441 rows) and was refused a change with its sentence; the editor passed the gate (a write sent
+  at a stale version, so no cell changed); the outsider saw it listed by name and maker only and was refused in the
+  grid, the chat's grounding and the SQL route — again right after the reader's run (`cached: false`); shared back with
+  the workspace, the outsider edits it again. Found on it and fixed: a stale version on a cell nobody had changed was
+  said as *"Someone changed…"* — it says *"Nobody has changed order_status in row 1, and this page sent a version it
+  never had"* now.
 - **Not built, and said.** Sharing closes the sheet — its rows and everyone's changes — not the Workspace file it was
   made from, which stays the workspace's: dee could make a sheet of their own from it. Who else is on a sheet at the
   same moment. A maker who leaves leaves their sheets with no one to reshare them; there is no administrator's override.
   A chosen sheet's columns stay in the schema for everyone (its values are withheld). Profiles or an ontology built
-  over the Sheets connection were not checked for a chosen sheet's values.
+  over the Sheets connection were not checked for a chosen sheet's values. *Checked 2026-10-28: none had been built on
+  the live install (its ontology answers 404); the Sheets connection now builds none — `build_intelligence` hands back
+  its fast schema — since value profiles everyone reads would carry a chosen sheet's values, stale after the next
+  edit.*
+
+**SH-5, built 2026-10-28 — a column a model writes** (same branch, local; the user: *"proceed with the rest"*, after
+*"SH-5 … waits for your go-ahead"*). Behind `sheets.model_columns`, off.
+- **What it is** (`aughor/sheets/model_columns.py`): a column with an instruction and the columns of each row it reads,
+  added from Fields (*Written by a model*). *Fill with the model…* in its header's menu fills it for the view on screen,
+  the semantic operators' way — the rows not filled yet, at most 200 a fill, 25 a call, on the cheap `fast` model —
+  and says first how many rows, how many calls, and what they cost (or that the model's price is not set, or that no
+  model is set up, which refuses the fill). One fill is one change, kept under the person who ran it with `origin`
+  `model:<fill id>`, undone whole. A call that fails leaves its rows unfilled and says so; a row the model gives nothing
+  for stays unfilled; a row it was not asked about is never written.
+- **Never a figure.** The column is marked *written by a model* in its header and the cell bar says *a reading, not a
+  fact*; an empty cell reads *not filled*. Its foot counts only how many rows are filled; no group, rule, link, total
+  or dashboard card is made by it (one sentence, `counting_refusal`, refused wherever counting would happen); the
+  chat's grounding tells the model never to count by it or state its values as findings.
+- **Proven.** 8 tests with a scripted model (no call left the process); 15 mutants, every one killed. On the scratch API
+  in a browser: added from Fields, the header marked, every cell *not filled*, and the fill said before it ran — *"Fills
+  Complaint topic for 200 rows — the first 200 of the 99,224 not filled… 8 model calls, 25 rows a call; no model is set
+  up here, so nothing can be filled"*, Fill held; grouping by it refused with its sentence. **No real model has filled
+  one yet** — that spends calls, and waits for the user's word.
+- **Not built, and said.** A standing yes that fills new rows as they come (they wait for the next fill). Choices for a
+  model column (it is text). The SQL Editor can still read its values — they are marked in the sheet, not in a query's
+  result.
+- **Fixed on the way:** a chat answer's chart called a count named like a date a day — *"Daily Orders Without Carrier
+  Date by Order Status"*; its title now takes its date column from the charts' one classifier (`ChatMessage.tsx`).
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

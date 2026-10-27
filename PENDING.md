@@ -818,6 +818,11 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     any failure; never over the audit log, the model-call log carried. 45 tests, 30 mutants killed. **LIVE 2026-10-27**:
     on, first backup 04:01 UTC (798 sources, 10.4 s, 396 MB), p95 did not rise during it (§3.63). **Open:** a week of
     hourly backups read and one restore proven on a copy (its graduation receipt); an `aughor doctor` line.
+    ✅ *2026-10-28:* one restore proven on copies of two live backups (810, then 807 restored; 51 stores' rows and 756
+    files equal to the backup's record) and `aughor doctor` says the backups (*"13 kept… checked 0.6 hours ago"* live).
+    Still open: the week of hourly backups read, from 2026-11-03. **SV-3 BUILT** the same day (the user: *"proceed with
+    the rest"*): the API connectors' sync equals a rebuild — three defects fixed, and a fourth beneath them (it had never
+    written a row on the installed DuckDB); not run live, no API connector here (§3.63).
 
     ~~**Next: SV-2.**~~ *Extended 2026-10-26 at the user's "Do you not see this as an
     addition to the Dashboard feature that we have?"* — study §10: piece by piece against the Dashboard vocabulary,
@@ -909,4 +914,10 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     longer keeps or serves a sheet's rows (one reader's cached rows reached another, found on the scratch API). A stale
     write says who changed which cell, and the grid shows their value. Proven in a browser as three people on a scratch
     API. Open: SH-5, the rest of SH-6; sharing does not close the Workspace file a sheet came from; no admin override.
-    **LIVE 2026-10-28** at `4e91f3a0`, `sheets.sharing` on (60 flags), the fingerprint the same; no sheet shared yet.
+    **LIVE 2026-10-28** at `4e91f3a0`, `sheets.sharing` on (60 flags), the fingerprint the same. Its receipt taken live the
+    same day on the second Olist orders sheet with three stand-ins, then shared back with the workspace (§3.64).
+    ✅ **SH-5 BUILT 2026-10-28** behind `sheets.model_columns`, off (the user: *"proceed with the rest"*): a column a model
+    writes, filled for a view's rows — at most 200 a fill, 25 a call, calls and cost said first, one change undone whole —
+    marked everywhere and never counted in a figure. Proven with a scripted model and in a browser on a scratch API; no
+    real model has filled one yet. Open: the rest of SH-6 (waits on the Grist breakdown calls); a standing yes for new
+    rows; the rail row (the user's call).
