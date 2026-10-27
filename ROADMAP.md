@@ -12510,8 +12510,11 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   same calendar. **LIVE 2026-10-27** (the user: *"Put b7b12c0a on the live install and turn on sheets.chat"*): the
   round is web only, so the live checkout moved with no restart; `sheets.chat` on (59 flags), its model the install's
   coder (`claude-sonnet-5-5`, tools native). The chat panel opens beside the live Olist orders; no question has been
-  asked on the live install yet. Seen, not fixed: below about 1,400 px wide with the chat open, the sheet's head buttons
-  (Combine, Chat) run under the panel.
+  asked on the live install yet. Seen there and fixed in `ec73d4c1`: with the chat open the sheet's head buttons ran
+  under the panel (82 px past the sheet at 1,280 px wide, 338 at 1,024; the toolbar 52 at 1,024) — the head and the
+  toolbar now wrap, the source giving way first, then the buttons taking a line of their own. **LIVE 2026-10-27** at
+  `ec73d4c1` (the user: *"Put ec73d4c1 on the live install"*), no restart: at 1,280 px on the live Olist orders the
+  buttons end at 844, the sheet at 860.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.

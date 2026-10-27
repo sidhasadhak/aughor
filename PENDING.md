@@ -888,4 +888,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     be a better way"*). A cell undone since SH-2 could not be changed again (the page sent version 0) — fixed. **LIVE
     2026-10-27** at `277b729f`, `sheets.everywhere` on (58 flags); no dashboard made on the live install yet.
     The grid's lines, border-only selection with Shift ranges, sort from the header and views taken off — **LIVE
-    2026-10-27** at `b7b12c0a`, `sheets.chat` on (59 flags); no question asked on the live install yet.
+    2026-10-27** at `b7b12c0a`, `sheets.chat` on (59 flags); no question asked on the live install yet. The head's
+    buttons no longer run under the open chat — **LIVE 2026-10-27** at `ec73d4c1`.
