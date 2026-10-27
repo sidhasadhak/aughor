@@ -12548,6 +12548,14 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   steps, no result figure (the last query's one row as tiles under raw column names), no actions, details or export;
   a withheld answer still shows its result. **LIVE 2026-10-27** at `8bdb1304`, web only, no restart; the served
   `ChatMessage` chunk carries it. Not yet seen on a fresh live answer (no question spent).
+- **A sort no longer flashes the grid; the headers show the sort as the user drew it, 2026-10-27** (`00d5d17e`; the
+  user: *"why does the sheet flashes (flickering) when I sort it"*, and an icon to follow, reversed for each
+  direction). A new sort emptied the rows and the count before the sorted rows were read, so *Loading the rows* stood
+  in the grid's place for the length of a read — measured on the live Olist orders. The rows now stay until the first
+  sorted block lands and are replaced whole; another sheet's rows never stay. `sortdesc` (a down arrow, the bars widest
+  first, as drawn) and `sortasc` (narrowest first), in Tabler's own way. **LIVE 2026-10-27** at `00d5d17e`, web only, no
+  restart: sorting customer_city A–Z, Z–A and back, the grid never left (385 cells throughout, no Loading, two changes
+  to the page each time), the header's symbol following the direction.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
