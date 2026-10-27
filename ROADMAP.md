@@ -12696,13 +12696,46 @@ or groups as readers or editors, and when a stale write is refused, say who chan
 - **Proven.** 8 tests with a scripted model (no call left the process); 15 mutants, every one killed. On the scratch API
   in a browser: added from Fields, the header marked, every cell *not filled*, and the fill said before it ran — *"Fills
   Complaint topic for 200 rows — the first 200 of the 99,224 not filled… 8 model calls, 25 rows a call; no model is set
-  up here, so nothing can be filled"*, Fill held; grouping by it refused with its sentence. **No real model has filled
-  one yet** — that spends calls, and waits for the user's word.
+  up here, so nothing can be filled"*, Fill held; grouping by it refused with its sentence. **LIVE 2026-10-28** at
+  `c8b8b617` (the user: *"Live + a 200-row fill"*; restarted with its twelve settings, the fingerprint the same,
+  `sheets.model_columns` on, 61 flags): *Complaint topic* added to Olist reviews, reading each review's title and
+  message. Said before it ran: 10,890 low-score reviews with a comment (the mockup's figure), the newest 200 in 8 calls
+  on claude-haiku-5-5, *about $0.0040*. Filled 195, the model gave nothing for 5, no call failed — *"Não recebi meu
+  produto…"* → *Product not received*, *"Fiz pedido de 6 produtos e só recebi 2"* → *Missing products in delivery*. Its
+  foot counts 195 filled and nothing more; grouping by it is refused live.
 - **Not built, and said.** A standing yes that fills new rows as they come (they wait for the next fill). Choices for a
   model column (it is text). The SQL Editor can still read its values — they are marked in the sheet, not in a query's
   result.
 - **Fixed on the way:** a chat answer's chart called a count named like a date a day — *"Daily Orders Without Carrier
   Date by Order Status"*; its title now takes its date column from the charts' one classifier (`ChatMessage.tsx`).
+
+**The Grist study's breakdown piece and rule marks, built 2026-10-28** (same branch, local; the user's four calls of the
+day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments later"*, *"Make the rail fit"*, *"Live + a
+200-row fill"*). Both are Dashboards pieces (`docs/GRIST_STUDY_2026-10-26.md` §10, mockup
+`design-mockups/dashboard-breakdown.html`), so they belong to SH-6's rest as much as to the study.
+- **The breakdown** (`ObjectBreakdown`, flag `dashboard.breakdowns`, off; the vocabulary at version 12): an entity or a
+  set grouped by one property over `ObjectQuery.by`, one to three measures a group, the largest 5, 8, 10 or 12 groups and
+  the rest one *Other* row, objects with no value their own row. Its foot says the groups add up to the whole — or *"The
+  groups hold 125,396 of 125,402 — some objects are in no row"*: Other is summed from the groups the door returned, or
+  asked of the door (`not_in`) when a measure does not add, and never the whole minus the rest. A click is the filter
+  column's choice — every other piece narrows, the breakdown keeps every group and ticks the one chosen (its own
+  grouping is never in its own query); Other and No value cannot be chosen, and say why. A kept spec holding one is
+  refused while the flag is off, and its query compiles at the keep. 3 server tests, 10 web; the leak case is the
+  falsifier. **Read live on theLook through the door, not drawn live:** orders by customer country — 16 groups, 124,732
+  orders, $10,739,087.41 adding up; China chosen, 42,460.
+- **Rule marks** (`marked` on an objects table and an object list, flag `dashboard.marks`, off): a segment the entity
+  declares and a tone — the rows on screen it admits carry a rule in that tone, and the legend beside the title says
+  *"Late dispatch — 13,395 of 124,732"*. Both reads go through the door as `in_set`, a set of the listing's own entity
+  kept to the segment; nothing a dashboard marks by is a formula of its own, and a segment the entity does not declare
+  is refused at the keep. 3 server tests, 5 web; the hook marking every row on screen instead of what the door admits
+  is killed. **Read live on theLook** (not drawn): the `in_set` count is 13,395, the segment's own count; of the first
+  200 orders it marks 24, the same 24 keys the segment lists.
+- **Not built, and said.** Comments on a figure or an object as said claims — recorded in the study, later (the user's
+  call). Neither flag is on, live or anywhere; the live checkout does not hold this code.
+- **The rail row, mocked to fit** (`design-mockups/rail-fit.html`): the live rail measured at 1440×900 hides 52 px
+  under its footer (Evals and half of Security & Audit); the proposal keeps every row 28 px and tightens only the groups
+  (8/10 → 4/6 px, a heading 28 → 24 px) and puts the version beside Settings — every row in view, about 15 px to spare.
+  **Waiting on the user's reaction; nothing built.**
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -15173,6 +15206,9 @@ the browser** · **measure the premise before building.**
       backups keep the newest 5, hourly 24, daily 14 and weekly 8, nothing older; every store but `checkpoints.db`.
       **SV-1 built the same day** (§3.63); SV-2 next.
     - **Still open:** SV-3; the Grist study's breakdown piece for Dashboards (§10.5, calls 6–9).
+    - ✅ *2026-10-28, the Grist study's calls 6–9, each as recommended:* the breakdown built behind
+      `dashboard.breakdowns`, a click being the filter column's; rule marks after it, behind `dashboard.marks`; comments
+      later; the rail made to fit — mocked first (§3.64 "The Grist study's breakdown piece and rule marks"). SV-3 built.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

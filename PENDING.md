@@ -831,6 +831,12 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     `dashboard.breakdowns`, M), **rows marked by a declared rule** (`dashboard.marks`, S–M) and **comments on a figure
     or an object as said claims** (recorded, not proposed). Mockup for approval: `design-mockups/dashboard-breakdown.html`
     (three screens, every number theLook's through the object door). **Four more calls (study §10.5).**
+    ✅ *Calls 6–9 decided 2026-10-28, as recommended* (click = filter · marks after · comments later · the rail made to
+    fit, mocked first). **The breakdown piece and rule marks BUILT the same day** behind `dashboard.breakdowns` and
+    `dashboard.marks`, both off (local, not pushed): Other summed or asked, never subtracted, and a foot that says when
+    the groups do not add up; marks read through the door as `in_set`. Read live on theLook through the door (16
+    countries adding to 124,732 orders; *late dispatch* 13,395, the segment's own count), not drawn live (ROADMAP §3.64).
+    Open: comments (later); turning either flag on.
 
 65. [x] **A spreadsheet section people make and then chat with — Teable** (the user, 2026-10-26: *"Chuck grist.. check
     this: https://github.com/teableio/teable … all we need to do is push our chat experience there.. framework already
@@ -918,6 +924,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     same day on the second Olist orders sheet with three stand-ins, then shared back with the workspace (§3.64).
     ✅ **SH-5 BUILT 2026-10-28** behind `sheets.model_columns`, off (the user: *"proceed with the rest"*): a column a model
     writes, filled for a view's rows — at most 200 a fill, 25 a call, calls and cost said first, one change undone whole —
-    marked everywhere and never counted in a figure. Proven with a scripted model and in a browser on a scratch API; no
-    real model has filled one yet. Open: the rest of SH-6 (waits on the Grist breakdown calls); a standing yes for new
-    rows; the rail row (the user's call).
+    marked everywhere and never counted in a figure. Proven with a scripted model and in a browser on a scratch API.
+    **LIVE 2026-10-28** at `c8b8b617`, on: *Complaint topic* on Olist reviews filled for the newest 200 low-score
+    reviews with a comment — 195 filled, 8 calls on claude-haiku-5-5, about $0.004 said first (§3.64). Open: the rest of
+    SH-6 (the breakdown piece is built, off — item 64; the Briefing over sheets is not); a standing yes for new rows;
+    the rail row — mocked to fit (`design-mockups/rail-fit.html`), waiting on the user's reaction.
