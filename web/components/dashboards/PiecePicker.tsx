@@ -34,8 +34,8 @@ import { getProcesses } from "@/lib/objectTypes";
 export type HandOff = "card" | "note" | "image" | "finding" | "query";
 const HANDED: readonly string[] = ["card", "note", "image", "finding", "query"];
 
-type Placed = "ObjectTable" | "ObjectDetail" | "ObjectFigure" | "ObjectChart" | "ProcessBoard" | "ActionButtons"
-  | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch";
+type Placed = "ObjectTable" | "ObjectDetail" | "ObjectFigure" | "ObjectChart" | "ObjectBreakdown" | "ProcessBoard"
+  | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch";
 /** "Linked" places two things: a set of what the chosen object links to, and a table of it; a drawer is the dashboard's own,
  *  holding a detail of the object it opens on. */
 type Kind = Placed | "ObjectFilters" | "Linked" | "Drawer" | HandOff;
@@ -53,6 +53,7 @@ const GROUPS: { group: string; pieces: Entry[] }[] = [
   { group: "Measure", pieces: [
     { kind: "ObjectFigure", label: "Figure", says: "One number of a set, beside the whole." },
     { kind: "ObjectChart", label: "Chart", says: "Bars across the days, split by a property if you like." },
+    { kind: "ObjectBreakdown", label: "Breakdown", says: "Groups by a property, each with its count; they add up to the whole." },
     { kind: "ProcessBoard", label: "Process board", says: "A process's stages, its promises and what is overdue." },
     { kind: "card", label: "Card", says: "A measured card from the card store." },
     { kind: "query", label: "Your own query", says: "SQL over any table, shown as a table, a figure or a chart." },
@@ -90,7 +91,8 @@ function firstEntity(spec: DashboardSpec): string {
   return "";
 }
 
-export function PiecePicker({ spec, section, connectionId, schema, wiringOn, queriesOn = false, onPlace, onHandOff, onClose }: {
+export function PiecePicker({ spec, section, connectionId, schema, wiringOn, queriesOn = false, breakdownsOn = false, onPlace,
+  onHandOff, onClose }: {
   spec: DashboardSpec;
   /** The section a piece goes in; the first that holds pieces when none is named. */
   section: string | null;
@@ -100,6 +102,8 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
   wiringOn: boolean;
   /** Arc AP-7 — whether a person may write a query of their own here. */
   queriesOn?: boolean;
+  /** Whether a breakdown may be placed here (`dashboard.breakdowns`). */
+  breakdownsOn?: boolean;
   onPlace: (next: DashboardSpec, note: string) => void;
   onHandOff: (kind: HandOff, section: string | null) => void;
   onClose: () => void;
@@ -232,6 +236,14 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
         if (!time) return { why: `${noun} holds no date to draw across.` };
         return { why: "", props: { ...scope, label: upTo(`${label}, by ${time.label.toLowerCase()}`, MAX_LABEL), time: time.path, days: CHART_DAYS[1] ?? 14 } };
       }
+      case "ObjectBreakdown": {
+        if (!of) return { why: "Choose what it groups above." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        const group = ef.fields.find(isCategory);
+        if (!group) return { why: `${noun} has no property to group by.` };
+        return { why: "", props: { ...scope, label: upTo(`${label} by ${group.label.toLowerCase()}`, MAX_LABEL), by: group.path,
+          measures: [{ agg: "count" }] } };
+      }
       case "ProcessBoard": {
         if (processes === null) return { why: "Reading the declared processes…" };
         const p = processes.find(x => !of || words(x.entity).toLowerCase() === words(of).toLowerCase()) ?? processes[0];
@@ -293,8 +305,9 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
   const shown = useMemo(() => {
     const q = find.trim().toLowerCase();
     return GROUPS.map(g => ({ ...g, pieces: g.pieces.filter(p => (queriesOn || p.kind !== "query")
+      && (breakdownsOn || p.kind !== "ObjectBreakdown")
       && (!q || `${p.label} ${p.says}`.toLowerCase().includes(q))) })).filter(g => g.pieces.length);
-  }, [find, queriesOn]);
+  }, [find, queriesOn, breakdownsOn]);
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>

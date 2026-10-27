@@ -62,7 +62,7 @@ const PAD = 16;
 
 const ICON: Record<string, IconName> = {
   Cockpit: "gauge", Tab: "panel", Section: "layers", Card: "metric", Note: "text", Image: "attach", ProcessBoard: "process",
-  ObjectTable: "table", ObjectDetail: "list", ActionButton: "bolt", ObjectFilters: "filter", ObjectFigure: "num", ObjectChart: "chart",
+  ObjectTable: "table", ObjectDetail: "list", ActionButton: "bolt", ObjectFilters: "filter", ObjectFigure: "num", ObjectChart: "chart", ObjectBreakdown: "column",
 };
 
 /** The pane's small uppercase heading. */

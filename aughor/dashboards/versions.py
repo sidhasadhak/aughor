@@ -402,9 +402,9 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     not_held = images.not_held(home.connection_id, spec)
     if not_held:
         return Kept(REFUSED, sentences=tuple(not_held))
-    from aughor.dashboards import app_pieces, builder, pieces, questions, variables, wiring
+    from aughor.dashboards import app_pieces, breakdowns, builder, pieces, questions, variables, wiring
     off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec) + variables.refused_off(spec) \
-        + questions.refused_off(spec)
+        + questions.refused_off(spec) + breakdowns.refused_off(spec)
     if off:
         return Kept(REFUSED, sentences=tuple(off))
     # Arc AP-2 — what each set reads, as the web reads it, once: the pieces that read a set are probed over it

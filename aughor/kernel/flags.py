@@ -260,6 +260,8 @@ FLAG_ENV = {
     # and shown as the Data Canvas shows one; opening the dashboard never asks. OFF: the vocabulary refuses a Question
     # and the question routes answer 404.
     "dashboard.questions": "AUGHOR_DASHBOARD_QUESTIONS",
+    # A breakdown piece — an entity's objects grouped by a property, adding up to the whole (the Grist study §10).
+    "dashboard.breakdowns": "AUGHOR_DASHBOARD_BREAKDOWNS",
     # PENDING 57 (2026-10-24, docs/DECISION_LOOP_STUDY_2026-10-24.md, D-1 to D-3). ON: a decision is booked in full where
     # it is made (Home's Decide cites its finding and may state an expectation; "Not worth it" books not acting; a
     # recommendation keeps its report's other actions as alternatives and marks what was recommended), every decision
@@ -922,6 +924,16 @@ FLAG_META = {
                        "who read it, whose run it was and the reason. The governance feed takes a first and last date, "
                        "pages past its newest thousand and exports as a file. Off: a payload read records who read it, "
                        "not why.",
+    },
+    "dashboard.breakdowns": {
+        "label": "Breakdowns on dashboards",
+        "summary": "Group an entity's objects by a property on a dashboard, with a count or a total per group. A click "
+                   "on a group narrows the dashboard.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Groups always add up"}],
+        "description": "The largest groups are shown, the rest are one Other row, and objects with no value are their "
+                       "own row. The line beneath says whether the groups add up to the whole. Off: a dashboard holds "
+                       "no breakdown, and one that does is refused when kept.",
     },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
@@ -1890,6 +1902,10 @@ GRADUATION_QUEUE: dict = {
                                  "dashboard's source names the pack and its version. Falsifier: a drafted card made "
                                  "from a metric the connection does not hold stops it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    # The Grist study §10, queued 2026-10-28. No model call.
+    "dashboard.breakdowns": "receipt: on theLook, a breakdown of orders by customer country shows groups whose counts "
+                            "and revenue add up to the dashboard's own figures, and a click on one narrows the figures "
+                            "and charts to it. Falsifier: groups that do not add up to the whole stop it",
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "
                               "Falsifier: a reader reads a version its owner never published stops it",

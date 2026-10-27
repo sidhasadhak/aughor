@@ -46,7 +46,7 @@ import { ActionButtonsPiece } from "@/components/dashboards/ActionButtonsPiece";
 import { ReadSlotContext, type ReadSlot, type ReadStatus } from "@/components/dashboards/readSlot";
 import { ChooseOnePiece, ObjectListPiece, ObjectMapPiece, ObjectSearchPiece, ObjectTimelinePiece } from "@/components/dashboards/AppPieces";
 import {
-  ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
+  ActionButtonPiece, FilterBar, NotFiltered, ObjectBreakdownPiece, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
   ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, ValuesBar, chooseWords, useFiltering, usePieceFiltering, usePieces,
   type FilterProperty,
 } from "@/components/dashboards/OntologyPieces";
@@ -897,6 +897,23 @@ function DashboardObjectFigure({ element }: ComponentRenderProps<{
   );
 }
 
+function DashboardObjectBreakdown({ element }: ComponentRenderProps<{
+  entity?: string | null; set?: string | null; label: string; by: string; size?: Size | null;
+  measures: { agg: string; path?: string | null; label?: string | null; format?: string | null }[];
+  top?: number | null; show?: string | null;
+}>) {
+  const { sym } = useDashboard();
+  const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
+  return (
+    <Cell type="ObjectBreakdown" props={p as Record<string, unknown>} size={p.size ?? "wide"} testid="dashboard-piece-cell">
+      {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectBreakdownPiece entity={p.entity} set={p.set} label={p.label} by={p.by} measures={p.measures} top={p.top}
+          show={p.show} sym={sym} /></>}
+    </Cell>
+  );
+}
+
 function DashboardObjectChart({ element }: ComponentRenderProps<{
   entity?: string | null; label: string; time: string; days?: number | null; size?: Size | null;
   agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null; set?: string | null;
@@ -1062,6 +1079,7 @@ const REGISTRY = {
   ObjectFilters: DashboardObjectFilters,
   ObjectFigure: DashboardObjectFigure,
   ObjectChart: DashboardObjectChart,
+  ObjectBreakdown: DashboardObjectBreakdown,
   ActionButtons: DashboardActionButtons,
   ObjectList: DashboardObjectList,
   ObjectMap: DashboardObjectMap,

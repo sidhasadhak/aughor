@@ -21,8 +21,8 @@ import { Segmented } from "@/components/ui/segmented";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  CHART_DAYS, CHART_TOPS, CHOOSERS, FIGURE_AGGS, MAX_CAPTION, MAX_FILTERS, MAX_LABEL, MAX_NOTE, MAX_TABLE_COLUMNS, MAX_TICKED_RUNS,
-  MAX_TITLE, SET_READERS, SPLIT_AGGS, TICKERS, TONES, type PieceName,
+  BREAKDOWN_TOPS, CHART_DAYS, CHART_TOPS, CHOOSERS, FIGURE_AGGS, MAX_BREAKDOWN_MEASURES, MAX_CAPTION, MAX_FILTERS, MAX_LABEL,
+  MAX_NOTE, MAX_TABLE_COLUMNS, MAX_TICKED_RUNS, MAX_TITLE, SET_READERS, SPLIT_AGGS, TICKERS, TONES, type PieceName,
 } from "@/lib/dashboards/catalog";
 import {
   editNote, freshWireName, moveCardTo, moveCardToNewSection, moveSectionTo, recaption, rename, sectionsOf, setProps, tabsOf,
@@ -386,6 +386,49 @@ function ChartSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: P
           <Segmented label="Values drawn" value={String(p.top ?? 5)} options={CHART_TOPS.map(t => ({ value: String(t), label: `Top ${t}` }))}
             onChange={v => set({ top: Number(v) === 5 ? null : Number(v) }, "a chart's split chosen by hand")} />
         )}
+      </Row>
+    </>
+  );
+}
+
+/** A breakdown: the property its objects are grouped by, one to three measures per group, how many groups it shows
+ *  before the rest are one Other row, and whether it is a table with share bars or bars alone. */
+function BreakdownSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
+  const fields = fieldsFor(ef, [p.by as string]);
+  const categories = fields.filter(isCategory);
+  const measures = (Array.isArray(p.measures) ? p.measures : [{ agg: "count" }]) as Props[];
+  const setMeasure = (i: number) => (patch: Props, note: string) =>
+    set({ measures: measures.map((m, j) => (j === i ? { ...m, ...patch } : m)) }, note);
+  return (
+    <>
+      <Row label="Label"><Words label="Label" value={String(p.label ?? "")} max={MAX_LABEL} onSave={v => set({ label: v }, "a breakdown's label written by hand")} /></Row>
+      <Row label="Grouped by" hint="Its largest groups are shown; the rest are one Other row, and objects with no value their own.">
+        <Pick label="Grouped by" value={String(p.by ?? "")} options={keeping(asOptions(categories), p.by as string)}
+          onPick={v => set({ by: v }, "a breakdown's grouping chosen by hand")} />
+      </Row>
+      {measures.map((m, i) => (
+        <div key={`measure-${i}`} data-testid="setup-breakdown-measure">
+          <MeasureRows p={m} ef={ef} aggs={FIGURE_AGGS} note="a breakdown's measure chosen by hand" set={setMeasure(i)} />
+          {i > 0 && (
+            <Button size="xs" variant="ghost" onClick={() => set({ measures: measures.filter((_, j) => j !== i) }, "a breakdown's measure taken off")}>
+              Take this measure off
+            </Button>
+          )}
+        </div>
+      ))}
+      {measures.length < MAX_BREAKDOWN_MEASURES && (
+        <Button size="xs" variant="outline" onClick={() => set({ measures: [...measures, { agg: "count" }] }, "a breakdown's measure added")}>
+          Add a measure
+        </Button>
+      )}
+      <Row label="Groups shown">
+        <Segmented label="Groups shown" value={String(p.top ?? 8)} options={BREAKDOWN_TOPS.map(n => ({ value: String(n), label: `Top ${n}` }))}
+          onChange={v => set({ top: Number(v) === 8 ? null : Number(v) }, "a breakdown's groups chosen by hand")} />
+      </Row>
+      <Row label="Shown as">
+        <Segmented label="Shown as" value={String(p.show ?? "table")}
+          options={[{ value: "table", label: "Table with shares" }, { value: "bars", label: "Bars" }]}
+          onChange={v => set({ show: v === "table" ? null : v }, "how a breakdown is shown, chosen by hand")} />
       </Row>
     </>
   );
@@ -766,6 +809,7 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
       {needsFields && el.type === "ObjectTable" && fieldsBody(f => <TableSetup p={p} ef={f} set={set} noun={noun} />)}
       {needsFields && el.type === "ObjectFigure" && fieldsBody(f => <FigureSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectChart" && fieldsBody(f => <ChartSetup p={p} ef={f} set={set} />)}
+      {needsFields && el.type === "ObjectBreakdown" && fieldsBody(f => <BreakdownSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectFilters" && fieldsBody(f => <FiltersSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectList" && fieldsBody(f => <ListSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectMap" && fieldsBody(f => <MapSetup p={p} ef={f} set={set} />)}
