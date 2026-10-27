@@ -2,8 +2,9 @@
 
 /**
  * A sheet's grid (SH-2; mockup screens 3, 4 and 6): 30px rows, each column headed by its kind and what it holds, a
- * cell edited in place by its kind, every cell's story one click away and opened beside the cell (imported from file
- * row N, or set by whom and when), the row opened as a record, and the totals of the rows shown at the foot.
+ * cell edited in place by its kind, the selected cell's story in the bar above the grid (imported from file row N, or
+ * set by whom and when — a click selects, nothing opens over the rows), the row opened as a record, and the totals of
+ * the rows shown at the foot.
  *
  * Built on TanStack Virtual, the house grid's own windowing (`components/query/ResultsGrid.tsx`): only the rows in
  * sight are mounted, and they are read a block at a time as they come into sight (`useRowBlocks`), so the scroll bar is
@@ -11,17 +12,20 @@
  * and edits. The cells, the header, the foot and a cell's story are shared with the grouped grid (`SheetGroups`).
  */
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type CSSProperties, Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState,
+} from "react";
 
 import { Chip, MUTED, NUM } from "@/components/clarity/kit";
+import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import type { RowBlocks } from "@/components/sheets/useRowBlocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { formatCount, formatTimestamp } from "@/lib/format";
 import {
-  KIND_LABEL, readCell, showValue, totalWords, typedValue, who, type CellStory, type ColumnTotals, type Kind,
-  type RuleTone, type Sheet, type SheetColumn, type SheetRule,
+  KIND_LABEL, showValue, totalWords, typedValue, who, type ColumnTotals, type Kind, type RuleTone, type Sheet,
+  type SheetColumn, type SheetRule,
 } from "@/lib/sheets";
 
 export const ROW_HEIGHT = 30;
@@ -102,6 +106,9 @@ export function aboutColumn(sheet: Sheet, c: SheetColumn): string[] {
 /** The header: each column's kind, name and marks — and what a derived or described column is, a click away. */
 export function GridHeader({ sheet, shown }: { sheet: Sheet; shown: SheetColumn[] }) {
   const [about, setAbout] = useState("");
+  const aboutRef = useRef<HTMLDivElement>(null);
+  const closeAbout = useCallback(() => setAbout(""), []);
+  useCloseOutside(aboutRef, closeAbout);
   const at = (id: string) => NUMBER_WIDTH + shown.slice(0, shown.findIndex(c => c.id === id)).reduce((n, c) => n + width(c), 0);
   const open = shown.find(c => c.id === about);
   const span = NUMBER_WIDTH + shown.reduce((n, c) => n + width(c), 0);
@@ -125,7 +132,7 @@ export function GridHeader({ sheet, shown }: { sheet: Sheet; shown: SheetColumn[
         </div>
       ))}
       {open && (
-        <div role="dialog" aria-label={`What ${open.name} is`} className="aug-fs-sm" style={{ position: "absolute",
+        <div ref={aboutRef} role="dialog" aria-label={`What ${open.name} is`} className="aug-fs-sm" style={{ position: "absolute",
           top: ROW_HEIGHT + 2, left: Math.max(0, Math.min(at(open.id) - 40, span - 304)), width: 300, zIndex: 12,
           background: "var(--bg-2)",
           border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "8px 10px", display: "flex",
@@ -181,88 +188,120 @@ export function RowNumber({ row, marks, rules, onOpen }: {
   );
 }
 
+/** Where a cell's value came from, said from what the grid already holds — never a read per click. The whole history
+ *  of a row's values is its record's (Open row). */
+export function cellOrigin(sheet: Sheet, c: SheetColumn, row: number,
+  set?: { by: string; at: string; version: number }): string {
+  if (set) {
+    return `Set by ${who(set.by, sheet.me)} · ${formatTimestamp(set.at, "short")}`
+      + (set.version > 1 ? ` · changed ${formatCount(set.version)} times` : "");
+  }
+  if (c.role === "computed") return `Computed from ${c.expression}`;
+  if (c.role === "lookup") return `Read from another sheet through ${sheet.columns.find(x => x.id === c.via)?.name ?? "a link"}`;
+  if (c.role === "total") {
+    return c.description ? c.description.charAt(0).toUpperCase() + c.description.slice(1) : "A total of another sheet's rows";
+  }
+  if (row <= sheet.source.rows && c.source) {
+    return sheet.source.kind === "file" ? `Imported from ${sheet.source.file}, row ${formatCount(row)} · not changed since`
+      : `Kept from a query's rows, row ${formatCount(row)} · not changed since`;
+  }
+  return row > sheet.source.rows ? "Typed in" : "A column added in the sheet";
+}
+
+export interface EditResult { ok: boolean; error?: string }
+
+/** A selected cell: its row, its column, and — in the flat grid — its place among the view's rows. */
+export interface Selected { row: number; column: string; index?: number }
+
+const ARROWS: Record<string, [number, number]> = {
+  ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
+};
+
 /**
- * Selecting a cell, editing it, and its story — the same in the flat grid and the grouped one. A cell's story opens
- * under the cell (above it near the foot), and closes when the grid scrolls.
+ * Selecting a cell, editing it, and the cell bar — the same in the flat grid and the grouped one. A click only selects:
+ * the bar above the grid says the selected cell's value and where it came from, with Change and Open row beside it, and
+ * nothing opens over the rows. Double-click, Enter or typing edits; Escape leaves; the arrows move (the flat grid).
  */
-export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, versionOf, frame }: {
+export function useCellWork({ sheet, editable, onEdit, onOpenRow, valueOf, changedOf, versionOf, focus }: {
   sheet: Sheet; editable: boolean;
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
   valueOf: (row: number, column: string) => unknown;
+  changedOf: (row: number, column: string) => { by: string; at: string; version: number } | undefined;
+  /** The version a change must name: set, or put back by an undo — never only the cells holding an edit. */
   versionOf: (row: number, column: string) => number;
-  frame: RefObject<HTMLDivElement | null>;
+  /** Put the keyboard back on the grid — after a click, and once an edit is kept or left. */
+  focus: () => void;
 }) {
-  const [selected, setSelected] = useState<{ row: number; column: string; top: number; left: number } | null>(null);
-  const [editing, setEditing] = useState<{ row: number; column: string; text: string; original: string } | null>(null);
-  const [story, setStory] = useState<CellStory | null>(null);
+  const [selected, setSelected] = useState<Selected | null>(null);
+  const [editing, setEditing] = useState<{ row: number; column: string; text: string; original: string; typed: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const place = (el: HTMLElement) => {
-    const box = frame.current?.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    if (!box) return { top: 40, left: 16 };
-    const POP_W = 320;
-    const POP_H = 180;
-    let top = r.bottom - box.top + 4;
-    if (top + POP_H > box.height) top = Math.max(4, r.top - box.top - POP_H - 4);
-    return { top, left: Math.max(8, Math.min(r.left - box.left, box.width - POP_W - 8)) };
-  };
-
-  const openStory = (row: number, column: string, el: HTMLElement) => {
-    setSelected({ row, column, ...place(el) });
-    setError(null);
-    setStory(null);
-    readCell(sheet.id, row, column).then(setStory).catch(e => setError(e instanceof Error ? e.message : String(e)));
-  };
+  const select = (s: Selected | null) => { setSelected(s); setError(null); };
 
   const save = async (row: number, c: SheetColumn, value: unknown) => {
     setSaving(true);
     const out = await onEdit(row, c, value, versionOf(row, c.id));
     setSaving(false);
     setEditing(null);
-    if (out.ok) setError(null);
-    else { setSelected(s => s ?? { row, column: c.id, top: 40, left: 16 }); setError(out.error ?? "The change was not made."); }
+    setError(out.ok ? null : out.error ?? "The change was not made.");
+    focus();
   };
 
-  const startEdit = (row: number, c: SheetColumn) => {
+  const startEdit = (row: number, c: SheetColumn, typed?: string) => {
+    if (!editable || c.role !== "stored") return;
     const v = valueOf(row, c.id);
     if (c.kind === "yesno") { void save(row, c, !(v === true || v === "true")); return; }
     const text = v === null || v === undefined ? "" : String(v);
-    setEditing({ row, column: c.id, text, original: text });
+    setEditing({ row, column: c.id, text: typed ?? text, original: text, typed: typed !== undefined });
   };
 
-  const cell = (row: number, c: SheetColumn, v: unknown, set: boolean) => {
+  const cell = (row: number, c: SheetColumn, v: unknown, set: boolean, index?: number) => {
     const isSel = selected?.row === row && selected.column === c.id;
     const isEdit = editing?.row === row && editing.column === c.id;
     return (
-      <div key={c.id} role="gridcell" tabIndex={-1} aria-selected={isSel}
-        onClick={e => openStory(row, c.id, e.currentTarget)}
-        onDoubleClick={() => { if (editable && c.role === "stored") startEdit(row, c); }}
+      <div key={c.id} role="gridcell" aria-selected={isSel}
+        onClick={() => { if (!isEdit) { select({ row, column: c.id, index }); focus(); } }}
+        onDoubleClick={() => { select({ row, column: c.id, index }); startEdit(row, c); }}
         style={{ ...cellStyle(c), cursor: "default",
           background: isSel ? "var(--bg-sel)" : set ? "var(--blue1)" : undefined,
           outline: isSel ? "1px solid var(--blue3)" : undefined, outlineOffset: -1 }}>
         {isEdit ? (
-          <CellEditor column={c} text={editing.text} original={editing.original} saving={saving}
+          <CellEditor column={c} text={editing.text} original={editing.original} saving={saving} typed={editing.typed}
             onChange={text => setEditing({ ...editing, text })}
-            onCancel={() => { setEditing(null); setError(null); }}
+            onCancel={() => { setEditing(null); setError(null); focus(); }}
             onSave={() => void save(row, c, typedValue(editing.text, c.kind))} />
         ) : <CellValue column={c} value={v} />}
       </div>
     );
   };
 
-  const close = () => { setSelected(null); setStory(null); setError(null); };
+  /** The grid's keys: the arrows (where the grid can move), Enter or F2 to change, a character to type over, Escape. */
+  const keys = (e: ReactKeyboardEvent<HTMLElement>, move?: (dRow: number, dCol: number) => void) => {
+    if (editing || e.metaKey || e.ctrlKey || e.altKey) return;
+    const arrow = ARROWS[e.key];
+    if (arrow && move) { e.preventDefault(); move(arrow[0], arrow[1]); return; }
+    if (!selected) return;
+    const c = sheet.columns.find(x => x.id === selected.column);
+    if (!c) return;
+    if (e.key === "Escape") { e.preventDefault(); select(null); return; }
+    if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); startEdit(selected.row, c); return; }
+    if (e.key.length === 1 && editable && c.role === "stored" && c.kind !== "yesno") {
+      e.preventDefault();
+      startEdit(selected.row, c, e.key);
+    }
+  };
+
   const column = selected ? sheet.columns.find(c => c.id === selected.column) : undefined;
-  const pop: ReactNode = selected && column && (story || error) ? (
-    <CellPop sheet={sheet} story={story} error={error} editable={editable} column={column} at={selected}
-      value={valueOf(selected.row, selected.column)}
-      onChange={() => startEdit(selected.row, column)}
-      onOpenRow={() => { const r = selected.row; close(); onOpenRow(r); }}
-      onClose={close} />
-  ) : null;
-  return { cell, pop, close, reset: () => { close(); setEditing(null); } };
+  const bar: ReactNode = (
+    <CellBar sheet={sheet} selected={selected} column={column} editable={editable} error={error}
+      value={selected ? valueOf(selected.row, selected.column) : undefined}
+      set={selected ? changedOf(selected.row, selected.column) : undefined}
+      onChange={() => { if (selected && column) startEdit(selected.row, column); }}
+      onOpenRow={() => { if (selected) onOpenRow(selected.row); }} />
+  );
+  return { cell, bar, keys, selected, select };
 }
 
 /** The flat grid: every row of the view in one scroll, read a block at a time as it comes into sight. */
@@ -280,13 +319,14 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   const shown = sheet.columns.filter(c => !hidden.has(c.id));
   const index = Object.fromEntries(rows.columns.map((id, i) => [id, i + 1]));
   const scrollRef = useRef<HTMLDivElement>(null);
-  const frameRef = useRef<HTMLDivElement>(null);
   const total = rows.total ?? 0;
 
   const work = useCellWork({
-    sheet, editable, onEdit, onOpenRow, frame: frameRef,
+    sheet, editable, onEdit, onOpenRow,
     valueOf: (row, column) => rows.rowByNumber(row)?.[index[column]],
-    versionOf: (row, column) => rows.changedOf(row, column)?.version ?? 0,
+    changedOf: (row, column) => rows.changedOf(row, column),
+    versionOf: (row, column) => rows.versionOf(row, column),
+    focus: () => scrollRef.current?.focus({ preventScroll: true }),
   });
 
   const virtualizer = useVirtualizer({
@@ -301,10 +341,32 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   const span = shown.reduce((n, c) => n + width(c), 0) + NUMBER_WIDTH;
   const sight = virtualizer.range;
 
+  /** The arrows: the next row in the view, or the next column shown — scrolled into sight. */
+  const move = (dRow: number, dCol: number) => {
+    const cols = shown.map(c => c.id);
+    if (!cols.length || !total) return;
+    const at = work.selected;
+    const i = at?.index === undefined ? (sight?.startIndex ?? 0) : Math.max(0, Math.min(total - 1, at.index + dRow));
+    const ci = at ? Math.max(0, Math.min(cols.length - 1, cols.indexOf(at.column) + dCol)) : 0;
+    const r = rows.rowAt(i);
+    if (!r) return;
+    work.select({ row: Number(r[0]), column: cols[ci], index: i });
+    virtualizer.scrollToIndex(i, { align: "auto" });
+    const el = scrollRef.current;
+    if (el) {
+      const left = NUMBER_WIDTH + shown.slice(0, ci).reduce((n, c) => n + width(c), 0);
+      const right = left + width(shown[ci]);
+      if (left - NUMBER_WIDTH < el.scrollLeft) el.scrollLeft = left - NUMBER_WIDTH;
+      else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth;
+    }
+  };
+
   return (
-    <div ref={frameRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
-      <div ref={scrollRef} role="grid" aria-label={sheet.name} aria-rowcount={total} onScroll={work.close}
-        style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)" }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {work.bar}
+      <div ref={scrollRef} role="grid" aria-label={sheet.name} aria-rowcount={total} tabIndex={0}
+        onKeyDown={e => work.keys(e, move)}
+        style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
           <GridHeader sheet={sheet} shown={shown} />
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -322,9 +384,8 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
                 <div key={rowNo} role="row" className="aug-fs-sm" style={{ position: "absolute", top: item.start, left: 0,
                   display: "flex", width: span, minWidth: "100%", borderBottom: "1px solid var(--b0)",
                   background: "var(--bg-0)" }}>
-                  <RowNumber row={rowNo} marks={rows.marksOf(rowNo)} rules={sheet.rules}
-                    onOpen={() => { work.close(); onOpenRow(rowNo); }} />
-                  {shown.map(c => work.cell(rowNo, c, r[index[c.id]], !!rows.changedOf(rowNo, c.id)))}
+                  <RowNumber row={rowNo} marks={rows.marksOf(rowNo)} rules={sheet.rules} onOpen={() => onOpenRow(rowNo)} />
+                  {shown.map(c => work.cell(rowNo, c, r[index[c.id]], !!rows.changedOf(rowNo, c.id), item.index))}
                 </div>
               );
             })}
@@ -332,7 +393,6 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
           <GridFoot shown={shown} totals={rows.totals} rows={total} />
         </div>
       </div>
-      {work.pop}
       <div className="aug-fs-xs" style={{ ...MUTED, ...NUM, padding: "4px 12px", borderTop: "1px solid var(--b0)",
         background: "var(--bg-1)" }}>
         Rows {formatCount(total === 0 ? 0 : (sight?.startIndex ?? 0) + 1)}–{formatCount(Math.min(total, (sight?.endIndex ?? 0) + 1))} of{" "}
@@ -342,16 +402,23 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   );
 }
 
-/** A cell's editor: Enter keeps the value, Escape leaves it as it was, and moving away keeps a value that changed. */
-function CellEditor({ column, text, original, saving, onChange, onSave, onCancel }: {
-  column: SheetColumn; text: string; original: string; saving: boolean; onChange: (t: string) => void;
+/** A cell's editor: Enter keeps the value, Escape leaves it as it was, and moving away keeps a value that changed. An
+ *  edit begun by typing keeps the typed character and goes on from it; one begun on purpose selects the value. */
+function CellEditor({ column, text, original, saving, typed, onChange, onSave, onCancel }: {
+  column: SheetColumn; text: string; original: string; saving: boolean; typed: boolean; onChange: (t: string) => void;
   onSave: () => void; onCancel: () => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   // Enter or Escape decides once; the blur that follows (the field is disabled while it saves) must not decide again,
   // or a value would be sent twice and the second refused as stale.
   const decided = useRef(false);
-  useEffect(() => { ref.current?.focus(); ref.current?.select(); }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    if (typed) el.setSelectionRange(el.value.length, el.value.length);
+    else el.select();
+  }, [typed]);
   const decide = (keep: boolean) => {
     if (decided.current) return;
     decided.current = true;
@@ -365,6 +432,7 @@ function CellEditor({ column, text, original, saving, onChange, onSave, onCancel
         aria-label={`New value for ${column.name}`} className="aug-fs-sm"
         onChange={e => onChange(e.target.value)} onBlur={() => decide(text !== original)}
         onKeyDown={e => {
+          e.stopPropagation();
           if (e.key === "Enter") { e.preventDefault(); decide(true); }
           if (e.key === "Escape") { e.preventDefault(); decide(false); }
         }}
@@ -378,57 +446,39 @@ function CellEditor({ column, text, original, saving, onChange, onSave, onCancel
   );
 }
 
-/** A cell's story, under the cell: where its value came from and every change since — and the two things to do next. */
-function CellPop({ sheet, story, error, column, value, editable, at, onChange, onOpenRow, onClose }: {
-  sheet: Sheet; story: CellStory | null; error: string | null; column: SheetColumn; value: unknown; editable: boolean;
-  at: { top: number; left: number }; onChange: () => void; onOpenRow: () => void; onClose: () => void;
+/**
+ * The cell bar, above the grid where a spreadsheet keeps its formula bar: the selected cell's column and row, its value,
+ * and where it came from — a file's row, who set it and when, what it is computed from — with Change and Open row. One
+ * line that is always there, so selecting a cell never moves the grid and nothing opens over the rows.
+ */
+function CellBar({ sheet, selected, column, value, set, editable, error, onChange, onOpenRow }: {
+  sheet: Sheet; selected: Selected | null; column?: SheetColumn; value: unknown;
+  set?: { by: string; at: string; version: number }; editable: boolean; error: string | null;
+  onChange: () => void; onOpenRow: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const empty = value === null || value === undefined || value === "";
   return (
-    <div role="dialog" aria-label={`${column.name}, row ${story?.row ?? ""}`} className="aug-fs-sm"
-      style={{ position: "absolute", top: at.top, left: at.left, zIndex: 10, width: 320, background: "var(--bg-2)",
-        border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "10px 12px", display: "flex",
-        flexDirection: "column", gap: 6, boxShadow: "var(--shadow-md)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span className="aug-fs-xs" style={MUTED}>{column.name} · row {story?.row}</span>
-        <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose} style={{ marginLeft: "auto" }}>
-          <Icon name="close" size={12} />
-        </Button>
-      </div>
-      {error && <span role="alert" style={{ color: "var(--red4)" }}>{error}</span>}
-      {story && (
+    <div role="status" aria-live="polite" aria-label="The selected cell" className="aug-fs-xs" style={{ height: 30,
+      flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "0 12px", minWidth: 0,
+      borderBottom: "1px solid var(--b0)", background: "var(--bg-1)", color: "var(--t3)" }}>
+      {!selected || !column ? (
+        <span style={ELLIPSIS}>Select a cell to see where its value came from · double-click, Enter or type to change it ·
+          the arrows move</span>
+      ) : (
         <>
-          <div>{value === null || value === undefined || value === "" ? <span style={MUTED}>empty</span> : showValue(value, column)}</div>
-          <div className="aug-fs-xs">{story.came_from.replace(/^imported from/, "Imported from")}</div>
-          {story.events.length === 0 ? (
-            <div className="aug-fs-xs" style={MUTED}>Not changed since {column.role === "stored" ? "it was imported" : "it was made"}.</div>
-          ) : (
-            <div className="aug-fs-xs" style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 120, overflowY: "auto" }}>
-              {story.events.map(e => (
-                <Fragment key={`${e.version}-${e.at}`}>
-                  <span>
-                    {e.event === "set"
-                      ? <>Set to <b>{showValue(e.value, column) || "empty"}</b></>
-                      : <>Back to the {sheet.source.kind === "file" ? "file's" : "source's"} value</>}
-                    {" "}by {who(e.by)} · {formatTimestamp(e.at, "short")}
-                    {e.origin.startsWith("proposal:") && " · proposed by the assistant"}
-                    {e.origin.startsWith("undo:") && " · an undo"}
-                    {e.origin === "merge" && " · from a newer file"}
-                  </span>
-                </Fragment>
-              ))}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 6 }}>
+          <span style={{ ...NUM, whiteSpace: "nowrap" }}>{column.name} · row {formatCount(selected.row)}</span>
+          <span className="aug-fs-sm" title={empty ? undefined : String(value)}
+            style={{ ...ELLIPSIS, maxWidth: 360, color: empty ? "var(--t4)" : "var(--t1)", fontWeight: 600 }}>
+            {empty ? "empty" : showValue(value, column) || String(value)}
+          </span>
+          {error ? <span role="alert" style={{ ...ELLIPSIS, color: "var(--red4)" }} title={error}>{error}</span>
+            : <span style={ELLIPSIS} title={cellOrigin(sheet, column, selected.row, set)}>{cellOrigin(sheet, column, selected.row, set)}</span>}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 2, flex: "0 0 auto" }}>
             {editable && column.role === "stored" && (
-              <Button variant="outline" size="xs" onClick={onChange}>{column.kind === "yesno" ? "Switch" : "Change…"}</Button>
+              <Button variant="ghost" size="xs" onClick={onChange}>{column.kind === "yesno" ? "Switch" : "Change"}</Button>
             )}
             <Button variant="ghost" size="xs" onClick={onOpenRow}>Open row</Button>
-          </div>
+          </span>
         </>
       )}
     </div>

@@ -12466,6 +12466,38 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   holding 2,001 — each count equal to the grid's own, 0 differing; the grid grouped by status shows each group's totals
   in R$ on the user's :3000. No view or rule has been kept on the live sheets yet.
 
+**SH-6's first piece, rules in the chat, the board by the keyboard, and the cell bar — built 2026-10-27** (branch
+`claude/sheets-next`; the user, on the three things SH-3 left: *"Lets keep building"*, then of the grid's cell pop-up:
+*"I don't want a pop-up to appear every time I click on a cell.. There has to be a better way"*).
+- **Make a dashboard from a sheet** (`aughor/sheets/dashboard.py`, flag `sheets.everywhere`, off, queued with the receipt
+  below; offered only where `dashboard.composed` and `dashboard.queries` are on). The platform offers what the sheet holds
+  — its rows counted, each money column summed, the rows per value of its choice columns, the rows by month of its first
+  date, a table — each a query card of the person's own on the Sheets connection, run once before it is offered; with a
+  filtered view on screen, every card reads the view's rows. The ticked cards and the dashboard are kept through the
+  dashboards' own doors, and the Dashboards tab opens on it. A card runs its query each time it is read, so it never
+  settles: on the scratch API a row added to the sheet moved the Orders card from 99,441 to 99,442 on its next read.
+- **Rules in the chat's proposals** (SH-4 with SH-3): a rule is a change the chat may propose — on a sheet or a dropped
+  file ("a rule for the rows that need attention", as the arc says) — counted as the grid counts it and applied as the
+  assistant's; refused while rules are off.
+- **A board by the keyboard:** on a card, ← and → move it to the lane beside and Enter opens it; its *Move to* list names
+  every other lane; the focus follows the card to its new lane.
+- **The cell bar replaces the cell pop-up.** A click only selects; one line above the grid, where a spreadsheet keeps
+  its formula bar, says the selected cell's value and where it came from — the file's row, or who set it and when — with
+  *Change* and *Open row*; it is read from what the grid holds, never a request per click. The arrows move, Enter or
+  typing edits, Escape leaves. Nothing opens over the rows, so nothing outlives the next click.
+- **A defect found on the way, since SH-2:** a cell set and then undone could not be changed again from the grid or the
+  board — the page told only the versions of cells holding an edit, so it sent 0 where the cell stood at 2, and the
+  change was refused as stale. Each page now carries every cell's version (`overlay.sheet_versions`).
+- **Proven.** 8 server tests and 10 web tests; the full unit suite 15,584 passed, its one failure (the SQL door census:
+  the proposal counted its rows through the door, undeclared) fixed by counting on the sheet itself, as the grid does;
+  11 guards mutation-tested, 10 killed, the eleventh equivalent (a dropped
+  file's draft and the sheet made from it number their columns alike). On the scratch API over the Olist orders: the five
+  cards offered in 0.3 s, *Paid* R$16,008,872.12 as the grid sums it, the *Open orders* view's count card 1,728 as the
+  board counts it; the dashboard made and opened; a card moved by the keyboard and undone.
+- **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
+  entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
+  — said by the card, not followed.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

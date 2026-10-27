@@ -17,8 +17,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Chip, MUTED, NUM } from "@/components/clarity/kit";
+import { Chip, Dot, MUTED, NUM } from "@/components/clarity/kit";
 import { PartsMessage } from "@/components/chat/PartsMessage";
+import { RULE_COLOR } from "@/components/sheets/SheetGrid";
 import { PANEL, PanelHead } from "@/components/sheets/SheetRecord";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,8 +28,8 @@ import { Input } from "@/components/ui/input";
 import { newSessionId, projectThread } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
-  KIND_LABEL, applyProposal, asksForAChange, propose, proposeNewSheet, readGrounding, stageFile, undo,
-  type Grounding, type Proposal, type ProposeOutcome, type Sheet,
+  KIND_LABEL, RULE_TONES, applyProposal, asksForAChange, propose, proposeNewSheet, readGrounding, stageFile, undo,
+  type Grounding, type Proposal, type ProposeOutcome, type RuleTone, type Sheet,
 } from "@/lib/sheets";
 import { useAughorChat } from "@/lib/useAughorChat";
 
@@ -249,6 +250,12 @@ export function ProposalCard({ proposal, applied, appliedSheet, onApplied, onUnd
           <span>
             {c.said}
             {c.type === "computed_column" && <span className="aug-fs-xs" style={{ ...MUTED, display: "block" }}>computed, no model</span>}
+            {c.type === "rule" && (
+              <span className="aug-fs-xs" style={{ ...MUTED, display: "flex", gap: 5, alignItems: "baseline" }}>
+                <Dot color={RULE_COLOR[RULE_TONES.includes(c.tone as RuleTone) ? c.tone as RuleTone : "amber"]} />
+                marks the rows where {String(c.where ?? "")}
+              </span>
+            )}
           </span>
         </label>
       ))}

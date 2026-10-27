@@ -10,18 +10,20 @@
  * `sheets.views` (SH-3) a view can be a board or a calendar, grouped with its totals, or kept to its maker — and rules mark
  * rows.
  */
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Chip, Dot, MUTED, NUM } from "@/components/clarity/kit";
 import { SheetBoard } from "@/components/sheets/SheetBoard";
 import { SheetCalendar } from "@/components/sheets/SheetCalendar";
 import { SheetChat } from "@/components/sheets/SheetChat";
 import { SheetCombine } from "@/components/sheets/SheetCombine";
+import { SheetDashboard } from "@/components/sheets/SheetDashboard";
 import { RULE_COLOR, SheetGrid, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
 import { SharePop } from "@/components/sheets/SheetsHome";
 import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
+import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { useRowBlocks } from "@/components/sheets/useRowBlocks";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -113,6 +115,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   const [history, setHistory] = useState<{ can_undo: string; can_redo: string } | null>(null);
   const [tick, setTick] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState(false);
   const [narrow, mainRef] = useNarrow();
 
   const readDefinition = useCallback(() => readSheet(sheetId).then(s => {
@@ -223,33 +226,33 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
         })} />
       )}
       {query.kind === "grid" && (
-        <ToolButton narrow={narrow} on={hidden.size > 0} onClick={() => setPop(pop === "fields" ? "" : "fields")} icon="column"
+        <ToolButton expanded={pop === "fields"} narrow={narrow} on={hidden.size > 0} onClick={() => setPop(pop === "fields" ? "" : "fields")} icon="column"
           label={hidden.size ? `Fields · ${hidden.size} hidden` : "Fields"} />
       )}
-      <ToolButton narrow={narrow} on={query.filter.length > 0} onClick={() => setPop(pop === "filter" ? "" : "filter")}
+      <ToolButton expanded={pop === "filter"} narrow={narrow} on={query.filter.length > 0} onClick={() => setPop(pop === "filter" ? "" : "filter")}
         icon="filter" label={query.filter.length ? `Filter · ${query.filter.length}` : "Filter"} />
       {query.kind !== "calendar" && (
-        <ToolButton narrow={narrow} on={query.sort.length > 0} onClick={() => setPop(pop === "sort" ? "" : "sort")}
+        <ToolButton expanded={pop === "sort"} narrow={narrow} on={query.sort.length > 0} onClick={() => setPop(pop === "sort" ? "" : "sort")}
           icon="sliders" label={query.sort.length ? `Sort · ${query.sort.length}` : "Sort"} />
       )}
       {query.kind === "grid" && (
-        <ToolButton narrow={narrow} on={!!query.group} onClick={() => setPop(pop === "group" ? "" : "group")} icon="list"
+        <ToolButton expanded={pop === "group"} narrow={narrow} on={!!query.group} onClick={() => setPop(pop === "group" ? "" : "group")} icon="list"
           label={query.group ? `Group · ${colName(query.group)}` : "Group"} />
       )}
       {query.kind === "board" && (
-        <ToolButton narrow={narrow} on onClick={() => setPop(pop === "lanes" ? "" : "lanes")} icon="column"
+        <ToolButton expanded={pop === "lanes"} narrow={narrow} on onClick={() => setPop(pop === "lanes" ? "" : "lanes")} icon="column"
           label={`Lanes by ${colName(query.group)}`} />
       )}
       {query.kind === "calendar" && (
-        <ToolButton narrow={narrow} on onClick={() => setPop(pop === "by" ? "" : "by")} icon="date"
+        <ToolButton expanded={pop === "by"} narrow={narrow} on onClick={() => setPop(pop === "by" ? "" : "by")} icon="date"
           label={`By ${colName(query.date)}`} />
       )}
       {query.kind !== "grid" && (
-        <ToolButton narrow={narrow} on={query.card.length > 0} onClick={() => setPop(pop === "card" ? "" : "card")}
+        <ToolButton expanded={pop === "card"} narrow={narrow} on={query.card.length > 0} onClick={() => setPop(pop === "card" ? "" : "card")}
           icon="eye" label={query.card.length ? `Card shows ${query.card.length}` : "Card shows"} />
       )}
       {waves.views && (
-        <ToolButton narrow={narrow} on={sheet.rules.length > 0} onClick={() => setPop(pop === "rules" ? "" : "rules")}
+        <ToolButton expanded={pop === "rules"} narrow={narrow} on={sheet.rules.length > 0} onClick={() => setPop(pop === "rules" ? "" : "rules")}
           icon="bookmark" label={sheet.rules.length ? `Rules · ${sheet.rules.length}` : "Rules"} />
       )}
     </>
@@ -285,7 +288,14 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
             {sheet.columns.length} columns
           </span>
           <span style={{ marginLeft: "auto", display: "flex", gap: 6, position: "relative", flex: "0 0 auto" }}>
-            <Button variant="outline" size="sm" onClick={() => setPop(pop === "share" ? "" : "share")}>Share · Workspace</Button>
+            {waves.dashboard && (
+              <Button variant="outline" size="sm" onClick={() => setDashboard(true)}
+                title={view && (view.filter.length || view.search) ? `Cards that read the view ${view.name}` : "Cards that read the sheet"}>
+                <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" aria-expanded={pop === "share"}
+              onClick={() => setPop(pop === "share" ? "" : "share")}>Share · Workspace</Button>
             {pop === "share" && <SharePop name={sheet.name} sheetId={sheet.id} views={sheet.views} me={sheet.me}
               onDone={() => setPop("")} />}
             {waves.combine && (
@@ -322,7 +332,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           </span>
           {waves.grid && (
             <span style={{ position: "relative", flex: "0 0 auto" }}>
-              <Button variant="ghost" size="sm" onClick={() => setPop(pop === "view" ? "" : "view")} style={{ ...MUTED, height: 34 }}>
+              <Button variant="ghost" size="sm" aria-expanded={pop === "view"} onClick={() => setPop(pop === "view" ? "" : "view")}
+                style={{ ...MUTED, height: 34 }}>
                 <Icon name="plus" size={12} /> View
               </Button>
               {pop === "view" && (
@@ -456,6 +467,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           )}
       </div>
 
+      {dashboard && <SheetDashboard sheet={sheet} viewId={query.view} onClose={() => setDashboard(false)} />}
       {panel === "chat" && waves.chat && (
         <SheetChat sheet={sheet} viewId={query.view} viewRows={rows.total} onClose={() => setPanel("")}
           onApplied={() => void changed("Applied")} onOpenSheet={onOpen} onAsk={onAsk}
@@ -481,11 +493,13 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
 }
 
 /** A toolbar button: its icon and its name — the name only on hover where the sheet is narrow. */
-function ToolButton({ on = false, onClick, icon, label, narrow }: {
+function ToolButton({ on = false, onClick, icon, label, narrow, expanded }: {
   on?: boolean; onClick: () => void; icon: IconName; label: string; narrow: boolean;
+  /** Whether the box this button opens is open — said, so a click on it toggles the box rather than closing it twice. */
+  expanded?: boolean;
 }) {
   return (
-    <Button variant={on ? "secondary" : "ghost"} size={narrow ? "icon-sm" : "sm"} onClick={onClick}
+    <Button variant={on ? "secondary" : "ghost"} size={narrow ? "icon-sm" : "sm"} onClick={onClick} aria-expanded={expanded}
       aria-label={narrow ? label : undefined} title={narrow ? label : undefined} style={{ flex: "0 0 auto" }}>
       <Icon name={icon} />{narrow ? null : ` ${label}`}
     </Button>
@@ -495,13 +509,10 @@ function ToolButton({ on = false, onClick, icon, label, narrow }: {
 export function Popover({ children, onClose, left = 0, width = 360 }: {
   children: ReactNode; onClose: () => void; left?: number; width?: number;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const ref = useRef<HTMLDivElement>(null);
+  useCloseOutside(ref, onClose);
   return (
-    <div role="dialog" className="aug-fs-sm" style={{ position: "absolute", top: "100%", left, zIndex: 30, width,
+    <div ref={ref} role="dialog" className="aug-fs-sm" style={{ position: "absolute", top: "100%", left, zIndex: 30, width,
       background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
       padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, boxShadow: "var(--shadow-md)" }}>
       {children}

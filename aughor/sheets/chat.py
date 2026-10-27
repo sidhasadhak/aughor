@@ -31,7 +31,7 @@ from sqlglot import exp
 
 from aughor.sheets import imports, kinds, model, projection, service
 from aughor.sheets.imports import ident
-from aughor.sheets.model import Column, Condition, Sheet, View
+from aughor.sheets.model import Column, Condition, Rule, Sheet, View
 
 #: The ledger's kind for a staged proposal.
 PROPOSAL_KIND = "sheet_proposal"
@@ -42,7 +42,7 @@ MAX_WORDS = 600
 #: A proposal holds at most this many changes.
 MAX_CHANGES = 6
 
-CHANGE_TYPES = ("view", "computed_column", "column", "link", "total")
+CHANGE_TYPES = ("view", "computed_column", "column", "link", "total", "rule")
 
 
 # ── grounding ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -212,8 +212,7 @@ def check_change(sheet: Sheet, change: dict, cur) -> dict:
     """One proposed change, checked and counted against the sheet: what the person will read about it."""
     kind = str(change.get("type") or "")
     if kind not in CHANGE_TYPES:
-        raise ChangeRefused(f"{kind!r} is not a change; the changes are {', '.join(CHANGE_TYPES)} (rows marked by a "
-                            "rule come later — propose a view instead)")
+        raise ChangeRefused(f"{kind!r} is not a change; the changes are {', '.join(CHANGE_TYPES)}")
     name = " ".join(str(change.get("name") or "").split())[:80]
     if kind == "view":
         conds = _conditions(sheet, change.get("filter") or [])
@@ -263,6 +262,8 @@ def check_change(sheet: Sheet, change: dict, cur) -> dict:
                 "description": str(change.get("description") or "")[:300],
                 "said": f"Column {name} — {kinds.LABELS[col_kind]}, empty, for people to fill"}
     from aughor import sheets
+    if kind == "rule":
+        return _check_rule(sheet, change, name, cur)
     if not sheets.on(sheets.COMBINE):
         raise ChangeRefused("combining sheets is off here, so a link or a total cannot be proposed")
     from aughor.sheets import combine
@@ -294,6 +295,32 @@ def check_change(sheet: Sheet, change: dict, cur) -> dict:
         "rows_with": seen["rows_with"], "rows_without": seen["rows_without"],
         "said": f"Column {name or how} — the {how} of {other.name} per row; {seen['rows_with']:,} rows have some, "
                 f"{seen['rows_without']:,} have none and show empty"}
+
+
+def _check_rule(sheet: Sheet, change: dict, name: str, cur) -> dict:
+    """A rule (SH-3) — a name and conditions as a view's filter writes them — counted as the grid counts the rows it
+    marks: a row its conditions cannot read (an empty date) is not marked."""
+    from aughor import sheets
+    from aughor.sheets.views import TONES, ViewRefused, check_rule
+    if not sheets.on(sheets.VIEWS):
+        raise ChangeRefused("rules are off here, so no row can be marked; propose a view instead")
+    conds = _conditions(sheet, change.get("conditions") or change.get("filter") or [])
+    try:
+        check_rule(sheet, conds)
+        where, params = projection.where_sql(sheet, conds)
+    except (ViewRefused, projection.FilterRefused) as exc:
+        raise ChangeRefused(str(exc)) from None
+    if not name:
+        raise ChangeRefused("a rule needs a name — what the rows it marks have in common")
+    if any(r.name.lower() == name.lower() for r in sheet.rules):
+        raise ChangeRefused(f"{sheet.name} already has a rule called {name}")
+    tone = str(change.get("tone") or "amber")
+    if tone not in TONES:
+        raise ChangeRefused(f"{tone!r} is not a mark's colour; it is one of {', '.join(TONES)}")
+    rows = int(cur.execute(f"SELECT COUNT(*) FROM {ident(sheet.table)} WHERE COALESCE(({where}), FALSE)",
+                           params).fetchone()[0])
+    return {"type": "rule", "name": name, "conditions": [c.model_dump() for c in conds], "tone": tone, "rows": rows,
+            "where": where_text(sheet, conds), "said": f"Rule {name} — marks {rows:,} rows"}
 
 
 def _named_sheet(ref: str) -> Sheet:
@@ -351,6 +378,8 @@ SYSTEM = (
     "for a date, compare by day and use a date from the data, not today, when the data is old), a column (a name and "
     "a kind, empty, for people to fill — Yes/No is yesno), a link (this sheet's column to another sheet's key, and the "
     "columns to bring), or a total (another sheet's rows per key: sum, count, average, min, max, earliest, latest). "
+    "A rule marks the rows that need attention: a name and conditions written as a view's filter is; it is "
+    "proposed only when rules are on. "
     "Filter ops are is, is_not, in, not_in, contains, gt, gte, lt, lte, before, after, empty, not_empty. The platform "
     "checks and counts every change before the person sees it; state no figure yourself. When a change is refused, "
     "repair it and propose again. When the proposal is staged, stop."
@@ -409,7 +438,7 @@ def _tool(sheet: Sheet, words: str, by: str, staged: list) -> Any:
     return ToolSpec(
         name="propose_sheet_changes",
         description=("Propose changes to the sheet on screen. op options: its columns, views and the other sheets. "
-                     "op propose: changes, a list of {type: view|computed_column|column|link|total, ...}; each is "
+                     "op propose: changes, a list of {type: view|computed_column|column|link|total|rule, ...}; each is "
                      "checked and counted by the platform before the person sees it, and nothing changes until they "
                      "apply it."),
         parameters={"type": "object", "properties": {
@@ -508,6 +537,9 @@ def _as_request(sheet: Sheet, ch: dict) -> dict:
     if ch["type"] == "total":
         return {"type": "total", "name": ch["name"], "by_column": ch["by_column"], "other": ch["other"],
                 "other_key": ch["other_key"], "how": ch["how"], "of": ch["of"]}
+    if ch["type"] == "rule":
+        return {"type": "rule", "name": ch["name"], "tone": ch["tone"],
+                "conditions": [{"column": c["column"], "op": c["op"], "value": c.get("value")} for c in ch["conditions"]]}
     return dict(ch)
 
 
@@ -553,6 +585,12 @@ def _apply_one(sheet: Sheet, ch: dict) -> None:
                                     key=ch["other_key"], by=ch["by_column"], how=ch["how"], of=ch["of"],
                                     made_by="the assistant",
                                     description=f"the {ch['how']} of {other.name} rows per row"))
+    elif t == "rule":
+        name, n = ch["name"], 2
+        while any(r.name.lower() == name.lower() for r in sheet.rules):
+            name, n = f"{ch['name']} {n}", n + 1
+        sheet.rules.append(Rule(id=uuid.uuid4().hex[:8], name=name, tone=ch["tone"], made_by="the assistant",
+                                conditions=[Condition(**c) for c in ch["conditions"]]))
 
 
 # ── a sheet from a file dropped into the chat ────────────────────────────────────────────────────────────────────────
@@ -619,8 +657,8 @@ def propose_new_sheet(token: str, words: str, *, by: str, upload: Optional[dict]
         if provider is not None:
             spec = ToolSpec(name="propose_sheet", description=(
                 "Propose the sheet a dropped file becomes. op options: its columns, their kinds and values. op "
-                "propose: a name and changes — views, computed columns, columns for people to fill — each checked and "
-                "counted on the file's rows before the person sees it."),
+                "propose: a name and changes — views, computed columns, columns for people to fill, a rule for the rows "
+                "that need attention — each checked and counted on the file's rows before the person sees it."),
                 parameters={"type": "object", "properties": {
                     "op": {"type": "string", "enum": ["options", "propose"]}, "name": {"type": "string"},
                     "changes": {"type": "array", "items": {"type": "object"}}}, "required": ["op"]},
@@ -639,7 +677,8 @@ SYSTEM_NEW = (
     "A person dropped a file to become a sheet, and said what it is for. Call propose_sheet with op options first, then "
     "ONCE with op propose: a short name for the sheet in their words, and a few changes that serve what they said — "
     "views (a name, a filter of {column, op, value}, a sort), a computed_column (a DuckDB expression over the "
-    "columns, each name in double quotes), a column for people to fill (Yes/No is yesno). The kinds are already read "
+    "columns, each name in double quotes), a column for people to fill (Yes/No is yesno), and a rule for the rows "
+    "that need attention (a name and conditions written as a filter is; only when rules are on). The kinds are already read "
     "from the file; never change them. State no figure; the platform counts every change. Repair what is refused."
 )
 
@@ -683,8 +722,10 @@ def apply_new_sheet(p: dict, picks: Optional[list[int]], *, by: str) -> dict:
 def _as_request_new(sheet: Sheet, ch: dict) -> dict:
     """A change checked against the proposed table, re-addressed to the sheet as made (column ids differ)."""
     req = _as_request(sheet, ch)
+    draft_ids = {f"c{i + 1}": c.name for i, c in enumerate(sheet.columns)}
+    if ch["type"] == "rule":
+        req["conditions"] = [{**c, "column": draft_ids.get(c["column"], c["column"])} for c in req["conditions"]]
     if ch["type"] == "view":
-        draft_ids = {f"c{i + 1}": c.name for i, c in enumerate(sheet.columns)}
         req["filter"] = [{**c, "column": draft_ids.get(c["column"], c["column"])} for c in req["filter"]]
         req["sort"] = [{**s, "column": draft_ids.get(s["column"], s["column"])} for s in req["sort"]]
         req["hidden"] = [draft_ids.get(h, h) for h in req["hidden"]]

@@ -23,7 +23,9 @@ combining, the Spreadsheets home, a sheet made by the chat, the AI column, total
 SV's SV-1 and SV-2 first (§3.63). The user: *"The ten-screen Spreadsheets mockup looks right — take the ten calls as
 recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap."* PENDING 66. **SH-1, SH-2, SH-4 and SH-7 built
 2026-10-27** behind their flags, all off (ROADMAP §3.64 "built"). **SH-3 built 2026-10-27** behind `sheets.views`, off,
-with the built screens brought to this mockup (ROADMAP §3.64 "SH-3, built"); SH-5, SH-6 and SH-8 are not.
+with the built screens brought to this mockup (ROADMAP §3.64 "SH-3, built"). **SH-6's first piece built 2026-10-27** —
+*Make a dashboard from this sheet*, behind `sheets.everywhere`, off — with the chat proposing rules and the board moved by
+the keyboard; the rest of SH-6, SH-5 and SH-8 are not.
 
 **The mockup.** `design-mockups/spreadsheets.html`, ten screens. Every row is the uploaded Olist files in the Workspace
 connection: orders, customers, payments and reviews. They were read with the reader the upload door uses

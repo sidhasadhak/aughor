@@ -156,6 +156,7 @@ FLAG_ENV = {
     "sheets.chat": "AUGHOR_SHEETS_CHAT",
     "sheets.combine": "AUGHOR_SHEETS_COMBINE",
     "sheets.views": "AUGHOR_SHEETS_VIEWS",
+    "sheets.everywhere": "AUGHOR_SHEETS_EVERYWHERE",
     # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
@@ -1189,6 +1190,15 @@ FLAG_META = {
         "description": "Moving a card on a board is an edit, kept with who and when. A view you keep to yourself "
                        "is seen by you only. Off: views are grids, shared with everyone.",
     },
+    "sheets.everywhere": {
+        "label": "Dashboards made from sheets",
+        "summary": "Make a dashboard from a sheet or the view on screen. Each card is a query on the sheet, so it "
+                   "follows every edit.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Cards read the sheet live"}],
+        "description": "The cards offered are counted on the sheet first, and you keep the ones you tick. It needs "
+                       "dashboards and their own queries on. Off: a sheet has no Make a dashboard.",
+    },
     "packs.installed_versions": {
         "label": "Record each pack's installed version",
         "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
@@ -1834,6 +1844,11 @@ GRADUATION_QUEUE: dict = {
                     "calendar, and marked by a rule; a card moved on the board reads back as an edit. Falsifier: a "
                     "group's, a lane's, a day's or a rule's count differs from the grid's count of the same rows "
                     "stops it",
+    # Arc SH, SH-6 (ROADMAP §3.64), queued 2026-10-27 — its first piece, a dashboard made from a sheet. No model call.
+    "sheets.everywhere": "receipt: on the live install, a dashboard made from a sheet shows the counts and sums the grid "
+                         "shows, and a cell edited in the sheet moves the card that reads it on the next read. "
+                         "Falsifier: a card that differs from the grid's own total of the same rows, or that still "
+                         "shows the value before an edit, stops it",
     # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
     "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
                                 "what was added, changed and removed, marks a declined term with the version it was "

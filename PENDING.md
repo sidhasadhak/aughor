@@ -882,3 +882,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     the Olist orders; a new view from the grid was refused (no id) and is fixed. SH-5, SH-6, SH-8 not built.
     **LIVE 2026-10-27**: live checkout at `3f5e117a`, `sheets.views` on (57 flags); on the live Olist orders every group,
     lane and day count equals the grid's (1,729 open orders, 2,001 due in September 2018) — no view or rule kept yet.
+    ✅ **SH-6's first piece, chat rules, board keys, the cell bar BUILT 2026-10-27** (branch `claude/sheets-next`): *Make a
+    dashboard* from a sheet or a view (`sheets.everywhere`, off; query cards that read the sheet live), rules proposed
+    by the chat, cards moved by ← → and *Move to*, and a cell bar in place of the cell pop-up (the user: *"There has to
+    be a better way"*). A cell undone since SH-2 could not be changed again (the page sent version 0) — fixed. Not live.

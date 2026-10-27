@@ -10,13 +10,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { readRows, type Changed, type ColumnTotals, type RowsQuery } from "@/lib/sheets";
+import { readRows, type Changed, type ColumnTotals, type RowsQuery, type Versions } from "@/lib/sheets";
 
 export const BLOCK = 200;
 /** The most blocks kept read at once; the farthest from sight go first. */
 const KEEP = 12;
 
-interface Block { rows: unknown[][]; changed: Changed; marks: Record<string, string[]> }
+interface Block { rows: unknown[][]; changed: Changed; versions: Versions; marks: Record<string, string[]> }
 
 export interface RowBlocks {
   /** null until the first block of this reading lands. */
@@ -27,6 +27,8 @@ export interface RowBlocks {
   rowAt: (index: number) => unknown[] | undefined;
   rowByNumber: (row: number) => unknown[] | undefined;
   changedOf: (row: number, column: string) => { by: string; at: string; version: number } | undefined;
+  /** The version a change to a cell must name — 0 for one never set. */
+  versionOf: (row: number, column: string) => number;
   marksOf: (row: number) => string[];
   /** The rows in sight — the blocks holding them are read if they are not. */
   onVisible: (first: number, last: number) => void;
@@ -56,7 +58,7 @@ export function useRowBlocks(sheetId: string, query: RowsQuery | null, tick: num
         setHead({ total: p.total, totals: p.totals, columns: p.columns });
         setFailed(null);
         setBlocks(old => {
-          const next = { ...old, [b]: { rows: p.rows, changed: p.changed, marks: p.marks ?? {} } };
+          const next = { ...old, [b]: { rows: p.rows, changed: p.changed, versions: p.versions ?? {}, marks: p.marks ?? {} } };
           const kept = Object.keys(next).map(Number);
           if (kept.length <= KEEP) return next;
           const mid = Math.floor((sight.current[0] + sight.current[1]) / 2 / BLOCK);
@@ -131,6 +133,13 @@ export function useRowBlocks(sheetId: string, query: RowsQuery | null, tick: num
           if (c) return c;
         }
         return undefined;
+      },
+      versionOf: (row, column) => {
+        for (const b of each) {
+          const v = b.versions[String(row)]?.[column] ?? b.changed[String(row)]?.[column]?.version;
+          if (v !== undefined) return v;
+        }
+        return 0;
       },
       marksOf: row => {
         for (const b of each) {

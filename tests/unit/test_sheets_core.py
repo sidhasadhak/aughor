@@ -334,3 +334,28 @@ def test_a_sheets_own_values_are_never_merged_onto_a_query_as_annotations(env):
     result = SheetsConnection().execute("t", f"SELECT _row, order_status AS {cid} FROM {sheet.table} ORDER BY _row LIMIT 2")
     apply_overlay(result, "sheets")
     assert result.annotations == [] and result.rows[0] == ["1", "shipped"]
+
+
+def test_a_cell_an_undo_put_back_is_changed_again_at_the_version_its_page_reads(env):
+    """A cell set and then undone holds no edit but keeps its version: the page says that version, a change made at it
+    is kept, and one made at 0 — what a page that knew only the cells holding an edit sent — is refused as stale."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from aughor.routers import sheets as sheets_router
+    from aughor.sheets import model, service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    service.set_cells(sheet, [{"row": 3, "column": status, "value": "delivered", "version": 0}], by="user:ana")
+    service.undo(model.get(sheet.id), by="user:ana")
+    app = FastAPI()
+    app.include_router(sheets_router.router)
+    page = TestClient(app).get(f"/sheets/{sheet.id}/rows").json()
+    assert "3" not in page["changed"]                                  # the source's value stands again
+    assert page["versions"]["3"][status] == 2                          # set, then put back
+    with pytest.raises(service.Conflict, match="read at version 0"):
+        service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 0}],
+                          by="user:ana")
+    service.set_cells(model.get(sheet.id), [{"row": 3, "column": status, "value": "canceled", "version": 2}],
+                      by="user:ana")
+    assert _cell(model.get(sheet.id), 3, "order_status") == "canceled"

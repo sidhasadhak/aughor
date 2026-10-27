@@ -20,7 +20,7 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount } from "@/lib/format";
 import {
   readGroups, readRows, rowsWord, totalWords, valueCondition, type Changed, type GroupsPage, type RowsQuery, type Sheet,
-  type SheetColumn,
+  type SheetColumn, type Versions,
 } from "@/lib/sheets";
 
 /** Rows read at a time when a group is opened further. */
@@ -38,7 +38,8 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   const [page, setPage] = useState<GroupsPage | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const [more, setMore] = useState<Record<string, { rows: unknown[][]; changed: Changed; marks: Record<string, string[]> }>>({});
+  const [more, setMore] = useState<Record<string, { rows: unknown[][]; changed: Changed; versions: Versions;
+    marks: Record<string, string[]> }>>({});
   const frameRef = useRef<HTMLDivElement>(null);
   const qKey = JSON.stringify(query);
 
@@ -63,6 +64,9 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
     ...(more[keyOf(value)]?.rows ?? [])];
   const changedOf = (row: number, column: string) =>
     page?.changed[String(row)]?.[column] ?? Object.values(more).find(m => m.changed[String(row)]?.[column])?.changed[String(row)][column];
+  const versionOf = (row: number, column: string) => page?.versions?.[String(row)]?.[column]
+    ?? Object.values(more).find(m => m.versions[String(row)]?.[column] !== undefined)?.versions[String(row)][column]
+    ?? changedOf(row, column)?.version ?? 0;
   const marksOf = (row: number) => page?.marks?.[String(row)] ?? Object.values(more).find(m => m.marks[String(row)])?.marks[String(row)] ?? [];
   const rowByNumber = (row: number) => {
     for (const g of page?.groups ?? []) {
@@ -73,9 +77,11 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   };
 
   const work = useCellWork({
-    sheet, editable, onEdit, onOpenRow, frame: frameRef,
+    sheet, editable, onEdit, onOpenRow,
     valueOf: (row, column) => rowByNumber(row)?.[index[column]],
-    versionOf: (row, column) => changedOf(row, column)?.version ?? 0,
+    changedOf,
+    versionOf,
+    focus: () => frameRef.current?.focus({ preventScroll: true }),
   });
 
   if (failed) return <ReadFailed what="the groups" error={failed} onRetry={read} />;
@@ -87,9 +93,9 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
       offset: have, limit: MORE })
       .then(p => setMore(m => {
         const k = keyOf(value);
-        const was = m[k] ?? { rows: [], changed: {}, marks: {} };
+        const was = m[k] ?? { rows: [], changed: {}, versions: {}, marks: {} };
         return { ...m, [k]: { rows: [...was.rows, ...p.rows], changed: { ...was.changed, ...p.changed },
-          marks: { ...was.marks, ...(p.marks ?? {}) } } };
+          versions: { ...was.versions, ...(p.versions ?? {}) }, marks: { ...was.marks, ...(p.marks ?? {}) } } };
       }))
       .catch(e => setFailed(e instanceof Error ? e.message : String(e)));
   };
@@ -101,9 +107,11 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   const span = shown.reduce((n, c) => n + width(c), 0) + NUMBER_WIDTH;
 
   return (
-    <div ref={frameRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
-      <div role="grid" aria-label={`${sheet.name}, grouped by ${gcol.name}`} onScroll={work.close}
-        style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)" }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {work.bar}
+      <div ref={frameRef} role="grid" aria-label={`${sheet.name}, grouped by ${gcol.name}`} tabIndex={0}
+        onKeyDown={e => work.keys(e)}
+        style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
           <GridHeader sheet={sheet} shown={shown} />
           {page.groups.map(g => {
@@ -139,8 +147,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
                   return (
                     <div key={rowNo} role="row" className="aug-fs-sm" style={{ display: "flex", width: span,
                       minWidth: "100%", borderBottom: "1px solid var(--b0)" }}>
-                      <RowNumber row={rowNo} marks={marksOf(rowNo)} rules={sheet.rules}
-                        onOpen={() => { work.close(); onOpenRow(rowNo); }} />
+                      <RowNumber row={rowNo} marks={marksOf(rowNo)} rules={sheet.rules} onOpen={() => onOpenRow(rowNo)} />
                       {shown.map(c => work.cell(rowNo, c, r[index[c.id]], !!changedOf(rowNo, c.id)))}
                     </div>
                   );
@@ -159,7 +166,6 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
           <GridFoot shown={shown} totals={page.totals} rows={page.total} />
         </div>
       </div>
-      {work.pop}
       <div className="aug-fs-xs" style={{ ...MUTED, ...NUM, padding: "4px 12px", borderTop: "1px solid var(--b0)",
         background: "var(--bg-1)" }}>
         {rowsWord(page.total, sheet.name)} in {formatCount(page.groups_total)} group{page.groups_total === 1 ? "" : "s"} ·

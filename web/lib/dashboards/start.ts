@@ -11,7 +11,7 @@
  */
 import { keepDashboard, type DashboardFromObject } from "@/lib/api";
 import { CHART_DAYS, MAX_LABEL, MAX_TITLE } from "@/lib/dashboards/catalog";
-import { placeNote, placePiece } from "@/lib/dashboards/edit";
+import { placeCard, placeNote, placePiece, type DashboardSpec } from "@/lib/dashboards/edit";
 import type { ProcessDetail } from "@/lib/objectTypes";
 import { dashboardIdFor } from "@/lib/processDraft";
 
@@ -20,6 +20,18 @@ function base(title: string): unknown {
     cockpit: { type: "Cockpit", props: { title }, children: ["sec"] },
     sec: { type: "Section", props: { title, columns: 3 }, children: [] },
   } };
+}
+
+/** A dashboard of cards already kept, in the order given, each at its size — one made from a sheet (Arc SH, SH-6). */
+export function cardsDashboardSpec(title: string, cards: { card: string; size: string }[]): DashboardSpec {
+  let spec = base(title.trim().slice(0, MAX_TITLE)) as DashboardSpec;
+  for (const c of cards) {
+    spec = placeCard(spec, c.card);
+    const section = Object.values(spec.elements).find(e => e.type === "Section");
+    const key = section?.children[section.children.length - 1];
+    if (key && spec.elements[key]) spec.elements[key].props = { ...spec.elements[key].props, size: c.size };
+  }
+  return spec;
 }
 
 /** A dashboard holding one note in the person's words — what it is for. */
