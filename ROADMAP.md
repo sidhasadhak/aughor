@@ -12735,7 +12735,10 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
 - **The rail row, mocked to fit** (`design-mockups/rail-fit.html`): the live rail measured at 1440×900 hides 52 px
   under its footer (Evals and half of Security & Audit); the proposal keeps every row 28 px and tightens only the groups
   (8/10 → 4/6 px, a heading 28 → 24 px) and puts the version beside Settings — every row in view, about 15 px to spare.
-  **Waiting on the user's reaction; nothing built.**
+  ✅ **Built the same day as mocked** (the user: *"The rail mockup looks right — build it as mocked"*; `globals.css`,
+  `app/page.tsx`). Measured in a browser on this branch's web against the live API, read only: at 1440×900 all 21 rows
+  in view, headings 24 px, the footer one 47 px line, 16 px to spare; at 1280×800 the list scrolls by 84 px (it scrolled
+  by 152). Collapsed, the version hides and Settings' icon sits centred. Not live — the live checkout does not hold it.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -15199,6 +15202,7 @@ the browser** · **measure the premise before building.**
       - **(6) The chat proposes and a person applies,** every time.
       - **(7) The rail row:** "Spreadsheets" in the Data group, measured to fit at 1440×900 first. If it does not fit,
         Sheets is a tab of the Catalog.
+        ✅ *2026-10-28:* it did not fit (52 px under the footer); the rail made to fit instead, mocked and built (§3.64).
       - **(8) Sharing:** the workspace in the first version, said on the Share button.
       - **(9) Backups first:** SH-1 waits for SV-1 and SV-2.
       - **(10) Comments on a record** are said claims in the Record, readable by whoever can read the row.

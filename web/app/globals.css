@@ -225,12 +225,14 @@ a:hover { color: var(--blue4); }
   position: relative;
   z-index: 60;
 }
-.aug-nav-section { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-bottom: 1px solid var(--b0); }
+/* Groups and their headings are as tight as every row in view at 1440×900 needs (design-mockups/rail-fit.html):
+   the rows keep their 28px on a 30px pitch, only the space around each group and its heading gave way. */
+.aug-nav-section { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 6px; border-bottom: 1px solid var(--b0); }
 .aug-nav-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px 4px;
+  padding: 4px 14px 2px;
   font-size: 12px;
   font-weight: 600;
   color: var(--t3);
@@ -292,6 +294,9 @@ a:hover { color: var(--blue4); }
    word about the furniture. The button keeps its aria-label and its tooltip. */
 .aug-nav-head .aug-nav-label { display: none; }
 .aug-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-top: 1px solid var(--b1); }
+/* Settings and the version on one line — the version said beside the row, not under it. */
+.aug-nav-foot-row { display: flex; align-items: center; }
+.aug-nav-foot-row .aug-nav-item { flex: 1; width: auto; min-width: 0; }
 
 /* Collapsed — the toggle at the rail's foot, or ⌘\ (lib/navCollapse.ts): a column of icons. The state
    is an attribute on <html>, set before the first paint, so the rail never renders open and snaps shut.

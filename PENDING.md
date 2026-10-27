@@ -928,4 +928,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     **LIVE 2026-10-28** at `c8b8b617`, on: *Complaint topic* on Olist reviews filled for the newest 200 low-score
     reviews with a comment — 195 filled, 8 calls on claude-haiku-5-5, about $0.004 said first (§3.64). Open: the rest of
     SH-6 (the breakdown piece is built, off — item 64; the Briefing over sheets is not); a standing yes for new rows;
-    the rail row — mocked to fit (`design-mockups/rail-fit.html`), waiting on the user's reaction.
+    ~~the rail row~~ — ✅ made to fit, mocked (`design-mockups/rail-fit.html`) and built 2026-10-28 at the user's word:
+    every row in view at 1440×900, 16 px to spare (ROADMAP §3.64).
