@@ -12738,7 +12738,9 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
   ✅ **Built the same day as mocked** (the user: *"The rail mockup looks right — build it as mocked"*; `globals.css`,
   `app/page.tsx`). Measured in a browser on this branch's web against the live API, read only: at 1440×900 all 21 rows
   in view, headings 24 px, the footer one 47 px line, 16 px to spare; at 1280×800 the list scrolls by 84 px (it scrolled
-  by 152). Collapsed, the version hides and Settings' icon sits centred. Not live — the live checkout does not hold it.
+  by 152). Collapsed, the version hides and Settings' icon sits centred. **LIVE 2026-10-28** at `d6a8032e` (the API
+  restarted with its twelve settings; :3000 restarted with `web/.next` cleared, as its cached stylesheet kept the old
+  rules): measured on :3000 the same — 21 rows, 16 px to spare.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
