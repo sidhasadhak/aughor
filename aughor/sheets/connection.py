@@ -10,7 +10,8 @@ would be handed to the next request whatever its organisation.
 
 A sheet shared with chosen people (SH-8) is read here only by them: a statement reading one not shared with the person
 it runs for is refused, saying so and who to ask, before the engine runs it; and the schema a model is handed carries no
-sample values of such a sheet, for anyone (``sharing.py``).
+sample values of such a sheet, for anyone (``sharing.py``). No profile or ontology is built over it at all
+(`build_intelligence`).
 """
 from __future__ import annotations
 
@@ -45,6 +46,15 @@ class SheetsConnection(DuckDBConnection):
     def get_schema(self) -> str:
         from aughor.sheets.sharing import without_samples
         return without_samples(super().get_schema())
+
+    def build_intelligence(self) -> str:
+        """The fast schema, and nothing heavier. A sheet is live and each person's to read or not: value profiles and an
+        ontology built over its rows would be stale after the next edit, and would carry a sheet shared with chosen
+        people to everyone who reads them (SH-8). Nothing had been built over this connection on the live install
+        (2026-10-28); this keeps it so."""
+        self.last_build = {"ok": True, "stage": "skipped",
+                           "why": "a sheet's rows are read at its door; no profile or ontology is built over them"}
+        return self.get_schema()
 
     def ibis_connection(self):
         """None: the projection is open read-write in this process, and a second, read-only open of the file is

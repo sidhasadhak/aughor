@@ -391,3 +391,46 @@ def test_the_result_cache_never_keeps_or_serves_a_sheets_rows(env, monkeypatch):
     assert matcache.get_cached("sheets", "SELECT COUNT(*) FROM olist_orders", variant="w") is None
     matcache.put_cache("workspace", "SELECT COUNT(*) FROM olist_orders", rows, variant="v")
     assert matcache.get_cached("workspace", "SELECT COUNT(*) FROM olist_orders", variant="v").rows == [["3"]]
+
+
+def test_a_stale_version_on_a_cell_nobody_changed_never_names_someone(env):
+    """Found on the live receipt 2026-10-28: a version the cell never had, on a cell with no change on record, was said as
+    "Someone changed order_status…" — a change that never happened."""
+    from aughor.sheets import service
+    sheet = _make(env)
+    status = sheet.column("order_status").id
+    with pytest.raises(service.Conflict) as refused:
+        service.set_cells(sheet, [{"row": 1, "column": status, "value": "x", "version": 99}], by="user:cy")
+    said = str(refused.value)
+    assert said.startswith("Nobody has changed order_status in row 1, and this page sent a version it never had, so "
+                           "your change was not made.")
+    assert "Someone" not in said
+
+
+def test_no_profile_or_ontology_is_built_over_the_sheets(env, monkeypatch):
+    """The heavy pass writes value profiles everyone reads: over sheets it would carry a chosen sheet's values to people
+    it was not shared with, stale after the next edit. The Sheets connection hands back its fast schema instead."""
+    from aughor.db.schema_render import SAMPLE_MARK
+    from aughor.kernel.registries import schema_annotators
+    from aughor.sheets.connection import SheetsConnection
+    sheet = _make(env)
+    _share(sheet, BO_READS_CY_EDITS)
+    real = schema_annotators.run_annotators
+
+    def no_heavy(db, base, phase="fast"):
+        assert phase != "heavy", "the heavy pass ran over the Sheets connection"
+        return real(db, base, phase=phase)
+    monkeypatch.setattr(schema_annotators, "run_annotators", no_heavy)
+    db = SheetsConnection()
+    built = db.build_intelligence()
+    assert db.last_build["stage"] == "skipped"
+    lines = built.splitlines()
+    start = next(i for i, line in enumerate(lines)
+                 if line.startswith("TABLE:") and line.split()[1].split(".")[-1] == sheet.table)
+    block = []
+    for line in lines[start + 1:]:
+        if line.startswith("TABLE:"):
+            break
+        block.append(line)
+    assert any("order_status" in line for line in block)                    # its columns are told
+    assert not any(SAMPLE_MARK in line for line in block)                    # its values are not

@@ -287,16 +287,20 @@ def stale_words(sheet: Sheet, exc: EditConflict, by: str, *, undoing: bool = Fal
     if exc.at:
         day, _, clock = exc.at.replace("T", " ").partition(" ")
         when = f" at {clock[:5]} UTC" + ("" if day == model.now()[:10] else f" on {day}")
+    if not exc.by:
+        # no change to the cell on record: the version this page sent is not one the cell has had — never "someone"
+        return (f"Nobody has changed {cell}, and this page sent a version it never had, so "
+                f"{'this cannot be undone over it' if undoing else 'your change was not made'}. The grid now shows it "
+                "as it stands; change it again if you still mean to.")
     if undoing:
-        who = "You" if exc.by and exc.by == by else (person_name(exc.by) if exc.by else "Someone")
+        who = "You" if exc.by == by else person_name(exc.by)
         return f"{who} changed {cell}{when} since, so this cannot be undone over it; change the cell instead."
-    if exc.by and exc.by == by:
+    if exc.by == by:
         return (f"You changed {cell}{when}, after this page read it, so this change was not made. The grid now shows "
                 "that value; change it again if you still mean to.")
-    who = person_name(exc.by) if exc.by else "Someone"
-    theirs = f"{who}'s" if exc.by else "their"
+    who = person_name(exc.by)
     return (f"{who} changed {cell}{when}, after you read it, so your change was not made. The grid now shows "
-            f"{theirs} value; change it again if you still mean to.")
+            f"{who}'s value; change it again if you still mean to.")
 
 
 def _cells_after(sheet: Sheet, written: list[dict]) -> list[dict]:
