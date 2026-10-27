@@ -12500,6 +12500,18 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   `sheets.everywhere` turned on (58 flags). On the live Olist orders, read only: the five cards offered in 0.26 s, *Paid*
   R$16,008,872.12 as the grid sums it; on the user's :3000 a click selects with the cell bar saying the cell's origin,
   and *Make a dashboard* opens on the sheet. No dashboard has been made on the live install yet.
+- **The grid as a spreadsheet reads, 2026-10-27** (`b7b12c0a`, from the user's five points on the live grid): lines
+  between the rows (each cell draws its own — a placed row painted over the line of the row before it), one selected cell
+  drawn by its border alone and a Shift range drawn filled, counted and — where every column holds numbers — summed by
+  the cell bar, Cmd or Ctrl+C copying it (and saying *Not copied* when the browser refuses, the toolbar's copy too), a
+  click on a column's name sorting ascending → descending → the sheet's order, and an × on the open view's tab taking
+  it off with Undo (never the last shared view). Proven on the scratch API: four Paid cells summed 431.49 as their
+  values add; the sort cycle 0.00 → 13,664.08 → the sheet's order; *Delivery calendar* taken off and put back as the
+  same calendar. **LIVE 2026-10-27** (the user: *"Put b7b12c0a on the live install and turn on sheets.chat"*): the
+  round is web only, so the live checkout moved with no restart; `sheets.chat` on (59 flags), its model the install's
+  coder (`claude-sonnet-5-5`, tools native). The chat panel opens beside the live Olist orders; no question has been
+  asked on the live install yet. Seen, not fixed: below about 1,400 px wide with the chat open, the sheet's head buttons
+  (Combine, Chat) run under the panel.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
