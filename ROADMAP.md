@@ -12638,7 +12638,11 @@ or groups as readers or editors, and when a stale write is refused, say who chan
   cy to edit and the Finance group to read; cy changed a cell ana had on screen, ana's change was refused naming cy,
   the grid then showed cy's value, and ana's retry was kept; dee saw the sheet listed and said, its link said, and the
   SQL route refused it — again after bo's run, once the cache was fixed; bo read the same rows (96,477 delivered) and
-  was offered nothing to change. Not on the live install.
+  was offered nothing to change. **LIVE 2026-10-28** at `4e91f3a0` (the user: *"Put SH-8 live"*; API restarted with
+  its twelve settings, pid 96495, no exploration resumed, the fingerprint the same; `sheets.sharing` on, 60 flags): the
+  five live sheets read as the user's own, all still the workspace's, and another person still edits them; a sheet's
+  query run twice with the cache on came back fresh both times; the Share pop-up offers *Only people chosen* on :3000.
+  Nothing was shared on the live install — the three-person receipt is the user's to make.
 - **Not built, and said.** Sharing closes the sheet — its rows and everyone's changes — not the Workspace file it was
   made from, which stays the workspace's: dee could make a sheet of their own from it. Who else is on a sheet at the
   same moment. A maker who leaves leaves their sheets with no one to reshare them; there is no administrator's override.

@@ -909,3 +909,4 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     longer keeps or serves a sheet's rows (one reader's cached rows reached another, found on the scratch API). A stale
     write says who changed which cell, and the grid shows their value. Proven in a browser as three people on a scratch
     API. Open: SH-5, the rest of SH-6; sharing does not close the Workspace file a sheet came from; no admin override.
+    **LIVE 2026-10-28** at `4e91f3a0`, `sheets.sharing` on (60 flags), the fingerprint the same; no sheet shared yet.
