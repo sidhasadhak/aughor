@@ -902,4 +902,4 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     (keys, Enter/Tab after an edit, Delete, undo keys, paste, drag, Cmd+A, pinned row numbers, column widths) — BUILT
     2026-10-27 at `9a1d4384` — **LIVE 2026-10-27** at `2a934270`. The next tier — header menu, second sort, frozen
     columns, headers dragged to reorder (shared, undoable), Cmd+F, edge-scroll — **LIVE 2026-10-27** at `773d5041`.
-    Undo steps back through several definition changes in a row (and redo forward) — BUILT 2026-10-27, not live.
+    Undo steps back through several definition changes in a row (and redo forward) — **LIVE 2026-10-27** at `929c7ba8`.

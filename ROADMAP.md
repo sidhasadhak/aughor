@@ -12595,7 +12595,9 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   was the newest version of the definition; an undo is a newer version holding an older definition. It asks now
   whether the definition is still what the change left — true after newer changes that were themselves undone, so undo
   steps back and redo forward again; false after a change still standing over it, which stays refused. Proven on the
-  scratch copy: two headers dragged, Cmd+Z twice back to the start, Cmd+Shift+Z twice forward. Not live yet (a restart).
+  scratch copy: two headers dragged, Cmd+Z twice back to the start, Cmd+Shift+Z twice forward. **LIVE 2026-10-27** at
+  `929c7ba8` (API restarted with its twelve settings, the fingerprint the same); the live sheet reads as before. Not
+  exercised on the live sheet: it would take two changes to its definition and their undoing in the user's history.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
   — said by the card, not followed.
