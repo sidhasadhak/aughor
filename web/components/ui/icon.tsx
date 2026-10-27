@@ -59,9 +59,20 @@ import {
   IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
   IconBulb, IconFlask, IconScale, IconZoomIn, IconArrowDownRight, IconArrowUpRight,
   IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
-  IconList, IconPaperclip, IconNumber123, IconBraces, IconBinary,
+  IconList, IconPaperclip, IconNumber123, IconBraces, IconBinary, createReactComponent,
 } from "@tabler/icons-react";
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
+
+/* A sheet's sort, as the user drew it (2026-10-27): a down arrow, the bars beside it — widest first for highest first,
+   narrowest first for lowest first. Tabler has the mirror (the bars, then the arrow), so these two are drawn here in
+   its own way: its 24-unit grid, its stroke and round ends, through its own factory. */
+const SORT_ARROW = [["path", { d: "M6 4.5v15", key: "a" }], ["path", { d: "M3 16.5l3 3l3 -3", key: "b" }]] as const;
+const sortBars = (lengths: number[]) =>
+  lengths.map((w, i) => ["path", { d: `M11 ${4.5 + 5 * i}h${w}`, key: `bar${i}` }] as const);
+const IconSortDownWideNarrow = createReactComponent("outline", "sort-down-wide-narrow", "SortDownWideNarrow",
+  [...SORT_ARROW, ...sortBars([10, 7.5, 5, 2.5])].map(([tag, attrs]) => [tag, { ...attrs }]));
+const IconSortDownNarrowWide = createReactComponent("outline", "sort-down-narrow-wide", "SortDownNarrowWide",
+  [...SORT_ARROW, ...sortBars([2.5, 5, 7.5, 10])].map(([tag, attrs]) => [tag, { ...attrs }]));
 
 interface GlyphProps {
   size?: number | string;
@@ -199,6 +210,10 @@ const ICONS = {
   chevr: IconChevronRight,
   chevu: IconChevronUp,
   chevl: IconChevronLeft,
+
+  // a column's sort: lowest first, highest first
+  sortasc: IconSortDownNarrowWide,
+  sortdesc: IconSortDownWideNarrow,
 } satisfies Record<string, Glyph>;
 
 export type IconName = keyof typeof ICONS;

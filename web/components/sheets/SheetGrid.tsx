@@ -129,7 +129,7 @@ export function GridHeader({ sheet, shown, sort = [], onSort }: {
         <div key={c.id} role="columnheader" aria-label={`${c.name} · ${KIND_LABEL[c.kind]}`}
           aria-sort={by ? (by.desc ? "descending" : "ascending") : "none"}
           style={{ ...cellStyle(c), justifyContent: "flex-start", gap: 6, fontWeight: 600 }}>
-          <Button variant="ghost" size="xs" disabled={!onSort} onClick={() => onSort?.(c.id)}
+          <Button variant="ghost" size="xs" disabled={!onSort} onClick={() => onSort?.(c.id)} className="group"
             title={by ? (by.desc ? "Highest first — click for the sheet's order" : "Lowest first — click for highest first")
               : "Sort by this column"}
             // the whole header sorts, as a spreadsheet's does — not only its name (the user: "I still cant sort the
@@ -139,7 +139,12 @@ export function GridHeader({ sheet, shown, sort = [], onSort }: {
               color: c.role === "lookup" ? "var(--blue4)" : "var(--t2)" }}>
             <span style={MUTED}><Icon name={KIND_ICON[c.kind]} size={12} /></span>
             <span style={ELLIPSIS}>{c.name}</span>
-            {by && <span style={{ color: "var(--blue4)" }}><Icon name={by.desc ? "chevd" : "chevu"} size={12} /></span>}
+            {/* the sort, at the header's end: the bars widest first for highest first, narrowest first for lowest first —
+                a column not sorted by shows it faintly where the pointer is, so it is seen to sort */}
+            <span className={by ? undefined : "opacity-0 group-hover:opacity-60 transition-opacity"}
+              style={{ marginLeft: "auto", display: "flex", color: by ? "var(--blue4)" : "var(--t3)" }}>
+              <Icon name={by?.desc ? "sortdesc" : "sortasc"} size={14} />
+            </span>
           </Button>
           {mark(c) && <Chip tone="accent">{mark(c)}</Chip>}
           {c.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
@@ -486,7 +491,7 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onOpenRow, fo
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {work.bar}
-      <div ref={scrollRef} role="grid" aria-label={sheet.name} aria-rowcount={total} tabIndex={0}
+      <div ref={scrollRef} role="grid" aria-label={sheet.name} aria-rowcount={total} aria-busy={rows.stale} tabIndex={0}
         onKeyDown={e => work.keys(e, move)}
         style={{ flex: 1, minHeight: 0, overflow: "auto", background: "var(--bg-0)", outline: "none" }}>
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
