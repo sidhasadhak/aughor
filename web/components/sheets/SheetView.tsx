@@ -178,6 +178,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   const dirty = !sameAsView(sheet, query, waves.views);
   const view = sheet.views.find(v => v.id === query.view);
   const all = Number(sheet.rows ?? 0);
+  const counted = `${flat && rows.total !== null && rows.total !== all ? `${formatCount(rows.total)} of ` : ""}${formatCount(all)} rows · `
+    + `${sheet.columns.length} columns`;
   const openRow = (row: number) => { setRecordRow(row); setPanel("record"); };
   const colName = (id: string) => sheet.columns.find(c => c.id === id)?.name ?? "";
   const viewQuery: RowsQuery = { filter: query.filter, sort: query.sort, search: query.search };
@@ -282,41 +284,48 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
       <div ref={mainRef} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
-        {/* the sheet's bar */}
-        <div style={BAR}>
+        {/* the sheet's bar: where it is too narrow for one line, the source gives way first, then the buttons take a
+            line of their own, and only then the name and the count shorten — never drawn past the sheet, under what
+            opens beside it */}
+        <div style={{ ...BAR, flexWrap: "wrap", rowGap: 6 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, overflow: "hidden" }}>
           <Button variant="ghost" size="sm" onClick={onBack} style={{ ...MUTED, padding: "0 4px", flex: "0 0 auto" }}>Spreadsheets /</Button>
           {renaming !== null ? (
-            <Input value={renaming} autoFocus aria-label="The sheet's name" style={{ width: 240 }}
+            <Input value={renaming} autoFocus aria-label="The sheet's name" style={{ flex: "0 1 240px", minWidth: 80 }}
               onChange={e => setRenaming(e.target.value)}
               onKeyDown={e => {
                 if (e.key === "Enter") { const n = renaming; setRenaming(null); void run(() => renameSheet(sheet.id, n), "Renamed"); }
                 if (e.key === "Escape") setRenaming(null);
               }} onBlur={() => setRenaming(null)} />
           ) : (
-            <Button variant="ghost" size="sm" disabled={!waves.grid} title={waves.grid ? "Rename" : undefined}
-              onClick={() => setRenaming(sheet.name)} style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px", flex: "0 0 auto" }}>
+            <Button variant="ghost" size="sm" disabled={!waves.grid} title={waves.grid ? `Rename ${sheet.name}` : sheet.name}
+              onClick={() => setRenaming(sheet.name)} style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px",
+                flex: "0 1 auto", minWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
               {sheet.name}
             </Button>
           )}
-          {/* the plain chip's look, shrinking to "…" where the bar is narrow */}
-          <span className="aug-fs-xs" title={sheet.source.sql || sheet.came_from} style={{ minWidth: 40, flex: "0 1 auto",
-            maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "var(--bg-3)",
+          {/* the plain chip's look, shrinking to "…" where the bar is narrow: it counts as its narrowest when the bar
+              decides whether the buttons fit beside it (width 0), and grows into what is left, up to its own text */}
+          <span className="aug-fs-xs" title={sheet.source.sql || sheet.came_from} style={{ display: "flex", width: 0,
+            flex: "1 1 auto", minWidth: 40, maxWidth: "max-content", overflow: "hidden", background: "var(--bg-3)",
             color: "var(--t2)", border: "1px solid var(--b1)", borderRadius: "var(--r-pill)", padding: "1px 8px" }}>
-            {sheet.came_from}
+            <span style={{ maxWidth: 260, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {sheet.came_from}
+            </span>
           </span>
-          <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", flex: "0 0 auto" }}>
-            {flat && rows.total !== null && rows.total !== all ? `${formatCount(rows.total)} of ` : ""}{formatCount(all)} rows ·{" "}
-            {sheet.columns.length} columns
+          <span className="aug-fs-xs" title={counted} style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", flex: "0 4 auto", minWidth: 0,
+            overflow: "hidden", textOverflow: "ellipsis" }}>{counted}</span>
           </span>
-          <span style={{ marginLeft: "auto", display: "flex", gap: 6, position: "relative", flex: "0 0 auto" }}>
+          <span style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6,
+            position: "relative", flex: "0 1 auto" }}>
             {waves.dashboard && (
               <Button variant="outline" size="sm" onClick={() => setDashboard(true)}
                 title={view && (view.filter.length || view.search) ? `Cards that read the view ${view.name}` : "Cards that read the sheet"}>
                 <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
               </Button>
             )}
-            <Button variant="outline" size="sm" aria-expanded={pop === "share"}
-              onClick={() => setPop(pop === "share" ? "" : "share")}>Share · Workspace</Button>
+            <Button variant="outline" size="sm" aria-expanded={pop === "share"} title={narrow ? "Share · the workspace" : undefined}
+              onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : "Share · Workspace"}</Button>
             {pop === "share" && <SharePop name={sheet.name} sheetId={sheet.id} views={sheet.views} me={sheet.me}
               onDone={() => setPop("")} />}
             {waves.combine && (
@@ -394,10 +403,10 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           </span>
         </div>
 
-        {/* the toolbar */}
-        <div style={{ ...BAR, gap: 4, background: "var(--bg-0)", position: "relative" }}>
+        {/* the toolbar: the search gives way first, then undo, history and copy take a line of their own */}
+        <div style={{ ...BAR, gap: 4, flexWrap: "wrap", rowGap: 4, background: "var(--bg-0)", position: "relative" }}>
           {toolbar}
-          <div style={{ flex: "0 1 220px", minWidth: 110, marginLeft: 8 }}>
+          <div style={{ flex: "1 1 110px", maxWidth: 220, minWidth: 110, marginLeft: 8 }}>
             <Input value={query.search} placeholder="Search this sheet" aria-label="Search this sheet"
               onChange={e => setQ({ search: e.target.value })} />
           </div>
