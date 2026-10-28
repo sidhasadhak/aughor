@@ -17,7 +17,7 @@ from aughor.ontology.overrides import (
     OntologyOverride,
     bind_overrides,
     preferred_table,
-    save_override,
+    publish_override,
 )
 from aughor.ontology.routing import RoutingRule, preferred_for, routing_rules
 
@@ -40,9 +40,11 @@ TABLE: customers  (50 rows)
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     """Point the override store at a throwaway tree (data/ is never test-isolated by
-    default — the registry incident's lesson)."""
+    default — the registry incident's lesson). Each rule here is set up in force —
+    written by the release's own door (`publish_override`), as a published one is."""
     from aughor.ontology import overrides as O
     monkeypatch.setattr(O, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(O, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     return tmp_path
 
 
@@ -71,7 +73,7 @@ def test_no_overrides_leaves_the_linker_byte_identical(store):
     compare something else entirely: connection hints already change the ranking.)"""
     from aughor.tools.schema_linker import link_schema
     before = link_schema("total sales by customer", _SCHEMA_TEXT, connection_id=CONN)
-    save_override(CONN, SCHEMA, _bound_override(scope="nothing in this question"))
+    publish_override(CONN, SCHEMA, _bound_override(scope="nothing in this question"))
     after = link_schema("total sales by customer", _SCHEMA_TEXT, connection_id=CONN)
     assert before == after, "a rule whose scope does not match must change nothing"
 
@@ -141,7 +143,7 @@ def test_bare_string_value_is_accepted():
 # ── the read path: unbound guidance is inert ─────────────────────────────────
 
 def test_a_bound_rule_is_returned(store):
-    save_override(CONN, SCHEMA, _bound_override(reason="net of returns"))
+    publish_override(CONN, SCHEMA, _bound_override(reason="net of returns"))
     rules = routing_rules(CONN, SCHEMA)
     assert len(rules) == 1
     assert (rules[0].deprecated, rules[0].preferred) == ("orders", "v_fact_sales")
@@ -149,7 +151,7 @@ def test_a_bound_rule_is_returned(store):
 
 
 def test_an_unbound_rule_is_never_enforced(store):
-    save_override(CONN, SCHEMA, _bound_override(
+    publish_override(CONN, SCHEMA, _bound_override(
         table="v_typo", explain=lambda sql: "no such table"))
     assert routing_rules(CONN, SCHEMA) == []
     assert preferred_for("sales", ["orders"], CONN, SCHEMA) == []
@@ -160,7 +162,7 @@ def test_an_unvalidated_rule_is_never_enforced(store):
     missing entry, so the rule is inert rather than trusted."""
     ov = OntologyOverride(target_kind="entity", target_id="orders",
                           fields={"use_instead": {"table": "v_fact_sales"}})
-    save_override(CONN, SCHEMA, ov)
+    publish_override(CONN, SCHEMA, ov)
     assert routing_rules(CONN, SCHEMA) == []
 
 
@@ -187,7 +189,7 @@ def test_scope_ignores_short_words():
 # ── enforcement is ADDITIVE at both doors ────────────────────────────────────
 
 def test_preferred_is_added_only_when_the_deprecated_table_is_in_scope(store):
-    save_override(CONN, SCHEMA, _bound_override())
+    publish_override(CONN, SCHEMA, _bound_override())
     # `orders` retrieved → the twin joins it.
     assert preferred_for("total sales", ["orders"], CONN, SCHEMA) == ["v_fact_sales"]
     # `orders` not retrieved → guidance stays silent; it is about a table nobody reached.
@@ -195,7 +197,7 @@ def test_preferred_is_added_only_when_the_deprecated_table_is_in_scope(store):
 
 
 def test_preferred_is_not_added_twice(store):
-    save_override(CONN, SCHEMA, _bound_override())
+    publish_override(CONN, SCHEMA, _bound_override())
     assert preferred_for("sales", ["orders", "v_fact_sales"], CONN, SCHEMA) == []
 
 
@@ -203,7 +205,7 @@ def test_the_linker_keeps_the_preferred_twin(store):
     """The A3 linker is the SECOND door: enforcing at the retriever while the packer
     drops the view is the both-ends-exist-feature-doesn't trap."""
     from aughor.tools.schema_linker import link_schema
-    save_override(CONN, SCHEMA, _bound_override(scope=""))
+    publish_override(CONN, SCHEMA, _bound_override(scope=""))
     out = link_schema("orders", _SCHEMA_TEXT, top_k_tables=1, connection_id=CONN)
     assert "TABLE: v_fact_sales" in out
     assert "TABLE: orders" in out, "additive — the deprecated table is never dropped"
@@ -211,7 +213,7 @@ def test_the_linker_keeps_the_preferred_twin(store):
 
 def test_the_retriever_keeps_the_preferred_twin(store, monkeypatch):
     import aughor.semantic.retriever as R
-    save_override(CONN, SCHEMA, _bound_override(scope=""))
+    publish_override(CONN, SCHEMA, _bound_override(scope=""))
     monkeypatch.setattr(R, "_filter_schema", lambda schema, keep: "|".join(sorted(keep)))
     monkeypatch.setattr(R, "collection_count", lambda *a, **k: 1, raising=False)
     out = R._retrieve("orders", _SCHEMA_TEXT, 1, "", connection_id=CONN,
@@ -243,7 +245,7 @@ def test_annotation_marks_both_sides(store):
         _connection_id = CONN
         _schema_name = SCHEMA
 
-    save_override(CONN, SCHEMA, _bound_override(reason="net of returns"))
+    publish_override(CONN, SCHEMA, _bound_override(reason="net of returns"))
     out = _routing(_Conn(), _SCHEMA_TEXT)
     assert "  -- ⚠ prefer v_fact_sales for sales — net of returns (human" in out
     assert "  -- ✓ preferred over orders for sales" in out
@@ -258,7 +260,7 @@ def test_annotation_does_not_disturb_column_lines(store):
         _connection_id = CONN
         _schema_name = SCHEMA
 
-    save_override(CONN, SCHEMA, _bound_override())
+    publish_override(CONN, SCHEMA, _bound_override())
     out = _routing(_Conn(), _SCHEMA_TEXT)
     for original in ("  order_id  BIGINT", "  amount  DOUBLE", "  customer_id  BIGINT"):
         assert original in out

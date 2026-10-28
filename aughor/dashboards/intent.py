@@ -29,11 +29,8 @@ def is_dashboard_ask(question: str) -> bool:
     return bool(_THING.search(q) and (_ASKED.search(q) or _ORDERED.match(q)))
 
 
-def where_dashboards_are_made(dashboards_on: bool) -> str:
+def where_dashboards_are_made() -> str:
     """The sentence the chat answers a dashboard request with — no model call."""
-    if not dashboards_on:
-        return ("Dashboards are switched off on this install — \"A dashboard in each Data Canvas\" "
-                "under Settings → Flags turns them on. This chat answers questions about the data.")
     return ("Dashboards are drafted in the Briefing, in its Dashboards tab: name the area — returns, "
             "pricing, the operations team — and a model drafts one there for you to keep or "
             "discard. This chat answers questions about the data.")

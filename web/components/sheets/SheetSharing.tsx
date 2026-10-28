@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Who a sheet is shared with (Arc SH, SH-8). Without `sheets.sharing` a sheet is its workspace's, and the pop-up says
- * exactly that (the arc's call 8). With it, the sheet's maker chooses: everyone in the workspace, or only the people and
- * groups chosen — each able to read it or to edit it. Anyone else who opens it sees who it is shared with, what they
+ * Who a sheet is shared with (Arc SH, SH-8). The sheet's maker chooses: everyone in the workspace, or only the people
+ * and groups chosen — each able to read it or to edit it. Anyone else who opens it sees who it is shared with, what they
  * may do themselves, and that only its maker changes it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,10 +28,8 @@ export function typedShare(text: string, groups: SheetSharing["groups"], level: 
   return g ? { kind: g.kind, id: g.id, level, name: g.name } : { kind: "person", id: t, level, name: t };
 }
 
-export function SharePop({ name, sheetId, views, me, sharing, onDone, onChanged }: {
+export function SharePop({ name, sheetId, views, me, onDone, onChanged }: {
   name: string; sheetId: string; views?: SheetView[]; me?: string;
-  /** `sheets.sharing` on: people and groups may be chosen. */
-  sharing?: boolean;
   onDone: () => void; onChanged?: (s: SheetSharing) => void;
 }) {
   const shared = views?.filter(v => v.shared).length ?? 0;
@@ -41,15 +38,10 @@ export function SharePop({ name, sheetId, views, me, sharing, onDone, onChanged 
   useCloseOutside(ref, onDone);
   return (
     <div ref={ref} role="dialog" aria-label={`Share · ${name}`} className="aug-fs-sm" style={{ position: "absolute", right: 0,
-      top: "100%", zIndex: 20, width: sharing ? 360 : 300, background: "var(--bg-2)", border: "1px solid var(--b1)",
+      top: "100%", zIndex: 20, width: 360, background: "var(--bg-2)", border: "1px solid var(--b1)",
       borderRadius: "var(--r3)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
       <span className="aug-fs-xs" style={MUTED}>Share · {name}</span>
-      {sharing ? <Chooser sheetId={sheetId} me={me} onChanged={onChanged} /> : (
-        <>
-          <span><b>Everyone in Workspace</b> can read and edit this sheet.</span>
-          <span className="aug-fs-xs" style={MUTED}>Choosing people, as readers or editors, comes in a later step.</span>
-        </>
-      )}
+      <Chooser sheetId={sheetId} me={me} onChanged={onChanged} />
       {views && (
         <span className="aug-fs-xs">Views: <b>{shared} shared</b>{mine ? <> · <b>{mine} your own</b> (only you see {mine === 1 ? "it" : "them"})</> : ""}</span>
       )}

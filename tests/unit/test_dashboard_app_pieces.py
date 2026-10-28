@@ -5,29 +5,27 @@ A list of objects as cards, a map, a timeline, a choose-one and a search are pie
 places them, a model never adds one, and what each reads is checked through the object door before a dashboard is kept —
 compiled over what this connection serves, never run. A map places by numbers and a timeline draws between moments; a
 list sorted by a property it does not show has that property listed beside its cards, since the door sorts by a listed
-property only. While `dashboard.app_pieces` is off a dashboard holding one is refused, said apart from the structure, and a
-dashboard holding none keeps exactly as before.
+property only.
 """
 from __future__ import annotations
 
 import copy
-import json
 import shutil
 import uuid
 
 import pytest
 
-from aughor.dashboards import app_pieces, pieces, validate as V, versions
+from aughor.dashboards import pieces, validate as V, versions
 from aughor.dashboards.home import Home
-from tests.unit.test_dashboard_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
+from tests.unit.test_dashboard_canvas import ME, volumes  # noqa: F401 — the fixture, by name
 from tests.unit.test_dashboard_pieces import _graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
 
 
-def _flags(monkeypatch, on: set[str]) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in on)
+def _flags(monkeypatch) -> None:
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
 
 
 @pytest.fixture
@@ -62,7 +60,7 @@ def _desk(keys=tuple(PROPS), **changes) -> dict:
 # ── what only the platform knows ─────────────────────────────────────────────────────────────
 
 def test_each_new_piece_resolves_when_what_it_reads_is_served(monkeypatch, no_edits):
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     assert pieces.not_resolved("c", _desk(), graph=_graph()) == []
 
 
@@ -79,21 +77,21 @@ def test_each_new_piece_resolves_when_what_it_reads_is_served(monkeypatch, no_ed
 ])
 def test_a_new_piece_reading_what_this_connection_cannot_serve_is_refused_by_name(monkeypatch, no_edits, key, change,
                                                                                    says):
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     said = pieces.not_resolved("c", _desk(**{key: change}), graph=_graph())
     assert len(said) == 1 and says in said[0], said
 
 
 def test_a_list_sorted_by_a_property_it_does_not_show_has_it_listed_beside_its_cards(monkeypatch, no_edits):
     """The object door sorts by a listed property only: the list asks for its sort beside what its cards say."""
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     assert pieces.listed_columns("ObjectList", {"title": "status", "sort": "customer_id"}) == ["status", "customer_id"]
     assert pieces.listed_columns("ObjectList", {"title": "status", "figure": "status", "sort": "status"}) == ["status"]
     assert pieces.not_resolved("c", _desk(("list",), list={"sort": "customer_id"}), graph=_graph()) == []
 
 
 def test_without_a_name_a_list_and_a_timeline_are_called_by_their_key_and_resolve(monkeypatch, no_edits):
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     spec = _desk(("list", "timeline"))
     del spec["elements"]["list"]["props"]["title"]
     assert pieces.listed_columns("ObjectList", spec["elements"]["list"]["props"]) == ["total_amount", "payment_method",
@@ -102,7 +100,7 @@ def test_without_a_name_a_list_and_a_timeline_are_called_by_their_key_and_resolv
 
 
 def test_a_detail_following_a_list_holds_buttons_on_the_objects_it_lists(monkeypatch, no_edits):
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     spec = _desk(("list",))
     spec["elements"]["detail"] = {"type": "ObjectDetail", "props": {"follows": "list"}, "children": ["flag"]}
     spec["elements"]["flag"] = {"type": "ActionButton", "props": {"action": "flag_for_review"}, "children": []}
@@ -114,7 +112,7 @@ def test_a_detail_following_a_list_holds_buttons_on_the_objects_it_lists(monkeyp
 
 
 def test_a_list_that_cannot_be_read_adds_no_second_sentence_for_the_detail_that_follows_it(monkeypatch, no_edits):
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     spec = _desk(("list",), list={"title": "no_such"})
     spec["elements"]["detail"] = {"type": "ObjectDetail", "props": {"follows": "list"}, "children": ["flag"]}
     spec["elements"]["flag"] = {"type": "ActionButton", "props": {"action": "flag_for_review"}, "children": []}
@@ -162,37 +160,16 @@ def _drawn() -> dict:
 def test_a_drawer_is_a_persons_wired_by_the_choice_it_opens_on_and_named_by_its_title(monkeypatch, no_edits):
     from aughor.dashboards import wiring
     spec = _drawn()
-    assert "drawer" in wiring.wired(spec) and app_pieces.added(spec) == ["list", "drawer"]
+    assert "drawer" in wiring.wired(spec)
     assert pieces.title_of("Drawer", spec["elements"]["drawer"]["props"]) == "Drawer · The order"
-    _flags(monkeypatch, {pieces.FLAG})
+    _flags(monkeypatch)
     assert pieces.not_resolved("c", spec, graph=_graph()) == []
     said = pieces.pieces_written(_desk(("list",), list={"chooses": "chosen-order"}), spec, new=False)
     assert any('adds the drawer "drawer"' in s for s in said), said
 
 
-# ── off, as it was ───────────────────────────────────────────────────────────────────────────
-
-def test_only_the_new_pieces_are_found_and_nothing_else():
-    assert app_pieces.added(_desk()) == list(PROPS)
-    assert app_pieces.added(json.loads(FIXTURE.read_text())) == []
-    for nonsense in (None, [], {"elements": "x"}, {"elements": {"s": "x"}}):
-        assert app_pieces.added(nonsense) == []
-
-
-def test_off_the_new_pieces_are_refused_and_said_apart_from_the_structure(monkeypatch):
-    _flags(monkeypatch, set())
-    said = app_pieces.refused_off(_desk(("list", "map")))
-    assert len(said) == 1 and "a list, a map, a timeline, a choose-one, a search or a drawer — list, map — and adding those is off" in said[0], said
-    split = _desk(("list",))
-    split["elements"]["desk"]["props"]["layout"] = "rows"
-    two = app_pieces.refused_off(split)
-    assert len(two) == 2 and "splitting a dashboard into sections is off" in two[0] and "— list —" in two[1], two
-    _flags(monkeypatch, {app_pieces.FLAG})
-    assert app_pieces.refused_off(_desk()) == []
-
-
 @needs_rules
-def test_the_keep_door_refuses_a_new_piece_while_off_and_keeps_it_while_on(volumes, monkeypatch, no_edits):  # noqa: F811
+def test_the_keep_door_keeps_a_new_piece_and_refuses_one_reading_what_is_not_there(volumes, monkeypatch, no_edits):  # noqa: F811
     tag = uuid.uuid4().hex[:6]
     home = Home(f"pieces{tag}", ME, f"desk-{tag}")
     graph = _graph()
@@ -201,11 +178,7 @@ def test_the_keep_door_refuses_a_new_piece_while_off_and_keeps_it_while_on(volum
     def keep(s):
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
     spec = _desk(("list", "map", "timeline", "search"))
-    _flags(monkeypatch, {pieces.FLAG})
-    off = keep(spec)
-    assert off.status == "refused" and "adding those is off" in " ".join(off.sentences), off.sentences
-    assert versions.latest(home) is None
-    _flags(monkeypatch, {pieces.FLAG, app_pieces.FLAG})
+    _flags(monkeypatch)
     wrong = keep(_desk(("map",), map={"lat": "status"}))
     assert not wrong.kept and 'which holds no number' in " ".join(wrong.sentences), wrong.sentences
     kept = keep(spec)

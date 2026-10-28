@@ -32,6 +32,7 @@ SAMPLES = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 @pytest.fixture
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr("aughor.kernel.ledger.Ledger.artifacts_of_kind", lambda self, *a, **k: [])
     return OntologyGraph.model_validate(json.loads(SAMPLES.read_text()))
 
@@ -164,6 +165,7 @@ def test_withdrawing_on_an_organisations_ontology_says_where_to_withdraw():
 
 def test_luxexperience_ships_gmv_and_gmv_per_order_that_compile_for_one_order(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(OV, "_SEED_ROOT", REPO / "data" / "shipped" / "ontology_overrides")
     import aughor.db.registry as registry
     monkeypatch.setattr(registry, "scope_key_of", lambda conn: "luxexperience" if conn == "c0ffee42" else "")

@@ -14,7 +14,6 @@ import random
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 
 ORDERS = """order_id,customer_id,order_status,order_purchase_timestamp,order_estimated_delivery_date,zip,items,price
 e481f51c,9ef432eb,delivered,2017-10-02 10:56:33,2017-10-18 00:00:00,01037,1,29.99
@@ -34,8 +33,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides({"sheets.core": True, "sheets.grid": True}):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -287,26 +285,12 @@ def test_a_comment_on_a_row_is_a_said_claim_in_the_record(env):
     assert booked and booked[0].tier == "said" and booked[0].author == "user:ana"
 
 
-# ── off ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ── the Sheets connection ────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_off_the_sheets_connection_is_not_listed_and_no_route_answers(tmp_path, monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
+def test_the_sheets_connection_is_always_listed():
     from aughor.db import registry
-    from aughor.routers import sheets as sheets_router
-    with flag_overrides({"sheets.core": False}):
-        ids = [c["id"] for c in registry.list_connections()]
-        assert "sheets" not in ids
-        with pytest.raises(KeyError):
-            registry.get_dsn("sheets")
-        app = FastAPI()
-        app.include_router(sheets_router.router)
-        client = TestClient(app)
-        assert client.get("/sheets").status_code == 404
-        assert client.post("/sheets", json={"source": "blank", "name": "x"}).status_code == 404
-    with flag_overrides({"sheets.core": True}):
-        assert "sheets" in [c["id"] for c in registry.list_connections()]
+    assert "sheets" in [c["id"] for c in registry.list_connections()]
+    assert registry.get_dsn("sheets") == ("sheets", "sheets://")
 
 
 def test_writing_the_typed_rows_refuses_a_value_its_kind_would_lose(env):

@@ -90,6 +90,12 @@ def _pagerduty(secret="pd-routing-key-xyz", **cfg) -> KineticAction:
         side_effects=[SideEffect(kind="http", config=config)])
 
 
+def _send(action: KineticAction, params: dict) -> dict:
+    """One call, as the outbox delivers it (Arc OC-6). A refusal raises here, and the outbox keeps it as refused, never
+    sent again by itself — through `default_dispatch` it is a row, not a raise (`test_action_outbox.py`)."""
+    return ex.dispatch_effect(action.side_effects[0], action, params)
+
+
 # ── the described call ────────────────────────────────────────────────────────
 
 def test_a_declared_component_calls_the_vendors_own_api(sent):
@@ -119,7 +125,7 @@ def test_a_declared_auth_header_with_no_secret_is_refused(sent):
     action = _pagerduty()
     action.side_effects[0].config["auth_secret"] = ""
     with pytest.raises(ex.KineticDispatchError, match="re-enter the credential"):
-        ex.default_dispatch(action, {"summary": "s", "severity": "info"})
+        _send(action, {"summary": "s", "severity": "info"})
     assert sent == []
 
 
@@ -129,7 +135,7 @@ def test_an_undeclared_placeholder_is_an_authoring_error(sent):
     action = _pagerduty()
     action.side_effects[0].config["body"] = {"summary": "{nope}"}
     with pytest.raises(ex.KineticDispatchError, match="does not declare"):
-        ex.default_dispatch(action, {"summary": "s", "severity": "info"})
+        _send(action, {"summary": "s", "severity": "info"})
     assert sent == []
 
 
@@ -167,14 +173,14 @@ def test_a_parameter_that_moves_the_request_to_a_private_host_is_blocked(monkeyp
     action = _pagerduty()
     action.side_effects[0].config["url"] = "http://{summary}/x"
     with pytest.raises(ex.KineticDispatchError, match="SSRF guard"):
-        ex.default_dispatch(action, {"summary": "localhost", "severity": "x"})
+        _send(action, {"summary": "localhost", "severity": "x"})
     assert sent == [], "a blocked call must not be made"
 
 
 def test_an_unknown_method_is_refused_rather_than_passed_through(sent):
     action = _pagerduty(method="TRACE")
     with pytest.raises(ex.KineticDispatchError, match="TRACE"):
-        ex.default_dispatch(action, {"summary": "s", "severity": "x"})
+        _send(action, {"summary": "s", "severity": "x"})
     assert sent == []
 
 

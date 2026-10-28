@@ -131,19 +131,8 @@ def _run_config() -> dict:
         cfg["backend"] = "unknown"
         tolerate(exc, "eval run config: model binding unavailable; recorded as unknown",
                  counter="evals.config.model")
-    try:
-        from aughor.kernel.flags import flag_enabled
-        # Snapshot the flags an eval's comparability actually depends on. Earlier
-        # occupants of this tuple kept graduating out (Wave 3 deleted ask.resolve_first
-        # and capabilities.auto; Wave 5 hardwired closed_loop and graph.readback — both
-        # unconditional now, nothing to record). The two remaining experiments change
-        # ROUTING (wide→explore wave, fresh-turn auto-federation), which is what makes
-        # two runs incomparable if they differ.
-        cfg["flags"] = {name: flag_enabled(name) for name in
-                        ("explore.route_wide", "federation.planner")}
-    except Exception as exc:
-        tolerate(exc, "eval run config: flag snapshot unavailable",
-                 counter="evals.config.flags")
+    # The routing flags this recorded (`explore.route_wide`, `federation.planner`) left 2026-10-28 (ROADMAP §3.65): nothing
+    # switchable changes routing now, so there is no flag for two runs to differ on.
     try:
         # Wave E4: whatever a grid cell is forcing right now. Recorded for EVERY run, not
         # just experiment runs — a run that happened to execute inside a cell and did not

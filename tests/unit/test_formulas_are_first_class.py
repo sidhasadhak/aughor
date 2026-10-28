@@ -43,6 +43,7 @@ def db(tmp_path_factory):
 @pytest.fixture
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [])
     return OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
 

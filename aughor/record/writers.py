@@ -95,11 +95,11 @@ def book_answer_observation(*, kind: str, natural_key: str, receipt_id: str, con
     if kind == CHAT_ANSWER_KIND:
         try:
             from aughor.answer import recheck
-            if recheck.enabled() and recheck.can_recheck(sql):
+            if recheck.can_recheck(sql):
                 next_check = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=1)).date().isoformat()
-                falsifier = ("the answer's own query, re-run daily for 14 days (answers.recheck): a number "
+                falsifier = ("the answer's own query, re-run daily for 14 days (the daily re-check): a number "
                              "that moves past the noise band restates this claim")
-            elif recheck.enabled():
+            else:
                 falsifier = ("not re-checked: the query reads the clock, so re-running it measures "
                              "another window")
         except Exception as exc:  # noqa: BLE001 — the falsifier is a note; the claim books without it
@@ -169,7 +169,7 @@ def book_from_receipt(*, kind: str, natural_key: str, receipt_id: Optional[str],
     if not receipt_id:
         return out
     extra = payload_extra or {}
-    # Arc OC-3 — the subject the run's frame gave it (`framing.frame_about`), while `ontology.release` is on
+    # Arc OC-3 — the subject the run's frame gave it (`framing.frame_about`)
     about = _frame_subject(extra)
     out["observation"] = book_answer_observation(
         kind=kind, natural_key=natural_key, receipt_id=receipt_id, connection_id=connection_id,
@@ -193,13 +193,11 @@ def book_from_receipt(*, kind: str, natural_key: str, receipt_id: Optional[str],
 
 
 def _frame_subject(extra: dict) -> Optional[dict]:
-    """The `about` a receipt's caller derived from its run's frame, honoured only while `ontology.release` is on — off,
-    every claim is about its connection exactly as before."""
+    """The `about` a receipt's caller derived from its run's frame, or None when it derived none."""
     about = extra.get("about")
     if not isinstance(about, dict) or not about:
         return None
-    from aughor.kernel.flags import flag_enabled
-    return about if flag_enabled("ontology.release") else None
+    return about
 
 
 # ── from the daily re-check ───────────────────────────────────────────────────────────────

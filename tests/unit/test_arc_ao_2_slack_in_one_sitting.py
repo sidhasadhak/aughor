@@ -341,15 +341,19 @@ def _tmp_supervisor(tmp_path):
     return tmp_path
 
 
-def test_off_by_default_spawns_nothing(tmp_path):
-    from aughor.slackbots.managed import ManagedSupervisor, managed_status
-    spawned: list = []
-    host = ManagedSupervisor(api_url="http://127.0.0.1:8000", runtime_key="k",
-                             cwd=_tmp_supervisor(tmp_path), spawn=lambda *a: spawned.append(a) or _Proc(),
-                             flag_enabled=lambda name: False)
-    assert host.start() == "off" and spawned == []
-    assert host.status().state == "off" and host.status().managed is False
-    assert managed_status()["flag"] is False and managed_status()["state"] == "off"
+def test_a_process_that_runs_no_supervisor_says_why_and_how_to_start_one(client, monkeypatch):
+    """The suite's API runs no clocks (AUGHOR_DISABLE_SCHEDULERS), so its lifespan starts no host — and the status
+    says so where Integrations → Slack reads it, rather than an unexplained 'off'."""
+    from aughor.slackbots import managed
+    assert managed.host() is None
+    s = client.get("/slack-bots/supervisor").json()
+    assert s["state"] == "off" and s["managed"] is False and "flag" not in s
+    assert s["waiting_on"] == ("The API does not run the Slack bot here: this API process runs no clocks "
+                               "(AUGHOR_DISABLE_SCHEDULERS). Start it by hand: cd bots/slack && npm run dev")
+    r = client.post("/slack-bots/supervisor/restart")
+    assert r.status_code == 409 and r.json()["detail"] == s["waiting_on"]
+    monkeypatch.setenv("VERCEL", "1")
+    assert "keeps no process running between requests" in managed.managed_status()["waiting_on"]
 
 
 def test_on_it_spawns_the_supervisor_with_its_own_key_and_the_api_url(tmp_path, monkeypatch):
@@ -358,8 +362,7 @@ def test_on_it_spawns_the_supervisor_with_its_own_key_and_the_api_url(tmp_path, 
     monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: "/usr/bin/npx"))
     host = managed.ManagedSupervisor(api_url="http://127.0.0.1:8010", runtime_key="managed-key",
                                      cwd=_tmp_supervisor(tmp_path),
-                                     spawn=lambda cmd, cwd, env: spawned.append((cmd, cwd, env)) or _Proc(),
-                                     flag_enabled=lambda name: True)
+                                     spawn=lambda cmd, cwd, env: spawned.append((cmd, cwd, env)) or _Proc())
     assert host.start() == "running"
     cmd, cwd, env = spawned[0]
     assert cmd == ["/usr/bin/npx", "tsx", "src/index.ts"] and cwd == tmp_path
@@ -367,23 +370,47 @@ def test_on_it_spawns_the_supervisor_with_its_own_key_and_the_api_url(tmp_path, 
     assert env["AUGHOR_RUNTIME_KEY"] == "managed-key" and env["AUGHOR_MANAGED_BY_API"] == "1"
     assert "SLACK_BOT_TOKEN" not in env
     s = host.status()
-    assert s.state == "running" and s.pid == 4242 and s.managed and s.flag
+    assert s.state == "running" and s.pid == 4242 and s.managed and s.waiting_on == ""
     host.stop()
     assert spawned[0] and host.status().state == "stopped"
 
 
-def test_a_missing_precondition_is_said_not_tried(tmp_path, monkeypatch):
+def test_a_missing_setup_is_waited_on_and_said_not_tried(tmp_path, monkeypatch):
+    """Missing setup is not a failure: the state is `waiting` (no red 'stopped' on an install with no bot), and one
+    sentence says what is missing and how to add it."""
     from aughor.slackbots import managed
     monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: ""))
     (tmp_path / "package.json").write_text("{}")          # no node_modules, no npx
     spawned: list = []
     host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=tmp_path,
-                                     spawn=lambda *a: spawned.append(a) or _Proc(),
-                                     flag_enabled=lambda name: True)
-    assert host.start() == "failed" and spawned == []
+                                     spawn=lambda *a: spawned.append(a) or _Proc())
+    assert host.start() == "waiting" and spawned == []
     s = host.status()
-    assert "node_modules" in s.last_error and "npx" in s.last_error
-    assert len(s.preconditions) == 2
+    assert s.managed and s.last_error == "" and len(s.preconditions) == 2
+    assert s.waiting_on == ("Not started: bots/slack/node_modules is missing — run `npm install` in bots/slack, or run "
+                            "the installer again; no `npx` on PATH — install Node.js 20+. Press Restart once that is done.")
+
+
+def test_once_the_setup_exists_restart_starts_and_watches_it(tmp_path, monkeypatch):
+    from aughor.slackbots import managed
+    monkeypatch.setattr(managed, "_WATCH_S", 0.01)
+    monkeypatch.setattr(managed, "BACKOFF_S", (0.01,))
+    npx = {"path": ""}
+    monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: npx["path"]))
+    procs: list = []
+    host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=_tmp_supervisor(tmp_path),
+                                     spawn=lambda *a: procs.append(_Proc(pid=200 + len(procs))) or procs[-1])
+    assert host.start() == "waiting" and procs == []
+    npx["path"] = "/usr/bin/npx"                          # Node.js installed
+    s = host.restart()
+    assert s.state == "running" and s.waiting_on == "" and len(procs) == 1
+    procs[0].exit(1)                                      # and it is watched: an exit is restarted
+    import time as _t
+    deadline = _t.time() + 3
+    while len(procs) < 2 and _t.time() < deadline:
+        _t.sleep(0.02)
+    host.stop()
+    assert len(procs) >= 2, "a child started by Restart was not watched"
 
 
 def test_an_exited_child_is_restarted_after_a_backoff(tmp_path, monkeypatch):
@@ -400,7 +427,7 @@ def test_an_exited_child_is_restarted_after_a_backoff(tmp_path, monkeypatch):
         return p
 
     host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=_tmp_supervisor(tmp_path),
-                                     spawn=_spawn, flag_enabled=lambda name: True)
+                                     spawn=_spawn)
     assert host.start() == "running"
     procs[0].exit(1)
     deadline = _t.time() + 3
@@ -422,8 +449,7 @@ def test_the_managed_child_writes_its_own_log_and_the_status_names_it(tmp_path, 
     monkeypatch.setattr(managed.ManagedSupervisor, "_npx", staticmethod(lambda: "/usr/bin/npx"))
     log = tmp_path / "logs" / "supervisor.log"
     host = managed.ManagedSupervisor(api_url="u", runtime_key="k", cwd=_tmp_supervisor(tmp_path),
-                                     log_path=log, spawn=lambda *a: _Proc(),
-                                     flag_enabled=lambda name: True)
+                                     log_path=log, spawn=lambda *a: _Proc())
     # The REAL spawn, with a child that only prints: its words land in the log, under a header.
     proc = host._real_spawn([sys.executable, "-c", "print('child says hi')"], tmp_path, dict(os.environ))
     proc.wait(timeout=30)
@@ -457,9 +483,3 @@ def test_the_managed_key_opens_the_runtime_route_and_a_regenerate_does_not_touch
     client.post("/slack-bots/supervisor-key")
     assert store.supervisor_key_matches(managed_key), "a person's rotation must not darken the managed child"
     assert client.get("/slack-bots/runtime", headers={"X-Aughor-Runtime-Key": managed_key}).status_code == 200
-
-
-def test_the_supervisor_routes_say_off_and_refuse_a_restart_when_unmanaged(client):
-    body = client.get("/slack-bots/supervisor").json()
-    assert body["flag"] is False and body["state"] == "off"
-    assert client.post("/slack-bots/supervisor/restart").status_code == 409

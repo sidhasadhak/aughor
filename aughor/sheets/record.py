@@ -120,9 +120,8 @@ def _linked(sheet: Sheet, values: dict) -> list[dict]:
     return out
 
 
-def record(sheet: Sheet, row: int, *, marked_by_rules: bool = False) -> Optional[dict]:
-    """The row as a record, or None when the sheet holds no such row. ``marked_by_rules`` (SH-3) adds the rules that
-    mark it."""
+def record(sheet: Sheet, row: int) -> Optional[dict]:
+    """The row as a record, with the rules that mark it (SH-3), or None when the sheet holds no such row."""
     values = projection.read_row(sheet, row)
     if values is None:
         return None
@@ -137,7 +136,7 @@ def record(sheet: Sheet, row: int, *, marked_by_rules: bool = False) -> Optional
                 "by": h["actor"], "at": h["at"], "origin": h["origin"]}
                for h in overlay.sheet_history(sheet.id, row=row, limit=200)]
     from aughor.sheets import views
-    marked = set((views.marks(sheet, {row}) if marked_by_rules else {}).get(str(row), []))
+    marked = set(views.marks(sheet, {row}).get(str(row), []))
     return {"row": row, "title": _title(sheet, values), "came_from": service.origin_of_row(sheet, row),
             "fields": fields, "linked": _linked(sheet, values), "history": history, "comments": comments(sheet, row),
             "marks": [{"id": r.id, "name": r.name, "tone": r.tone} for r in sheet.rules if r.id in marked]}

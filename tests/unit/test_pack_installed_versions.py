@@ -1,8 +1,7 @@
 """Arc FA, FA-6 (ROADMAP §3.60) — packs as products: the installed version, what a pack offered, and the upgrade
-(`aughor/packs/upgrade.py`, flag `packs.installed_versions`).
+(`aughor/packs/upgrade.py`).
 
-What these hold. Off, a bind stores the caller's version and nothing else, and the upgrade doors are closed. On, a
-bind records the MANIFEST's version (never the caller's), who bound it and a snapshot of what the pack offered. The
+What these hold. A bind records the MANIFEST's version (never the caller's), who bound it and a snapshot of what the pack offered. The
 diff against a newer version lists what was added, changed and removed, each item a person declined marked with the
 version it was declined in — read from the three stores that keep a decline (the vocabulary's tombstone, the inbox's
 rejected proposal, the explorer's withdrawn proposal). The upgrade proposes only new and changed items, never an
@@ -17,12 +16,10 @@ import uuid
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from aughor.actions import inbox
-from aughor.kernel.flags import flag_overrides
 from aughor.ontology import vocabulary as V
 from aughor.packs import bindings as B
 from aughor.packs import upgrade as U
@@ -71,7 +68,7 @@ def _registered(monkeypatch):
 
 
 def _bind(pack: Pack, conn: str, by: str = "user:ana") -> dict:
-    """What the bind door does with the flag on: the manifest's version, who, and the snapshot."""
+    """What the bind door does: the manifest's version, who, and the snapshot."""
     B.save_binding(pack.id, conn, {"account": {"table": "accounts"}}, version=pack.manifest.version, verified=True,
                    installed=U.install_record(pack, by=by))
     return B.load_install(pack.id, conn)
@@ -84,30 +81,9 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-# ── off ──────────────────────────────────────────────────────────────────────────────────────
+# ── the store ────────────────────────────────────────────────────────────────────────────────
 
-def test_off_the_bind_stores_the_callers_version_and_nothing_else_and_the_upgrade_doors_are_closed(monkeypatch):
-    monkeypatch.setattr("aughor.routers.connections.open_connection_for",
-                        lambda cid: (_ for _ in ()).throw(RuntimeError("unreachable")))
-    conn = _conn()
-    client = _client()
-    with flag_overrides({U.FLAG: False}):
-        r = client.post("/packs/banking/bind", json={"connection_id": conn, "bindings": {}, "version": 7})
-        assert r.status_code == 200, r.text
-        body = r.json()
-        # the response carries exactly the keys it always did
-        assert set(body) == {"org_id", "pack_id", "connection_id", "schema", "version", "bindings", "verified",
-                             "updated_at", "missing", "dry_run_errors", "arrival"}
-        assert body["version"] == 7
-        assert B.load_binding("banking", conn)["version"] == 7
-        install = B.load_install("banking", conn)
-        assert install["bound_by"] == "" and install["offered"] == {}
-        assert client.get(f"/packs/banking/upgrade?connection_id={conn}").status_code == 404
-        assert client.post("/packs/banking/upgrade", json={"connection_id": conn}).status_code == 404
-        assert client.get("/packs/banking/installs").status_code == 404
-
-
-def test_off_the_store_writes_the_row_exactly_as_before():
+def test_a_save_without_an_install_record_writes_the_row_exactly_as_before():
     conn = _conn()
     rec = B.save_binding("banking", conn, {"r": {"table": "t"}}, version=3, verified=True)
     assert set(rec) == {"org_id", "pack_id", "connection_id", "schema", "version", "bindings", "verified", "updated_at"}
@@ -119,9 +95,9 @@ def test_off_the_store_writes_the_row_exactly_as_before():
     assert after["version"] == 1 and after["bound_by"] == "user:ana" and after["offered"]["version"] == 2
 
 
-# ── on: the bind records the manifest's version ──────────────────────────────────────────────
+# ── the bind records the manifest's version ──────────────────────────────────────────────────
 
-def test_on_the_bind_records_the_manifests_version_who_bound_it_and_what_the_pack_offered(monkeypatch):
+def test_the_bind_records_the_manifests_version_who_bound_it_and_what_the_pack_offered(monkeypatch):
     monkeypatch.setattr("aughor.routers.connections.open_connection_for",
                         lambda cid: (_ for _ in ()).throw(RuntimeError("unreachable")))
     from aughor.packs.loader import load_pack
@@ -129,34 +105,33 @@ def test_on_the_bind_records_the_manifests_version_who_bound_it_and_what_the_pac
     banking = load_pack(pack_dir("banking"))
     conn = _conn()
     client = _client()
-    with flag_overrides({U.FLAG: True}):
-        # the caller says 9; the manifest says what it is
-        r = client.post("/packs/banking/bind", json={"connection_id": conn, "bindings": {}, "version": 9})
-        assert r.status_code == 200, r.text
-        assert r.json()["version"] == banking.manifest.version != 9
-        assert r.json()["bound_by"].startswith("user:")
-        install = B.load_install("banking", conn)
-        assert install["version"] == banking.manifest.version and install["bound_by"].startswith("user:")
-        items = install["offered"]["items"]
-        assert install["offered"]["version"] == banking.manifest.version and install["offered"]["at"]
-        kinds = {i["kind"] for i in items.values()}
-        assert kinds == {"term", "alert", "metric", "structure"}
-        # an alert per bounded side of a measured prior, and none for the unmeasured one
-        assert {"alert:net_interest_margin:below", "alert:net_interest_margin:above"} <= set(items)
-        assert not any(k.startswith("alert:approval_rate") for k in items)
-        assert "term:metric:net_interest_margin:nim" in items
-        assert all(len(i["hash"]) == 16 for i in items.values())
-        # the same pack read again is up to date: nothing added, changed or removed, and no upgrade
-        up = client.get(f"/packs/banking/upgrade?connection_id={conn}")
-        assert up.status_code == 200, up.text
-        d = up.json()
-        assert d["installed"] == d["available"] == banking.manifest.version and d["recorded"] is True
-        assert d["added"] == d["changed"] == d["removed"] == [] and d["upgrade_available"] is False
-        assert client.post("/packs/banking/upgrade", json={"connection_id": conn}).status_code == 409
-        installs = client.get("/packs/banking/installs").json()
-        row = next(i for i in installs["installs"] if i["connection_id"] == conn)
-        assert row["installed"] == banking.manifest.version and row["recorded"] and row["behind"] is False
-        assert client.get(f"/packs/banking/upgrade?connection_id={_conn()}").status_code == 404
+    # the caller says 9; the manifest says what it is
+    r = client.post("/packs/banking/bind", json={"connection_id": conn, "bindings": {}, "version": 9})
+    assert r.status_code == 200, r.text
+    assert r.json()["version"] == banking.manifest.version != 9
+    assert r.json()["bound_by"].startswith("user:")
+    install = B.load_install("banking", conn)
+    assert install["version"] == banking.manifest.version and install["bound_by"].startswith("user:")
+    items = install["offered"]["items"]
+    assert install["offered"]["version"] == banking.manifest.version and install["offered"]["at"]
+    kinds = {i["kind"] for i in items.values()}
+    assert kinds == {"term", "alert", "metric", "structure"}
+    # an alert per bounded side of a measured prior, and none for the unmeasured one
+    assert {"alert:net_interest_margin:below", "alert:net_interest_margin:above"} <= set(items)
+    assert not any(k.startswith("alert:approval_rate") for k in items)
+    assert "term:metric:net_interest_margin:nim" in items
+    assert all(len(i["hash"]) == 16 for i in items.values())
+    # the same pack read again is up to date: nothing added, changed or removed, and no upgrade
+    up = client.get(f"/packs/banking/upgrade?connection_id={conn}")
+    assert up.status_code == 200, up.text
+    d = up.json()
+    assert d["installed"] == d["available"] == banking.manifest.version and d["recorded"] is True
+    assert d["added"] == d["changed"] == d["removed"] == [] and d["upgrade_available"] is False
+    assert client.post("/packs/banking/upgrade", json={"connection_id": conn}).status_code == 409
+    installs = client.get("/packs/banking/installs").json()
+    row = next(i for i in installs["installs"] if i["connection_id"] == conn)
+    assert row["installed"] == banking.manifest.version and row["recorded"] and row["behind"] is False
+    assert client.get(f"/packs/banking/upgrade?connection_id={_conn()}").status_code == 404
 
 
 # ── the diff, with what a person declined ────────────────────────────────────────────────────
@@ -251,7 +226,7 @@ def test_a_binding_made_before_versions_were_recorded_says_so_and_its_upgrade_of
     _registered(monkeypatch)
     conn = _conn()
     v1 = _pack(1)
-    B.save_binding(v1.id, conn, {}, version=1)            # as every binding was before the flag
+    B.save_binding(v1.id, conn, {}, version=1)            # as every binding was before installed versions
     from aughor.packs.connect import alert_proposals_for, propose_terms
     propose_terms(v1, conn)
     first = alert_proposals_for(v1, conn, run_sql=_series, today=TODAY)["staged"]
@@ -308,11 +283,3 @@ def test_a_withdrawn_structure_proposal_with_the_packs_provenance_is_read_as_dec
     install = {"version": 1, "offered": U.install_record(pack, by="user:ana")["offered"], "bound_by": "user:ana"}
     d = U.diff(_pack(2), install, connection_id=conn, schema="bank", graph=graph)
     assert {r["key"] for r in d["kept_declined"]} >= {"structure:process:opening", "structure:link:Account>Holder"}
-
-
-@pytest.mark.parametrize("flag", [U.FLAG])
-def test_the_flag_is_registered_off_by_default(flag):
-    from aughor.kernel.flags import FLAG_ENV, flag_disposition, flag_enabled
-    assert flag in FLAG_ENV and flag_disposition(flag) == "graduation_queue"
-    with flag_overrides({}):
-        assert flag_enabled(flag) is False

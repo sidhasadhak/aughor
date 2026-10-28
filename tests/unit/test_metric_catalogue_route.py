@@ -56,10 +56,11 @@ class TestTheCatalogueDoor:
         # Exact-match on purpose: the tally is the door's contract, so a key added
         # without a decision shows up here. `formula_rejected` is counted apart from
         # `needs_formula` because a connection where every metric lands there is telling
-        # you about the CONNECTION, not about missing SQL.
+        # you about the CONNECTION, not about missing SQL. `coverage` and `gate_failed` are Arc MC's: proposed for an
+        # area of the map, and the proposals a gate refused.
         assert body["counts"] == {"total": 3, "defined": 1, "industry": 1,
                                   "explorer": 1, "needs_binding": 1, "needs_formula": 0,
-                                  "formula_rejected": 0}
+                                  "formula_rejected": 0, "coverage": 0, "gate_failed": 0}
         assert [m["source"] for m in body["metrics"]] == ["defined", "industry", "explorer"]
         assert body["metrics"][1]["missing_roles"] == ["financial_period"]
 

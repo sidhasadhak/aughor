@@ -59,10 +59,10 @@ _MAX_ROWS = 1000
 
 
 def _complete(out: Any, clock: Any, **facts) -> Any:
-    """Arc ED-6 — the answer with how complete its read is (`semantic/completeness.py`), when ``objects.completeness``
-    is on; as it was when off. A refusal is said as ``refused``, with its reason."""
+    """Arc ED-6 — the answer with how complete its read is (`semantic/completeness.py`). A refusal is said as
+    ``refused``, with its reason."""
     from aughor.semantic import completeness as C
-    if not C.enabled() or not isinstance(out, dict):
+    if not isinstance(out, dict):
         return out
     if out.get("path") == "refused":
         return {**out, "completeness": C.refused(str(out.get("refused") or ""), clock)}
@@ -70,10 +70,10 @@ def _complete(out: Any, clock: Any, **facts) -> Any:
 
 
 def _truthful(out: dict, result: Any) -> dict:
-    """With ``objects.completeness`` on, ``truncated`` says what the connection did: it stopped at its own cap (500)
-    long before the 1,000 this door compares with, so the old boolean was never true. Off: as before."""
+    """``truncated`` says what the connection did: it stopped at its own cap (500) long before the 1,000 this door
+    compares with, so the old boolean was never true."""
     from aughor.semantic import completeness as C
-    if C.enabled() and C.cut(result):
+    if C.cut(result):
         out["truncated"] = True
     return out
 
@@ -85,6 +85,16 @@ def _read_facts(graph: Any, compiled: Any, result: Any, shown: int) -> dict:
     error = str(getattr(result, "error", "") or "")
     return {"shown": shown, "truncated": C.cut(result), "withheld": list(getattr(compiled, "withheld", []) or []),
             "said": C.policy_words(graph, getattr(compiled, "withheld", []) or []), "refused": error}
+
+
+def _outside_grant(exc: Exception) -> None:
+    """Arc ED, ED-2 — a refusal because the request reached an entity outside its service principal's grant (a link, a
+    path through one) is the agent gate's own refusal: a 403 with the code and words an entity named outside the grant
+    gets, never an answer that says the door refused. Every other refusal is the door's to answer."""
+    from aughor.semantic.object_query import OutsideGrant
+    if isinstance(exc, OutsideGrant):
+        from aughor.rbac.principal_grant import refused_here
+        raise refused_here(exc.reason) from exc
 
 
 def _served_graph(connection_id: str, schema_name: Optional[str]):
@@ -205,7 +215,7 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         related = object_context(graph, db, connection_id, graph.schema_name, instance,
                                  dialect=getattr(db, "dialect", "") or "duckdb",
-                                 keyed=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
+                                 keyed=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3
         return _complete({"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
                           **instance.to_dict(), "related": related,
                           **_retiring_of(graph, _entity_id(graph, object_type), connection_id)}, clock, **_object_facts(instance))
@@ -297,6 +307,7 @@ def get_object_links_page(object_type: str, pk: str, link: str, connection_id: s
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         return _complete({"path": "links", "connection_id": connection_id, "schema_name": graph.schema_name, **page},
@@ -329,6 +340,7 @@ def _domain_links_page(object_type: str, pk: str, link: str, domain: str, limit:
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "domain": scope.key}, clock)
     where = entity_source(graph, graph.entities[page["type_id"]])
@@ -395,14 +407,11 @@ class _FindRequest(BaseModel):
 @router.post("/objects/find", dependencies=[Depends(preview_from_request)])
 def post_object_find(body: _FindRequest, connection_id: str = BUILTIN_ID,
                      schema_name: Optional[str] = Query(default=None)):
-    """Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+    """Arc FA, FA-1 — the objects whose name holds the words, across the served entities: each
     entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
     the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
     ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
-    with more matches than shown. 404 while the flag is off. No model call."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("objects.find"):
-        raise HTTPException(status_code=404, detail="Finding an object by its name is off on this install.")
+    with more matches than shown. No model call."""
     from aughor.semantic.completeness import Clock, policy_words
     from aughor.semantic.object_find import find_objects
     from aughor.semantic.object_query import ObjectQueryRefused
@@ -482,11 +491,9 @@ def get_object_types_by_reads(connection_id: str = BUILTIN_ID, schema_name: Opti
     """ROADMAP §3.60 (Arc FA, FA-3) — every entity of the scope ranked by how often audited statements named its tables
     in the last ``window`` days, the least read first — the list a person cleaning up reads: each with its reads, the
     day it was last read, how many people read it where the session log says who ran the statement, and the tables it
-    shares with another entity (a statement naming a shared table counts for both, said beside it). Behind
-    `ontology.entity_usage`: off, the door says so. No model call; the platform's own log, never the warehouse."""
+    shares with another entity (a statement naming a shared table counts for both, said beside it). No model call;
+    the platform's own log, never the warehouse."""
     from aughor.ontology import entity_uses
-    if not entity_uses.enabled():
-        return {"path": "off", "said": "What uses an entity is not shown: the setting is off."}
     graph = _served_graph(connection_id, schema_name)
     return {"path": "by_reads", "connection_id": connection_id, "schema_name": graph.schema_name,
             **entity_uses.ranked_by_reads(graph, connection_id, days=_days(window))}
@@ -520,12 +527,9 @@ def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
 
 
 def _retiring_of(graph: Any, entity_id: str, connection_id: str) -> dict:
-    """Arc FA, FA-3 — ``{"retiring": …}`` while `ontology.retiring` is on: the entity's mark — its successor, its day,
-    and the sentence readers are told — or None when it carries none, which tells the panel it may mark it. ``{}``
-    while the setting is off, so the answer is exactly what it was."""
+    """Arc FA, FA-3 — ``{"retiring": …}``: the entity's mark — its successor, its day, and the sentence readers are
+    told — or None when it carries none, which tells the panel it may mark it."""
     from aughor.ontology import retiring
-    if not retiring.enabled():
-        return {}
     try:
         mark = retiring.mark_for(graph, "entity", entity_id, conn=connection_id)
     except Exception as exc:  # noqa: BLE001 — the page still reads; the gap is journaled, never shown as no mark
@@ -542,11 +546,8 @@ def get_object_type_uses(object_type: str, connection_id: str = BUILTIN_ID,
                                              description="the recent window's days back, today included")):
     """ROADMAP §6 item 53 — what one entity is used by: its dependents (automations, processes, rules, actions,
     links, parts, metrics — each with how), every dashboard whose pieces read it, and how many audited statements
-    named its tables in each of the last twelve months. Behind `ontology.entity_usage`: off, the door says so and
-    the type's own page is exactly what it was. An unknown type is `path: refused`."""
+    named its tables in each of the last twelve months. An unknown type is `path: refused`."""
     from aughor.ontology import entity_uses
-    if not entity_uses.enabled():
-        return {"path": "off", "said": "What uses an entity is not shown: the setting is off."}
     from aughor.semantic.object_query import ObjectQueryRefused
     from aughor.semantic.object_types import describe_object_type
     graph = _served_graph(connection_id, schema_name)
@@ -653,6 +654,7 @@ def post_object_query(
                                             overlay=_accepted_edits(connection_id),
                                             metrics=keyed_metrics_for(connection_id, graph.schema_name))
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         out = {"connection_id": connection_id, "schema_name": graph.schema_name, **compiled.to_dict()}
@@ -710,6 +712,7 @@ def post_object_listing(
             compiled = compile_object_listing(listing, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                               overlay=_accepted_edits(connection_id))
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         out = {"connection_id": connection_id, "schema_name": graph.schema_name, "offset": listing.offset,
@@ -726,7 +729,8 @@ def post_object_listing(
                     "caveats": list(compiled.caveats) + list(page.caveats or []), "guard_receipts": list(receipts)})
         from aughor.semantic.completeness import policy_words
         return _complete(out, clock, shown=len(out["rows"]), of=out["total"], refused=str(error or ""),
-                         withheld=compiled.withheld, said=policy_words(graph, compiled.withheld))
+                         withheld=compiled.withheld, masked=list(compiled.masked),
+                         said=policy_words(graph, compiled.withheld) + list(compiled.masked.values()))
     finally:
         db.close()
 
@@ -759,6 +763,7 @@ def _domain_object_query(query: ObjectQuery, domain: str, execute: bool, clock: 
             compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                             overlay=_domain_edits(graph))
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
                               "connection_id": home}, clock)
         out = {"domain": scope.key, "connection_id": home, "schema_name": "", **compiled.to_dict()}

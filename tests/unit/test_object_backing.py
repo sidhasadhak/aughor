@@ -40,6 +40,7 @@ _CUSTOMER_SQL = ("SELECT c.customer_id, c.name, p.lifetime_spend, p.lifetime_ord
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 def _db(tmp_path):
@@ -129,7 +130,7 @@ def test_a_human_backing_binds_by_dry_run_and_earns_verified_only_when_measured(
                              fields={"backing": {"kind": "query", "sql": _CUSTOMER_SQL, "primary_key": "customer_id"}})
     OV.bind_overrides(ov, None, lambda sql: None)
     assert ov.binding["backing"]["bound"] is True and "unique" not in ov.binding["backing"]
-    OV.save_override(conn, schema, ov)
+    OV.publish_override(conn, schema, ov)                               # in force: the release's own door
     e = _entity()
     g = OntologyGraph(connection_id=conn, schema_name=schema, schema_fingerprint="f", entities={"Customer": e})
     OV.apply_overrides(g, conn, schema)
@@ -169,7 +170,8 @@ def test_the_entity_route_accepts_a_backing_and_the_read_path_shows_it(tmp_path,
                    json={"backing": {"kind": "query", "sql": _CUSTOMER_SQL, "primary_key": "customer_id"}})
     assert r.status_code == 200, r.text
     assert r.json()["verified"] is True and r.json()["override"]["binding"]["backing"]["bound"] is True
-    got = client.get("/ontology/entities", params={"connection_id": "cid", "schema_name": "crm"})
+    got = client.get("/ontology/entities",                          # the editor reads the draft the change waits in
+                     params={"connection_id": "cid", "schema_name": "crm", "ontology_view": "draft"})
     assert got.status_code == 200, got.text
     cust = got.json()["Customer"]                                   # the route returns {id: entity}
     assert cust["backing"]["kind"] == "query" and cust["api_name"] == "customer"
@@ -196,7 +198,7 @@ def test_a_keyed_select_is_previewed_against_the_type_set_and_withdrawn_back_to_
         "name": M.EntityProperty(name="name", data_type="VARCHAR", semantic_type="dimension")})
     ST.save_ontology("cid", "crm", "fp", OntologyGraph(connection_id="cid", schema_name="crm", schema_fingerprint="fp",
                                                        entities={"Customer": customer}))
-    params = {"connection_id": "cid", "schema_name": "crm"}
+    params = {"connection_id": "cid", "schema_name": "crm", "ontology_view": "draft"}   # as the editing screens read
 
     def preview(sql: str, key: str = "customer_id") -> dict:
         r = client.post("/ontology/entities/Customer/backing/preview", params=params, json={"sql": sql, "primary_key": key})

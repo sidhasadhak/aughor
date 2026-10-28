@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Arc OC-2 — the release strip: nothing while releases are off; with them on, which release everyone reads, each
- * waiting change with its class and what it touches, Publish refused while a change would break something, and a
- * discard of one change sent with its kind and id.
+ * Arc OC-2 — the release strip: which release everyone reads, each waiting change with its class and what it
+ * touches, Publish refused while a change would break something, and a discard of one change sent with its kind and id.
  *
  * Since the Ontology tab was laid out as its approved mockup (2026-10-10) the release is a chip in the tab's bar —
  * "Release 2 · 9 Oct" — and, while changes wait, the chip says how many and opens them, with Publish and Discard.
@@ -38,8 +37,8 @@ const breaking = { ...meaning, element: "ontology:c/s/entity/Review", kind: "ent
   change: "withdrawn", class: "ERR", reasons: [{ class: "ERR", why: "it is withdrawn, and 1 thing relies on it" }],
   touches: { claims: [], cards: [], automations: [] } };
 
-function state(draft: unknown[], enabled = true) {
-  return { enabled, connection_id: "c", schema_name: "s", releases: [],
+function state(draft: unknown[]) {
+  return { connection_id: "c", schema_name: "s", releases: [],
            published: { number: 2, id: "c/s@2", at: "2026-10-09T08:41:25+00:00", by: "ana", note: "", elements: 4 },
            draft };
 }
@@ -47,13 +46,6 @@ function state(draft: unknown[], enabled = true) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ReleaseStrip", () => {
-  it("renders nothing while releases are off", async () => {
-    const calls = serve(state([], false));
-    const { container } = render(<ReleaseStrip connectionId="c" schema="s" onChanged={() => {}} />);
-    await waitFor(() => expect(calls.length).toBe(1));
-    expect(container.firstChild).toBeNull();
-  });
-
   it("with nothing waiting, is one chip naming the release everyone reads — and offers no publish", async () => {
     serve(state([]));
     render(<ReleaseStrip connectionId="c" schema="s" onChanged={() => {}} />);

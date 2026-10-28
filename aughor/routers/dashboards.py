@@ -1,10 +1,8 @@
 """A person's dashboards in the Briefing — list, read, start, keep, go back, retire, draft, move
 (Arc CT, CT-7 to CT-10; ROADMAP §3.50).
 
-Behind ``dashboard.composed``. Off, every route here answers 404 and the Briefing draws its
-dashboard as it always did. On, **one route calls a model** — ``POST /cockpits/draft``, when a
-person names an area and asks for a draft. Every other route reads what was kept, or keeps
-what a person wrote, and calls none.
+**One route calls a model** — ``POST /cockpits/draft``, when a person names an area and asks for
+a draft. Every other route reads what was kept, or keeps what a person wrote, and calls none.
 
 A dashboard is the asker's own (``aughor/dashboards/home.py``): the person comes from the request,
 never from a parameter, so no route here can read or change someone else's. Every connection a
@@ -24,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from aughor.ontology.security import acting_agent_from_request
 from aughor.security.authz import connection_owner_guard
 
 router = APIRouter(tags=["cockpit"], dependencies=[Depends(connection_owner_guard)])
@@ -77,12 +76,6 @@ class PublishRequest(BaseModel):
     to: list[dict[str, Any]]
 
 
-def _on() -> None:
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("dashboard.composed"):
-        raise HTTPException(status_code=404, detail="dashboards need the 'dashboard.composed' flag")
-
-
 class QuestionKeepRequest(BaseModel):
     """A question kept on a dashboard (PENDING 54): its words, how often it is asked, and the Data Canvas answer it
     starts from, when it is kept from one."""
@@ -94,13 +87,6 @@ class QuestionKeepRequest(BaseModel):
 
 class QuestionRhythmRequest(BaseModel):
     rhythm: str
-
-
-def _questions_on() -> None:
-    _on()
-    from aughor.dashboards import questions
-    if not questions.on():
-        raise HTTPException(status_code=404, detail="questions on a dashboard need the 'dashboard.questions' flag")
 
 
 def _home(request: Request, connection_id: str, cockpit_id: str):
@@ -170,7 +156,6 @@ def _layout_order(connection_id: str, owner: str) -> list[str]:
 def list_dashboards(request: Request, connection_id: str) -> dict:
     """The asker's dashboards on this connection, the cards they may place, and the canvas
     dashboards waiting to be moved here. No model call, and nothing is written."""
-    _on()
     from aughor.dashboards import cards, versions
     from aughor.dashboards.home import FIRST, Home, person_of
     owner = person_of(request)
@@ -188,7 +173,6 @@ def list_dashboards(request: Request, connection_id: str) -> dict:
 def audiences(request: Request, connection_id: str) -> dict:
     """The groups the asker belongs to and the roles they hold: who they may publish a dashboard to
     (the canvas, B5). Declared before the dashboard-by-id read, which would take the word for an id."""
-    _on()
     from aughor.dashboards import sharing
     from aughor.dashboards.home import person_of
     return sharing.audience_of(person_of(request))
@@ -197,7 +181,6 @@ def audiences(request: Request, connection_id: str) -> dict:
 @router.get("/dashboards/shared")
 def shared_dashboards(request: Request, connection_id: str) -> dict:
     """The dashboards others published to a group the asker is in or a role they hold."""
-    _on()
     from aughor.dashboards import sharing
     from aughor.dashboards.home import person_of
     return {"cockpits": sharing.shared_with(connection_id, person_of(request))}
@@ -209,20 +192,16 @@ def read_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
                         workspace_id: Optional[str] = None) -> dict:
     """A published dashboard as it stands, for a reader it reaches: read-only, for the reader's own
     period; a card the reader may not read stands and says so."""
-    _on()
     from aughor.dashboards import cards, host, images, sharing
     from aughor.dashboards.home import person_of
-    from aughor.kernel.flags import flag_enabled
     from aughor.routers.investigations import resolve_currency_symbol
     try:
         got = sharing.read_shared(connection_id, owner, cockpit_id, reader=person_of(request))
     except sharing.Refused as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     home, kept = got["home"], got["cockpit"]
-    ranges_on = flag_enabled("briefing.ranges")
-    block, why = host.range_state(connection_id, preset if ranges_on else None,
-                                  start=_day(start, "start") if ranges_on else None,
-                                  end=_day(end, "end") if ranges_on else None, workspace_id=workspace_id)
+    block, why = host.range_state(connection_id, preset, start=_day(start, "start"), end=_day(end, "end"),
+                                  workspace_id=workspace_id)
     if block is None:
         raise HTTPException(status_code=422, detail=why)
     return {
@@ -230,7 +209,6 @@ def read_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
         "cockpit": kept,
         "cards": [_as_read(c, connection_id) for c in cards.cards_of(home)],
         "range": block,
-        "ranges_on": ranges_on,
         "currency_symbol": resolve_currency_symbol(connection_id, None),
         "images": images.stamps_for(connection_id, kept.get("spec")),
         "published_by": kept.get("published_by") or "",
@@ -243,7 +221,6 @@ def read_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
 def copy_shared_dashboard(request: Request, owner: str, cockpit_id: str, connection_id: str) -> dict:
     """Start a dashboard of the asker's own from a published one: the publisher's cards copied into
     theirs, the spec kept as the new dashboard's first version. The publisher's is untouched."""
-    _on()
     from aughor.dashboards import sharing
     from aughor.dashboards.home import person_of
     try:
@@ -254,19 +231,17 @@ def copy_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
     return _answer(out["kept"], cockpit_id=out["cockpit_id"], title=out["title"])
 
 
-@router.get("/dashboards/from-object")
+@router.get("/dashboards/from-object", dependencies=[Depends(acting_agent_from_request)])
 def propose_from_object(entity: str, connection_id: str, schema_name: Optional[str] = None) -> dict:
     """What a dashboard started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
-    it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path."""
-    _on()
-    from aughor.dashboards import from_object, pieces
-    from aughor.kernel.flags import flag_enabled
+    it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+    Arc OC-7 — read as the object doors read: an agent acting for the person (``X-Aughor-Acting-Agent``) reads only
+    what both may."""
+    from aughor.dashboards import from_object
     from aughor.routers.ontology import served_ontology_graph
     from aughor.semantic.object_query import ObjectQueryRefused
-    if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG)):
-        raise HTTPException(status_code=404, detail="Starting a dashboard from an object is off on this install.")
     graph = served_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
@@ -284,28 +259,17 @@ def propose_from_object(entity: str, connection_id: str, schema_name: Optional[s
 def suggested_shapes(connection_id: str, schema_name: Optional[str] = None) -> dict:
     """Arc AP-5 — what each object suggests a dashboard be: the shape that fits it best, with a short line of why, read
     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``."""
-    _on()
-    from aughor.dashboards import app_pieces, from_object, pieces, shapes, wiring
-    from aughor.kernel.flags import flag_enabled
+    from aughor.dashboards import shapes
     from aughor.routers.ontology import served_ontology_graph
-    if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG) and shapes.on()):
-        raise HTTPException(status_code=404, detail="Starting a dashboard from a shape is off on this install.")
     graph = served_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
     out = []
     for entity in graph.entities.values():
-        sig = shapes.signals(graph, entity, wiring=wiring.on(), pieces=app_pieces.on())
+        sig = shapes.signals(graph, entity)
         best = shapes.offered(sig)[0]
         out.append({"entity": entity.api_name, "type_id": entity.id, "name": sig["name"], **best})
     return {"connection_id": connection_id, "schema_name": graph.schema_name, "objects": out}
-
-
-def _queries_on() -> None:
-    from aughor.dashboards import queries
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(queries.FLAG):
-        raise HTTPException(status_code=404, detail="A query of your own on a dashboard is off on this install.")
 
 
 def _read_query(connection_id: str, req: QueryRequest) -> dict:
@@ -320,12 +284,9 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
         shown = queries.Shown.model_validate(req.shown or {"as": "table"})
     except Exception as e:
         return {"refused": [f"How the card is shown cannot be read: {e}"]}
-    # Arc AP-8 — the dashboard's values it reads, bound: refused while variables are off, or when one holds nothing
+    # Arc AP-8 — the dashboard's values it reads, bound: refused when one holds nothing
     run_sql, params = sql, None
     if queries.params_of(sql):
-        from aughor.dashboards import variables
-        if not variables.on():
-            return {"refused": [variables.refused_query(sql)]}
         try:
             run_sql, params = queries.bind(sql, req.values)
         except queries.Refused as e:
@@ -373,8 +334,6 @@ def preview_query(connection_id: str, req: QueryRequest) -> dict:
     """Arc AP-7 — run a person's own query as the builder would keep it, and say what it returns and how it would be
     shown — or what stops it. Nothing is kept. It runs through the connection's own door, read-only, stopped after the
     connection's time limit. Registered before ``/cockpits/{cockpit_id}``."""
-    _on()
-    _queries_on()
     return {"connection_id": connection_id, **_read_query(connection_id, req)}
 
 
@@ -383,8 +342,6 @@ def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
     """Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
     card, and the one it replaces is superseded, never deleted — so a dashboard's earlier versions still read their own."""
-    _on()
-    _queries_on()
     from aughor.dashboards import cards
     from aughor.dashboards.home import FIRST, Home, person_of
     from aughor.cards import doors
@@ -416,7 +373,6 @@ def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
 def keep_question(body: QuestionKeepRequest, connection_id: str) -> dict:
     """Keep a question for a dashboard: its automation, asked on its rhythm (weekly by default) or only when asked.
     Nothing is asked now — the first answer comes on its schedule, or is the Data Canvas answer it starts from."""
-    _questions_on()
     from aughor.dashboards import questions
     try:
         return questions.keep(connection_id=connection_id, question=body.question, rhythm=body.rhythm,
@@ -429,7 +385,6 @@ def keep_question(body: QuestionKeepRequest, connection_id: str) -> dict:
 def question_cost(connection_id: str) -> dict:
     """What one answer costs on this connection, from this install's own metered runs — said before a question is kept.
     Registered before the read below, which would otherwise take "cost" for a question's id."""
-    _questions_on()
     from aughor.record.inquiry import run_cost_estimate
     return run_cost_estimate(connection_id)
 
@@ -437,7 +392,6 @@ def question_cost(connection_id: str) -> dict:
 @router.get("/dashboards/questions/{automation_id}")
 def read_question(automation_id: str, first: str = "") -> dict:
     """A question as a dashboard shows it — its latest answer in full and every answer in a line. No model call."""
-    _questions_on()
     from aughor.dashboards import questions
     try:
         return questions.read(automation_id, first=first)
@@ -448,7 +402,6 @@ def read_question(automation_id: str, first: str = "") -> dict:
 @router.post("/dashboards/questions/{automation_id}/ask")
 def ask_question_now(automation_id: str) -> dict:
     """Ask it now: a full agent run, through the gates its schedule uses. A person's click, never a page's load."""
-    _questions_on()
     from aughor.dashboards import questions
     try:
         return questions.ask_now(automation_id)
@@ -458,7 +411,6 @@ def ask_question_now(automation_id: str) -> dict:
 
 @router.put("/dashboards/questions/{automation_id}/rhythm")
 def set_question_rhythm(automation_id: str, body: QuestionRhythmRequest) -> dict:
-    _questions_on()
     from aughor.dashboards import questions
     try:
         return questions.set_rhythm(automation_id, body.rhythm)
@@ -472,17 +424,12 @@ def read_dashboard(request: Request, cockpit_id: str, connection_id: str, preset
                  workspace_id: Optional[str] = None) -> dict:
     """One of the asker's dashboards as it stands: its newest version with its spec, every card
     it may place (theirs and the connection's), the range it is read for, and its history."""
-    _on()
     from aughor.dashboards import cards, host, images, versions
-    from aughor.kernel.flags import flag_enabled
     from aughor.routers.investigations import resolve_currency_symbol
     home = _home(request, connection_id, cockpit_id)
     kept = versions.latest(home)
     if kept is None:
         raise HTTPException(status_code=404, detail="No such dashboard")
-    ranges_on = flag_enabled("briefing.ranges")
-    if (preset or start or end) and not ranges_on:
-        raise HTTPException(status_code=404, detail="a dashboard for a date range needs the 'briefing.ranges' flag")
     block, why = host.range_state(connection_id, preset, start=_day(start, "start"), end=_day(end, "end"),
                                   workspace_id=workspace_id)
     if block is None:
@@ -494,7 +441,6 @@ def read_dashboard(request: Request, cockpit_id: str, connection_id: str, preset
         "cockpit": kept,
         "cards": [{**_as_read(c, connection_id), "not_offered": withheld.get(c.id, "")} for c in held],
         "range": block,
-        "ranges_on": ranges_on,
         "history": versions.history(home),
         "currency_symbol": resolve_currency_symbol(connection_id, None),
         # What the spec's images are, from the volume's own rows; one the dashboard may not show says why.
@@ -516,7 +462,6 @@ async def upload_image(request: Request, connection_id: str, file: UploadFile) -
     """Take an image into this connection's dashboard volume — PNG, JPEG, GIF, WebP or SVG, up to
     5 MB, read from its bytes — to be placed on a dashboard by the object id this answers with.
     By hand only: no model uploads an image."""
-    _on()
     from aughor.dashboards import images
     data = await file.read()
     try:
@@ -529,7 +474,6 @@ async def upload_image(request: Request, connection_id: str, file: UploadFile) -
 @router.get("/dashboards/images/{object_id}")
 def read_image(request: Request, object_id: str, connection_id: str) -> Response:
     """An image a dashboard on this connection places, as bytes, with the reader's own access."""
-    _on()
     from aughor.dashboards import images
     try:
         data, content_type = images.read_image(connection_id, object_id)
@@ -547,7 +491,6 @@ def read_image(request: Request, object_id: str, connection_id: str) -> Response
 def keep_dashboard(request: Request, cockpit_id: str, connection_id: str, req: KeepRequest) -> dict:
     """Keep a spec the person wrote — a card moved, a section renamed — as the dashboard's next
     version, or a refusal with the reasons."""
-    _on()
     from aughor.dashboards import versions
     home = _home(request, connection_id, cockpit_id)
     return _answer(versions.keep(home, req.spec, approved_by=_approved_by(request),
@@ -560,7 +503,6 @@ def keep_dashboard(request: Request, cockpit_id: str, connection_id: str, req: K
 def start_first(request: Request, connection_id: str) -> dict:
     """Start "My dashboard" from the cards pinned in the Briefing before dashboards had names, in the
     order the person arranged them. Written by code, kept like any other spec."""
-    _on()
     from aughor.dashboards import cards, compose, versions
     from aughor.dashboards.home import FIRST
     home = _home(request, connection_id, FIRST)
@@ -585,7 +527,6 @@ def draft_dashboard(request: Request, connection_id: str, req: DraftRequest) -> 
     """⚑ Spends model calls. Draft a new dashboard for the area the person named: one short
     model run with the drafting tool alone. What comes back is a proposal to keep or not, or
     the reasons none was drafted — never a dashboard changed."""
-    _on()
     from aughor.dashboards.ask import draft_for_area
     from aughor.dashboards.home import person_of
     return draft_for_area(connection_id, person_of(request), req.area, schema=req.schema_name)
@@ -595,7 +536,6 @@ def draft_dashboard(request: Request, connection_id: str, req: DraftRequest) -> 
 def move_dashboard(request: Request, connection_id: str, req: MoveRequest) -> dict:
     """Move a canvas's dashboard to the asker's Briefing. One act: the cards it places become
     theirs, its spec their dashboard's first version, and the canvas's is retired with a note."""
-    _on()
     from aughor.dashboards.home import person_of
     from aughor.dashboards.move import move_from_canvas
     out = move_from_canvas(req.canvas_id, connection_id=connection_id, owner=person_of(request))
@@ -609,7 +549,6 @@ def ask_dashboard(request: Request, cockpit_id: str, connection_id: str, req: As
     """⚑ Spends model calls. A change to one of the asker's dashboards, asked for in words — add a
     finding, move or resize an element, take a note off, share it with a team. One short model
     run with the drafting tool alone; what comes back is a proposal to keep or not."""
-    _on()
     from aughor.dashboards.ask import edit_in_words
     from aughor.dashboards.home import person_of
     home = _home(request, connection_id, cockpit_id)
@@ -620,7 +559,6 @@ def ask_dashboard(request: Request, cockpit_id: str, connection_id: str, req: As
 def publish_dashboard(request: Request, cockpit_id: str, connection_id: str, req: PublishRequest) -> dict:
     """Publish the dashboard as it stands to groups the asker belongs to and roles they may publish
     to. A version, under their name; a reader sees it under "Shared with you"."""
-    _on()
     from aughor.dashboards import sharing, versions
     from aughor.dashboards.home import person_of
     home = _home(request, connection_id, cockpit_id)
@@ -641,7 +579,6 @@ def publish_dashboard(request: Request, cockpit_id: str, connection_id: str, req
 @router.post("/dashboards/{cockpit_id}/unpublish")
 def unpublish_dashboard(request: Request, cockpit_id: str, connection_id: str) -> dict:
     """Stop sharing a dashboard. A version too: its history says when it reached whom."""
-    _on()
     from aughor.dashboards import versions
     home = _home(request, connection_id, cockpit_id)
     return _answer(versions.publish(home, [], approved_by=_approved_by(request)), cockpit_id=home.cockpit_id)
@@ -651,7 +588,6 @@ def unpublish_dashboard(request: Request, cockpit_id: str, connection_id: str) -
 def restore_dashboard(request: Request, cockpit_id: str, connection_id: str, req: RestoreRequest) -> dict:
     """Go back to an earlier version. It is kept again as the newest, checked against the
     cards as they are today."""
-    _on()
     from aughor.dashboards import versions
     home = _home(request, connection_id, cockpit_id)
     return _answer(versions.restore(home, req.version, approved_by=_approved_by(request)),
@@ -661,7 +597,6 @@ def restore_dashboard(request: Request, cockpit_id: str, connection_id: str, req
 @router.post("/dashboards/{cockpit_id}/retire")
 def retire_dashboard(request: Request, cockpit_id: str, connection_id: str, req: RetireRequest) -> dict:
     """Retire a dashboard. Its history stays."""
-    _on()
     from aughor.dashboards import versions
     home = _home(request, connection_id, cockpit_id)
     return _answer(versions.retire(home, approved_by=_approved_by(request), note=req.note),

@@ -1,8 +1,7 @@
-"""Rows marked by a declared rule (the Grist study §10; flag ``dashboard.marks``, off).
+"""Rows marked by a declared rule (the Grist study §10).
 
 A table's or a list's ``marked`` names a segment the ontology declares and a tone; the web marks the rows it admits and
-says how many. The server holds a kept spec to the flag — a spec marking rows is refused while marks are off, and any
-other keeps as it did — and compiles each mark's count over the served ontology, so a segment the entity does not
+says how many. The server compiles each mark's count over the served ontology, so a segment the entity does not
 declare is refused at the keep.
 """
 from __future__ import annotations
@@ -12,7 +11,6 @@ import pytest
 from aughor.dashboards import marks as M
 from aughor.dashboards import pieces
 from aughor.dashboards.compose import default_spec
-from aughor.kernel.flags import flag_overrides
 from tests.unit.test_dashboard_pieces import _graph
 
 
@@ -24,16 +22,6 @@ def _spec(marked: dict | None) -> dict:
     spec["elements"].update({"s": {"type": "Section", "props": {"title": "Orders"}, "children": ["t"]},
                              "t": {"type": "ObjectTable", "props": props, "children": []}})
     return spec
-
-
-def test_off_a_spec_marking_rows_is_refused_and_any_other_is_not():
-    marked = _spec({"segment": "overdue_dispatch", "tone": "warn"})
-    with flag_overrides({"dashboard.marks": False}):
-        assert M.held(marked) == [("t", {"segment": "overdue_dispatch", "tone": "warn"})]
-        assert M.refused_off(marked) == ["The dashboard marks rows by a rule — t — and marking rows is off on this install."]
-        assert M.refused_off(_spec(None)) == []
-    with flag_overrides({"dashboard.marks": True}):
-        assert M.refused_off(marked) == []
 
 
 def test_a_mark_counts_its_rows_through_the_door_as_a_set_of_the_entity():
@@ -51,7 +39,7 @@ def no_edits(monkeypatch):
 
 
 def test_a_mark_naming_a_segment_the_entity_declares_keeps_and_one_it_does_not_is_refused(monkeypatch, no_edits):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in {pieces.FLAG})
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
     # `delivered_orders` is a verified segment the test graph declares on orders
     assert pieces.not_resolved("c", _spec({"segment": "delivered_orders", "tone": "good"}), graph=_graph()) == []
     said = pieces.not_resolved("c", _spec({"segment": "no_such_rule", "tone": "warn"}), graph=_graph())

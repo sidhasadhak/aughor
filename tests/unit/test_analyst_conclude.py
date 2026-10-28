@@ -1,4 +1,5 @@
-"""P1 of the canvas-output study (`analyst.conclude`): the analyst's answer carries its own
+"""P1 of the canvas-output study (the flag `analyst.conclude` until it was made unconditional, 2026-10-28,
+ROADMAP §3.65): the analyst's answer carries its own
 structure — a headline, the answer, the results it cites with their claims — and nothing in it
 is cut or guessed by code. Measured on 88 stored answers (2026-10-14): 58% of the results drawn
 carried no words, 46 bodies tabulated rows a result below drew again, and the first-sentence
@@ -16,9 +17,6 @@ from aughor.agent.analyst import (
     analyst_tools,
     conclude,
 )
-from aughor.kernel.flags import flag_overrides
-
-ON = {"analyst.conclude": True}
 
 
 def _turn(findings: list[dict] | None = None) -> AnalystTurn:
@@ -82,21 +80,16 @@ def test_a_phase_tool_names_its_results_ids_beside_the_evidence():
     assert payload["phases"][0]["results"] == [{"result_id": "adhoc_1_1", "title": "Revenue by category"}]
 
 
-def test_the_tool_is_on_the_roster_only_with_the_flag():
+def test_the_tool_ends_the_roster():
     stub = SimpleNamespace(connection_id="c1")
-    assert "conclude" not in {t.name for t in analyst_tools(stub, session_id="s")}
-    with flag_overrides(ON):
-        for shape in ("diagnose", "describe"):
-            tools = analyst_tools(stub, session_id="s", shape=shape)
-            assert tools[-1].name == "conclude" and tools[-1].concludes is True, shape
+    for shape in ("diagnose", "describe", "check"):
+        tools = analyst_tools(stub, session_id="s", shape=shape)
+        assert tools[-1].name == "conclude" and tools[-1].concludes is True, shape
 
 
-def test_the_prompt_asks_for_conclude_only_with_the_flag():
-    for shape in ("diagnose", "describe"):
-        off = analyst_system_prompt("c1", {}, 10, shape=shape)
-        assert "conclude" not in off and "When you stop" in off, shape
-        with flag_overrides(ON):
-            on = analyst_system_prompt("c1", {}, 10, shape=shape)
+def test_the_prompt_asks_for_conclude():
+    for shape in ("diagnose", "describe", "check"):
+        on = analyst_system_prompt("c1", {}, 10, shape=shape)
         assert "call `conclude`" in on and "result_id" in on, shape
         assert "The following table lists" not in on or shape == "diagnose"
 

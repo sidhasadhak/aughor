@@ -3,7 +3,8 @@
 The tree the app writes (`data/ontology_overrides/`) is the INSTANCE; overrides the repo ships
 live in `data/shipped/ontology_overrides/`, which is never written. A file at the same relative
 path shadows the seed's whole, and a withdrawn shipped one leaves a `<file>.hidden` marker.
-Both roots are repointed at tmp in every test.
+Both roots are repointed at tmp in every test. A change waits in the draft until a person publishes it (Arc OC-2), so
+the instance tree is written here through the release's own doors (`publish_override`, `publish_withdrawal`).
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ def roots(tmp_path, monkeypatch):
     inst, seed = tmp_path / "instance", tmp_path / "seed"
     monkeypatch.setattr(ov, "_ROOT", inst)
     monkeypatch.setattr(ov, "_SEED_ROOT", seed)
+    monkeypatch.setattr(ov, "_DRAFT_ROOT", tmp_path / "draft")
     return inst, seed
 
 
@@ -42,9 +44,9 @@ def test_O1_a_reader_sees_this_installs_files_over_the_shipped_ones(roots):
     ship(seed, "c1", "main", "entity", "orders", label="Shipped orders", owner="shipped-owner")
     ship(seed, "c1", "main", "action", "refund")
     ship(seed, "c1", "seedonly", "entity", "x")
-    ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="orders",
-                                                    fields={"label": "Our orders"}))
-    ov.save_override("c1", "main", OntologyOverride(target_kind="action", target_id="ship_it"))
+    ov.publish_override("c1", "main", OntologyOverride(target_kind="entity", target_id="orders",
+                                                       fields={"label": "Our orders"}))
+    ov.publish_override("c1", "main", OntologyOverride(target_kind="action", target_id="ship_it"))
     assert ids() == [("action", "refund", None), ("action", "ship_it", None),
                      ("entity", "orders", "Our orders")]
     assert "owner" not in ov.find_override("c1", "main", "entity", "orders").fields
@@ -60,16 +62,16 @@ def test_O2_withdrawing_a_shipped_declaration_hides_it_and_redeclaring_brings_it
     SEED, and a `removed` flag that stops meaning "something was visible"."""
     inst, seed = roots
     shipped = ship(seed, "c1", "main", "action", "refund")
-    assert ov.delete_override("c1", "main", "action", "refund") is True
+    assert ov.publish_withdrawal("c1", "main", "action", "refund") is True
     assert shipped.exists(), "the shipped file was deleted"
     assert ids() == []
     assert action_census() == {}
-    assert ov.delete_override("c1", "main", "action", "refund") is False     # nothing visible now
-    ov.save_override("c1", "main", OntologyOverride(target_kind="action", target_id="refund",
-                                                    fields={"label": "ours"}))
+    assert ov.publish_withdrawal("c1", "main", "action", "refund") is False     # nothing visible now
+    ov.publish_override("c1", "main", OntologyOverride(target_kind="action", target_id="refund",
+                                                       fields={"label": "ours"}))
     assert ids() == [("action", "refund", "ours")]
     assert not list(inst.rglob("*.hidden"))
-    assert ov.delete_override("c1", "main", "action", "refund") is True
+    assert ov.publish_withdrawal("c1", "main", "action", "refund") is True
     assert ids() == []
 
 
@@ -79,8 +81,8 @@ def test_a_write_that_dies_halfway_leaves_the_previous_declaration_whole(roots, 
     import pathlib
 
     inst, _ = roots
-    ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
-                                                    fields={"label": "before"}))
+    ov.publish_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
+                                                       fields={"label": "before"}))
     real = pathlib.Path.write_text
 
     def dies_halfway(self, data, *a, **k):
@@ -92,8 +94,8 @@ def test_a_write_that_dies_halfway_leaves_the_previous_declaration_whole(roots, 
         # and it SAYS so (PENDING item 21): a write that did not land used to be swallowed, so every door reported
         # a save that never happened
         with pytest.raises(ov.OverrideWriteFailed, match="entity 'o' was not saved"):
-            ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
-                                                            fields={"label": "after"}))
+            ov.publish_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
+                                                               fields={"label": "after"}))
     assert ids() == [("entity", "o", "before")]
     assert [p.name for p in inst.rglob("*") if p.is_file()] == ["o.yaml"], "a temp file leaked"
 
@@ -103,16 +105,16 @@ def test_a_replace_windows_refuses_falls_back_to_writing_in_place(roots, monkeyp
     PermissionError be swallowed — the route would report a save that never happened."""
     import pathlib
 
-    ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
-                                                    fields={"label": "before"}))
+    ov.publish_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
+                                                       fields={"label": "before"}))
 
     def refused(self, target):
         raise PermissionError(13, "The process cannot access the file")
 
     with monkeypatch.context() as mp:
         mp.setattr(pathlib.Path, "replace", refused)
-        ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
-                                                        fields={"label": "after"}))
+        ov.publish_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o",
+                                                           fields={"label": "after"}))
     assert ids() == [("entity", "o", "after")]
 
 
@@ -130,6 +132,6 @@ def test_O3_an_instance_tree_inside_the_seed_is_refused_loudly(roots, monkeypatc
 
 def test_an_absent_seed_is_an_empty_layer(roots):
     """What every install has today: nothing ships under data/shipped/ontology_overrides."""
-    ov.save_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o"))
+    ov.publish_override("c1", "main", OntologyOverride(target_kind="entity", target_id="o"))
     assert ids() == [("entity", "o", None)]
     assert ov.override_scopes("c1") == ["main"]

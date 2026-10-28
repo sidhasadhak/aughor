@@ -124,6 +124,7 @@ def sources(tmp_path_factory):
 def _isolated(tmp_path, monkeypatch, sources):
     """Every test declares into its own tree; each half has the builder's catalogue its columns borrow roles from."""
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     catalogue = json.loads(CATALOGUE.read_text())
     for name in ("whole", "shop", "crm"):
@@ -1296,7 +1297,10 @@ def test_the_object_doors_open_an_organisations_objects_where_they_live_over_htt
     assert (opened.json()["path"], opened.json()["domain"], opened.json()["connection_id"], opened.json()["title"]) == (
         "object", "default/default", sources["crm"], full_name)
     carried = client.get("/objects/Customer/C00001", params={"connection_id": "domain:default", "domain": "default"})
-    assert carried.json() == opened.json()                 # the scope the web carries an organisation's ontology in
+
+    def _untimed(body: dict) -> dict:                      # every read says how long it took, which two reads never share
+        return {**body, "completeness": {k: v for k, v in body["completeness"].items() if k != "took_ms"}}
+    assert _untimed(carried.json()) == _untimed(opened.json())   # the scope the web carries an organisation's ontology in
     stray = client.get("/objects/Customer/C00001", params={"connection_id": "domain:default"})
     assert stray.status_code == 400 and "?domain=" in stray.json()["detail"]
     assert client.get("/objects/Customer/C99999", params=domain).status_code == 404

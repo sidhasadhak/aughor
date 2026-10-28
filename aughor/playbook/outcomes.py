@@ -135,15 +135,6 @@ def log_outcome(
             return outcome
     raw.append(outcome.model_dump())
     _save_raw(raw, path)
-
-    # Promote (or weaken) causal proposals for this investigation
-    if status in ("verified", "implemented", "rejected"):
-        try:
-            from aughor.lifecycle.causal import promote_on_outcome
-            promote_on_outcome(inv_id, contradicted=(status == "rejected"))
-        except Exception:
-            pass
-
     return outcome
 
 

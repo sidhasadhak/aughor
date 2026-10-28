@@ -9,7 +9,7 @@ describe("appWords — what an App's owner is told about the version its readers
     expect(appWords({ version: 3, published_to: [] })).toEqual({ label: "Publish as an App", title: "", draft: false, readersSee: null });
   });
 
-  it("a server with App versions off says no state, and the words read as before", () => {
+  it("a server from before App versions says no state, and the words read as before", () => {
     expect(appWords({ version: 3, published_to: [sales] }).label).toBe("An App for Sales team");
     expect(appWords({ version: 3, published_to: [sales] }).draft).toBe(false);
   });

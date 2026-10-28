@@ -205,7 +205,8 @@ def test_run_records_the_model_it_ran_under(db):
     cfg = store.get_run(summary.run_id)["config"]
     assert "backend" in cfg
     assert "models" in cfg and "coder" in cfg["models"]
-    assert "flags" in cfg
+    # no routing flag to record since 2026-10-28 (ROADMAP §3.65): nothing switchable changes what a run does
+    assert "flags" not in cfg
     assert cfg["iterations"] == 1
 
 
@@ -380,7 +381,7 @@ def test_graduation_without_a_baseline_demands_a_clean_run():
     assert evaluate_graduation("demo.flag", _CLEAN, registered_flags=_REG).can_graduate
 
 
-def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
+def test_graduate_a_real_flag_over_http_and_receipt_it(client, db, synthetic_flags):
     """The E6 decision gate: graduate exactly one REAL flag through the gate, and prove
     the load-bearing property — graduation records receipted EVIDENCE and does NOT flip
     the flag (a ledger-on/code-off override is the very drift the 2026-07-22 audit removed)."""
@@ -394,7 +395,7 @@ def test_graduate_a_real_flag_over_http_and_receipt_it(client, db):
         {"question": "rows", "artifact": "SELECT id, v FROM t ORDER BY id"}]})
     client.post(f"/evals/suites/{sid}/run", json={"iterations": 3})
 
-    flag = "explore.route_wide"                    # a real, default-OFF flag (an E4 A/B candidate)
+    flag = synthetic_flags[0]                      # a default-OFF experiment flag (an E4 A/B candidate), synthetic
     before = flag_state(flag)
     assert before == "off"
 

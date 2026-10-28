@@ -205,7 +205,6 @@ def test_a_scheduled_send_pauses_while_ended_data_does_not_move(monkeypatch, end
     """Data that stopped sends the same edition every morning; the first goes, the repeats pause, and
     the send resumes by itself when new rows move the edge (the edition then covers new days)."""
     from aughor.briefing import delivery
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "briefing.ranges")
     edge = ENDED if ended else {**ENDED, "through": date(2026, 10, 21), "tables": {"orders": date(2026, 10, 21)}}
     asked: dict = {}
 

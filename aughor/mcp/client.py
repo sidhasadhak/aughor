@@ -247,7 +247,8 @@ class AughorClient:
     # ── AO-5a: custom agents as tools ───────────────────────────────────────────
     async def list_user_agents(self) -> list[dict]:
         """The deployment's custom agents (the roster the registrar reads at start). Kept a moment, so the grounding
-        roster reads its flag off this same answer rather than asking the API again (FA-7)."""
+        roster reads whether there is an agent to ground off this same answer rather than asking the API again
+        (FA-7)."""
         payload = await self._get("/agents/custom")
         rows = list(payload or []) if isinstance(payload, list) else []
         self._agents_seen = (time.monotonic(), rows)
@@ -545,7 +546,7 @@ class AughorClient:
 
     async def service_principal_me(self, name: str, key: str) -> tuple[int, Optional[dict]]:
         """Arc ED, ED-2 — ``(status, body)`` the API gives a presented service principal: 200 with its grant, 401 when the
-        name and key do not match, 404 when callers as principals are off there. 0 when the API could not be asked."""
+        name and key do not match. 0 when the API could not be asked."""
         token = CURRENT_CALLER.set((name, key))
         try:
             async with self._mk_client() as c:

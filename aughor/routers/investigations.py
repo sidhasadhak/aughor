@@ -375,8 +375,8 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # receipted (chat / deep-analysis / monitor), so stamping here attributes all three by
         # construction. Absent when nobody asked as an agent — an unbound answer says so by
         # omission rather than carrying an empty agent that reads like a real one.
-        # Arc TC-1 — with `agents.revision_on_answers` on, the stamp also names the revision of the
-        # agent's configuration this answer ran under (`rev`); off, it is `{id, name}` as before.
+        # Arc TC-1 — the stamp also names the revision of the agent's configuration this answer ran
+        # under (`rev`).
         _agent = None
         try:
             from aughor.custom_agents.context import answer_stamp, current_agent
@@ -923,14 +923,13 @@ class ChatRequest(BaseModel):
 class AskFocus(BaseModel):
     """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
 
-    Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+    Arc FA-2 — or what a reader chose on a dashboard, as the question's subject: ``objects``,
     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
-    (`agent.ask_subject`); off, they contribute nothing.
+    (`agent.ask_subject`).
 
-    Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with
-    ``sheets.chat`` on)."""
+    Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>``."""
     kind: Literal["departure", "automation", "metric", "objects", "set", "sheet"]
     id: str = Field(default="", max_length=200)
     objects: list[str] = Field(default_factory=list, max_length=50)
@@ -1913,11 +1912,6 @@ def _answer_core(
             s = render_exploration_annotations(connection_id)
             return (s + "\n\n") if s else ""
 
-        def _causal() -> str:
-            from aughor.lifecycle.causal import build_causal_context_section
-            s = build_causal_context_section(question, conn_id=connection_id)
-            return (s + "\n") if s else ""
-
         def _docs() -> str:
             from aughor.knowledge.indexer import build_external_context_section
             # The canvas is passed so ITS pinned documents reach the prompt. Without
@@ -1970,11 +1964,11 @@ def _answer_core(
             # introspects; hits within the window skip it.
             _f_schema = _prelude.submit(_get_schema_cached, connection_id, db)
             _f_ctx = [_prelude.submit(_safe, _fn)
-                      for _fn in (_kb, _ckb, _sqlex, _expl, _causal, _docs)]
+                      for _fn in (_kb, _ckb, _sqlex, _expl, _docs)]
             _f_pb = _prelude.submit(_safe_list, _pb_match)
             schema = _f_schema.result()
             (kb_patterns_section, conn_kb_section, sql_examples_section,
-             exploration_section, causal_section, document_section) = [
+             exploration_section, document_section) = [
                 _f.result() for _f in _f_ctx]
             pb_entries = _f_pb.result()
         _checkpoint()   # the gather is the prelude's longest silent stretch
@@ -1998,6 +1992,12 @@ def _answer_core(
                         schema = _scoped
                 except Exception:
                     logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
+
+        # Arc ED, ED-1 — read as the reader may read it while the ontology's declarations apply to the request: a
+        # policied table's row count, sample values and value lists and a masked column's values are withheld, and
+        # said, in the text every block below is cut from (`security_sql.schema_as_read`). Unchanged otherwise.
+        from aughor.ontology.security_sql import schema_as_read as _schema_as_read
+        schema, _ = _schema_as_read(connection_id, schema)
 
         # Governed-metric grounding — built AFTER schema (needs the column set to
         # filter connection-scoped metrics) and BEFORE schema-linking (grounds on the
@@ -2083,22 +2083,6 @@ def _answer_core(
                                 if semantic_layer_section else _rel_block)
                     except Exception:
                         logger.debug("relationship block injection skipped", exc_info=True)
-                    # PENDING item 19 (`grounding.data_profiles`, off) — what the data HOLDS for
-                    # the linked tables, from the profile cache: the catalog carries five head
-                    # rows, and the profiler's measured ranges, values and null rates reached no
-                    # SQL prompt. Rides the same section, prepended after the table cap.
-                    from aughor.tools import catalog_profiles as _catalog_profiles
-                    if _catalog_profiles.enabled():
-                        try:
-                            _prof_block = _catalog_profiles.render(connection_id, linked_tables)
-                            if _prof_block:
-                                semantic_layer_section = (
-                                    semantic_layer_section + "\n\n" + _prof_block
-                                    if semantic_layer_section else _prof_block)
-                        except Exception as _prof_exc:
-                            from aughor.kernel.errors import tolerate
-                            tolerate(_prof_exc, "the data profile block is advisory; the catalog "
-                                                "stands without it", counter="chat.data_profiles")
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 
@@ -2200,7 +2184,6 @@ def _answer_core(
             sql_examples_section=sql_examples_section,
             metrics_section=metrics_section,
             exploration_section=exploration_section,
-            causal_section=causal_section,
             document_section=document_section,
         )
         if rules_block:
@@ -2964,6 +2947,12 @@ def _answer_core(
         # is never repaired — is said beside the number, as the shared executor says it.
         if _frun is not None and _frun.findings:
             result.caveats = list(dict.fromkeys([*(result.caveats or []), *(w.caveat() for w in _frun.findings)]))
+        # Arc ED, ED-1 — what the reader's access policy did to the read that answers (narrowed it, or refused it) is
+        # said on the reader's answer, not only to the model in `caveats`: the conversation's `run_sql` receipt.
+        from aughor.agent.converse_tools import policy_receipt as _policy_receipt
+        _policy = _policy_receipt(result)
+        if _policy is not None:
+            _receipt(_policy)
 
         if result.error:
             from aughor.agent.escalate import assess_escalation
@@ -3649,7 +3638,7 @@ async def _stream_converse(
     shape: Optional[str] = None,
     sheet: str = "",
 ) -> AsyncGenerator[str, None]:
-    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
+    """Serve one `/ask` turn as a CONVERSATION (SP-14; unconditional since 2026-10-28).
 
     Same shape as :func:`_stream_chat` — the shared bridge, a different body — and
     deliberately so: one copy of the concurrency design, two bodies riding it.
@@ -4519,9 +4508,8 @@ async def _stream_investigation(
             # classifier downgrade the run to a 'direct' lookup (live incident: "Where are we
             # losing money?" ran as 3 flat queries with a fake 'direct' hypothesis, zero
             # decomposition). /ask now passes its route verdict through here — normally
-            # "investigate", or "explore" when the deterministic wide-question detector fires
-            # under explore.route_wide (R9) — reaching the already-built explore wave with no
-            # graph change (route_question honors requested_mode ∈ {investigate, explore}).
+            # "investigate", or "explore" when a person or a starter asks for the landscape wave
+            # (route_question honors requested_mode ∈ {investigate, explore}).
             "requested_mode": requested_mode,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "answer_report": None, "_ada_intake": None, "_intake_failed": None,
@@ -5201,7 +5189,7 @@ async def _job_streamed_body(
     kernel job and drain its frames to the request over an in-process queue.
 
     Extracted from `_investigation_job_streamed` when the CA-3 analyst body
-    joined it — with `ask.converse` on, the analyst serves the deep turn, and a
+    joined it — the analyst serves the deep turn, and a
     request-driven analyst died with its tab (row orphaned 'running') while the
     graph path had K1 supervision. One bridge now carries both: job lifecycle +
     heartbeat, kernel-driven cancellation, `created_by_job` stamping (which is
@@ -5274,34 +5262,6 @@ async def _job_streamed_body(
         yield item
 
 
-def _investigate_requested_mode(req: "InvestigateRequest") -> str:
-    """The deep mode a ``/investigate`` turn runs — ``"investigate"``, or ``"explore"``
-    when the deterministic wide detector fires under ``explore.route_wide``.
-
-    This door pins DEEP on purpose (the recorded incident: the LLM classifier downgraded
-    "Where are we losing money?" to three flat queries) — but the pin is about depth, not
-    about which deep body. A genuinely broad landscape question ("characterize / profile /
-    how does X vary across …") is served by the multi-cut explore wave, which is deep in
-    exactly the way the pin promises. Without this check the wave was UNREACHABLE from
-    chat entirely (found live 2026-08-29): the Agent chip routes here — never ``/ask``'s
-    auto path — so R9's wide→explore branch in ``ask_router`` had no caller from the UI.
-
-    Same discipline as R9: the wide check is pure and runs first, so a normal question
-    never touches the flag store; no model in the routing path; a causal "why" stays a
-    single investigation (``is_wide_question`` yields to it). A seeded turn — a finding
-    drill, seed SQL, an escalation — keeps the pin: its origin anchors ONE question, not
-    a landscape.
-    """
-    if req.escalate or req.insight_id or req.seed_sql or req.seed_context:
-        return "investigate"
-    from aughor.agent.ask_router import is_wide_question
-    from aughor.agent.complexity import assess_complexity
-    if not is_wide_question(req.question, assess_complexity(req.question or "")):
-        return "investigate"
-    from aughor.kernel.flags import flag_enabled
-    return "explore" if flag_enabled("explore.route_wide") else "investigate"
-
-
 @router.post("/investigate", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 async def investigate(req: InvestigateRequest, request: Request):
     conn_id = _resolve_conn(req)
@@ -5312,34 +5272,20 @@ async def investigate(req: InvestigateRequest, request: Request):
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
             allow_clarify=req.allow_clarify, session_id=req.session_id,
-            requested_mode=_investigate_requested_mode(req),
+            requested_mode="investigate",   # the explicit deep surface; R9's wide→explore route left 2026-10-28
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-def _federation_eligible(req) -> bool:
-    """Whether a ``/ask`` turn may auto-federate: only a truly FRESH auto turn qualifies — not a depth
-    override, deep-drill, dossier, canvas follow-up, conversational follow-up (``history``), or a
-    clarify-answer (``skip_clarify``). Follow-ups compose on the prior turn via the normal path, and a
-    clarify-answer carries a refinement the federated planner wouldn't see — so federation is first-turn
-    only. Flag-gated on ``federation.planner`` (default off), checked first for the short-circuit."""
-    from aughor.kernel.flags import flag_enabled
-    return bool(
-        flag_enabled("federation.planner") and req.depth == "auto"
-        and not req.escalate and not req.insight_id and not req.canvas_id
-        and not req.history and not req.skip_clarify
-    )
-
-
 def _converse_eligible(req, route) -> bool:
     """Whether this ``/ask`` turn may be served by the converse body instead of the quick one.
 
-    Flag first, for the short-circuit: ``converse_available()`` reads ``ask.converse`` at
-    CALL time (never at import), which is what keeps the experiment flippable in a running
-    process — a module-level read turns ``monkeypatch.setenv`` into a no-op and is how tests
-    once spent the real LLM budget.
+    The binding first, for the short-circuit: ``binding_calls_tools()`` is read at CALL time
+    (never at import). A coder binding that cannot make a tool call takes the quick body — the
+    ineligible-turn fallback, the one path the conversation does not serve (it was also the
+    whole of ``ask.converse``'s off path until that flag was made unconditional, 2026-10-28).
 
     CI-4 shrank the carve-outs, one at a time as the plan requires. The seeded-SQL and
     dossier-drill flags stopped being bypasses: such a turn now carries its
@@ -5356,25 +5302,25 @@ def _converse_eligible(req, route) -> bool:
     QUICK turn be served by plain converse" — so deep/escalate still return False
     here and take the analyst door instead.
     """
-    from aughor.agent.converse_tools import converse_available
-    if not converse_available() or req.escalate:
+    from aughor.agent.converse_tools import binding_calls_tools
+    if not binding_calls_tools() or req.escalate:
         return False
     return route.depth != "deep" or route.forced == "dossier"
 
 
 def _analyst_eligible(req, route) -> bool:
     """CA-3 — the door opens: a deep or escalated ``/ask`` turn is served by the
-    analyst loop when the converse experiment is on.
+    analyst loop.
 
     Two deliberate exclusions. A dossier drill stays a CONVERSATION (Tier-0 read
     posture — the trace already exists; CI-4 decided the conversation takes it,
     holding ``deep_analysis`` in reserve). A router-chosen ``explore`` wave keeps the
     explore graph — the analyst investigates one question; it does not run the
-    multi-cut landscape scan. With the flag off, the phase script serves every deep
-    turn exactly as before (§5's free-tier ladder: the library remains the fallback).
+    multi-cut landscape scan. With a coder binding that cannot call tools, the phase
+    script serves every deep turn (§5's free-tier ladder: the library remains the fallback).
     """
-    from aughor.agent.converse_tools import converse_available
-    if not converse_available():
+    from aughor.agent.converse_tools import binding_calls_tools
+    if not binding_calls_tools():
         return False
     if route.forced == "dossier" or route.mode == "explore":
         return False
@@ -5387,10 +5333,10 @@ def _joined(*parts: str) -> str:
 
 async def _ask_subject_for(req, conn_id: str, request) -> Any:
     """Arc FA-2 — the subject a turn carries, read for the person asking (`agent.ask_subject`), off the event loop: the
-    reads are the object door's. None with ``canvas.ask_about_chosen`` off, or when the focus is SP-15's one object."""
-    from aughor.agent.ask_subject import is_subject, on, resolve
+    reads are the object door's. None when the focus is SP-15's one object."""
+    from aughor.agent.ask_subject import is_subject, resolve
     focus = getattr(req, "focus", None)
-    if not is_subject(focus) or not on():
+    if not is_subject(focus):
         return None
     from aughor.dashboards.home import person_of
     return await asyncio.to_thread(resolve, focus, conn_id, req.schema_name, person=person_of(request))
@@ -5413,8 +5359,7 @@ def _focus_prose_for(req, conn_id: str, subject=None) -> str:
     read degrades the turn to a plain conversation, never fails it.
 
     Arc FA-2 — a subject of chosen objects or a set is handed the same way, as `subject` reads it
-    (`agent.ask_subject`); with ``canvas.ask_about_chosen`` off there is no subject, and a focus of
-    that kind contributes nothing."""
+    (`agent.ask_subject`)."""
     focus = getattr(req, "focus", None)
     if focus is None:
         return ""
@@ -5462,75 +5407,10 @@ async def _origin_prose_for(req, conn_id: str) -> str:
         return ""
 
 
-def _federation_candidates(conn_id: str, cap: int = 15) -> list[str]:
-    """Org-visible connection ids (the current one first) — the candidate pool for cross-source
-    selection on the ``/ask`` path. Bounded so a large connection roster can't blow up the selector."""
-    from aughor.db.registry import list_connections
-    try:
-        from aughor.security.authz import org_visible_conn_ids
-        visible = org_visible_conn_ids()
-    except Exception:
-        visible = None
-    ids: list[str] = [conn_id] if conn_id else []
-    for c in list_connections():
-        cid = c.get("id")
-        if not cid or cid in ids:
-            continue
-        if visible is not None and cid not in visible:
-            continue
-        ids.append(cid)
-    return ids[:cap]
-
-
 def _conn_names(conn_ids: list[str]) -> list[str]:
     from aughor.db.registry import list_connections
     by_id = {c.get("id"): (c.get("name") or c.get("id")) for c in list_connections()}
     return [by_id.get(cid, cid) for cid in conn_ids]
-
-
-async def _stream_federated(question: str, sel) -> AsyncGenerator[str, None]:
-    """Answer a cross-source question via the federated planner and stream it as ``/ask`` events.
-
-    Emits a federated ``route`` receipt (transparency: which sources, and the terms each grounded),
-    then the merged table using the same primitives the quick path uses (columns/rows/headline/sql/
-    tables_used), so it renders in the existing answer surface."""
-    from aughor.agent.federated_planner import answer_federated
-
-    names = _conn_names(sel.conn_ids)
-    yield _sse("route", {
-        "depth": "federated", "mode": "federated", "tier": "complex",
-        "score": 1.0, "confidence": 1.0, "ambiguous": False,
-        "why": f"Question spans {len(sel.conn_ids)} sources ({', '.join(names)}); answering across them.",
-        "alternatives": ["quick"], "forced": None, "downgraded_from": None,
-        "sources": sel.conn_ids, "matched": sel.matched,
-    })
-    # answer_federated catches planning errors and the engine is fail-safe, but a stale conn id (deleted
-    # between selection and execution) could still raise on open — never let that break the /ask stream.
-    try:
-        ans = await asyncio.to_thread(
-            answer_federated, question, sel.conn_ids, reconcile=True,
-        )
-        r = ans.result
-    except Exception as exc:  # noqa: BLE001 — the stream must always end cleanly
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "federated answer failed after routing; stream an honest error",
-                 counter="ask.federation_answer_failed")
-        yield _sse("headline", {"headline": f"Cross-source answer failed — {str(exc)[:120]}"})
-        yield _sse("done", {})
-        return
-    if r.error:
-        yield _sse("headline", {"headline": f"Cross-source answer unavailable — {r.error}"})
-        yield _sse("done", {})
-        return
-    streamed = r.rows[:10000]
-    more = f" (showing first {len(streamed):,})" if r.row_count > len(streamed) else ""
-    yield _sse("columns", {"columns": r.columns})
-    yield _sse("rows", {"rows": streamed})
-    yield _sse("headline",
-               {"headline": f"Answered across {len(names)} sources ({', '.join(names)}) — {r.row_count:,} rows{more}."})
-    yield _sse("sql", {"sql": r.sql})
-    yield _sse("tables_used", {"tables": names})
-    yield _sse("done", {})
 
 
 # ── Overview / "interesting facts about this schema" (the default first-look) ──
@@ -5695,9 +5575,9 @@ async def record_overview_drill(req: OverviewDrillRequest) -> None:
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to a body.
 
-    THREE bodies now, not two: quick, deep (deep-analysis/explore), and — behind `ask.converse`,
-    an EXPERIMENT that is off by default — the conversational one. The two originals are
-    unchanged; converse swaps which body answers a quick turn, never which door it
+    THREE bodies now, not two: quick, deep (deep-analysis/explore), and the conversational
+    one, which serves every turn a tool-calling binding can take (the other two answer the
+    turns it cannot). Converse swaps which body answers a quick turn, never which door it
     entered by, so the overview branch, the clarify gate and federation all still run
     first exactly as they did.
 
@@ -5743,8 +5623,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     if not req.insight_id:
         from aughor.dashboards.intent import is_dashboard_ask, where_dashboards_are_made
         if is_dashboard_ask(req.question):
-            from aughor.kernel.flags import flag_enabled
-            yield _sse("headline", {"headline": where_dashboards_are_made(flag_enabled("dashboard.composed"))})
+            yield _sse("headline", {"headline": where_dashboards_are_made()})
             yield _sse("done", {})
             return
 
@@ -5755,27 +5634,6 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         if decision.should_ask:
             yield _sse("clarify", decision.to_event())
             yield _sse("done", {})
-            return
-
-    # Cross-source federation (Rec 2 answer-path): on a fresh auto turn, if the question spans MULTIPLE of
-    # the org's connections, answer across them via the federated planner instead of the single-connection
-    # path. A deterministic selector (no LLM) decides; only a genuinely multi-source question federates.
-    # Flag-gated on `federation.planner` → default off = byte-identical. Fail-safe: any error falls through
-    # to the normal routing below.
-    if _federation_eligible(req):
-        try:
-            from aughor.agent.connection_selector import select_connections
-            candidates = _federation_candidates(conn_id)
-            sel = (await asyncio.to_thread(select_connections, req.question, candidates)
-                   if len(candidates) >= 2 else None)
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "cross-source selection is best-effort; fall through to single-connection",
-                     counter="ask.federation_select_failed")
-            sel = None
-        if sel is not None and sel.multi_source:
-            async for _ev in _stream_federated(req.question, sel):
-                yield _ev
             return
 
     has_deep = has_capability(Capability.DEEP_ANALYSIS, conn_id=conn_id)
@@ -5825,8 +5683,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     except Exception:  # noqa: BLE001 — a receipt field, never a dependency
         _route_ev["trace_id"] = ""
     # Arc FA-2 — what the reader chose, read once for them under their row policy: the conversation and the
-    # analyst are handed it, and the receipt says it — and whether the body answering read it. None when
-    # `canvas.ask_about_chosen` is off or the focus is no subject: the receipt and both bodies are as before.
+    # analyst are handed it, and the receipt says it — and whether the body answering read it. None when the focus is
+    # no subject: the receipt and both bodies are as before.
     _subject = await _ask_subject_for(req, conn_id, request)
     if _subject is not None:
         _route_ev["subject"] = _subject.receipt(carried=_use_converse or _use_analyst)
@@ -5871,9 +5729,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             schema_scope=req.schema_name, seed_sql=req.seed_sql,
             seed_context=req.seed_context, insight_id=req.insight_id, deep=req.escalate,
             history=req.history,  # follow-up composition on the deep path (parity with quick)
-            # R9 — carry the route verdict's mode so a wide question reaches the explore wave.
-            # Normally "investigate"; "explore" only when the deterministic wide detector fired
-            # under explore.route_wide. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
+            # R9 — carry the route verdict's mode: "investigate", or "explore" when a person or a starter asked for the
+            # landscape wave. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
             requested_mode=route.mode,
             allow_clarify=req.allow_clarify,
             purpose=req.purpose,  # R10 — starter provenance on the job row + run record
@@ -6003,8 +5860,7 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
         canvas_id=req.canvas_id or "", schema=req.schema_name or "",
         purpose=req.purpose or "", agent_id=req.agent_id or "",
         # what the focus says, and only that: SP-15's `{kind, id}` as it always was; FA-2's subject without its empty fields
-        focus=req.focus.model_dump(exclude_defaults=True) if getattr(req, "focus", None) else None,
-        prior_turn=_prior_turn_text(req.history))
+        focus=req.focus.model_dump(exclude_defaults=True) if getattr(req, "focus", None) else None)
     # ambient session + asker → trace attribution (RC-4: the asker is why LF-2's
     # user field was empty on every headless door — nobody was setting it)
     stream = _stream_with_session(req.session_id, stream, req.principal_ref or "")
@@ -6232,7 +6088,6 @@ async def stream_with_session_log(
     stream: AsyncGenerator[str, None], *, question: str, conn_id: str,
     door: str = "ask", depth: str = "", canvas_id: str = "", schema: str = "",
     purpose: str = "", agent_id: str = "", focus: Optional[dict] = None,
-    prior_turn: str = "",
 ) -> AsyncGenerator[str, None]:
     """Record the run in the session log (flag ``obs.session_log``).
 
@@ -6331,88 +6186,6 @@ async def stream_with_session_log(
                          **({"receipt_id": receipt_id} if receipt_id else {}),
                          **({"error": failed} if failed else {})},
             )
-            # CP-1 — the treatment shadow, AFTER the answer and after its own final
-            # record. The classification is a model call, so it runs where it cannot
-            # delay a word the user is waiting for — and, since 2026-09-28, where it
-            # cannot stop the server either: see `_shadow_when_settled`. `shadow` is a
-            # no-op unless `judgment.shadow_treatment` is on, which is the operator's
-            # spending switch and is off by default. It swallows everything, so a dead
-            # judge or a dead ledger cannot turn a delivered answer into a failed request.
-            #
-            # `ran` is the depth the door was asked for, else whether the deep path minted
-            # an investigation. What the turn DID — how many queries, which body — is read
-            # from this run's own trace when the shadow writes its row
-            # (`treatment.observed_for_trace`): it was counted here off `columns` frames
-            # until 2026-10-04, a frame the sniff list above never named, so the count was
-            # 0 on every row and CP-2 scored two levers against a constant.
-            _shadow_when_settled(question, ran=(depth or ("deep" if inv_id else "quick")),
-                                 conn_id=conn_id, prior_turn=prior_turn,
-                                 observed={"ok": failed is None,
-                                           "investigation": bool(inv_id)})
-
-
-def _prior_turn_text(history: list) -> str:
-    """The previous turn as the treatment shadow reads it: what was asked and the answer's
-    headline. Two levers (`from_last_result`, `follow_up`) are questions ABOUT the previous
-    turn; judged without it they answered "no" on every row, with full confidence."""
-    if not history:
-        return ""
-    prior = history[-1]
-    asked = str(getattr(prior, "question", "") or "").strip()
-    said = str(getattr(prior, "headline", "") or "").strip()
-    return "\n".join(p for p in (asked[:400], said[:400]) if p)
-
-
-#: The name of the thread a treatment shadow runs on — so a reader of a process sample, or a
-#: test, can find it.
-SHADOW_THREAD = "treatment-shadow"
-
-
-def _shadow_when_settled(question: str, *, ran: str, conn_id: str, observed: dict,
-                         prior_turn: str = "") -> None:
-    """CP-1's treatment shadow, on a thread of its own — never on the event loop.
-
-    It was called here directly, from the ``finally`` of an async generator, which runs ON the
-    event loop. The shadow is a model call. While it waited on its model the server served
-    nothing at all: measured on a live install on 2026-09-28, twice in one hour, for 3m45s and
-    for 8 minutes, when the provider began a reply and stalled. Health checks timed out and six
-    automations failed every tick of the heartbeat. A sample of the process found its main
-    thread in a socket read, beneath an async generator.
-
-    The comment above the call had said it "runs where it cannot delay a word the user is
-    waiting for". That was true of THIS user's answer, which had already streamed, and false of
-    every other request the server had.
-
-    The thread is `_remember_answer`'s pattern, two functions up, for the same reason: slow
-    work after the answer, which nothing waits on. It carries the request's context, so the
-    row the shadow writes is filed under the run's trace, organisation and asker exactly as it
-    was. It is a daemon: a shadow still waiting on its model when the server stops is lost,
-    which is what "a shadow never costs a turn" already promised of every other failure.
-
-    The flag is read HERE, on the loop, as it always was (``shadow`` read it first thing), so
-    with the flag off — the default — no thread is started and nothing is different.
-    """
-    import contextvars
-    import threading
-
-    from aughor.judgment import treatment
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled(treatment.SHADOW_FLAG):
-            return
-        ctx = contextvars.copy_context()
-        threading.Thread(
-            target=ctx.run,
-            # Looked up when it runs, not when it is scheduled: `treatment.shadow` is what a
-            # test replaces, and what a reload would.
-            args=(lambda: treatment.shadow(question, ran=ran, conn_id=conn_id,
-                                           observed=observed, prior_turn=prior_turn),),
-            daemon=True, name=SHADOW_THREAD,
-        ).start()
-    except Exception as exc:  # noqa: BLE001 — a shadow never costs a turn, nor its scheduling
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "the treatment shadow could not be scheduled; the turn is unaffected",
-                 counter="judgment.shadow_schedule", conn_id=conn_id or None)
 
 
 async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None],
@@ -6629,15 +6402,11 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
 def recheck_investigation(inv_id: str, principal=Depends(get_principal)) -> dict:
     """Idea 5 — re-run a chat answer's own query NOW and compare it with what was said: the
     numbers that moved by 5% or more, and whether they are late rows or a restatement. The
-    re-check is recorded on the answer. Nothing is sent: the person asking is looking at it.
-    404 while `answers.recheck` is off, with the reason."""
+    re-check is recorded on the answer. Nothing is sent: the person asking is looking at it."""
     from aughor.answer import recheck
     from aughor.db.history import get_chat_answer
     from aughor.security.authz import check_owner
 
-    if not recheck.enabled():
-        raise HTTPException(status_code=404, detail=(
-            f"re-checking answers is off on this install — it needs the '{recheck.FLAG}' flag"))
     check_owner("investigation", inv_id, principal)
     answer = get_chat_answer(inv_id)
     if answer is None:
@@ -7082,13 +6851,6 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest,
             tolerate(exc, "booking the outcome in the Record is best-effort; the answer itself is logged",
                      counter="record.outcome_from_review")
         update_playbook_success_rates()
-        try:
-            from aughor.lifecycle.causal import promote_on_outcome
-            promote_on_outcome(inv_id, contradicted=(req.status == "rejected"))
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "causal-playbook promotion on outcome is best-effort; the outcome itself is already logged",
-                     counter="investigation.outcome_promote")
     return outcome.model_dump()
 
 

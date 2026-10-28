@@ -19,12 +19,15 @@ import { useCallback, useEffect, useState } from "react";
 import {
   getCapabilities,
   getEffectiveSettings,
+  getOrgAllows,
   getOrgSettings,
   getWorkspace,
   listOwners,
   updateOrgSettings,
   updateWorkspace,
   type IndustryChoice,
+  type OrgAllowSetting,
+  type OrgAllows,
   type OrgSettings,
   type OwnerEntry,
 } from "@/lib/api";
@@ -71,6 +74,8 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
   const [s, setS] = useState<OrgSettings>(EMPTY);
   // What the form was loaded with — so the Save line can say an edit is not saved yet.
   const [loaded, setLoaded] = useState<OrgSettings>(EMPTY);
+  // ROADMAP §3.65 — each choice's answer as the server reads it, so one never set shows what it does now
+  const [allows, setAllows] = useState<OrgAllows | null>(null);
   const [appDefaults, setAppDefaults] = useState<OrgSettings>(EMPTY);
   const [loading, setLoading] = useState(true);
   // BYOK is a per-ORG override. With a single tenant it can only restate the
@@ -91,6 +96,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     try {
       const app = await getOrgSettings();
       setAppDefaults(app);
+      getOrgAllows().then(setAllows).catch(() => setAllows(null));
       if (scope === "workspace" && workspaceId) {
         const ws = await getWorkspace(workspaceId);
         const over = { ...EMPTY, ...((ws.settings_override ?? {}) as Partial<OrgSettings>) };
@@ -196,6 +202,42 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       </span>
     </label>
   );
+
+  // ROADMAP §3.65 — the four choices an organisation makes about what Aughor may do; everything else is the platform's.
+  const ALLOWS: { k: OrgAllowSetting; label: string; hint: string }[] = [
+    { k: "share_aggregates", label: "Share summary statistics with other installs",
+      hint: "How often packs' claims held here. Names, ids and values never leave." },
+    { k: "outside_row_model", label: "Send row text to an outside, cheaper model",
+      hint: "TypeSafe's Jev judges text rows before your own strong model. Row text leaves this install." },
+    { k: "reason_to_read_runs", label: "Ask for a reason before anyone reads a run's details",
+      hint: "The reason is kept with who read it. Exporting the ledger asks too." },
+    { k: "scheduled_model_work", label: "Let Aughor run model work on its own schedule",
+      hint: "Nightly runs of each custom agent's checked questions, and re-tests after reviews, within the Spend budget." },
+  ];
+  const allowField = ({ k, label, hint }: { k: OrgAllowSetting; label: string; hint: string }) => {
+    const chosen = s[k];
+    const fromServer = chosen == null && !!allows?.[k]?.allowed;
+    return (
+      <label key={k} data-testid={`org-allows-${k}`} data-on={chosen ?? !!allows?.[k]?.allowed}
+        style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+        <Checkbox
+          checked={chosen ?? !!allows?.[k]?.allowed}
+          onChange={(e) => { setSaved(false); setS((prev) => ({ ...prev, [k]: e.target.checked })); }}
+          style={{ marginTop: 2, cursor: "pointer" }}
+          aria-label={label}
+        />
+        <span style={{ display: "flex", flexDirection: "column" }}>
+          <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{label}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{hint}</span>
+          {fromServer && (
+            <span className="aug-fs-xs" data-testid={`org-allows-${k}-from-server`} style={{ color: "var(--amb4)" }}>
+              On through this server&apos;s environment until you choose here.
+            </span>
+          )}
+        </span>
+      </label>
+    );
+  };
 
   if (loading) return <Loading what="settings" />;
 
@@ -352,6 +394,17 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           </Card>
         )}
       </Pair>
+
+      {app && (
+        <Pair>
+          <Card label="What Aughor may do">
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid="org-allows">
+              {ALLOWS.map(allowField)}
+            </div>
+            <Note>Off unless chosen here. Everything else Aughor does is part of the platform, not a switch.</Note>
+          </Card>
+        </Pair>
+      )}
 
       <SaveLine saved={saved && !saving} error={error} testId="org-save">
         <Button variant="default" size="sm" onClick={save} disabled={saving}>

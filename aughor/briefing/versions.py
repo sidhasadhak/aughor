@@ -45,7 +45,7 @@ def natural_key(conn_id: str, *, scope_key: str, range_key: str, recipe: str = "
 def figures(briefing: dict) -> dict[str, float]:
     """The comparable numbers in a built Briefing: each measured metric's current value.
 
-    A built Briefing carries them at ``brief["period"]["measured"]`` — `build_period_briefing`
+    A built Briefing carries them at ``brief["period"]["measured"]`` — `build_range_briefing`
     hands its `measure()` output to `get_briefing` as `period_measure`, and `sheet_lines`, the
     reader that turns a brief into the lines a send departs with, reads exactly that path. The
     top level is accepted too, because that is the shape `measure()` itself returns and a caller

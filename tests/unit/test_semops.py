@@ -516,33 +516,3 @@ def test_champion_cascade_off_by_default_no_champion_calls(monkeypatch):
 
     assert out.result.row_count == 10       # cheap verdict stands, byte-identical to before
     assert champ.calls == 0                  # champion never consulted
-
-
-def test_champion_cascade_agreement_trusts_cheap(monkeypatch):
-    # The banded path graduated to default-ON (JD-3, 2026-09-21); this test pins the
-    # SAMPLED cascade — the kill-switch arm — so it opts into it explicitly.
-    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "0")
-    cheap = FakeProvider(filter_fn=lambda t: "keep" in t)
-    champ = FakeProvider(filter_fn=lambda t: "keep" in t)       # agrees with cheap on the sample
-    _patch_by_role(monkeypatch, cheap, champ)
-
-    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers", validate_sample=8)
-
-    assert out.result.row_count == 5         # the correct "keep" rows
-    assert champ.calls == 1                  # one sample-validation call, no escalation
-    assert any("trusted" in n for n in out.notes)
-
-
-def test_champion_cascade_disagreement_escalates(monkeypatch):
-    # The banded path graduated to default-ON (JD-3, 2026-09-21); this test pins the
-    # SAMPLED cascade — the kill-switch arm — so it opts into it explicitly.
-    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "0")
-    cheap = FakeProvider(filter_fn=lambda t: True)             # cheap is wrong: keeps all
-    champ = FakeProvider(filter_fn=lambda t: "keep" in t)      # champion is right
-    _patch_by_role(monkeypatch, cheap, champ)
-
-    out = semantic_filter(_qr(["note"], _alt_rows()), "note", "keepers", validate_sample=8)
-
-    assert out.result.row_count == 5         # escalation applied the champion's correct verdicts
-    assert champ.calls == 2                  # sample + full-batch escalation
-    assert any("escalated" in n for n in out.notes)

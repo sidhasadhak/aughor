@@ -7,15 +7,14 @@
  *
  * The server cites what the decision was taken on, never the page: a run's answer by the claims its receipt booked, a
  * Briefing figure by measuring it for the edition's days and booking that reading with its own receipt. What it could
- * not cite is said on the decision. With the decision loop off the door is not shown — a decision booked there would
- * cite nothing, and Home's door says the same by hiding its expectation.
+ * not cite is said on the decision. With nowhere to book it — no connection — the door is not shown.
  */
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
-import { getMetrics, getSystemFlags, type Metric } from "@/lib/api";
+import { getMetrics, type Metric } from "@/lib/api";
 import { utcDayWords } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
@@ -51,22 +50,6 @@ export function useReviewableMetrics(connectionId: string, open: boolean): Metri
     return () => { alive = false; };
   }, [open, connectionId]);
   return metrics;
-}
-
-/** Whether the decision loop is on — read once per page, and not at all where no door can be shown. */
-let loopRead: Promise<boolean> | null = null;
-/** Read the flag afresh next time (a test, or a page that just switched it). */
-export function forgetDecisionLoop(): void { loopRead = null; }
-export function useDecisionLoop(wanted = true): boolean {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    if (!wanted) return;
-    let alive = true;
-    loopRead ??= getSystemFlags().then(f => !!f["record.decision_loop"]?.value).catch(() => { loopRead = null; return false; });
-    loopRead.then(v => { if (alive) setOn(v); });
-    return () => { alive = false; };
-  }, [wanted]);
-  return on;
 }
 
 /** What a decision expects: an approved metric that knows its dates, the way it should move, and — for a metric with
@@ -119,7 +102,6 @@ export function DecideDoor({ connectionId, question, on, testId }: {
   on: DecideOn;
   testId: string;
 }) {
-  const loop = useDecisionLoop(!!connectionId);
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState("");
   const [figure, setFigure] = useState(on.kind === "figure" ? on.figures[0]?.metric ?? "" : "");
@@ -127,7 +109,7 @@ export function DecideDoor({ connectionId, question, on, testId }: {
   const [said, setSaid] = useState<{ line: string; id?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const metrics = useReviewableMetrics(connectionId, open);
-  if (!loop || !connectionId) return null;
+  if (!connectionId) return null;
   if (on.kind === "figure" && on.figures.length === 0) return null;
   const figureLabel = on.kind === "figure" ? on.figures.find(f => f.metric === figure)?.label ?? figure : "";
 

@@ -1,11 +1,11 @@
-"""Arc FA, FA-3 — reads per entity over thirty days, folded into `ontology.entity_usage` (ROADMAP §3.60).
+"""Arc FA, FA-3 — reads per entity over thirty days, folded into what uses an entity (ROADMAP §3.60).
 
 Before: an entity's page counted audited statements per calendar month and nothing else — no rolling window, no last
 read, no readers, one entity at a time, and two entities read from one table counted each other's reads unsaid. Held
 here: the window counts the last thirty days, today included; the last read is the newest statement's moment; readers
 are the distinct people the session log names for the runs that issued them, and a read whose run it does not name is
 counted and said, never given a reader; every entity of a scope is listed by those reads, the least read first, an
-uncounted one last and saying why; a shared table is said beside each entity that reads it. Off, both doors say so.
+uncounted one last and saying why; a shared table is said beside each entity that reads it.
 """
 from __future__ import annotations
 
@@ -42,10 +42,6 @@ def router(graph, monkeypatch):
     monkeypatch.setattr(R, "_served_graph", lambda conn, schema: graph)
     monkeypatch.setattr(R, "_accepted_edits", lambda conn: [])
     return R
-
-
-def _on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.entity_usage")
 
 
 def _ran(ledger, trace_id: str, person: str) -> None:
@@ -90,7 +86,6 @@ def test_entity_tables_read_off_the_entity_are_the_tables_its_detail_lists(graph
 
 def test_every_entity_ranked_least_read_first_a_shared_table_said_and_the_uncounted_last(router, graph, ledger,
                                                                                          monkeypatch):
-    _on(monkeypatch)
     conn = "usage-rank-t"
     graph.entities["Review"].backing.table = "customers"                       # two entities, one table
     graph.entities["Product"].backing = graph.entities["Product"].backing.model_copy(
@@ -112,7 +107,6 @@ def test_every_entity_ranked_least_read_first_a_shared_table_said_and_the_uncoun
 
 
 def test_the_entity_door_carries_the_window_and_what_it_shares(router, graph, ledger, monkeypatch):
-    _on(monkeypatch)
     monkeypatch.setattr("aughor.ontology.dependents.dependents_of", lambda *a, **k: [])
     monkeypatch.setattr("aughor.dashboards.pieces.dashboards_reading", lambda *a, **k: [])
     conn = "usage-door-t"
@@ -125,14 +119,11 @@ def test_the_entity_door_carries_the_window_and_what_it_shares(router, graph, le
     assert len(out["reads"]["months"]) == 12                                   # the twelve months stay
 
 
-def test_off_both_doors_say_so(router, client):
-    off = {"path": "off", "said": "What uses an entity is not shown: the setting is off."}
-    assert router.get_object_types_by_reads("usage-off-t", schema_name=None, window=30) == off
-    assert router.get_object_type_uses("customer", "usage-off-t", schema_name=None) == off
+def test_the_list_has_its_own_address(router, client):
     # the list's address is its own door, never an entity called "uses"
-    served = client.get("/object-types/uses", params={"connection_id": "usage-off-t", "window": 30})
-    assert served.status_code == 200 and served.json() == off
-    assert client.get("/object-types/uses", params={"connection_id": "usage-off-t", "window": 0}).status_code == 422
+    served = client.get("/object-types/uses", params={"connection_id": "usage-list-t", "window": 30})
+    assert served.status_code == 200 and served.json()["path"] == "by_reads"
+    assert client.get("/object-types/uses", params={"connection_id": "usage-list-t", "window": 0}).status_code == 422
 
 
 def test_one_reading_of_each_statement_counts_every_entity_whose_table_it_names():

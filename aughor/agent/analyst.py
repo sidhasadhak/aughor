@@ -89,7 +89,7 @@ class AnalystTurn:
     #: ad-hoc statement's literal bounds (`_note_window`) — for `_attach_measured_period`. On
     #: the turn for `frame_breakdowns_ran`'s reason: a private state key must be on AgentState.
     windows_measured: list = field(default_factory=list)
-    #: P1 (`analyst.conclude`) — the conclusion the `conclude` tool accepted: headline, answer, the
+    #: P1 (the canvas-output study's `conclude`) — the conclusion the `conclude` tool accepted: headline, answer, the
     #: cited results with their claims, figures, gaps. None until it is called and accepted.
     conclusion: Optional[dict] = None
 
@@ -1341,7 +1341,7 @@ _ANALYST_PLATFORM_TOOLS = frozenset({"propose_context_note"})
 INVESTIGATION_TOOLS = frozenset({"baseline", "decompose", "premise_check", "cross_section"})
 
 
-# ── conclude — the answer with its own structure (P1, `analyst.conclude`) ──────────────────
+# ── conclude — the answer with its own structure (P1 of the canvas-output study) ─────────────
 
 #: The narrator's own rule for a headline (`SYNTHESIS_CORE_RULES`), held here by a check.
 _HEADLINE_WORDS = 16
@@ -1685,19 +1685,17 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
          if t.name in _ANALYST_PLATFORM_TOOLS]
     if shape in ("describe", "check"):
         roster = [t for t in roster if t.name not in INVESTIGATION_TOOLS]
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("analyst.conclude"):
-        roster.append(ToolSpec(
-            name="conclude",
-            description=(
-                "End the investigation with the answer: its headline, the answer in prose, the "
-                "results it cites (by result_id, each with its claim) and the figures it rests on. "
-                "Call it once the results answer the question; the turn ends on it."
-            ),
-            parameters=_CONCLUDE_PARAMS,
-            run=lambda a: conclude(turn, a),
-            concludes=True,
-        ))
+    roster.append(ToolSpec(
+        name="conclude",
+        description=(
+            "End the investigation with the answer: its headline, the answer in prose, the "
+            "results it cites (by result_id, each with its claim) and the figures it rests on. "
+            "Call it once the results answer the question; the turn ends on it."
+        ),
+        parameters=_CONCLUDE_PARAMS,
+        run=lambda a: conclude(turn, a),
+        concludes=True,
+    ))
     return roster
 
 
@@ -1833,13 +1831,13 @@ def _measured_preface(turn: "AnalystTurn") -> str:
                       *(f"run_sql: {sql}\n→ {payload}" for sql, payload in turn.measured_by_code)])
 
 
-def _check_rules(budget: int, conclude: bool = False) -> list[str]:
+def _check_rules(budget: int) -> list[str]:
     """The rules for a question that asks to VERIFY a property of the data or the model — do these
     keys join, are there orphans, does one table agree with another (the check shape, 2026-10-15).
     A check frames no metric, no window and no cause: it decides what would make the answer yes or
     no, measures exactly that, and states the verdict with the counts that carry it. Its conclusion
     is the answer (`investigate._conclusion_as_answer`), written for the reader."""
-    closing = ([
+    closing = [
         f"When you stop, call `conclude`. Its headline is the VERDICT in one line, under {_HEADLINE_WORDS} "
         "words — yes, no or partly, with the decisive count read from a row ('Yes: event_id joins all "
         "1,642 attendance rows; 0 orphans'). Its answer is plain prose for the reader: each check you ran "
@@ -1848,12 +1846,7 @@ def _check_rules(budget: int, conclude: bool = False) -> list[str]:
         "counts came from, by the result_id each tool result carried, with the claim the reader takes "
         "from it. In `gaps`, what you did not check, in the report's voice. No cause, no recommendation, "
         "no period the question did not name.",
-    ] if conclude else [
-        "When you stop, write the answer the reader will read: the verdict first, in one sentence — yes, "
-        "no or partly, with the decisive count read from a row — then each check you ran and what it "
-        "found, each figure read from a row; then what you did not check. No cause, no recommendation, "
-        "no period the question did not name.",
-    ])
+    ]
     from aughor.agent.question_shape import CHECK_RULE
     return [
         f"You have at most {budget} tool calls. {CHECK_RULE} Read a table's columns first when you are "
@@ -1863,12 +1856,12 @@ def _check_rules(budget: int, conclude: bool = False) -> list[str]:
     ]
 
 
-def _describe_rules(budget: int, conclude: bool = False) -> list[str]:
+def _describe_rules(budget: int) -> list[str]:
     """The stopping rule for a question that asks to SEE the data (item 3). Its conclusion
     is published as the answer (`investigate._conclusion_as_answer`), so it is written for
-    the reader, not for a writer to rework. With ``conclude`` (`analyst.conclude`) the
-    answer is handed over through the tool, with its headline and exhibits named."""
-    closing = ([
+    the reader, not for a writer to rework; it is handed over through `conclude`, with its
+    headline and exhibits named."""
+    closing = [
         f"When you stop, call `conclude`. Its headline is one line, under {_HEADLINE_WORDS} words, "
         "stating what leads, what trails and by how much — a figure read from a row; never a "
         "sentence that announces what follows. Its answer is plain prose for the reader: groups "
@@ -1882,23 +1875,7 @@ def _describe_rules(budget: int, conclude: bool = False) -> list[str]:
         "and a column under `no_total` is never added up at all; an overall average comes from a "
         "query that computes it without the GROUP BY — never one group's value, never an average "
         "of the groups' averages. No recommendations, no speculation about causes.",
-    ] if conclude else [
-        "When you stop, write the answer the reader will read, in plain prose. Open with "
-        "the answer itself in one sentence, with its figures — what leads, what trails, by "
-        "how much — never a definition or a restatement of the question. That sentence is the "
-        "headline the reader sees first: it states a figure read from a row, and one that "
-        "announces what follows (\"The following table lists…\") answers nothing. Groups within a "
-        "few percent of each other are alike: say so with their range — the lowest and the "
-        "highest group's own value, each read from a row — and name no leader or laggard "
-        "the data does not separate. Then "
-        "the figures asked for, as a table when there are several rows, with the period and "
-        "the definition used; then anything the data could not answer. A total or share "
-        "across rows is quoted from the result's `totals`, never added up by hand, and a "
-        "column under `no_total` is never added up at all; an "
-        "overall average comes from a query that computes it without the GROUP BY — never "
-        "one group's value, never an average of the groups' averages. No recommendations, "
-        "no speculation about causes.",
-    ])
+    ]
     return [
         f"You have at most {budget} tool calls. This question asks to SEE the data, not why "
         "it moved. STOPPING RULE: stop as soon as your results answer every part of it — "
@@ -1933,8 +1910,6 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
     intake returned nothing still knows the engine and the date. Measured 2026-09-29: the
     analyst was told neither, wrote `DATEADD` and `DATE_TRUNC('month', …)` for BigQuery,
     and with no spec anchored on `CURRENT_DATE` into a month still filling."""
-    from aughor.kernel.flags import flag_enabled
-    _conclude = flag_enabled("analyst.conclude")
     lines = [
         f"You are Aughor's analyst, investigating one question against the connected "
         f"warehouse '{connection_id}'. You work the way a good analyst works: slice, "
@@ -1963,25 +1938,20 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "answer: re-measure the way it says, then answer from that result. Leaving out the "
         "rows a guard flagged is not a re-measure.",
         "",
-        *(_describe_rules(budget, conclude=_conclude) if shape == "describe"
-          else _check_rules(budget, conclude=_conclude) if shape == "check" else [
+        *(_describe_rules(budget) if shape == "describe"
+          else _check_rules(budget) if shape == "check" else [
             f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
             "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
             "the change it carries) — or, if the data cannot answer, stop and say plainly "
             "what it cannot tell and what to check next. Do not spend remaining budget "
             "re-confirming what the evidence already shows.",
             "",
-            (f"When you stop, call `conclude`: the headline (one line, under {_HEADLINE_WORDS} "
-             "words — the cause and its size), the answer in plain prose (the evidence that "
-             "carries it, what you could not test), the exhibits — the results the answer rests "
-             "on, each by the result_id its tool result carried, with the one-line claim the "
-             "reader takes from it — and the figures it rests on. A slice you never ran is a "
-             "claim you cannot make, and a result you do not cite is not drawn."
-             if _conclude else
-             "When you stop, write your conclusion as plain prose: the cause and its size, "
-             "the evidence that carries it, and what you could not test. The report is "
-             "assembled from the phases you ran plus this conclusion — a slice you never "
-             "ran is a claim you cannot make."),
+            f"When you stop, call `conclude`: the headline (one line, under {_HEADLINE_WORDS} "
+            "words — the cause and its size), the answer in plain prose (the evidence that "
+            "carries it, what you could not test), the exhibits — the results the answer rests "
+            "on, each by the result_id its tool result carried, with the one-line claim the "
+            "reader takes from it — and the figures it rests on. A slice you never ran is a "
+            "claim you cannot make, and a result you do not cite is not drawn.",
         ]),
     ]
     if extra:

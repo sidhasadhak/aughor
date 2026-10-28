@@ -66,7 +66,7 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
   rows: CatalogueMetric[];
   onAdopted: () => void;
 }) {
-  const [coverage, setCoverage] = useState<MetricCoverage | null | undefined>(undefined);
+  const [coverage, setCoverage] = useState<MetricCoverage | undefined>(undefined);
   const [error, setError] = useState("");
   const [reading, setReading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -78,7 +78,7 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
       const got = await getMetricCoverage(connId, schema, figures);
       setCoverage(got);
       setError("");
-      if (!figures && got && got.areas.some(a => a.state === "unchecked")) {
+      if (!figures && got.areas.some(a => a.state === "unchecked")) {
         setReading(true);
         try { setCoverage(await getMetricCoverage(connId, schema, true)); } finally { setReading(false); }
       }
@@ -88,7 +88,6 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
   }
   useEffect(() => { setCoverage(undefined); void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId, schema]);
 
-  if (coverage === null) return null;                                     // the coverage view is off
   if (coverage === undefined) {
     return error
       ? <Card label="Coverage" testId="metric-coverage"><Empty>The coverage could not be read: {error}</Empty></Card>
@@ -96,8 +95,6 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
   }
 
   const c = coverage.counts;
-  const canRun = coverage.flags["metrics.coverage_proposals"] || coverage.flags["metrics.blind_spot_proposals"];
-  const canWrite = coverage.flags["metrics.coverage_writer"];
   const spend = coverage.run?.spend;
   const toWrite = c.writable ?? coverage.areas.filter(a => a.writable).length;
 
@@ -106,7 +103,7 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
     try {
       const out = await runMetricCoverage(connId, schema);
       setNote(out.started ? "Proposing — each proposal's figures are read before it is listed. Read this again in a few minutes."
-        : "Nothing started: no proposer is on.");
+        : "The run did not start.");
     } catch (e) { setNote(e instanceof Error ? e.message : String(e)); } finally { setBusy(""); }
   }
   async function write() {
@@ -123,10 +120,10 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
       <span className="aug-fs-sm" style={{ ...MUTED, ...NUM }}>
         {`${formatCount(c.covered)} of ${formatCount(c.with_data)} areas with data covered`}
       </span>
-      {canRun && <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => void run()} title="Proposes by code — no model call">
+      <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => void run()} title="Proposes by code — no model call">
         {busy === "run" ? "Proposing…" : "Propose by code"}
-      </Button>}
-      {canWrite && toWrite > 0 && <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => void write()}
+      </Button>
+      {toWrite > 0 && <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => void write()}
         title={`One model call for each of the ${toWrite} areas whose data has patterns no metric computes yet`}>
         {busy === "write" ? "Starting…" : `Write from the knowledge base · ${countNoun(toWrite, "call")}`}
       </Button>}

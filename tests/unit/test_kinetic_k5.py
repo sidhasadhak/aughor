@@ -17,6 +17,7 @@ from aughor.routers import ontology as ONT
 @pytest.fixture(autouse=True)
 def _iso(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ov")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ov_draft")
     monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
 
 
@@ -41,12 +42,15 @@ def test_author_valid_action_persists_and_reads_back_whole():
     out = ONT.author_kinetic_action("refund", _valid_body(), connection_id="c", schema_name=None)
     assert out["override"]["target_kind"] == "action" and out["override"]["target_id"] == "refund"
     assert out["override"]["fields"]["kind"] == "side_effect"
-    # a YAML override file was written under the isolated root
-    assert list(OV._ROOT.rglob("*.yaml"))
-    # Every reader — the executor, the GET door, the inbox — sees the action through the overlay. The door persisted
-    # the phase-4 fields and the overlay dropped them, so a stored side-effect action read back undeclarable: it
-    # never graduated and its undo was refused.
+    # a YAML override file was written under the isolated draft root: it waits for a person to publish it
+    assert list(OV._DRAFT_ROOT.rglob("*.yaml"))
+    # Every reader — the executor, the GET door, the inbox — sees the action through the overlay once published. The
+    # door persisted the phase-4 fields and the overlay dropped them, so a stored side-effect action read back
+    # undeclarable: it never graduated and its undo was refused.
     schema = ONT._served_scope("c", None)          # where the door writes: the schema of the graph it serves
+    from aughor.ontology import release as R
+    R.publish("c", schema, by="person:ana")
+    assert list(OV._ROOT.rglob("*.yaml"))
     graph, _ = OV.apply_overrides(OntologyGraph(connection_id="c", schema_name=schema, schema_fingerprint="x"),
                                   "c", schema)
     action = {a.id: a for a in graph.declared_actions()}["refund"]

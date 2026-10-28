@@ -457,7 +457,7 @@ export function DashboardTile({ cs, status, sym, doors, place = STANDING, waits 
       : <Frame testid="dashboard-tile" doors={chrome}><Title title={cs.card.title} />
         <div className="aug-fs-sm" data-testid="query-tile-waiting" style={{ color: "var(--t3)" }}>{waits.waiting}</div></Frame>;
   }
-  // Arc AP-7 — a card of a person's own query, run while queries are on (the run then says how it is shown)
+  // Arc AP-7 — a card of a person's own query (the run says how it is shown)
   if (cs.run && "shown" in cs.run && (cs.card.render as { shown?: unknown })?.shown) {
     return <QueryTile cs={cs} doors={doors} place={place} />;
   }

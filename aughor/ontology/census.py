@@ -17,8 +17,7 @@ once cannot say whether a wave moved it. This module counts the same things the 
 
 Read-only and cache-only: a scope whose ontology was never built is listed as not built, never built here (a read
 never builds). `take_census` is the door's live reading; `record_if_due` journals one reading a day as
-`ontology.census` behind the `ontology.census` flag, so a later wave reads its before and after from the journal
-instead of from a document.
+`ontology.census`, so a later wave reads its before and after from the journal instead of from a document.
 """
 from __future__ import annotations
 
@@ -198,11 +197,8 @@ def _stamp(value: Any) -> Optional[datetime]:
 
 
 def record_if_due(now: Optional[datetime] = None) -> Optional[int]:
-    """Journal one reading if none was journaled in the last day. Behind `ontology.census`, off by default: off,
-    nothing is read or written. Returns the journal seq, or None when off, not due or failed."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.census"):
-        return None
+    """Journal one reading if none was journaled in the last day. Returns the journal seq, or None when not due or
+    failed."""
     from aughor.kernel.ledger import Ledger
     now = now or datetime.now(timezone.utc)
     ledger = Ledger.default()

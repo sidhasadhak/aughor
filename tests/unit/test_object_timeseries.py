@@ -97,6 +97,7 @@ def graph(db) -> OntologyGraph:
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 def compile_(query: dict, graph: OntologyGraph):

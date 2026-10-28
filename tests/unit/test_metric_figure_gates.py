@@ -3,15 +3,13 @@
 LuxExperience carried two approved metrics that read 1 in every period: retail's two recipes, their roles bound to the
 wrong tables — `order_item` → `returns`, whose every row has a return date, and `cart` → `events`, an id bound to a date.
 The return-rate recipe declared a sane range of 0–30% beside a figure of 100%, and nothing compared them. These run the
-real measurement on a DuckDB shop through the approval door: with `metrics.figure_gates` on, a figure that never moves,
-one outside its recipe's band, and a recipe bound to the wrong columns are each refused with why; off, approval reads as
-it did.
+real measurement on a DuckDB shop through the approval door: a figure that never moves, one outside its recipe's band,
+and a recipe bound to the wrong columns are each refused with why.
 """
 from __future__ import annotations
 
 import uuid
 
-from aughor.kernel.flags import flag_overrides
 from aughor.semantic import metric_gates as G
 from aughor.semantic.metrics import MetricDefinition, save_metric
 from tests.unit.test_metric_twins import client, con  # noqa: F401 — fixtures by name
@@ -35,15 +33,14 @@ def _approve(client, conn: str, name: str):  # noqa: F811
 def test_a_figure_that_reads_one_value_in_every_month_is_refused_with_that_value(client):  # noqa: F811
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "constant_share", CONSTANT)
-    with flag_overrides({G.FLAG: True}):
-        refused = _approve(client, conn, "constant_share")
+    refused = _approve(client, conn, "constant_share")
     assert refused.status_code == 409, refused.text
     detail = refused.json()["detail"]
     assert detail["reason"] == "reads_constant"
     assert "it reads 1 in every one of the last 6 months with figures" in detail["message"]
     assert detail["gates"]["moves"]["ok"] is False
-    # off, the approval reads as it did: the gate never ran
-    assert _approve(client, conn, "constant_share").status_code == 200
+    # asked again, it is refused again: the figures are read at every approval
+    assert _approve(client, conn, "constant_share").status_code == 409
 
 
 def test_a_figure_that_moves_is_approved_and_one_that_cannot_be_read_is_not_refused(client):  # noqa: F811
@@ -51,9 +48,8 @@ def test_a_figure_that_moves_is_approved_and_one_that_cannot_be_read_is_not_refu
     _proposed(conn, "revenue", REVENUE)
     save_metric(MetricDefinition(name="units", label="Units", sql="SELECT COUNT(*) AS units FROM order_items",
                                  connection=conn, status="proposed"))           # no dates: not measurable, not refused
-    with flag_overrides({G.FLAG: True}):
-        assert _approve(client, conn, "revenue").status_code == 200
-        ok = _approve(client, conn, "units")
+    assert _approve(client, conn, "revenue").status_code == 200
+    ok = _approve(client, conn, "units")
     assert ok.status_code == 200, ok.text
     assert ok.json()["audit"]["figure_check"].startswith("not read: moves: its figures could not be read: its dates")
 
@@ -63,8 +59,7 @@ def test_a_return_rate_outside_the_recipes_sane_range_is_refused_with_the_band_a
     monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "return_rate", RETURNS, label="Return rate")    # every third line returned: about 0.33
-    with flag_overrides({G.FLAG: True}):
-        refused = _approve(client, conn, "return_rate")
+    refused = _approve(client, conn, "return_rate")
     assert refused.status_code == 409, refused.text
     detail = refused.json()["detail"]
     assert detail["reason"] == "outside_sane_range", detail
@@ -79,9 +74,8 @@ def test_the_adopt_door_skips_a_figure_that_never_moves_with_the_same_words(clie
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "constant_share", CONSTANT)
     _proposed(conn, "revenue", REVENUE)
-    with flag_overrides({G.FLAG: True}):
-        out = client.post(f"/metrics/catalogue/{conn}/adopt", json={"items": [{"name": "constant_share"},
-                                                                              {"name": "revenue"}]})
+    out = client.post(f"/metrics/catalogue/{conn}/adopt", json={"items": [{"name": "constant_share"},
+                                                                          {"name": "revenue"}]})
     assert out.status_code == 200, out.text
     body = out.json()
     assert [a["name"] for a in body["adopted"]] == ["revenue"]
@@ -140,8 +134,7 @@ def test_a_metric_that_only_carries_a_recipes_alias_is_not_held_to_its_band(clie
     monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "item_return_rate", RETURNS, label="Item Return Rate")      # about 0.33, as return_rate above
-    with flag_overrides({G.FLAG: True}):
-        ok = _approve(client, conn, "item_return_rate")
+    ok = _approve(client, conn, "item_return_rate")
     assert ok.status_code == 200, ok.text
     m = MetricDefinition(name="item_return_rate", label="Item Return Rate", sql=RETURNS, connection=conn)
     assert G.band_of(m, conn) == (None, "")

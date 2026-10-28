@@ -9,13 +9,16 @@ with the person who named it), and the cell, slide or quoted text it points at a
 decision as LATER evidence, dated, never as something it relied on when it was decided. Reading the same file again
 adds only what is new, and a comment edited since restates its claim. Nothing is approved from a comment: a Google
 comment's author address is not always given, and an approval is a named, verified person's.
+
+It reads through the install's Google OAuth client and the person's own grant on the Google Drive comments card. Until
+both exist, the decision says which is missing where the file would be named (`missing`), and a read is refused with
+the same sentence.
 """
 from __future__ import annotations
 
 import re
 from typing import Optional
 
-FLAG = "arrivals.google_comments"
 OPERATION = "drive.comments.list"
 #: The comments read from one file at most — more are said, never silently dropped.
 MAX_COMMENTS = 100
@@ -28,9 +31,26 @@ class CommentsRefused(ValueError):
         self.status = status
 
 
-def door_on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
+#: Where the install's Google OAuth client is set, and where a person connects the card — as the screen names them.
+CLIENT_WHERE = "Operations → Integrations → Google → Set up"
+CARD_WHERE = "Operations → Integrations → Google"
+
+
+def client_set_up() -> bool:
+    """Whether the install holds a Google OAuth client (`integrations/store.py`) — the setup this door reads through."""
+    from aughor.integrations.store import get_app
+    app = get_app("google")
+    return bool(app is not None and app.client_id)
+
+
+def missing(user_id: str) -> str:
+    """The sentence a decision shows where a Google file would be named, while no file's comments can be read here —
+    the install's Google OAuth client first, then this person's grant; "" once nothing is missing."""
+    if not client_set_up():
+        return f"Not set up yet: this install has no Google OAuth client. Add it in {CLIENT_WHERE}."
+    if not grant_for(user_id):
+        return f"Connect the Google Drive comments card first, in {CARD_WHERE}."
+    return ""
 
 
 def file_id_of(link: str) -> str:
@@ -70,8 +90,7 @@ def read_onto(decision_id: str, link: str, *, user_id: str, grant: str = "") -> 
         raise CommentsRefused(404, f"no decision {decision_id}")
     grant = grant or grant_for(user_id) or ""
     if not grant:
-        raise CommentsRefused(409, "connect the Google Drive comments card first — this person has no Google grant "
-                                   "that may read comments")
+        raise CommentsRefused(409, missing(user_id) or f"Connect the Google Drive comments card first, in {CARD_WHERE}.")
     got = call_operation(grant, OPERATION, {"file_id": fid}, actor=user_id or "unidentified")
     if got.status != "executed":
         raise CommentsRefused(502, f"Google did not give the comments ({got.status}): {got.message}")

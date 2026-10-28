@@ -130,13 +130,10 @@ def run_recall_daily(*, force: bool = False, now: Optional[datetime] = None,
     """Re-measure recent Briefings once a UTC day, from the heartbeat.
 
     Bounded the way `recheck` is bounded: only Briefings built inside its window, and the pass
-    runs once a day. Off when `answers.recheck` is off — one switch for "re-check what we told
-    people", because two switches is how one of them ends up forgotten in the on position.
+    runs once a day.
     """
     global _last_run_day
-    from aughor.answer.recheck import WINDOW_DAYS, enabled
-    if not enabled():
-        return {"skipped": "off"}
+    from aughor.answer.recheck import WINDOW_DAYS
     now = now or _now()
     today = now.date().isoformat()
     if _last_run_day == today and not force:

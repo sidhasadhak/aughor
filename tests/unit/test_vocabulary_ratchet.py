@@ -97,13 +97,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # Exempt because they name FROZEN WIRE/API identifiers verbatim, and a test that
         # renamed them would assert a contract the backend does not speak:
         #   test_stream_chat_transcript — `insight` / `insight_delta` are SSE event types.
-        #   test_converse_route_off_state, probe_converse_turn — `insight_id` is a field on
+        #   test_converse_route_ineligible, probe_converse_turn — `insight_id` is a field on
         #     AskRequest; both construct request shapes to prove the /ask door's behaviour.
         #   ci0_scorecard — `insight` is the FROZEN report_json key quick-turn prose is
         #     stored under; the CI-0 scorecard reads the historical store as written.
         # Same reason api.ts and uiMessageAdapter.ts are exempt from `investigation_in_web`.
         ("tests/integration/test_stream_chat_transcript.py",
-         "tests/unit/test_converse_route_off_state.py",
+         "tests/unit/test_converse_route_ineligible.py",
          "scripts/probe_converse_turn.py",
          "scripts/ci0_scorecard.py",
          # CI-2's findings tool reads the explorer store, whose frozen state key is the
@@ -115,7 +115,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # by the store's frozen `insights`; the module under test speaks 'findings'.
          "tests/unit/test_briefing_reask.py",
          # CI-4's tests construct /ask request shapes carrying the frozen `insight_id`
-         # field — the same reason test_converse_route_off_state is exempt.
+         # field — the same reason test_converse_route_ineligible is exempt.
          "tests/unit/test_ci4_depth_as_tool.py",
          # S1's embedded-seam test drives org intelligence end-to-end, whose frozen
          # payload key is `insight_id` and whose API is `delete_org_insight` — the
@@ -365,7 +365,9 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
     ),
     "digest": (
         # (?<!hex)(?<!\.) so hashlib's hexdigest()/.digest() are not vocabulary.
-        r"(?i)(?<!hex)(?<!\.)\bdigest", CODE_ROOTS, (),
+        r"(?i)(?<!hex)(?<!\.)\bdigest", CODE_ROOTS,
+        # names the frozen `/monitors/digest` route once, to pin that the alert summary's door answers (2026-10-28)
+        ("tests/unit/test_alert_summary_route.py",),
         "one of three words for the periodic narrative; it is a 'briefing'",
     ),
     "agentic_ops": (
@@ -578,7 +580,9 @@ BASELINE: dict[str, int] = {
     # them by correcting the old paths comments still named (lib/cockpit/, aughor/cockpit/) to where the code lives.
     # 971 → 966 (ED-4, 2026-10-24): an App's versions read the stored field names they must, and paid for them with
     # nine comments that still said cockpit for a dashboard.
-    "cockpit": 966,
+    # 966 → 927 (2026-10-28, ROADMAP §3.65): the dashboard flags were made unconditional — their nine `cockpit.*` aliases,
+    # their nine `AUGHOR_COCKPIT_*` variables and the off paths that said the word went with them.
+    "cockpit": 927,
     "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is

@@ -1,39 +1,33 @@
 """Arc FA, FA-3 — a declaration marked *retiring*: still served, moving to a successor by a date (ROADMAP §3.60).
 
 A withdrawal something depends on is refused (Arc OC-1), which is right, and left a person nothing between keeping an
-element for good and breaking what reads it. Behind `ontology.retiring` any declaration may carry a mark — the user's
+element for good and breaking what reads it. Now any declaration may carry a mark — the user's
 word, 2026-10-26: *retiring* ("withdraw" is removal; "retired" already means archived for dashboards and the graph):
 
 * **The mark** is one field on the declaration, ``retiring: {successor, on, note}``: the element of the SAME kind to
   use instead, which must exist on this ontology, the day it is meant to go, and the person's own words. It is written
-  through the normal save path, so with releases on it waits in the draft; any change to it is a MEANING change
+  through the normal save path, so it waits in the draft; any change to it is a MEANING change
   (`compatibility.classify`), so publishing it restates the claims computed under it.
 * **It still serves.** Retiring is not withdrawal: the element reads exactly as before, and every reader is told —
   the semantic block the agent reads, the entity's panel and its objects' pages say "retiring on <date> — use
   <successor> instead", and after the date "past its retiring date". Withdrawing it stays a separate, person's act.
 * **It is the suggested route** when a withdrawal is refused because something depends on it.
 
-The mark lives on the declaration, never on the graph's models: no model field grows, so with the flag off every
-graph, prompt and page is exactly what it was. A built element marked retiring gets a declaration that holds the mark
-alone, which the overlay applies as nothing.
+The mark lives on the declaration, never on the graph's models: no model field grows, so an element nobody marked
+reads exactly as it did. A built element marked retiring gets a declaration that holds the mark alone, which the
+overlay applies as nothing.
 """
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
-FLAG = "ontology.retiring"
 #: The declaration field the mark is kept in.
 FIELD = "retiring"
 
 KIND_WORDS = {"entity": "entity", "object_set": "segment", "computed_property": "computed property",
               "metric": "metric", "action": "action", "link": "link", "process": "process", "rule": "rule",
               "impact": "impact"}
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def _today(today: Optional[date] = None) -> date:
@@ -157,8 +151,8 @@ def described(graph: Any, kind: str, target_id: str, mark: dict, today: Optional
 
 def mark_for(graph: Any, kind: str, target_id: str, *, conn: str = "") -> Optional[dict]:
     """The described mark of one element of ``graph``'s scope — on ``conn``, the connection the request named, else
-    the graph's own — or None. Read only while the flag is on."""
-    if graph is None or not enabled() or getattr(graph, "scope", ""):
+    the graph's own — or None."""
+    if graph is None or getattr(graph, "scope", ""):
         return None
     mark = marks(conn or graph.connection_id, graph.schema_name or "default").get((kind, target_id))
     return described(graph, kind, target_id, mark) if mark is not None else None
@@ -187,8 +181,8 @@ def _owners(graph: Any, kind: str, target_id: str) -> set[str]:
 
 def semantic_lines(graph: Any, wanted: set[str], today: Optional[date] = None) -> list[str]:
     """The semantic block's lines for every retiring element read on an entity whose tables are ``wanted`` (bare,
-    lower-case names): what it is, and "retiring on <date> — use <successor> instead". [] while the flag is off."""
-    if graph is None or not enabled() or getattr(graph, "scope", ""):
+    lower-case names): what it is, and "retiring on <date> — use <successor> instead"."""
+    if graph is None or getattr(graph, "scope", ""):
         return []
     try:
         found = marks(graph.connection_id, graph.schema_name or "default")
@@ -214,10 +208,7 @@ def semantic_lines(graph: Any, wanted: set[str], today: Optional[date] = None) -
 
 
 def withdrawal_hint(kind: str) -> str:
-    """What a refused withdrawal adds while the flag is on: the way to take an element out of use without breaking
-    what depends on it. "" while it is off."""
-    if not enabled():
-        return ""
+    """What a refused withdrawal adds: the way to take an element out of use without breaking what depends on it."""
     word = KIND_WORDS.get(kind, kind)
     return (f" Or mark the {word} retiring — name its successor and a day; it keeps serving while what depends on it "
             "moves, and is withdrawn once nothing does.")

@@ -47,10 +47,7 @@ def _today() -> _dt.date:
 
 def review_due_decisions(*, now: Optional[_dt.datetime] = None, runner: Optional[Runner] = None) -> list[str]:
     """Review every due decision that is not a recommendation's (those have their own review); returns the outcome
-    ids booked. Each decision is reviewed once — a booked outcome takes it off the due list. Nothing when the loop is
-    off."""
-    if not _dec.loop_on():
-        return []
+    ids booked. Each decision is reviewed once — a booked outcome takes it off the due list."""
     booked: list[str] = []
     for d in _dec.due_for_review(now):
         if d.source.kind == "recommendation":

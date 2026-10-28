@@ -22,7 +22,6 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
 
 @pytest.fixture
 def doors(graph, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", "1")
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
 
@@ -81,15 +80,6 @@ def test_a_proposal_that_does_not_fit_the_action_is_refused_in_words(graph):  # 
     assert "needs 'reason'" in validate_params(schema, {"order": "order:1"})
     assert "names an object as order:.+" in validate_params(schema, {"order": "customer:1", "reason": "x"})
     assert validate_params(schema, {"order": f"order:{ORDER}", "reason": "late"}) is None
-
-
-def test_with_the_flag_off_every_door_says_it_is_off(graph, client, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", "0")                # default-on since it graduated
-    for method, path in (("get", "/ontology/v1/contract"), ("get", "/ontology/v1/types.d.ts"),
-                         ("post", "/objects/v1/list"), ("post", "/objects/v1/actions/flag_order_for_review/propose")):
-        body = {"entity": "Order"} if path.endswith("list") else {"params": {}}
-        r = getattr(client, method)(path, params=PARAMS, **({"json": body} if method == "post" else {}))
-        assert r.status_code == 404 and "doors for builders are off" in r.json()["detail"], path
 
 
 def test_a_program_lists_objects_and_proposes_an_action_a_person_then_decides(doors, db, client):  # noqa: F811
@@ -254,7 +244,8 @@ def test_accepting_declares_each_part_through_its_own_door_as_the_persons_with_t
     assert results["dataset:customers"]["ok"] is True, results
     assert results["metric:order_value"]["ok"] is True, results
     from aughor.ontology import overrides as OV
-    described = OV.find_override(CONN, "ecommerce", "entity", "Customer")
+    with OV.viewing("draft"):                                  # declared through its door: waiting to be published
+        described = OV.find_override(CONN, "ecommerce", "entity", "Customer")
     assert described is not None and described.fields["description"] == "Someone who has placed at least one order."
     from aughor.semantic.metrics import definition_at
     metric = definition_at("order_value", CONN, "ecommerce")

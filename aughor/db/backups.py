@@ -49,7 +49,7 @@ account of what happened: `audit.db` (the SQL audit log) stays as it is, and the
 `system.db`) is carried from the present into the restored ledger. A restore is a new state with the old one kept as a
 labelled backup, never a rewind.
 
-Behind `state.backups`, off by default: off, nothing is scheduled, nothing is written, `/health` reads as before.
+Part of the platform since 2026-10-28 (ROADMAP §3.65; it was the flag `state.backups`).
 
 **Falsifier** (§3.63): the API's p95 on `/health` or `/catalog/tree` rising more than 20% while a backup runs → move
 backups to a quiet hour.
@@ -77,7 +77,6 @@ from aughor.db.retention import AUGHOR, LABELLED_ONLY, should_keep
 
 logger = logging.getLogger(__name__)
 
-FLAG = "state.backups"
 MANIFEST = "manifest.json"
 LAST_RUN = "last_run.json"
 #: The manifest's envelope. A reader refuses a manifest newer than it understands rather than half-restoring it
@@ -211,7 +210,7 @@ class Backup:
 @dataclass
 class TakeOutcome:
     """A typed verdict: "taken", "unchanged", "skipped_space" and "failed" are recorded in `last_run.json`;
-    "busy", "off", "not_due" and "not_serving" are not, because nothing was checked."""
+    "busy", "not_due" and "not_serving" are not, because nothing was checked."""
     status: str
     reason: str = ""
     stamp: Optional[str] = None
@@ -808,10 +807,7 @@ def _take_locked(root: Path, at: datetime, *, label: Optional[str], reason: str,
 
 
 def run_scheduled(now: Optional[datetime] = None) -> TakeOutcome:
-    """The hourly job: behind ``state.backups``, only in the process serving the state directory, at most hourly."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(FLAG):
-        return TakeOutcome("off")
+    """The hourly job: only in the process serving the state directory, at most hourly."""
     from aughor.db.serving import serving_pid
     pid = serving_pid()
     if pid != os.getpid():
@@ -833,7 +829,11 @@ def run_scheduled(now: Optional[datetime] = None) -> TakeOutcome:
 # ── /health ────────────────────────────────────────────────────────────────────────
 
 def health_block(root: Optional[Path] = None, now: Optional[datetime] = None) -> dict:
-    """The backups block of `/health`: one small file and a folder listing, never a manifest — health stays instant."""
+    """The backups block of `/health`: one small file and a folder listing, never a manifest — health stays instant.
+
+    ``ok`` is None in the two processes the clock never runs in (serverless, or the in-process clocks off): no backup is
+    taken there by design, which is said in ``detail`` and does not degrade `/health` — a process that is never the one
+    keeping the state is not failing to keep it."""
     root = root or _root()
     now = now or _now()
     last = read_last_run(root)
@@ -847,14 +847,15 @@ def health_block(root: Optional[Path] = None, now: Optional[datetime] = None) ->
     }
     # The two processes the clock never runs in, said rather than left to read as a backup not yet due.
     if os.environ.get("VERCEL"):
+        out["ok"] = None
         out["detail"] = "backups do not run on a serverless instance — its disk is not the state's"
         return out
     if (os.environ.get("AUGHOR_DISABLE_SCHEDULERS") or "").strip().lower() not in ("", "0", "false", "no"):
+        out["ok"] = None
         out["detail"] = "the in-process clocks are off here (AUGHOR_DISABLE_SCHEDULERS), so no backup is taken"
         return out
     if not last:
-        out["detail"] = ("no backup has been checked yet — the first is taken a few minutes after the server starts "
-                         "with backups on")
+        out["detail"] = "no backup has been checked yet — the first is taken a few minutes after the server starts"
         return out
     try:
         at = datetime.fromisoformat(str(last.get("at")))

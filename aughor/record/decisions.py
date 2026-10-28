@@ -26,14 +26,9 @@ from aughor.record import claims as _claims
 DECISION_KIND = "decision"
 OUTCOME_KIND = "outcome"
 DEFAULT_REVIEW_DAYS = 30
-#: PENDING 57, D-1 to D-3 (docs/DECISION_LOOP_STUDY_2026-10-24.md): decisions booked in full where they are made,
-#: reviewed when they expected something, scored against what would have happened anyway. Off: as before.
-LOOP_FLAG = "record.decision_loop"
-
-
-def loop_on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(LOOP_FLAG)
+# PENDING 57, D-1 to D-3 (docs/DECISION_LOOP_STUDY_2026-10-24.md): decisions booked in full where they are made,
+# reviewed when they expected something, scored against what would have happened anyway — part of the platform since
+# 2026-10-28 (ROADMAP §3.65; it was the flag `record.decision_loop`).
 
 SourceKind = Literal["recommendation", "approval", "declared", "autonomy"]
 #: ``missed`` — a *hold* that moved outside its band beyond the baseline's noise: it named no wanted side, so the

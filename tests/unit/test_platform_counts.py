@@ -97,8 +97,7 @@ def _case_desk(**list_props) -> dict:
 
 
 def test_a_case_queue_is_checked_where_its_cases_live_and_kept_like_any_cockpit(queue, monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda name: name in {pieces.FLAG, "ontology.object_dashboards", "dashboard.app_pieces"})
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
     assert pieces.not_resolved(CONN, _case_desk(), graph=queue) == []
     said = pieces.not_resolved(CONN, _case_desk(title="priority"), graph=queue)

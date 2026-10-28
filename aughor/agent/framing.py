@@ -139,7 +139,7 @@ def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] 
     # not the person's.
     from aughor.automations.temporal import ask_of
     from aughor.semantic.object_query import keyed_metrics_for
-    metrics = keyed_metrics_for(connection_id, graph.schema_name)     # Arc OC-3 — empty while the flag is off
+    metrics = keyed_metrics_for(connection_id, graph.schema_name)     # Arc OC-3
     frame = frame_question(ask_of(question), graph, synonyms=synonyms, hops=hops, dialect=dialect, metrics=metrics)
     if choose and frame.ambiguous:
         frame = choose_definition(frame, graph, provider=provider, synonyms=synonyms, dialect=dialect,

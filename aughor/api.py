@@ -399,7 +399,7 @@ class _OntologyViewMiddleware:
     ontology when the client asks (`X-Aughor-Ontology-View: draft`, or `?ontology_view=draft` — the ontology's own
     editing screens) and for every write to an `/ontology` door, which resolves against and reads back what it drafts;
     the PUBLISHED ontology for everything else — the agent, the Briefing, metrics, object pages. Pure ASGI for the
-    workspace middleware's reason. Inert while `ontology.release` is off: the view is never consulted."""
+    workspace middleware's reason."""
 
     def __init__(self, app):
         self.app = app
@@ -928,7 +928,7 @@ async def _ontology_refresh_loop() -> None:
         except Exception as exc:
             logger.warning("Ontology refresh loop error: %s", exc)
         try:
-            # Arc OC-0: one census reading a day into the journal, behind `ontology.census` (a no-op when off).
+            # Arc OC-0: one census reading a day into the journal.
             from aughor.ontology.census import record_if_due
             await asyncio.get_running_loop().run_in_executor(None, record_if_due)
         except Exception as exc:
@@ -939,21 +939,20 @@ async def _start_ontology_refresh_loop() -> None:
     asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
 
 
-#: Arc OC-6 — how often the outbox's worker looks for a call that is due (a no-op while `actions.outbox` is off).
+#: Arc OC-6 — how often the outbox's worker looks for a call that is due.
 _OUTBOX_EVERY_S = 15
 
 
 async def _outbox_worker_loop() -> None:
     """Arc OC-6 — the outbox's worker: each pass claims the calls that are due under a lease and delivers them (a call
-    whose fate is unknown is checked first). Off, nothing is read."""
+    whose fate is unknown is checked first)."""
     import uuid as _uuid
     worker = f"api:{os.getpid()}:{_uuid.uuid4().hex[:6]}"
     while True:
         await asyncio.sleep(_OUTBOX_EVERY_S)
         try:
             from aughor.actions import outbox
-            if outbox.enabled():
-                await asyncio.get_running_loop().run_in_executor(None, lambda: outbox.work_once(worker))
+            await asyncio.get_running_loop().run_in_executor(None, lambda: outbox.work_once(worker))
         except Exception as exc:
             logger.warning("Outbox pass failed: %s", exc)
 
@@ -1229,9 +1228,9 @@ from aughor.routers import builder_v1 as builder_v1_router  # noqa: E402 — Arc
 app.include_router(builder_v1_router.router)  # /ontology/v1 + /objects/v1: the contract, listing, proposing
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(cards.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
-app.include_router(dashboards_router.router)  # Arc CT-4 — dashboards (self-gate on dashboard.composed); /cockpits answers too
+app.include_router(dashboards_router.router)  # Arc CT-4 — dashboards; /cockpits answers too
 from aughor.routers import sheets as sheets_router  # noqa: E402 — Arc SH, the sheets people make
-app.include_router(sheets_router.router)  # Arc SH — Spreadsheets (self-gate on sheets.core and each wave's flag)
+app.include_router(sheets_router.router)  # Arc SH — Spreadsheets
 app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
 app.include_router(charts.router)  # RC-2 — the chart door for surfaces that cannot draw (Slack)
 app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)

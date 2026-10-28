@@ -2,8 +2,8 @@
 `aughor/record/google_comments.py`, `POST /record/decisions/{id}/google-file`).
 
 What these hold, with Google's answer faked at the call seam: a Sheets, Slides, Docs or Drive link names a file and
-nothing else does; the door is closed while its flag is off; a person with no Google grant that may read comments is
-told to connect the card; the ONE named file is read — never another — and each comment becomes a said claim in its
+nothing else does; while the install has no Google OAuth client, or the person no grant that may read comments, the
+decision says which where the file would be named and a read is refused with the same sentence; the ONE named file is read — never another — and each comment becomes a said claim in its
 author's name with the cell or quoted text it points at, added to the decision as later evidence; reading again adds
 nothing new, and an edited comment restates its claim; Google's refusal is said.
 """
@@ -15,7 +15,6 @@ import pytest
 from fastapi import HTTPException
 
 from aughor.integrations.call import CallResult
-from aughor.kernel.flags import flag_overrides
 from aughor.record import byproducts as B
 from aughor.record import claims as C
 from aughor.record import decisions as D
@@ -99,13 +98,37 @@ def test_reading_again_adds_nothing_new_and_an_edited_comment_restates_its_claim
     assert len(D.latest_decision(d.source).extra["evidence"]) == 2
 
 
-def test_no_grant_no_file_and_googles_refusal_are_each_said(calls, monkeypatch):
+NO_CLIENT = "Not set up yet: this install has no Google OAuth client. Add it in Operations → Integrations → Google → Set up."
+NO_GRANT = "Connect the Google Drive comments card first, in Operations → Integrations → Google."
+
+
+def test_what_is_missing_is_said_the_client_first_then_the_grant(monkeypatch):
+    import aughor.integrations.store as store
+    from aughor.integrations.models import ProviderApp
+    apps: dict = {}
+    monkeypatch.setattr(store, "get_app", lambda provider_id: apps.get(provider_id))
+    monkeypatch.setattr(G, "grant_for", lambda user_id: None)
+    assert G.client_set_up() is False and G.missing("user:amit") == NO_CLIENT
+    apps["google"] = ProviderApp(id="google", client_id="")                 # a row with no client is no client
+    assert G.client_set_up() is False and G.missing("user:amit") == NO_CLIENT
+    apps["google"] = ProviderApp(id="google", client_id="1-a.apps.googleusercontent.com")
+    assert G.client_set_up() is True and G.missing("user:amit") == NO_GRANT
+    monkeypatch.setattr(G, "grant_for", lambda user_id: "g-1")
+    assert G.missing("user:amit") == ""
+
+
+def test_no_client_no_grant_no_file_and_googles_refusal_are_each_said(calls, monkeypatch):
     _seen, state = calls
     d = _decision()
     monkeypatch.setattr(G, "grant_for", lambda user_id: None)
-    with pytest.raises(G.CommentsRefused, match="connect the Google Drive comments card first") as e:
+    monkeypatch.setattr(G, "client_set_up", lambda: False)
+    with pytest.raises(G.CommentsRefused) as e:
         G.read_onto(d.id, LINK, user_id="user:amit")
-    assert e.value.status == 409
+    assert e.value.status == 409 and str(e.value) == NO_CLIENT
+    monkeypatch.setattr(G, "client_set_up", lambda: True)
+    with pytest.raises(G.CommentsRefused) as e:
+        G.read_onto(d.id, LINK, user_id="user:amit")
+    assert e.value.status == 409 and str(e.value) == NO_GRANT
     with pytest.raises(G.CommentsRefused, match="names no Google file"):
         G.read_onto(d.id, "https://example.com/x", user_id="", grant="g-1")
     state["status"] = "failed"
@@ -114,15 +137,19 @@ def test_no_grant_no_file_and_googles_refusal_are_each_said(calls, monkeypatch):
     assert e.value.status == 502
 
 
-def test_the_route_is_closed_while_off_and_reads_while_on(calls, monkeypatch):
+def test_the_decision_says_what_is_missing_and_the_route_refuses_with_it_then_reads(calls, monkeypatch):
     from aughor.routers import record as R
     d = _decision()
     monkeypatch.setattr(R, "_who", lambda principal: "user:amit")
+    monkeypatch.setattr(R, "_visible", lambda conn_id: True)
+    monkeypatch.setattr(G, "client_set_up", lambda: False)
+    monkeypatch.setattr(G, "grant_for", lambda user_id: None)
+    assert R.get_record_decision(d.id)["google"] == {"files": [], "missing": NO_CLIENT}
+    with pytest.raises(HTTPException) as e:
+        R.read_google_file_onto_decision(d.id, R.GoogleFileRequest(link=LINK), principal=None)
+    assert e.value.status_code == 409 and e.value.detail == NO_CLIENT
+    monkeypatch.setattr(G, "client_set_up", lambda: True)
     monkeypatch.setattr(G, "grant_for", lambda user_id: "g-1")
-    with flag_overrides({G.FLAG: False}):
-        with pytest.raises(HTTPException) as e:
-            R.read_google_file_onto_decision(d.id, R.GoogleFileRequest(link=LINK), principal=None)
-        assert e.value.status_code == 404
-    with flag_overrides({G.FLAG: True}):
-        out = R.read_google_file_onto_decision(d.id, R.GoogleFileRequest(link=LINK), principal=None)
+    out = R.read_google_file_onto_decision(d.id, R.GoogleFileRequest(link=LINK), principal=None)
     assert out["new"] == 2 and out["by"] == "user:amit"
+    assert R.get_record_decision(out["decision"])["google"] == {"files": [FILE], "missing": ""}

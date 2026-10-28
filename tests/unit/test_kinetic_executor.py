@@ -194,10 +194,14 @@ def test_default_webhook_dispatch_posts(monkeypatch):
 
 
 def test_default_webhook_ssrf_is_blocked(monkeypatch):
+    """The guard refuses the call: the outbox keeps it, never sends it again by itself, and the press says it waits for
+    a person, and why (Arc OC-6)."""
     monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda u: False)
     a = _action(side_effects=[SideEffect(kind="webhook", config={"url": "http://169.254.169.254/"})])
     r = execute_kinetic_action(a, {"amount": 500})
-    assert r.status == "dispatch_error" and "SSRF" in r.message
+    [send] = r.outcome["outbox"]
+    assert r.status == "executed" and send["status"] == "dead" and "SSRF" in send["error"]
+    assert r.verification["status"] == "waits_for_a_person" and "SSRF" in r.verification["why"]
 
 
 def test_annotate_without_target_params_errors_clearly():
@@ -223,12 +227,14 @@ def test_annotate_names_the_row_by_the_param_its_key_column_names(monkeypatch):
     assert saved[0].row_key == "O000999"
 
 
-def test_trigger_investigation_without_a_question_is_a_dispatch_error():
+def test_trigger_investigation_without_a_question_is_refused():
     """H5 wired this branch; a side effect that declares no question still cannot run.
     The full behaviour lives in tests/unit/test_runners_investigation.py."""
     a = _action(side_effects=[SideEffect(kind="trigger_investigation")], submission_criteria=[])
     r = execute_kinetic_action(a, {"amount": 1})
-    assert r.status == "dispatch_error" and "question" in r.message
+    [send] = r.outcome["outbox"]                     # refused: kept, never sent again by itself (Arc OC-6)
+    assert r.status == "executed" and send["status"] == "dead" and "question" in send["error"]
+    assert r.verification["status"] == "waits_for_a_person"
 
 
 # ── the HTTP surface ─────────────────────────────────────────────────────────────

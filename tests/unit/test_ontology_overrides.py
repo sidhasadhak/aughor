@@ -24,9 +24,12 @@ def _graph() -> OntologyGraph:
     return g
 
 
+#: Each override here is set up in force — written by the release's own door (`publish_override`), as a published one
+#: is: a change made through a declaring door waits in the draft until a person publishes it (Arc OC-2).
 @pytest.fixture(autouse=True)
 def _isolated_root(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 def test_verified_gate_bound_vs_unbound():
@@ -38,8 +41,8 @@ def test_verified_gate_bound_vs_unbound():
         target_kind="computed_property", target_id="OrderItem::bad",
         fields={"label": "Bad", "formula_sql": "SUM(nope)"},
         binding={"formula_sql": {"bound": False, "note": "no col"}})
-    OV.save_override("c", "s", ov_ok)
-    OV.save_override("c", "s", ov_bad)
+    OV.publish_override("c", "s", ov_ok)
+    OV.publish_override("c", "s", ov_bad)
 
     g, report = OV.apply_overrides(_graph(), "c", "s")
     cps = {c.id: c for c in g.entities["OrderItem"].computed_properties}
@@ -54,7 +57,7 @@ def test_yaml_roundtrip():
         target_kind="metric", target_id="category_revenue",
         fields={"entity": "OrderItem", "formula_sql": "SUM(line_total)"},
         binding={"formula_sql": {"bound": True, "note": ""}})
-    OV.save_override("c", "s", ov)
+    OV.publish_override("c", "s", ov)
     loaded = OV.load_overrides("c", "s")
     assert len(loaded) == 1
     assert loaded[0].target_id == "category_revenue"
@@ -73,7 +76,7 @@ def test_override_survives_fingerprint_rebuild(tmp_path, monkeypatch):
         target_kind="computed_property", target_id="OrderItem::rev",
         fields={"label": "Rev", "formula_sql": "SUM(line_total)"},
         binding={"formula_sql": {"bound": True, "note": ""}})
-    OV.save_override("c", "s", ov)
+    OV.publish_override("c", "s", ov)
 
     # present under the original fingerprint
     g1 = ST.load_latest_ontology("c", "s")

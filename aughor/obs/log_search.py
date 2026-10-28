@@ -1,4 +1,4 @@
-"""Arc TC, TC-5 — search the lines every run wrote, across runs (flag ``obs.log_search``).
+"""Arc TC, TC-5 — search the lines every run wrote, across runs (``GET /obs/logs``).
 
 A run's lines were readable one trace at a time (``GET /traces/{id}/logs``): the kernel journal's
 state transitions and, above all, its *tolerated errors* — failures deliberately swallowed so the

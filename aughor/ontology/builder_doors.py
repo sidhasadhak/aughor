@@ -114,16 +114,15 @@ def action_schema(action: KineticAction, release: str = "", graph: Optional[Onto
 
 def ontology_contract(graph: OntologyGraph, release: str = "") -> dict:
     """The whole contract a scope serves: every entity's and every declared action's schema, stamped with the
-    release. Entities an organisation marked as parts are included (a listing may name them). Arc ED-6 — with
-    ``objects.completeness`` on, it also describes the ``completeness`` every object door's answer carries."""
+    release. Entities an organisation marked as parts are included (a listing may name them). Arc ED-6 — it also
+    describes the ``completeness`` every object door's answer carries."""
     out = {"release": release or "", "connection_id": graph.connection_id, "schema_name": graph.schema_name,
            "entities": {e.id: entity_schema(graph, e, release) for e in sorted(graph.entities.values(), key=lambda e: e.id)},
            "actions": {a.id: action_schema(a, release, graph)
                        for a in sorted(graph.declared_actions(), key=lambda a: a.id)}}
     from aughor.semantic import completeness
-    if completeness.enabled():
-        out["completeness"] = {"$schema": DIALECT, "$id": f"aughor:{release or 'unreleased'}:completeness",
-                               **completeness.SCHEMA}
+    out["completeness"] = {"$schema": DIALECT, "$id": f"aughor:{release or 'unreleased'}:completeness",
+                           **completeness.SCHEMA}
     return out
 
 

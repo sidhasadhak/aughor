@@ -49,14 +49,23 @@ def plane(monkeypatch, tmp_path):
             return [{"payload": {"doc_id": "d1", "text": "a passage", "title": "d1"},
                      "score": 0.9}]
 
+        def _scroll(_coll, limit=10_000, *, strict=False):
+            if not store_ok:
+                raise ConnectionError("qdrant did not answer")
+            return [{"id": "1", "payload": {"doc_id": "d1", "text": "a passage", "title": "d1"}}]
+
         monkeypatch.setattr("aughor.semantic.embedder.embed_one", _embed)
         monkeypatch.setattr("aughor.semantic.vector_store.search", _search)
+        # an embedder that is down is searched by words (FA-1): the store's passages are read for that
+        monkeypatch.setattr("aughor.semantic.vector_store.scroll_points", _scroll)
         return calls
     return _set
 
 
-def test_an_unreachable_embedder_is_unavailable_not_empty(plane):
-    plane(embed_ok=False)
+def test_an_unreachable_embedder_and_store_are_unavailable_not_empty(plane):
+    """An embedder that is down alone is searched by words (`test_hybrid_documents.py`); with the store down too there
+    is nothing to search, and that is unavailable, not an empty answer."""
+    plane(embed_ok=False, store_ok=False)
     with pytest.raises(idx.DocumentSearchUnavailable, match="ConnectionError"):
         idx.search_documents("refund policy")
 
@@ -83,7 +92,7 @@ def test_a_healthy_search_still_answers(plane):
 def test_the_chat_tool_says_so_over_the_real_indexer(plane):
     from aughor.agent import platform_tools as pt
 
-    plane(embed_ok=False)
+    plane(embed_ok=False, store_ok=False)
     out = pt.search_documents("c1", {"query": "refund policy"})
     assert out["count"] == 0 and "could not be searched" in out["why"]
 
@@ -101,7 +110,7 @@ def test_a_prompt_reads_nothing_when_nothing_is_indexed(plane):
 def test_the_http_door_answers_503_not_an_empty_list(plane):
     from aughor.routers.knowledge import search_documents_endpoint
 
-    plane(embed_ok=False)
+    plane(embed_ok=False, store_ok=False)
     with pytest.raises(HTTPException) as exc:
         search_documents_endpoint({"query": "refund policy"}, request=None)
     assert exc.value.status_code == 503

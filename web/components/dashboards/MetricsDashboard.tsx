@@ -34,33 +34,24 @@ function showing(block: BriefingRangeBlock): DashboardRange {
   };
 }
 
-export function MetricsDashboard({ connectionId, schema, rangesOn, value, onChange }: {
+export function MetricsDashboard({ connectionId, schema, value, onChange }: {
   connectionId: string;
   schema?: string;
-  /** Whether this install reads a period at all (`briefing.ranges`); null while that is unknown. */
-  rangesOn: boolean | null;
   value: RangeChoice;
   onChange: (c: RangeChoice) => void;
 }) {
   const range: BriefingRange | null = value.preset === "standing" ? null : value;
   const rangeKey = JSON.stringify(range);
   const load = useLoad(
-    () => (rangesOn && range ? measureRange(connectionId, range, schema) : Promise.resolve(null)),
+    () => (range ? measureRange(connectionId, range, schema) : Promise.resolve(null)),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-    [connectionId, schema, rangeKey, rangesOn]);
+    [connectionId, schema, rangeKey]);
   // A new period is being read while the one before it is still on screen: said once, under the
   // picker (the user, 2026-10-08: one indicator), and the table it is about to replace is dimmed,
   // so nobody reads the old figures as the new period's. The first read has no table yet; the
   // gate below says it is loading, in the same place.
-  const reading = load.loading && !!range && rangesOn === true;
+  const reading = load.loading && !!range;
 
-  if (rangesOn === false) {
-    return (
-      <div data-testid="metrics-dashboard">
-        <Absent>A metric is measured for a period, and periods are off on this install — they need the Briefing ranges flag.</Absent>
-      </div>
-    );
-  }
   const block = !reading && load.data ? load.data.period : null;
   return (
     <div data-testid="metrics-dashboard">
@@ -97,7 +88,7 @@ export function MetricsDashboard({ connectionId, schema, rangesOn, value, onChan
       )}
       {!range ? (
         <Absent>“As written” is for cards. A metric is measured for a period — pick one above.</Absent>
-      ) : rangesOn === null ? null : (
+      ) : (
         <div data-testid="metrics-body" aria-busy={reading || undefined}
           style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
           <Gate load={load} what={`the metrics for ${choiceName(value)}`}>

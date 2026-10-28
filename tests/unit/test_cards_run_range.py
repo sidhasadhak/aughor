@@ -2,8 +2,7 @@
 
 Pinned: with a range the card's SQL is cut to it on the main date of the first table it reads
 and `scoped` says what the number covers; a card whose tables have no date runs standing and
-`scoped` says why; a range's figure never rolls into the standing value history; a range is
-refused with the flag off.
+`scoped` says why; a range's figure never rolls into the standing value history.
 """
 from __future__ import annotations
 
@@ -38,7 +37,6 @@ def _stub(monkeypatch, seen: dict):
 
 
 def test_a_range_cuts_the_card_on_its_tables_date_and_never_rolls_into_the_history(monkeypatch):
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}
     _stub(monkeypatch, seen)
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
@@ -60,7 +58,6 @@ def test_a_run_says_its_own_figure_and_the_standing_one_stays_the_cards(monkeypa
     figure is the range's, and `refresh` goes on carrying the standing one. The card drew
     `refresh`, so it showed the all-time figure under the range's label — which the test above
     could not see, because it cuts the card before it has ever run standing."""
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}
     _stub(monkeypatch, seen)
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
@@ -85,7 +82,6 @@ def test_a_run_says_its_own_figure_and_the_standing_one_stays_the_cards(monkeypa
 
 
 def test_a_table_has_no_figure(monkeypatch):
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})
     monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: QueryResult(
         hypothesis_id="c", sql=sql, columns=["region", "n"], rows=[["NA", 3], ["EU", 2]], row_count=2))
@@ -96,7 +92,6 @@ def test_a_table_has_no_figure(monkeypatch):
 
 
 def test_a_card_without_a_date_runs_standing_and_says_why(monkeypatch):
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}
     _stub(monkeypatch, seen)
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
@@ -118,7 +113,6 @@ def _answers(monkeypatch, seen: list, by_window: dict):
 def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(monkeypatch):
     """A dashboard's card says how its figure moved against the window its range is compared
     with — the card's own SQL, cut on the same date, so the two differ only by their dates."""
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})
     seen: list = []
     _answers(monkeypatch, seen, {"2026-08-24": 7, "2026-08-10": 5})
@@ -134,7 +128,6 @@ def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(m
 
 
 def test_a_comparison_before_the_range_settles_says_it_is_not_at_equal_age(monkeypatch):
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})
     young = RangeSpec(**{**SPEC.__dict__, "as_of": date(2026, 8, 26)})
     monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (young, ""))
@@ -146,7 +139,6 @@ def test_a_comparison_before_the_range_settles_says_it_is_not_at_equal_age(monke
 
 
 def test_a_comparison_with_no_figure_says_so_and_is_never_zero(monkeypatch):
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})
     _answers(monkeypatch, [], {"2026-08-24": 7})
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
@@ -158,7 +150,6 @@ def test_a_comparison_with_no_figure_says_so_and_is_never_zero(monkeypatch):
 def test_nothing_is_compared_unasked_or_where_nothing_was_cut(monkeypatch):
     """The Briefing's own cards never ask, so they pay for no second query; a card that ran
     standing has no window of its own to compare."""
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})
     seen: list = []
     _answers(monkeypatch, seen, {"2026-08-24": 7, "2026-08-10": 5})
@@ -170,13 +161,3 @@ def test_nothing_is_compared_unasked_or_where_nothing_was_cut(monkeypatch):
                                          sql="SELECT COUNT(*) AS n FROM products", title="products"))
     body = client.post(f"/cards/{products.id}/run", params={"preset": "last_week", "compare": True}).json()
     assert body["scoped"]["standing"] is True and body["previous"] is None and len(seen) == 2
-
-
-def test_a_range_is_refused_with_the_flag_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "0")
-    seen: dict = {}
-    _stub(monkeypatch, seen)
-    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
-                                     sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
-    r = client.post(f"/cards/{card.id}/run", params={"preset": "last_week"})
-    assert r.status_code == 404 and "briefing.ranges" in r.json()["detail"]

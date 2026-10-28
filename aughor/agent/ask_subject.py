@@ -1,7 +1,7 @@
 """Arc FA, FA-2 — a choice can leave its piece: the objects a reader ticked, or a set a piece reads, as a question's subject.
 
-A dashboard's table collects ticks and its pieces read named sets; until now neither could leave the dashboard. Behind
-``canvas.ask_about_chosen`` a question asked in the Data Canvas may carry one of them as its subject (`AskFocus`):
+A dashboard's table collects ticks and its pieces read named sets; until now neither could leave the dashboard. A
+question asked in the Data Canvas may carry one of them as its subject (`AskFocus`):
 
 * **objects** — up to fifty references, ``<type>:<key>`` (the builder doors' form, read by `ontology.object_refs`), of one
   entity or several;
@@ -20,7 +20,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-FLAG = "canvas.ask_about_chosen"
 #: The kinds of subject this module reads; every other focus kind is SP-15's one object.
 KINDS = ("objects", "set")
 #: The most objects a subject names by key and title — a page of a queue, never a warehouse.
@@ -29,11 +28,6 @@ MAX_CHOSEN = 50
 MAX_READER_FILTERS = 20
 #: What the conversation is handed at most, as the SP-15 focus is.
 _MAX_PROSE = 8000
-
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def is_subject(focus: Any) -> bool:
@@ -142,9 +136,9 @@ class Subject:
 # ── reading a subject ────────────────────────────────────────────────────────────────────────────────────────────────
 
 def resolve(focus: Any, connection_id: str, schema_name: Optional[str] = None, *, person: str = "") -> Optional[Subject]:
-    """The subject ``focus`` names, read for the asker — or None when the flag is off or the focus is not a subject.
+    """The subject ``focus`` names, read for the asker — or None when the focus is not a subject.
     Never raises: a subject that cannot be read says why in ``refused``, and the turn proceeds."""
-    if not is_subject(focus) or not on():
+    if not is_subject(focus):
         return None
     try:
         if focus.kind == "objects":
@@ -243,7 +237,7 @@ def _objects(refs: list[Any], connection_id: str, schema_name: Optional[str], *,
 def _existing(connection_id: str, schema_name: Optional[str], entity: Any, key: str, keys: list[str]) -> int:
     """How many of ``keys`` name an object at all — the platform's own check, so a chosen object the reader may not see
     is said to be withheld rather than missing (`security.unfiltered`, as the object page says it). Only the count leaves
-    here; with row policies off, a key the reader cannot list is not there."""
+    here; inside the platform's own unfiltered check nothing is withheld, so a key the reader cannot list is not there."""
     from aughor.ontology import security
     if not security.enabled():
         return 0

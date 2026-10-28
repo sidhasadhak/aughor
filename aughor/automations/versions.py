@@ -19,8 +19,8 @@ true, or were not:
 **No new store.** A version is a kernel artifact (``Ledger.artifact_write``): the next version for
 a natural key, the one before stamped ``superseded_by`` — supersede, never delete — with lineage
 and a tenant. A Briefing and a dashboard keep their versions the same way. A run's stamp is a
-sidecar row beside the run in the automations store (``automation_run_stamps``), because the run
-row and its model must stay exactly what they are while the flag is off.
+sidecar row beside the run in the automations store (``automation_run_stamps``), so the run row and
+its model stay exactly what they were before versions began.
 
 **A version is a change of the definition**, not an act of saving: saving the same chain twice
 keeps one version. The definition is what was authored — its conditions, steps, logic, retries,
@@ -34,9 +34,6 @@ import logging
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
-
-#: The flag. Off (the default): a save replaces the definition, and a run keeps neither.
-FLAG = "automations.versions"
 
 #: How much of a trigger's payload a run keeps. Larger is kept as its size and its keys, and the
 #: replay refuses it by that name — a replay on a partial payload would answer a question nobody
@@ -65,17 +62,12 @@ MONITOR_LIFECYCLE = frozenset({"id", "enabled", "created_at", "updated_at"})
 
 
 class VersionNotKept(RuntimeError):
-    """A save refused because its version could not be kept. With versions on, the store never
-    holds a definition whose version was not kept."""
+    """A save refused because its version could not be kept. The store never holds a definition
+    whose version was not kept."""
 
 
 class NotReplayable(Exception):
     """A replay refused, by name: what was not kept, and why."""
-
-
-def keeping() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 # ── definitions ──────────────────────────────────────────────────────────────────
@@ -113,6 +105,16 @@ def _actor() -> str:
     return f"user:{who}" if who else ""
 
 
+def asked_by() -> str:
+    """Who asked for the run in flight — the person (or agent, or service principal) the request acts for, as a
+    principal; "" outside a request: a tick, a schedule. Kept on a run's start record (``trigger.by``)."""
+    from aughor.org.context import current_actor
+    who = (current_actor() or "").strip()
+    if not who:
+        return ""
+    return who if who.startswith(("user:", "agent:", "service:")) else f"user:{who}"
+
+
 def _keep(kind: str, key: str, definition: dict, *, conn_id: str, saved_by: str,
           source: str, saved_at: str) -> dict:
     """Keep ``definition`` as the next version of ``key`` unless it already is the latest.
@@ -137,7 +139,7 @@ def _keep_on_save(kind: str, key: str, *, prior_definition: Optional[dict], prio
                   definition: dict, conn_id: str, saved_at: str) -> None:
     """The save hook both stores share. The definition being replaced is kept first when nothing
     kept it yet — "every save keeps the earlier definition" holds for a chain saved before
-    versions were switched on too — and then the new one. Any failure refuses the save."""
+    versions began too — and then the new one. Any failure refuses the save."""
     try:
         if prior_definition is not None and _ledger().artifact_latest(key) is None \
                 and _canonical(prior_definition) != _canonical(definition):
@@ -152,9 +154,7 @@ def _keep_on_save(kind: str, key: str, *, prior_definition: Optional[dict], prio
 
 
 def keep_automation_version(automation: Any) -> None:
-    """Called by ``upsert_automation`` before it replaces the row. Off: reads nothing."""
-    if not keeping():
-        return
+    """Called by ``upsert_automation`` before it replaces the row."""
     from aughor.automations.store import get_automation
     prior = get_automation(automation.id)
     _keep_on_save(AUTOMATION_KIND, automation_key(automation.id),
@@ -165,9 +165,7 @@ def keep_automation_version(automation: Any) -> None:
 
 
 def keep_monitor_version(monitor: Any) -> None:
-    """Called by ``upsert_monitor`` before it replaces the row. Off: reads nothing."""
-    if not keeping():
-        return
+    """Called by ``upsert_monitor`` before it replaces the row."""
     from aughor.monitors.store import get_monitor
     prior = get_monitor(monitor.id)
     _keep_on_save(MONITOR_KIND, monitor_key(monitor.id),
@@ -182,7 +180,7 @@ def keep_monitor_version(monitor: Any) -> None:
 def version_for_run(automation: Any) -> dict:
     """The version this run runs under — ``{"version", "version_id", "why_not"}``.
 
-    A definition no save kept (saved while versions were off) is kept now, said as such. Never
+    A definition no save kept (saved before versions were kept) is kept now, said as such. Never
     raises: a run is an event that happened, and one whose version could not be kept says why
     on its stamp rather than not running.
     """
@@ -260,7 +258,7 @@ def _version_view(row: dict) -> dict:
 
 def history(kind: str, entity_id: str, current: Optional[dict], *, limit: int = 50) -> dict:
     """Every kept version of one automation or monitor, newest first, and whether the current
-    definition is one of them — a definition saved while versions were off is said, not hidden."""
+    definition is one of them — a definition saved before versions were kept is said, not hidden."""
     key = automation_key(entity_id) if kind == AUTOMATION_KIND else monitor_key(entity_id)
     versions = [_version_view(r) for r in _rows(key, max(1, min(int(limit), 500)))]
     current_version: Optional[int] = None
@@ -271,7 +269,7 @@ def history(kind: str, entity_id: str, current: Optional[dict], *, limit: int = 
     if current is None:
         why = "it was deleted; its versions are kept"
     elif current_version is None:
-        why = ("its current definition was saved while versions were off; it is kept as a "
+        why = ("its current definition was saved before versions were kept; it is kept as a "
                "version at its next save or run")
     else:
         why = ""
@@ -280,14 +278,15 @@ def history(kind: str, entity_id: str, current: Optional[dict], *, limit: int = 
 
 
 def stamp_view(run: Any) -> dict:
-    """What one run kept, for the run's own route: its version and its trigger payload."""
+    """What one run kept, for the run's own route: its version and its trigger — when it started, what asked
+    (``via``: the tick, a person's Run now, a webhook, a parent chain) and, for a person's Run now, who (``by``)."""
     from aughor.automations.store import get_run_stamp
     stamp = get_run_stamp(run.id)
     base = {"run_id": run.id, "automation_id": run.automation_id,
             "cap_bytes": TRIGGER_CAP_BYTES}
     if stamp is None:
         return {**base, "kept": False, "version": None, "version_id": "",
-                "why_not": "this run kept no version and no trigger: it ran while versions were off",
+                "why_not": "this run kept no version and no trigger: it ran before versions were kept",
                 "trigger": None, "trigger_bytes": 0, "trigger_capped": False,
                 "replayable": False}
     try:
@@ -307,7 +306,7 @@ def stamp_view(run: Any) -> dict:
 def _replay_inputs(run: Any, stamp: Optional[dict]) -> tuple[dict, dict]:
     """``(version row, kept trigger)``, or :class:`NotReplayable` naming what was not kept."""
     if stamp is None:
-        raise NotReplayable("this run kept no version and no trigger: it ran while versions were off")
+        raise NotReplayable("this run kept no version and no trigger: it ran before versions were kept")
     if stamp.get("version") is None:
         raise NotReplayable(f"this run's version was not kept: {stamp.get('why_not') or 'no reason was recorded'}")
     row = _ledger().artifact_by_id(str(stamp.get("version_id") or ""))

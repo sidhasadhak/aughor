@@ -2,7 +2,7 @@
 
 /**
  * A grid grouped by a column (SH-2's grouping, SH-3's group totals; mockup screen 7): the largest group first, each
- * under a head saying its value, how many rows it holds and — with `sheets.views` on — its totals over its own rows,
+ * under a head saying its value, how many rows it holds and its totals over its own rows,
  * placed under the columns they total. A group shows its first rows in the view's order and opens further on asking;
  * the first three groups open, the rest closed. A grouping with more groups than it lists says how many it left out.
  *

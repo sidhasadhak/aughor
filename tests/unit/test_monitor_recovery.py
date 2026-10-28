@@ -1,11 +1,10 @@
-"""Arc TC, TC-4 — alerts that close (`aughor/monitors/recovery.py`, flag `monitors.recovery`, off by default).
+"""Arc TC, TC-4 — alerts that close (`aughor/monitors/recovery.py`; part of the platform since 2026-10-28).
 
-What these hold, with the flag on: the first check back within its limit after an alert writes ONE *recovered* alert
+What these hold: the first check back within its limit after an alert writes ONE *recovered* alert
 naming the alert it closes, when, and the value that came back; a second check within its limit writes nothing more;
 the next alert after a recovery opens a new one, the grace period notwithstanding; a check says "within its limit"
 apart from "suppressed by its grace period"; the alert lists say which recovery closed an alert; a recovery is recorded
-and never sent; and every other reader of the alert store reads a recovery as no alert that fired. With the flag off,
-the same ticks write the same rows and say the same words as before, and the routes return the rows as they were.
+and never sent; and every other reader of the alert store reads a recovery as no alert that fired.
 
 Driven through the monitor effect the heartbeat runs (`automations.engine._dispatch_monitor`) over a stand-in
 warehouse whose value the test moves — the stores are the conftest's temp ones.
@@ -19,12 +18,8 @@ import pytest
 
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.db.connection import DatabaseConnection
-from aughor.kernel.flags import EXPERIMENT, FLAG_DEFAULT, FLAG_ENV, FLAG_META, flag_enabled, flag_overrides
 from aughor.monitors import recovery
 from aughor.monitors.models import Monitor, MonitorAlert
-
-ON = {"monitors.recovery": True}
-OFF = {"monitors.recovery": False}
 
 
 class _Warehouse:
@@ -87,27 +82,16 @@ def _alerts(monitor_id: str) -> list[MonitorAlert]:
     return list(reversed(get_alerts(monitor_id=monitor_id, limit=100)))      # oldest first
 
 
-# ── the flag ────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-def test_the_flag_is_registered_off_with_its_copy_and_its_question():
-    assert FLAG_ENV["monitors.recovery"] == "AUGHOR_MONITORS_RECOVERY"
-    assert "monitors.recovery" not in FLAG_DEFAULT and flag_enabled("monitors.recovery") is False
-    meta = FLAG_META["monitors.recovery"]
-    assert meta["label"] and meta["summary"] and meta["facts"] and "Off:" in meta["description"]
-    assert "Falsifier" in EXPERIMENT["monitors.recovery"]
-
-
 # ── an alert that closes ────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_first_check_back_within_its_limit_closes_the_alert_once_and_a_new_alert_opens_after(heartbeat):
     mid = heartbeat.watch.id
-    with flag_overrides(ON):
-        fired = heartbeat(5)
-        held = heartbeat(5)
-        back = heartbeat(15)
-        again = heartbeat(15)
-        refired = heartbeat(5)
-        back2 = heartbeat(15)
+    fired = heartbeat(5)
+    held = heartbeat(5)
+    back = heartbeat(15)
+    again = heartbeat(15)
+    refired = heartbeat(5)
+    back2 = heartbeat(15)
 
     rows = _alerts(mid)
     assert [(a.alert_on, a.severity) for a in rows] == [
@@ -133,48 +117,32 @@ def test_the_first_check_back_within_its_limit_closes_the_alert_once_and_a_new_a
     assert rec2.id == recovery.recovery_id(second) != rec.id and "recovered: closes the warning alert" in back2
 
 
-def test_off_the_same_ticks_write_the_same_rows_and_say_the_same_words_as_before(heartbeat):
-    mid = heartbeat.watch.id
-    with flag_overrides(OFF):
-        said = [heartbeat(v) for v in (5, 5, 15, 15, 5, 15)]
-    assert said[0].startswith("warning: Units watch: 5 below warning threshold 10")
-    assert said[1:] == ["no alert · read 5 (warning below 10)", "no alert · read 15 (warning below 10)",
-                        "no alert · read 15 (warning below 10)", "no alert · read 5 (warning below 10)",
-                        "no alert · read 15 (warning below 10)"]
-    assert [(a.alert_on, a.severity) for a in _alerts(mid)] == [("threshold_cross", "warning")]
-
-
 def test_two_checks_racing_to_close_one_alert_write_one_recovery(heartbeat):
     from aughor.monitors.runner import check_monitor
     from aughor.monitors.store import append_alert
 
     watch = heartbeat.watch
-    with flag_overrides(ON):
-        heartbeat(5)
-        run = check_monitor(watch, _Warehouse(15), suppress=True)
-    with flag_overrides(OFF):           # asked while the alert is open, so only the flag can say no
-        assert recovery.recovery_alert(watch, run) is None, "off, no caller can write a recovery"
-    with flag_overrides(ON):
-        one, two = recovery.recovery_alert(watch, run), recovery.recovery_alert(watch, run)
-        append_alert(one[0])
-        append_alert(two[0])
+    heartbeat(5)
+    run = check_monitor(watch, _Warehouse(15), suppress=True)
+    one, two = recovery.recovery_alert(watch, run), recovery.recovery_alert(watch, run)
+    append_alert(one[0])
+    append_alert(two[0])
     assert [a.alert_on for a in _alerts(watch.id)] == ["threshold_cross", "recovered"]
 
 
 def test_only_an_alert_from_a_rule_with_a_limit_is_closed():
     from aughor.monitors.store import append_alert
 
-    with flag_overrides(ON):
-        m = _watch()
-        append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(3), alert_on="threshold_cross", severity="warning"))
-        append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(2), alert_on="anomaly", severity="info",
-                                  message="baseline building"))
-        append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(1), alert_on="query_failing", severity="warning"))
-        # an information alert and an alert about running sit above it, and it is still the open one
-        assert recovery.open_alert(m.id).alert_on == "threshold_cross"
-        n = _watch()
-        append_alert(MonitorAlert(monitor_id=n.id, triggered_at=_ago(1), alert_on="trend_reversal", severity="warning"))
-        assert recovery.open_alert(n.id) is None, "a trend reversal is an event, not a state that comes back"
+    m = _watch()
+    append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(3), alert_on="threshold_cross", severity="warning"))
+    append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(2), alert_on="anomaly", severity="info",
+                              message="baseline building"))
+    append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(1), alert_on="query_failing", severity="warning"))
+    # an information alert and an alert about running sit above it, and it is still the open one
+    assert recovery.open_alert(m.id).alert_on == "threshold_cross"
+    n = _watch()
+    append_alert(MonitorAlert(monitor_id=n.id, triggered_at=_ago(1), alert_on="trend_reversal", severity="warning"))
+    assert recovery.open_alert(n.id) is None, "a trend reversal is an event, not a state that comes back"
 
 
 # ── what a check found ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -215,7 +183,7 @@ def _ago(hours: float) -> str:
     return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
 
-def test_a_recovery_ends_the_grace_period_only_with_the_flag_on():
+def test_a_recovery_ends_the_grace_period():
     from aughor.monitors.runner import _suppressed_by_grace
     from aughor.monitors.store import append_alert
 
@@ -223,10 +191,7 @@ def test_a_recovery_ends_the_grace_period_only_with_the_flag_on():
     append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(1.0), alert_on="threshold_cross", severity="warning"))
     append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(0.5), alert_on="recovered", severity="info"))
     now = MonitorAlert(monitor_id=m.id, triggered_at=_ago(0), alert_on="threshold_cross", severity="warning")
-    with flag_overrides(ON):
-        assert _suppressed_by_grace(m, now) is False
-    with flag_overrides(OFF):
-        assert _suppressed_by_grace(m, now) is True
+    assert _suppressed_by_grace(m, now) is False
 
 
 def test_a_recovery_is_never_a_baseline_a_trend_point_or_the_last_alert():
@@ -259,15 +224,13 @@ def test_a_recovery_is_recorded_and_never_sent_nor_asked_about(monkeypatch):
 # ── the readers ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def _closed_pair(heartbeat) -> tuple[MonitorAlert, MonitorAlert]:
-    with flag_overrides(ON):
-        heartbeat(5)
-        heartbeat(15)
+    heartbeat(5)
+    heartbeat(15)
     first, rec = _alerts(heartbeat.watch.id)[-2:]
     return first, rec
 
 
-def test_the_alert_lists_say_which_recovery_closed_an_alert_and_off_return_the_rows_as_they_were(heartbeat):
-    from aughor.monitors.store import get_alerts
+def test_the_alert_lists_say_which_recovery_closed_an_alert(heartbeat):
     from aughor.routers.monitors import get_all_alerts, get_monitor_alerts
 
     from aughor.monitors.store import append_alert
@@ -278,19 +241,13 @@ def test_the_alert_lists_say_which_recovery_closed_an_alert_and_off_return_the_r
     append_alert(failing)
     first, rec = _closed_pair(heartbeat)
     conn = heartbeat.watch.conn_id
-    with flag_overrides(ON):
-        listed = {a["id"]: a for a in get_all_alerts(conn_id=conn, limit=100, unacknowledged_only=False,
-                                                     workspace_id=None)}
-        one = {a["id"]: a for a in get_monitor_alerts(heartbeat.watch.id, limit=50, unacknowledged_only=False)}
+    listed = {a["id"]: a for a in get_all_alerts(conn_id=conn, limit=100, unacknowledged_only=False,
+                                                 workspace_id=None)}
+    one = {a["id"]: a for a in get_monitor_alerts(heartbeat.watch.id, limit=50, unacknowledged_only=False)}
     for rows in (listed, one):
         assert "closed_by" not in rows[failing.id]
         assert rows[first.id]["closed_by"] == rec.id and rows[first.id]["closed_at"] == rec.triggered_at
         assert rows[rec.id]["closes"] == first.id and "closed_by" not in rows[rec.id]
-    with flag_overrides(OFF):
-        raw = [a.model_dump() for a in get_alerts(conn_id=conn, limit=100)]
-        assert get_all_alerts(conn_id=conn, limit=100, unacknowledged_only=False, workspace_id=None) == raw
-        assert get_monitor_alerts(heartbeat.watch.id, limit=50, unacknowledged_only=False) == \
-            [a.model_dump() for a in get_alerts(monitor_id=heartbeat.watch.id, limit=50)]
 
 
 def test_what_waits_on_a_person_is_neither_a_recovery_nor_an_alert_one_closed(heartbeat):
@@ -298,10 +255,7 @@ def test_what_waits_on_a_person_is_neither_a_recovery_nor_an_alert_one_closed(he
 
     _closed_pair(heartbeat)
     conn = heartbeat.watch.conn_id
-    with flag_overrides(ON):
-        assert list_monitors(conn, {})["unacknowledged_alerts"] == 0
-    with flag_overrides(OFF):
-        assert list_monitors(conn, {})["unacknowledged_alerts"] == 1, "off, the alert waits as before"
+    assert list_monitors(conn, {})["unacknowledged_alerts"] == 0
 
 
 def test_a_recovery_is_no_alert_that_fired_to_the_other_readers(heartbeat):

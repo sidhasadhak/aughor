@@ -363,8 +363,7 @@ def declaration_rows(ontology, overrides: list, *, release: str = "") -> list[di
 
 def load_declarations(connection_id: str, ontology) -> list[dict]:
     """The scope's PUBLISHED declarations — what every consumer reads, never the draft, even when the build runs inside
-    a door that reads the draft (a write to `/ontology`). The release they were read from names each row while
-    `ontology.release` is on."""
+    a door that reads the draft (a write to `/ontology`). The release they were read from names each row."""
     from aughor.ontology import release
     from aughor.ontology.overrides import draft_view, load_overrides, viewing
     from aughor.ontology.store import load_latest_ontology
@@ -374,8 +373,7 @@ def load_declarations(connection_id: str, ontology) -> list[dict]:
     with viewing("published"):
         graph = (load_latest_ontology(connection_id, schema or None) if drafted else ontology) or ontology
         published = load_overrides(connection_id, schema)
-    return declaration_rows(graph, published,
-                            release=release.current_id(connection_id, schema) if release.enabled() else "")
+    return declaration_rows(graph, published, release=release.current_id(connection_id, schema))
 
 
 def note_brief(
@@ -523,10 +521,8 @@ def build_context_graph(
     findings = merge_finding_sources(record, legacy)
 
     briefs = _safe(lambda: load_briefs(connection_id), "briefs", [])
-    # Arc FA, FA-1 — the published declarations, only while `graph.declarations` is on; off, none is read.
-    from aughor.kernel.flags import flag_enabled
-    declarations = (_safe(lambda: load_declarations(connection_id, ontology), "declarations", [])
-                    if flag_enabled("graph.declarations") else None)
+    # Arc FA, FA-1 — the published declarations.
+    declarations = _safe(lambda: load_declarations(connection_id, ontology), "declarations", [])
 
     cg = project_graph(
         ontology,

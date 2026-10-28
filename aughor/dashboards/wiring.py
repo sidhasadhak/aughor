@@ -7,7 +7,6 @@ web's rules hold the wiring's shape — every name resolves, no ring of sets —
 (`web/lib/dashboards/rules.ts`), and what a set reads comes from one function there too (`web/lib/dashboards/sets.ts`, run here
 through the validator bundle). What only the platform knows is checked here before a spec is kept:
 
-  - that wiring is on here — off, a spec that says any of it is refused, and the dashboard is what it was;
   - that every set compiles through the object door over the ontology this connection serves;
   - that each button's action is declared, and takes for each object parameter a source holding objects of its
     entity — "an order parameter takes a chosen order, never a customer" — and for a value parameter the form or a
@@ -21,14 +20,8 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-FLAG = "dashboard.wiring"
 #: The props that wire a piece to a set or a choice.
 WIRED_PROPS = ("set", "set_from", "chooses", "ticks", "shows", "of", "opens_on")
-
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def _elements(spec: Any) -> dict:
@@ -47,16 +40,6 @@ def wired(spec: Any) -> list[str]:
         if el.get("type") == "ActionButtons" or any(props.get(p) is not None for p in WIRED_PROPS):
             out.append(str(key))
     return out
-
-
-def refused_off(spec: Any) -> list[str]:
-    """A sentence when ``spec`` is wired and wiring is off here — what a keep is refused with. Empty when it is not
-    wired, whatever the flag says, so a dashboard that is not keeps as it always did."""
-    said = wired(spec)
-    if not said or on():
-        return []
-    return [f"The dashboard is wired — {', '.join(said[:6])}{'…' if len(said) > 6 else ''} read sets, make choices or run "
-            "actions — and wiring a dashboard is off on this install."]
 
 
 def read(spec: Any) -> Optional[dict]:

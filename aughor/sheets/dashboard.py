@@ -1,4 +1,4 @@
-"""Make a dashboard from a sheet (Arc SH, SH-6 — its first piece; flag ``sheets.everywhere``).
+"""Make a dashboard from a sheet (Arc SH, SH-6 — its first piece).
 
 The platform proposes the cards a sheet holds: how many rows it has, the sum of each money column, the rows per value
 of its choice columns, the rows over time by its first date, and a table of the rows. Each card is a query of the
@@ -27,18 +27,6 @@ MAX_BARS = 2
 TABLE_COLUMNS = 6
 #: The values of a bar a piece's preview names.
 PREVIEW_VALUES = 3
-
-
-def unavailable() -> Optional[str]:
-    """Why a dashboard cannot be made from a sheet on this install — None when it can. A dashboard made here is made
-    of query cards, so it needs dashboards and their queries on."""
-    from aughor.dashboards import queries
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("dashboard.composed"):
-        return "Dashboards are off on this install."
-    if not flag_enabled(queries.FLAG):
-        return "A query of your own on a dashboard is off on this install, and a sheet's dashboard is made of them."
-    return None
 
 
 def rows_noun(name: str) -> str:

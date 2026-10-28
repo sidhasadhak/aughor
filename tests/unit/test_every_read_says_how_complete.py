@@ -5,7 +5,7 @@ door said ``truncated`` only past 1,000 — so a cut read reached its reader as 
 read ``SELECT *`` with no mask: a sensitive property emptied on an object's own page was shown in full on the page of
 the objects linked to it (OC-7's law, closed here at that door).
 
-With ``objects.completeness`` on, every object door says one typed thing — complete · truncated · withheld · refused —
+Now (part of the platform since 2026-10-28) every object door says one typed thing — complete · truncated · withheld · refused —
 with what it showed, what it withheld and how long it took, and the contract describes it. Held on the seeded samples
 warehouse through the real DuckDB connection, the real compiler and the real routes. The falsifier: an object read cut
 at the cap that says complete.
@@ -18,7 +18,6 @@ from aughor.semantic import completeness as C
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_ontology_security import SHIPPED, secured  # noqa: F401 — fixtures by name
 
-ON = {"AUGHOR_OBJECTS_COMPLETENESS": "1"}
 PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
 BY_STATUS = {"object_type": "order", "measures": [{"name": "n", "agg": "count"}], "by": ["status"]}
 
@@ -27,12 +26,6 @@ BY_STATUS = {"object_type": "order", "measures": [{"name": "n", "agg": "count"}]
 def served(graph, monkeypatch):  # noqa: F811
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
-
-
-@pytest.fixture
-def on(monkeypatch):
-    for k, v in ON.items():
-        monkeypatch.setenv(k, v)
 
 
 def _as(monkeypatch, who: str) -> None:
@@ -54,7 +47,7 @@ def _ok(r):
 
 # ── the falsifier ───────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_a_query_cut_at_the_connections_cap_says_truncated(served, client, on, monkeypatch):
+def test_a_query_cut_at_the_connections_cap_says_truncated(served, client, monkeypatch):
     every = _ok(client.post("/objects/query", params=PARAMS, json=BY_STATUS))
     assert every["completeness"]["state"] == "complete" and len(every["rows"]) > 3
     monkeypatch.setattr("aughor.db.connection.MAX_ROWS", 3)                    # the connection's own cap, lowered
@@ -65,15 +58,9 @@ def test_a_query_cut_at_the_connections_cap_says_truncated(served, client, on, m
     assert isinstance(said["took_ms"], int) and said["took_ms"] >= 0
 
 
-def test_off_a_cut_read_answers_as_it_did_and_carries_no_completeness(served, client, monkeypatch):
-    monkeypatch.setattr("aughor.db.connection.MAX_ROWS", 3)
-    out = _ok(client.post("/objects/query", params=PARAMS, json=BY_STATUS))
-    assert "completeness" not in out and out["truncated"] is False and len(out["rows"]) == 3   # the defect, as it was
-
-
 # ── withheld, said ──────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_a_row_policy_reads_withheld_at_the_query_and_listing_doors_with_its_words(secured, client, on, monkeypatch):  # noqa: F811
+def test_a_row_policy_reads_withheld_at_the_query_and_listing_doors_with_its_words(secured, client, monkeypatch):  # noqa: F811
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ana")
     count = _ok(client.post("/objects/query", params=PARAMS,
@@ -85,7 +72,7 @@ def test_a_row_policy_reads_withheld_at_the_query_and_listing_doors_with_its_wor
     assert said["state"] == "withheld" and said["shown"] == 2 and said["of"] == listed["total"] > 2
 
 
-def test_the_object_page_says_the_property_it_emptied(secured, client, on, monkeypatch):  # noqa: F811
+def test_the_object_page_says_the_property_it_emptied(secured, client, monkeypatch):  # noqa: F811
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ana")
     said = _ok(client.get(f"/objects/order/{ORDER}", params=PARAMS))["completeness"]
@@ -94,7 +81,7 @@ def test_the_object_page_says_the_property_it_emptied(secured, client, on, monke
 
 
 def test_the_linked_page_masks_what_an_objects_own_page_masks(secured, db, client, monkeypatch):  # noqa: F811
-    """OC-7 at the linked page — with object security on and completeness OFF: the mask is the security law's."""
+    """OC-7 at the linked page: the mask is the security law's."""
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     customer = _shipping_customer(db)
     _as(monkeypatch, "ana")
@@ -104,58 +91,42 @@ def test_the_linked_page_masks_what_an_objects_own_page_masks(secured, db, clien
     assert {row[page["columns"].index("status")] for row in page["rows"]} <= SHIPPED
     assert "masked for user:ana" in page["masked"]["total_amount"]
     assert any("only the Order objects user:ana may see are shown" in c for c in page["caveats"])
-    assert "completeness" not in page
     _as(monkeypatch, "ben")                                                   # finance reads the amount
     assert "masked" not in _ok(client.get(f"/objects/Customer/{customer}/links/customer_to_order", params=PARAMS))
 
 
-def test_the_linked_page_says_withheld_when_completeness_is_on(secured, client, on, monkeypatch):  # noqa: F811
+def test_the_linked_page_says_withheld(secured, client, monkeypatch):  # noqa: F811
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ana")
     said = _ok(client.get("/objects/Customer/C00001/links/customer_to_order", params=PARAMS))["completeness"]
     assert said["state"] == "withheld" and said["withheld"] == ["Order"] and said["masked"] == ["total_amount"]
 
 
-def test_titles_say_the_first_of_more(served, client, on, monkeypatch):
+def test_titles_say_the_first_of_more(served, client, monkeypatch):
     monkeypatch.setattr("aughor.semantic.object_instances.MAX_TITLES", 1)
     said = _ok(client.post("/objects/titles", params=PARAMS,
                            json={"object_type": "customer", "keys": ["C00001", "C00002"]}))["completeness"]
     assert said["state"] == "truncated" and said["of"] == 2 and said["shown"] <= 1
 
 
-# ── refused, and off ────────────────────────────────────────────────────────────────────────────────────────────
+# ── refused ────────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_a_refusal_says_refused_with_its_reason(served, client, on):
+def test_a_refusal_says_refused_with_its_reason(served, client):
     out = _ok(client.post("/objects/query", params=PARAMS,
                           json={"object_type": "no_such_thing", "measures": [{"name": "n", "agg": "count"}]}))
     assert out["path"] == "refused" and out["completeness"]["state"] == "refused"
     assert out["completeness"]["said"] == out["refused"] and out["completeness"]["shown"] == 0
 
 
-def test_off_no_object_door_carries_it(served, client):
-    answers = [client.post("/objects/query", params=PARAMS, json=BY_STATUS),
-               client.post("/objects/list", params=PARAMS, json={"entity": "Order", "columns": ["status"], "limit": 2}),
-               client.get(f"/objects/order/{ORDER}", params=PARAMS),
-               client.get("/objects/Customer/C00001/links/customer_to_order", params=PARAMS),
-               client.post("/objects/titles", params=PARAMS, json={"object_type": "customer", "keys": ["C00001"]})]
-    assert all("completeness" not in _ok(r) for r in answers)
-
-
 # ── the contract, and the one definition ────────────────────────────────────────────────────────────────────────
 
-def test_the_contract_describes_it_for_a_program(graph, on):  # noqa: F811
+def test_the_contract_describes_it_for_a_program(graph):  # noqa: F811
     from aughor.ontology.builder_doors import ontology_contract, typescript
     contract = ontology_contract(graph, "r@1")
     assert contract["completeness"]["properties"]["state"]["enum"] == list(C.STATES)
     ts = typescript(contract)
     assert "export interface Completeness {" in ts
     assert "  state: 'complete' | 'truncated' | 'withheld' | 'refused';" in ts and "  withheld: string[];" in ts
-
-
-def test_off_the_contract_is_as_before(graph):  # noqa: F811
-    from aughor.ontology.builder_doors import ontology_contract, typescript
-    contract = ontology_contract(graph, "r@1")
-    assert "completeness" not in contract and "Completeness" not in typescript(contract)
 
 
 def test_one_state_by_precedence_and_every_list_said():

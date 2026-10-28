@@ -330,16 +330,13 @@ def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
 def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: Optional[str],
                 workspace_id: Optional[str]):
     """BR-9 — the range a card run asks for, resolved as the Briefing resolves its own; None
-    when none is asked; refused (404) with the flag off, (422) when it cannot be read."""
+    when none is asked; refused (422) when it cannot be read."""
     from datetime import date as _date
 
     from aughor.briefing import ranges
-    from aughor.kernel.flags import flag_enabled
 
     if not (preset or start or end):
         return None
-    if not flag_enabled("briefing.ranges"):
-        raise HTTPException(status_code=404, detail="a card for a date range needs the 'briefing.ranges' flag")
     try:
         first = _date.fromisoformat(start) if start else None
         last = _date.fromisoformat(end) if end else None
@@ -486,12 +483,9 @@ def _recorded(card, scalar):
 
 
 def _shown_of(card):
-    """Arc AP-7 — how a card of a person's own query is shown, while queries are on: ``(shown, "")``; ``(None, why)``
-    when what it says cannot be read; ``(None, "")`` for every other card, which runs as it always did."""
+    """Arc AP-7 — how a card of a person's own query is shown: ``(shown, "")``; ``(None, why)`` when what it says cannot
+    be read; ``(None, "")`` for every other card, which runs as it always did."""
     from aughor.dashboards import queries
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(queries.FLAG):
-        return None, ""
     try:
         return queries.shown_of(card.render), ""
     except queries.Refused as e:
@@ -517,9 +511,6 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Option
         return said(unread)
     params = None
     if queries.params_of(sql):
-        from aughor.dashboards import variables
-        if not variables.on():
-            return said(variables.refused_query(sql))
         try:
             sql, params = queries.bind(sql, values or {})
         except queries.Refused as e:

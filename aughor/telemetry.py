@@ -627,7 +627,7 @@ def bind_trace(trace_id: str) -> Generator[str, None, None]:
 #: ``chat`` (a question asked at the ask door), ``automation``, ``monitor`` or ``agent`` (a kernel job a built-in agent
 #: runs). The trace alone cannot say it: a deep analysis keeps the asking turn's trace, and a nested chain its parent's.
 #: Bound where runs start — the ask door, `run_automation`, the kernel's job runner — and read by the edit layer and
-#: the action audit (flag `actions.run_attribution`), so no caller threads a run id.
+#: the action audit (`actions/attribution.py`), so no caller threads a run id.
 _active_run: contextvars.ContextVar[tuple[str, str]] = contextvars.ContextVar(
     "aughor_active_run", default=("", ""))
 

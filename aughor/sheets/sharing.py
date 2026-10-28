@@ -1,8 +1,8 @@
-"""Who may read and change a sheet (Arc SH, SH-8; flag ``sheets.sharing``).
+"""Who may read and change a sheet (Arc SH, SH-8).
 
 A sheet is its workspace's — everyone in it reads and edits it — until its maker shares it with chosen people and
 groups, each able to read it (``view``) or to change it (``edit``): the access ladder's own words (``rbac/levels.py``).
-The maker holds ``own``: with the flag on, only they change who a sheet is shared with, or remove it. Who it is shared
+The maker holds ``own``: only they change who a sheet is shared with, or remove it. Who it is shared
 with is kept in the sheet's definition (``model.Sheet.sharing`` and ``shared_with``), versioned with every other change
 to it, as a dashboard keeps who it is published to — so a sharing change has its who and when, and a removed sheet
 takes its sharing with it. A group reaches a person as a published dashboard does (``dashboards/sharing.audience_of``):
@@ -12,8 +12,7 @@ an organisation's group they are a member of, or a role they hold.
 refused at every door that reads them — the sheet's own routes, the chat's tools, and the Sheets connection, which the
 SQL Editor, dashboards and every answer read through (`refusal_for_statement`). Its sample values are kept out of the
 schema a model is handed, for everyone (`without_samples`), because that schema is cached per connection, not per
-person. What is shared is decided whatever the flag says: off, nothing can be shared, and a sheet already shared with
-chosen people stays shared only with them — turning a wave off never opens what a person closed.
+person.
 
 Who is asking is the person every write is recorded under (``security.authz.acting_person``): the signed-in person,
 else this install's own operator.

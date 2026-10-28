@@ -8415,7 +8415,7 @@ filter-domain checks (which read the question and probe the warehouse) are not a
 `TABLE:`-only parsers remain (`schema_linker`, `answer_resolution`, the portrait's fallback) — item 19 reaches the
 ones on the value path.
 
-### 3.38 · The SQL writer sees the data, not only the schema (PENDING.md item 19, the ML review's point 5; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; two bug fixes default-on, the prompt block behind `grounding.data_profiles`, **off**)
+### 3.38 · The SQL writer sees the data, not only the schema (PENDING.md item 19, the ML review's point 5; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; two bug fixes default-on, the prompt block behind `grounding.data_profiles`, **off** · ❌ the block **DELETED 2026-10-28** by its own falsifier)
 
 > **The fact it answers.** docs/ENGINE_REVIEW_ANSWERS_2026-09-24.md §3: the model writing SQL attends to the warehouse's
 > schema and five head rows per table; the profiler's measured statistics reach no SQL prompt; tables are linked by
@@ -8443,6 +8443,15 @@ ones on the value path.
    only as "about N", above what is listed — the first render said "5 values:" over a list of six (SUMMARIZE
    estimates), and a short list is never called complete. **Measured:** mean 1,662 characters on the golden set
    (max 1,771) beside a mean catalog of 4,067; no table left out.
+   ❌ **DELETED 2026-10-28, with its flag, by its own falsifier** (the user: *"Run the one clean data-profiles test on
+   the cheap model, and let its own rule decide keep or delete"*). The run found first that neither earlier run had
+   measured the block: `evals/run_golden.py` imported `_parse_schema_tables`, gone from `aughor.tools.schema` since
+   2026-06-30, inside `try: … except: pass`, so no table was linked and the block rendered for none — both arms got one
+   prompt (fixed in `df151f9b`, with a test that resolves every Aughor import in the harness). The first clean run, in
+   its own state on claude-haiku-5-5, 65 questions × 3 runs, the block in all 195 "on" prompts and none of the "off":
+   0.661 → 0.651 (paired t −1.01; 11 better, 17 worse), lower on both sets; execution success 0.995 → 1.000 (one
+   question); 407 calls, about $0.71 (`evals/data_profiles_ab_2026-10-28.json`). No gain, so the block and the flag
+   are gone; the rule was written down before the run.
 
 ✅ **The falsifier RAN 2026-09-24** (`evals/data_profiles_ab_2026-09-24.json`) — and two pieces of prep had to
 land first, or it would have measured nothing: `evals/run_golden.py` **never built the block** (`catalog_profiles`
@@ -12742,6 +12751,67 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
   restarted with its twelve settings; :3000 restarted with `web/.next` cleared, as its cached stylesheet kept the old
   rules): measured on :3000 the same — 21 rows, 16 px to spare.
 
+- **Breakdowns and rule marks LIVE 2026-10-28** (the user: *"Lets do breakdowns and marks live"*): both flags on at
+  runtime. Receipt on theLook's *Orders by country* dashboard, drawn on :3000: 15 countries adding to the figures above
+  them (124,669 orders, $10.81M); choosing China narrowed both figures (42,399 · $3.68M), the objects table and the
+  legend (*Late dispatch — 4,599 of 42,399*, equal to the door's count) and kept every country, China ticked; letting
+  go put the whole back. The legend's 13,495 equals the segment's own count; on the table's third page order 15 alone
+  carries the mark, as the door lists. Seen on the way, not changed: while a choice is read again, one figure can show
+  the new value a moment before the other.
+
+### 3.65 · Flags into settings — always on, or an organisation's choice (DRAFTED 2026-10-28 as `docs/FLAGS_TO_SETTINGS_2026-10-28.md`, at the user's *"let's consider not having any feature flags at all… this is one of the critical things that we need to do"* · ✅ **ADOPTED the same day** — §6 item 57 · **stage 1 BUILT** — PENDING item 67)
+
+- **Measured:** 81 flags on the live install, 63 on; 44 set by a toggle, 13 by an environment variable, 24 by default;
+  120 reads in the code. The 2026-07-31 strategy cut 91 to about 22 decisions; the count regrew because `AGENTS.md`'s
+  flag invariant makes every arc ship behind flags that leave only on a separate receipt.
+- **Proposed:** 57 always on (all on live) · 10 always on after a live check · 4 on when their setup exists · 5 flags
+  become 4 organisation settings, admin-only, in `aughor/orgsettings` — data leaving the install, model work nobody
+  asked for, a governance posture · 5 experiments decided once. New work merges on, or stays on its branch; the receipt
+  moves before the merge.
+- **Calls:** the rule for new work; the four settings; the ten off today; the five experiments (study §8).
+- **Stage 1, built 2026-10-28** (branch `claude/flags-to-settings`): 63 flags in `ALWAYS_ON` — on whatever a saved
+  override says, never listed in Settings, and the flags door answers a change with 409 and a sentence; an operator's
+  env var set to an explicit falsy value still turns one off until stage 2 deletes its off path (the suite runs them
+  off that way, as it ran Arc OC's five). Five flags became four organisation settings (`aughor/orgsettings/allows.py`,
+  Settings ▸ Organization ▸ *What Aughor may do*); one never set reads the former flag's variable and the screen says
+  so. `federation.planner` kept, through its own doors only — `/ask` no longer sends a fresh turn to it.
+  `grounding.data_profiles` deleted by its own falsifier (§3.38). `AGENTS.md`'s flag invariant replaced.
+- **Stage 2, built 2026-10-28** (the user: *"go on to stage 2 first and put it all live together"*) — every flag is
+  gone; the registry holds none, `/system/flags` answers `{}`, and the machinery stays exercised by test-only flags.
+  - **Deleted outright:** `explore.route_wide` and the treatment shadow (`5bd89e70`); `grounding.data_profiles` by its
+    own clean run (§3.38).
+  - **The 63 always-on, area by area, each with the full suite green:** dashboards (`4dfe0354`), sheets (`1d954523`),
+    ontology (`5d413fdd`), metrics and the Briefing (`071333ec`), answering (`1f03f176`), operations (`45f712b0`), and
+    the four that wait on their setup (`1ee73d2a`), each now saying what is missing where it would appear — a decision's
+    email address is shown only once the inbound domain and secret are set, the Google file field names the missing
+    OAuth client, the Slack supervisor reads "Waiting on setup", a document search names the store that is down.
+  - **The ten off in the live install, each checked on live data first** (`308088f6`). On live theLook:
+    `objects.completeness` (a read past the cap says "truncated — the first 1,000 rows…", a small one "complete", the
+    contract describes it) and `quality.expectations` (a step read "orders: 2 of 2 expectations met; 1 could not be
+    measured: ghost column", and the table-health door "All 2 checks passing"); `ontology.impacts_only`'s old causal
+    door answers 410, and its alert summary is read after the deploy — that door had never served (it sat behind
+    `/monitors/{monitor_id}`; fixed `6bfb6daa`). In-process over the samples data with stand-in people: object security
+    (three readers see 3,300 · 1,100 · 0 orders, each told why; all 19 assertions fail with enforcement off), security in
+    answers (one count, 3,300, through the object door, the SQL editor and a real quick answer — 6 calls on
+    claude-haiku-5-5, 70,416 tokens in), outside programs as their own principals, readers keeping a dashboard's
+    published version ([2, 2, 2, 5] read of [2, 5] published), alerts closing on recovery, automation versions and
+    replays (a replay sent, ran and wrote nothing). The two soak receipts (two and four weeks of use) were taken as
+    working checks.
+  - **What the checks found, fixed before the ten went** (`09aae58f`, a failing test each): the model was handed row
+    counts, masked values and rows outside a reader's policy (the converse schema tools, and the quick body's Data
+    Catalog, which read samples with the policy door bypassed and cached them with no reader in the key); a policy
+    refusal was retried as a type mismatch and never said to the reader; a principal's grant was escaped through
+    links; a refusal at the organisation's level check was audited with no principal; `/dashboards/from-object`
+    ignored an acting agent and left a masked figure out unsaid; a listing's completeness named no masked property; a
+    person's Run now kept no asker.
+  - **LIVE 2026-10-28** at `9b5e22da`: no flag registered (`/system/flags` → `{}`); the four settings in Settings ▸
+    Organization; queries read as before (no policy is declared live); the alert summary names theLook's one declared
+    impact — "1 declared impact not measured to hold: Dispatch bears on delivery" — and no model-proposed cause.
+  - **Named, not fixed:** publishing a release clears neither `forget_declared` nor the schema cache (a declaration
+    can take ~30 s to reach the trust checks); `ensure_first_release` writes outside `tolerate`; `/objects/catalog`,
+    `/object-types` and `/object-paths` describe entities outside a principal's grant, and an action on one is still
+    described; the quick prompt's "connection graph" of stored findings was not measured against a row policy.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -15215,6 +15285,20 @@ the browser** · **measure the premise before building.**
     - ✅ *2026-10-28, the Grist study's calls 6–9, each as recommended:* the breakdown built behind
       `dashboard.breakdowns`, a click being the filter column's; rule marks after it, behind `dashboard.marks`; comments
       later; the rail made to fit — mocked first (§3.64 "The Grist study's breakdown piece and rule marks"). SV-3 built.
+
+57. ✅ **DECIDED 2026-10-28 — no feature flags: always on, or an organisation's choice** (§3.65;
+    `docs/FLAGS_TO_SETTINGS_2026-10-28.md`). The user: *"let's consider not having any feature flags at all.. most of it
+    comes as a default feature like always on and cannot be turned off.. and some of them can be turned on off based on
+    the requirements of the organisation and not the user mostly"*; asked first for every flag in plain English, then
+    *"All okay, except that lets keep federation.planner.. We may need cross querying across connections in the
+    future"*.
+    - **New work merges on;** unfinished work stays on its branch; no feature flags.
+    - **Four organisation settings,** off by default: share summary statistics, an outside row model, a reason to
+      read a run, model work on its own schedule.
+    - **The ten off today** are checked live, then always on.
+    - **Experiments:** `grounding.full_schema_first` kept on its record; `judgment.shadow_treatment` stopped;
+      `explore.route_wide` deleted; `federation.planner` kept (its doors, not chat's routing);
+      `grounding.data_profiles` deleted by its own clean run.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

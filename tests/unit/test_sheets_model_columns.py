@@ -11,11 +11,6 @@ import re
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
-
-ON = {"sheets.core": True, "sheets.grid": True, "sheets.views": True, "sheets.combine": True, "sheets.chat": True,
-      "sheets.model_columns": True}
-
 
 def _reviews(n: int) -> str:
     lines = ["review_id,order_id,review_score,review_comment_message"]
@@ -53,8 +48,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides(ON):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -94,20 +88,13 @@ def _client():
     return TestClient(app)
 
 
-# ── off, and as it was ───────────────────────────────────────────────────────────────────────────────────────────────
+# ── as it was ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_off_no_column_is_written_by_a_model_and_others_are_stored_as_before(env):
+def test_a_column_no_model_writes_is_stored_as_before(env):
     from aughor.kernel.ledger import Ledger
     from aughor.sheets import model
     sheet = _sheet(env)
-    with flag_overrides({"sheets.model_columns": False}):
-        client = _client()
-        r = client.post(f"/sheets/{sheet.id}/columns", json={"name": "Topic", "model": {"instruction": "x",
-                                                                                          "reads": ["c4"]}})
-        assert r.status_code == 404
-        assert client.post(f"/sheets/{sheet.id}/columns/c1/fill/preview", json={}).status_code == 404
-        assert client.post(f"/sheets/{sheet.id}/columns/c1/fill", json={}).status_code == 404
-        assert client.post(f"/sheets/{sheet.id}/columns", json={"name": "Note"}).status_code == 200
+    assert _client().post(f"/sheets/{sheet.id}/columns", json={"name": "Note"}).status_code == 200
     for art in Ledger.default().artifacts_of_kind(model.KIND, conn_id=model.SHEETS_CONNECTION, org_id="default"):
         assert all("model_writes" not in c for c in art["payload"]["_body"]["columns"])
 

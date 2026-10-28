@@ -2,8 +2,8 @@
 
 /**
  * Whether one feature flag is on, for a leaf that offers a control only while it is — read once per page for every
- * leaf that asks, as `DecideDoor` reads its own. A read that fails (an older server, no network in a test) is off, and
- * is asked again next time: a control is never offered on a guess.
+ * leaf that asks. A read that fails (an older server, no network in a test) is off, and is asked again next time: a
+ * control is never offered on a guess.
  */
 import { useEffect, useState } from "react";
 

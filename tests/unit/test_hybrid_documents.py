@@ -1,11 +1,11 @@
-"""Arc FA, FA-1 — the documents are still searched when the embedder is down (ROADMAP §3.60), behind
-``knowledge.hybrid_documents``.
+"""Arc FA, FA-1 — the documents are still searched when the embedder is down (ROADMAP §3.60); unconditional since
+2026-10-28, on when its setup — the vector store up — exists (ROADMAP §3.65).
 
 Measured 2026-10-26: document search was vector-only, so a stopped local embedder — the usual cause `knowledge/health.py`
 explains — made the documents unsearchable, said honestly since ED-0 but searched not at all, while the store holding
-every passage's text still answered. With the flag on, the passages the caller may read are ranked by their words (BM25
-over the scoped corpus), each hit says it was matched by words, and the door, the chat tool and the prompt say so; the
-search is unavailable only when the store cannot be read either. Off, a failed embed is unavailable, as before.
+every passage's text still answered. Now the passages the caller may read are ranked by their words (BM25 over the
+scoped corpus), each hit says it was matched by words, and the door, the chat tool and the prompt say so; the search is
+unavailable only when the store cannot be read either, and then it says which store did not answer and where it is set.
 
 Drives the real indexer, as ED-0's tests do; the embedder and the store fail on request.
 """
@@ -43,9 +43,7 @@ def plane(monkeypatch, tmp_path):
     }
     calls = {"scroll": 0}
 
-    def _set(*, embed_ok=True, store_ok=True, flag=True):
-        monkeypatch.setenv("AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS", "1" if flag else "0")
-
+    def _set(*, embed_ok=True, store_ok=True):
         def _embed(_q):
             if not embed_ok:
                 raise ConnectionError("connection refused")
@@ -70,17 +68,7 @@ def plane(monkeypatch, tmp_path):
     return _set
 
 
-def test_off_a_failed_embed_is_unavailable_and_hits_carry_no_new_key(plane):
-    calls = plane(embed_ok=False, flag=False)
-    with pytest.raises(idx.DocumentSearchUnavailable, match="ConnectionError: connection refused"):
-        idx.search_documents("refund", connection_id="c1")
-    assert calls["scroll"] == 0
-    plane(flag=False)
-    (hit,) = idx.search_documents("refund", connection_id="c1")
-    assert "matched_by" not in hit and "said" not in hit
-
-
-def test_on_the_embedder_down_the_scoped_passages_are_ranked_by_their_words_and_say_so(plane):
+def test_the_embedder_down_the_scoped_passages_are_ranked_by_their_words_and_say_so(plane):
     plane(embed_ok=False)
     hits = idx.search_documents("how long does a refund take", connection_id="c1")
     # another organisation's upload, another connection's schema docs and a deleted document are never ranked;
@@ -91,18 +79,52 @@ def test_on_the_embedder_down_the_scoped_passages_are_ranked_by_their_words_and_
     assert hit["text"].startswith("A refund is issued") and hit["filename"] == "refunds.md"
 
 
-def test_on_a_search_by_meaning_says_so(plane):
+def test_a_search_by_meaning_says_so(plane):
     plane()
     (hit,) = idx.search_documents("refund", connection_id="c1")
     assert hit["matched_by"] == "meaning" and "said" not in hit
 
 
-def test_on_with_the_store_down_too_it_is_unavailable_and_names_both(plane):
+def test_with_the_store_down_too_it_is_unavailable_and_names_both_and_where_the_store_is_set(plane, monkeypatch):
     plane(embed_ok=False, store_ok=False)
+    monkeypatch.delenv("AUGHOR_QDRANT_URL", raising=False)
+    monkeypatch.setattr("aughor.semantic.vector_store.backend", lambda: "qdrant")     # the embedded default
     with pytest.raises(idx.DocumentSearchUnavailable) as exc:
         idx.search_documents("refund", connection_id="c1")
     assert "the embedder failed (ConnectionError: connection refused)" in str(exc.value)
     assert "the document store could not be read (ConnectionError: qdrant did not answer)" in str(exc.value)
+    assert str(exc.value).endswith("; the store is the embedded index at AUGHOR_QDRANT_PATH (default: the state "
+                                   "directory's qdrant), which one process holds at a time")
+
+
+def test_a_meaning_search_whose_store_is_down_says_where_the_store_is_set(plane, monkeypatch):
+    plane(store_ok=False)
+    monkeypatch.setenv("AUGHOR_QDRANT_URL", "http://qdrant.internal:6333")
+    with pytest.raises(idx.DocumentSearchUnavailable) as exc:
+        idx.search_documents("refund", connection_id="c1")
+    assert str(exc.value) == ("the document store could not be read (ConnectionError: qdrant did not answer); the store "
+                              "is the Qdrant server at AUGHOR_QDRANT_URL")
+
+
+@pytest.mark.parametrize("env, backend, said", [
+    ({"AUGHOR_DB_URL": "postgresql://h/db"}, "pgvector", "pgvector, in the database at AUGHOR_DB_URL"),
+    ({}, "", "not installed here — add qdrant-client, or set AUGHOR_QDRANT_URL or a Postgres AUGHOR_DB_URL"),
+])
+def test_where_the_store_is_set_is_named_for_each_backend(monkeypatch, env, backend, said):
+    monkeypatch.delenv("AUGHOR_QDRANT_URL", raising=False)
+    monkeypatch.delenv("AUGHOR_DB_URL", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr("aughor.semantic.vector_store.backend", lambda: backend)
+    assert idx.store_where() == said
+
+
+def test_the_chat_tool_says_why_the_documents_could_not_be_searched(plane):
+    from aughor.agent import platform_tools as pt
+    plane(embed_ok=False, store_ok=False)
+    out = pt.search_documents("c1", {"query": "how long does a refund take"})
+    assert out["count"] == 0 and out["why"].startswith("the document index could not be searched: the embedder failed")
+    assert "the store is " in out["why"]
 
 
 def test_a_search_that_read_the_most_passages_it_reads_says_so(plane, monkeypatch):
@@ -127,8 +149,8 @@ def test_the_prompt_is_told_the_passages_were_matched_by_words(plane):
     assert "A refund is issued within 14 days" in section
 
 
-def test_off_the_prompt_says_the_documents_could_not_be_searched(plane):
-    plane(embed_ok=False, flag=False)
+def test_with_the_store_down_too_the_prompt_says_the_documents_could_not_be_searched(plane):
+    plane(embed_ok=False, store_ok=False)
     assert idx.build_external_context_section("refund", connection_id="c1") == idx.DOCUMENTS_UNAVAILABLE_SECTION
 
 

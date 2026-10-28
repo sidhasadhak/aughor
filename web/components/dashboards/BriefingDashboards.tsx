@@ -10,8 +10,8 @@
  * dashboard should be a tab inside the Briefing.. as simple as that" — so it is a tab of the
  * Intelligence workspace, next to the Briefing, and the Briefing's page no longer draws one.
  *
- * Behind `dashboard.composed`; off, the tab is not there. Opening it loads no Briefing and asks
- * no model, and it needs no exploration: a dashboard is made of cards, not of findings.
+ * Opening it loads no Briefing and asks no model, and it needs no exploration: a dashboard is made
+ * of cards, not of findings.
  *
  * What it does, and what each costs:
  *   - draws the chosen dashboard for a period of its own — the latest month when ranges are on,
@@ -22,7 +22,7 @@
  *   - drafts a new dashboard for an area the person names: ONE short model run, said so on the
  *     button. The draft is shown as its outline, can be adjusted, and is kept or discarded.
  *
- * While `dashboard.builder` is on (Arc AP-1), a dashboard opens to be read — the strip, then one bar: its period, its
+ * A dashboard opens to be read (Arc AP-1) — the strip, then one bar: its period, its
  * history and Edit — and Edit opens the builder (`DashboardBuilder`): the dashboard between its layout and the setup of
  * what is chosen, the rail folded to its icons until Done. Every change there is drawn at once and kept as one version
  * a moment after a burst of them, with undo and redo. No model; a change asked in words is the one exception, as here.
@@ -60,16 +60,16 @@ import { toast } from "@/components/ui/toast";
 import {
   DashboardRefused, acceptProposal, askDashboard, dashboardAudiences, dashboardImageUrl, copySharedDashboard, draftDashboard, findingOfCard,
   getDeclaredActions,
-  getDashboard, getGroups, getProposalById, getSharedDashboard, getSuggestedShapes, getSystemFlags, keepDashboard, listDashboards, listSharedDashboards, moveCanvasDashboard,
+  getDashboard, getGroups, getProposalById, getSharedDashboard, getSuggestedShapes, keepDashboard, listDashboards, listSharedDashboards, moveCanvasDashboard,
   publishDashboard, rejectProposal, restoreDashboard, retireDashboard, runCard, startMyDashboard, unpublishDashboard,
   uploadDashboardImage,
   type BriefingRange, type DashboardAudience, type DashboardDrafted, type DashboardKept, type DashboardList, type DashboardVersion,
   type PersonDashboard, type ShapeName, type SharedDashboard, type SharedDashboardListed, type StagedProposal,
 } from "@/lib/api";
 import { appWords } from "@/lib/dashboards/appVersion";
-import { MAX_CAPTION, MAX_NOTE, type Layout, type Size } from "@/lib/dashboards/catalog";
+import { MAX_CAPTION, MAX_NOTE, type Layout } from "@/lib/dashboards/catalog";
 import {
-  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, placeQuestion, recaption, regrid, resize, sectionsOf, setFilterWidth, swapCard, takeOff, takeOffCard,
+  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, placeQuestion, recaption, regrid, sectionsOf, setFilterWidth, swapCard, takeOff, takeOffCard,
   type DashboardSpec,
   type Box,
 } from "@/lib/dashboards/edit";
@@ -287,18 +287,14 @@ function DraftReview({ connectionId, dashboardId, result, proposal, held, onKept
 /** A new dashboard, three ways (2026-10-09): empty — its name and a first note in the person's words, since a dashboard
  *  holding nothing is refused; for a declared process — its board, its open-and-overdue objects and one beside them;
  *  or drafted by a model for an area, the one way here that asks one. The walk-through found only the last. */
-function NewDashboard({ connectionId, schema, fromObject, fromPack = false, sym, onKept, onClose }: {
+function NewDashboard({ connectionId, schema, sym, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (dashboardId: string) => void; onClose: () => void;
-  /** Whether a dashboard may start from an object here (`ontology.object_dashboards`). */
-  fromObject: boolean;
-  /** Arc FA, FA-6 — whether a bound pack's dashboard template is offered here (`packs.dashboard_templates`). */
-  fromPack?: boolean;
   sym: string;
 }) {
   const [way, setWay] = useState<"empty" | "object" | "pack" | "process" | "draft">("empty");
   const [types, setTypes] = useState<{ object_type: string; display_name: string }[] | null>(null);
   const [entity, setEntity] = useState("");
-  // Arc AP-5 — what each object suggests a dashboard be; none while shapes are off (the route says so with a 404)
+  // Arc AP-5 — what each object suggests a dashboard be
   const [suggested, setSuggested] = useState<{ entity: string; name: string; shape: ShapeName; short: string }[] | null>(null);
   useEffect(() => {
     if (way !== "object" || types) return;
@@ -312,7 +308,7 @@ function NewDashboard({ connectionId, schema, fromObject, fromPack = false, sym,
   useEffect(() => {
     if (way !== "object" || suggested) return;
     let live = true;
-    getSuggestedShapes(connectionId, schema).then(s => { if (live) setSuggested(s); }).catch(() => { /* shapes are off here */ });
+    getSuggestedShapes(connectionId, schema).then(s => { if (live) setSuggested(s); }).catch(() => { /* none suggested: a choice is still made by hand */ });
     return () => { live = false; };
   }, [way, suggested, connectionId, schema]);
   const [name, setName] = useState("");
@@ -354,8 +350,7 @@ function NewDashboard({ connectionId, schema, fromObject, fromPack = false, sym,
   return (
     <div data-testid="dashboard-new" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-        {([["empty", "Start empty"], ...(fromObject ? [["object", "From an object"] as const] : []),
-           ...(fromPack ? [["pack", "From a pack template"] as const] : []), ["process", "For a process"],
+        {([["empty", "Start empty"], ["object", "From an object"], ["pack", "From a pack template"], ["process", "For a process"],
            ["draft", "Draft it with a model"]] as const).map(([w, label]) => (
           <Button key={w} size="xs" variant={way === w ? "secondary" : "ghost"} aria-pressed={way === w}
             data-testid={`dashboard-new-${w}`} disabled={drafting || starting || !!proposal} onClick={() => setWay(w)}>{label}</Button>
@@ -613,9 +608,9 @@ function PublishPanel({ connectionId, dashboardId, publishedTo, draft = false, r
 /** A dashboard someone else published to a group the person is in or a role they hold: read as it
  *  stands, for the reader's own period, with no door that changes it — and a door to start a
  *  dashboard of their own from it. */
-function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, chosenRange, onRange, rangesOn, onStarted }: {
+function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, chosenRange, onRange, onStarted }: {
   connectionId: string; schema?: string; owner: string; dashboardId: string;
-  range: BriefingRange | null; chosenRange: RangeChoice; onRange: (c: RangeChoice) => void; rangesOn: boolean | null;
+  range: BriefingRange | null; chosenRange: RangeChoice; onRange: (c: RangeChoice) => void;
   onStarted: (dashboardId: string) => void;
 }) {
   const [data, setData] = useState<SharedDashboard | null>(null);
@@ -671,9 +666,7 @@ function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, 
   return (
     <div data-testid="dashboard-shared" data-owner={owner} data-dashboard={dashboardId}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-        {data.ranges_on && rangesOn && (
-          <PeriodPicker value={chosenRange} onChange={onRange} showing={data.range.status === "standing" ? null : data.range} />
-        )}
+        <PeriodPicker value={chosenRange} onChange={onRange} showing={data.range.status === "standing" ? null : data.range} />
         <span className="aug-fs-sm" data-testid="dashboard-shared-by" style={{ color: "var(--t2)" }}>
           An App by {personName(data.published_by)}, for {data.published_to.map(t => t.name).join(", ")} · version {data.cockpit.version} · read-only
         </span>
@@ -711,15 +704,12 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
 }) {
-  // The period the cards are read for: the person's pick, else the latest complete month where
-  // ranges are on — a dashboard is watched month by month, as the mock showed it — else as written.
-  // Nothing is read until the flag is known: a first read "as written" would roll every card's
-  // standing value for a view nobody asked for.
-  const [rangesOn, setRangesOn] = useState<boolean | null>(null);
+  // The period the cards are read for: the person's pick, else the latest complete month — a
+  // dashboard is watched month by month, as the mock showed it.
   const [picked, setChosenRange] = useState<RangeChoice | null>(null);
-  const chosenRange: RangeChoice = picked ?? (rangesOn ? { preset: "previous_month" } : { preset: "standing" });
+  const chosenRange: RangeChoice = picked ?? { preset: "previous_month" };
   const range: BriefingRange | null = chosenRange.preset === "standing" ? null : chosenRange;
-  const [list, setList] = useState<DashboardList | null | "off">(null);
+  const [list, setList] = useState<DashboardList | null>(null);
   const [chosen, setChosen] = useState("");
   const [data, setData] = useState<PersonDashboard | null>(null);
   const [cards, setCards] = useState<CardState[]>([]);
@@ -746,7 +736,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   }, []);
   // Retire is on the toolbar (2026-10-09): inside History it read as absent — the usability walk-through's finding.
   const [retiring, setRetiring] = useState(false);
-  const [arranging, setArranging] = useState<DashboardSpec | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   // The two doors by hand only: a note's words and an image are the person's, never a model's.
@@ -754,31 +743,9 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [imaging, setImaging] = useState(false);
   // Any recorded finding of the connection, as a card (B3); who the dashboard is published to (B5).
   const [picking, setPicking] = useState(false);
-  // Arc OC-4 — a piece bound to the ontology, placed by hand, while `ontology.dashboard_pieces` is on.
-  const [piecesOn, setPiecesOn] = useState(false);
-  // A dashboard started from an object (2026-10-10), while `ontology.object_dashboards` is on.
-  const [objectsOn, setObjectsOn] = useState(false);
-  // Arc FA, FA-6 — a dashboard started from a bound pack's template, while `packs.dashboard_templates` is on
-  const [templatesOn, setTemplatesOn] = useState(false);
-  // Arc AP-1 — a dashboard built in place, while `dashboard.builder` is on: read first, and Edit opens the builder.
-  const [builderOn, setBuilderOn] = useState(false);
-  // Arc AP-2 and AP-3 — sets, choices and action buttons, while `dashboard.wiring` is on
-  const [wiringOn, setWiringOn] = useState(false);
-  // Arc AP-4 — a structure of pieces and the piece picker, while `dashboard.app_pieces` is on
-  const [structureOn, setStructureOn] = useState(false);
-  // Arc AP-6 — whether row policies and masks hold here (`ontology.security`): off, a previewed group reads all the person reads
-  const [limitsOn, setLimitsOn] = useState(false);
-  // Arc AP-7 — a query of the person's own, while `dashboard.queries` is on; a new one is written for a section
-  const [queriesOn, setQueriesOn] = useState(false);
-  // a breakdown may be placed (the Grist study §10)
-  const [breakdownsOn, setBreakdownsOn] = useState(false);
-  // a table's or a list's rows marked by a declared rule (the Grist study §10)
-  const [marksOn, setMarksOn] = useState(false);
   // PENDING 54 — a question the agent answers on a rhythm
-  const [questionsOn, setQuestionsOn] = useState(false);
   const [questioning, setQuestioning] = useState(false);
-  // Arc AP-8 — variables, while `dashboard.variables` is on: the Variables pane, and a query reading the dashboard's values
-  const [variablesOn, setVariablesOn] = useState(false);
+  // Arc AP-7 — a query of the person's own, written for a section
   const [writing, setWriting] = useState<{ section: string | null } | null>(null);
   // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
   // handed off from it lands
@@ -815,28 +782,11 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const rangeKey = JSON.stringify(range ?? null);
   const reload = useCallback(() => setTick(t => t + 1), []);
 
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => {
-      if (alive) {
-        setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.dashboard_pieces"]?.value);
-        setObjectsOn(!!f["ontology.object_dashboards"]?.value); setBuilderOn(!!f["dashboard.builder"]?.value);
-        setWiringOn(!!f["dashboard.wiring"]?.value); setStructureOn(!!f["dashboard.app_pieces"]?.value);
-        setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["dashboard.queries"]?.value);
-        setBreakdownsOn(!!f["dashboard.breakdowns"]?.value); setMarksOn(!!f["dashboard.marks"]?.value);
-        setVariablesOn(!!f["dashboard.variables"]?.value); setQuestionsOn(!!f["dashboard.questions"]?.value);
-        setTemplatesOn(!!f["packs.dashboard_templates"]?.value);
-      }
-    }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
-    return () => { alive = false; };
-  }, []);
-
-  // The person's dashboards. Null from the route means the flag is off: draw what was drawn before.
+  // The person's dashboards.
   useEffect(() => {
     let cancelled = false;
     listDashboards(connectionId).then(l => {
       if (cancelled) return;
-      if (l === null) { setList("off"); return; }
       setList(l);
       const live = l.cockpits.filter(c => !c.retired);
       // The metrics are the dashboard a person opens on (asked 2026-10-05); one of their own is
@@ -854,8 +804,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
 
   // The chosen dashboard, read for the page's range, each card it places run through the guards.
   useEffect(() => {
-    if (!chosen || chosen === METRICS_DASHBOARD || chosen.startsWith("shared:") || list === "off") { setData(null); return; }
-    if (rangesOn === null) return;
+    if (!chosen || chosen === METRICS_DASHBOARD || chosen.startsWith("shared:")) { setData(null); return; }
     let cancelled = false;
     setReading(true);
     (async () => {
@@ -893,7 +842,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-  }, [connectionId, chosen, rangeKey, tick, list === "off", rangesOn]);
+  }, [connectionId, chosen, rangeKey, tick]);
 
   const write = useCallback(async (act: () => Promise<DashboardKept>, done: (k: DashboardKept) => string) => {
     setBusy(true); setRefusal(null);
@@ -913,7 +862,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const choose = (id: string, keepEditing = false) => {
     if (burst.current.timer) sendBurst();
     setDraft(null);
-    setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem("");
+    setChosen(id); remember(connectionId, id); setShowHistory(false); setRefusal(null); setProblem("");
     setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false); setQuestioning(false);
     setEditing(keepEditing); setStacks(NO_STEPS); previewAsGroup("");
   };
@@ -928,13 +877,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
   }, [rangeKey]);
-
-  // "Remove" on a card takes it off THIS dashboard. The card stays — another dashboard may place it.
-  const takeOffOne = useCallback((id: string) => {
-    if (!data?.cockpit.spec) return;
-    void write(() => keepDashboard(connectionId, data.cockpit_id, takeOffCard(data.cockpit.spec, id), "a card taken off"),
-      () => "Taken off this dashboard. The card is kept.");
-  }, [connectionId, data, write]);
 
   // One edit of the spec by hand, kept as the next version: what every door on a tile comes to. It is made on the newest
   // spec — a burst still waiting is folded into it, not kept after it — and kept after any keep already on its way, so
@@ -1012,16 +954,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   // the rail folds to its icons while the builder is open, and comes back as the person keeps it
   useEffect(() => (editing ? foldNavFor() : undefined), [editing]);
 
-  const doors = useMemo<DashboardDoors>(() => ({
-    onRemove: takeOffOne, onRefresh: refreshOne, onOpenSource, onEvidence,
-    onTakeOff: (key: string) => edit(s => takeOff(s, key), "taken off by hand", "Taken off. The version before keeps it."),
-    onResize: (key: string, size: Size) => edit(s => resize(s, key, size), `resized to ${size} by hand`,
-      "Resized. The same thing, with more or less room; nothing was re-measured."),
-    onEditNote: (key: string, text: string) => edit(s => editNote(s, key, text), "a note's words changed by hand", "Kept, and stamped with your name and today."),
-    onRecaption: (key: string, caption: string) => edit(s => recaption(s, key, caption), "an image's caption changed by hand", "Kept."),
-    onPlaceTable: piecesOn ? (entity: string, segment: string) => edit(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
-      "an objects table placed from a process board", "Placed: the objects still waiting and already past the promise.") : undefined,
-  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn]);
   // Arc AP-1 — read first: a dashboard being read offers its reader's own doors only, and the builder all of them, each
   // change kept through `change` so that it can be undone
   const readDoors = useMemo<DashboardDoors>(() => ({ onRefresh: refreshOne, onOpenSource, onEvidence }), [refreshOne, onOpenSource, onEvidence]);
@@ -1033,32 +965,21 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
       onTakeOff: (key: string) => on(s => takeOff(s, key), "taken off by hand"),
       onEditNote: (key: string, text: string) => on(s => editNote(s, key, text), "a note's words changed by hand"),
       onRecaption: (key: string, caption: string) => on(s => recaption(s, key, caption), "an image's caption changed by hand"),
-      onPlaceTable: piecesOn ? (entity: string, segment: string) => on(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
-        "an objects table placed from a process board") : undefined,
+      onPlaceTable: (entity: string, segment: string) => on(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
+        "an objects table placed from a process board"),
       onRegrid: (key: string, box: Box, measured: Record<string, Box>) => on(s => regrid(s, key, box, measured), "resized by hand"),
       onFilterWidth: (grades: number) => on(s => setFilterWidth(s, grades), "the filter column resized by hand"),
       // Arc AP-4 — an empty section's offer: the piece picker for it, or sections of its own
-      ...(structureOn ? {
-        onAddPiece: (section: string) => setAdding({ section }),
-        onLayOut: (section: string, layout: Layout) => on(s => layOut(s, section, layout), `laid out in ${layout} by hand`),
-      } : {}),
+      onAddPiece: (section: string) => setAdding({ section }),
+      onLayOut: (section: string, layout: Layout) => on(s => layOut(s, section, layout), `laid out in ${layout} by hand`),
     };
-  }, [current, change, refreshOne, onOpenSource, onEvidence, piecesOn, structureOn]);
+  }, [current, change, refreshOne, onOpenSource, onEvidence]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
   // Where each image's bytes are read from: the API, with this reader's own access.
   const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
     Object.entries(data?.images ?? {}).map(([id, s]) => [id, { ...s, url: dashboardImageUrl(connectionId, id) }])),
   [data?.images, connectionId]);
 
-  if (list === "off") {
-    return (
-      <div style={{ padding: "24px 32px" }}>
-        <EmptyState icon="gauge" title="Dashboards are off on this install">
-          Dashboards need the dashboard flag, which is off here. The Briefing keeps its own dashboard meanwhile.
-        </EmptyState>
-      </div>
-    );
-  }
   if (list === null) {
     return <div className="aug-fs-sm" data-testid="dashboards-loading" style={{ color: "var(--t3)", padding: "24px 32px" }}>Reading your dashboards…</div>;
   }
@@ -1070,11 +991,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const app = appWords(kept ?? { version: 0, published_to: [] });
   const pinned = list.shared_cards + list.own_cards;
   const lines = new Map<string, CardLine>((data?.cards ?? []).map(c => [c.id, { title: c.title }]));
-  const notPlaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
-  // A duplicate is not offered back — superseded, from a deprecated metric, or a copy — and the
-  // tray says how many it left out and why, so nothing reads as lost.
-  const unplaced = notPlaced.filter(c => !c.not_offered);
-  const withheld = notPlaced.filter(c => c.not_offered);
 
   const startOwn = pinned > 0 ? (
     <Button variant="secondary" size="xs" disabled={busy}
@@ -1171,7 +1087,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
           onPlace={(objectId, caption) => { const at = target.current ?? undefined; target.current = null;
             edit(s => placeImage(s, objectId, caption, at), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
       )}
-      {placing && piecesOn && (
+      {placing && (
         <OntologyPieceComposer connectionId={connectionId} schema={schema} spec={(current ?? kept.spec) as DashboardSpec} busy={busy}
           onClose={() => setPlacing(false)}
           onPlace={(change, note, said) => { edit(change, note, said); setPlacing(false); }} />
@@ -1190,7 +1106,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   ) : null;
 
   // Arc AP-1 — the builder: the dashboard between its layout and the setup of what is chosen, in place of the strip
-  if (builderOn && editing && drawn && data && current && chosen !== METRICS_DASHBOARD && !chosen.startsWith("shared:")) {
+  if (editing && drawn && data && current && chosen !== METRICS_DASHBOARD && !chosen.startsWith("shared:")) {
     const at = savedAt ?? (kept.kept_at ? Date.parse(kept.kept_at) : NaN);
     const saved = pending ? "Saving…"
       : `saved ${Number.isNaN(at) ? "" : new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · version ${kept.version}`;
@@ -1198,8 +1114,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     return (
       <div data-testid="briefing-dashboards" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <DashboardBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
-          wiringOn={wiringOn} marksOn={marksOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
-          checks={checks} variablesOn={variablesOn && wiringOn}
+          onAddPiece={section => setAdding({ section })} checks={checks}
           cardReads={id => valuesRead(data.cards.find(c => c.id === id)?.sql)}
           queryCards={placedQueries(current, data.cards)}
           bar={(
@@ -1242,12 +1157,10 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                 title="Your own words on this dashboard. By hand only: a model never writes a note." onClick={() => { shut(); setNoting(true); }}>
                 <Icon name="plus" /> Note
               </Button>
-              {questionsOn && (
-                <Button size="xs" variant="ghost" disabled={busy || questioning} data-testid="dashboard-question-new"
-                  title="A question the agent answers on a rhythm, as the Data Canvas does. By hand only." onClick={() => { shut(); setQuestioning(true); }}>
-                  <Icon name="plus" /> Question
-                </Button>
-              )}
+              <Button size="xs" variant="ghost" disabled={busy || questioning} data-testid="dashboard-question-new"
+                title="A question the agent answers on a rhythm, as the Data Canvas does. By hand only." onClick={() => { shut(); setQuestioning(true); }}>
+                <Icon name="plus" /> Question
+              </Button>
               <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="dashboard-image-new"
                 title="An image of your own on this dashboard. By hand only: a model never chooses one." onClick={() => { shut(); setImaging(true); }}>
                 <Icon name="plus" /> Image
@@ -1257,42 +1170,38 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                 onClick={() => { shut(); setPicking(true); }}>
                 <Icon name="plus" /> Finding
               </Button>
-              {piecesOn && (
-                <Button size="xs" variant="ghost" disabled={busy || placing} data-testid="dashboard-piece-new"
-                  title="A process board, an objects table, an object detail or an action button — each reads what the ontology declares, by id."
-                  onClick={() => { shut(); setPlacing(true); }}>
-                  <Icon name="plus" /> From the ontology
-                </Button>
-              )}
-              {wiringOn && (
-                <Button size="xs" variant="ghost" disabled={busy} data-testid="dashboard-buttons-new"
-                  title="Buttons that run declared actions on what a reader chose or ticked — wired in their setup."
-                  onClick={async () => {
-                    shut();
-                    try {
-                      const declared = Object.values(await getDeclaredActions(connectionId, schema));
-                      if (!declared.length) { toast.error("No action is declared here", { description: "Declare one in Ontology ▸ Actions, then place its button." }); return; }
-                      const placed = placePiece(current, "ActionButtons", { buttons: [{ action: declared[0].id }] });
-                      if (placed.key) change(placed.spec, "action buttons placed by hand");
-                    } catch (e) {
-                      toast.error("The declared actions could not be read", { description: (e as Error).message.slice(0, 160) });
-                    }
-                  }}>
-                  <Icon name="plus" /> Action buttons
-                </Button>
-              )}
+              <Button size="xs" variant="ghost" disabled={busy || placing} data-testid="dashboard-piece-new"
+                title="A process board, an objects table, an object detail or an action button — each reads what the ontology declares, by id."
+                onClick={() => { shut(); setPlacing(true); }}>
+                <Icon name="plus" /> From the ontology
+              </Button>
+              <Button size="xs" variant="ghost" disabled={busy} data-testid="dashboard-buttons-new"
+                title="Buttons that run declared actions on what a reader chose or ticked — wired in their setup."
+                onClick={async () => {
+                  shut();
+                  try {
+                    const declared = Object.values(await getDeclaredActions(connectionId, schema));
+                    if (!declared.length) { toast.error("No action is declared here", { description: "Declare one in Ontology ▸ Actions, then place its button." }); return; }
+                    const placed = placePiece(current, "ActionButtons", { buttons: [{ action: declared[0].id }] });
+                    if (placed.key) change(placed.spec, "action buttons placed by hand");
+                  } catch (e) {
+                    toast.error("The declared actions could not be read", { description: (e as Error).message.slice(0, 160) });
+                  }
+                }}>
+                <Icon name="plus" /> Action buttons
+              </Button>
             </>
           )}
-          cardSetup={queriesOn ? (cardId => {
+          cardSetup={cardId => {
             // Arc AP-7 — a card of the person's own query is set up here: its SQL, how it is shown, and Keep
             const held = data.cards.find(c => c.id === cardId);
             if (!held || !held.own || !(held.render as { shown?: unknown })?.shown) return null;
             return (
-              <QuerySetup key={held.id} connectionId={connectionId} card={held} values={variablesOn ? current.values ?? {} : null}
+              <QuerySetup key={held.id} connectionId={connectionId} card={held} values={current.values ?? {}}
                 onKept={(kept, replaced) => replaced
                   && edit(s => swapCard(s, replaced, kept.id), "a query of your own changed by hand", `Kept the change to “${kept.title}”.`)} />
             );
-          }) : undefined}
+          }}
           aside={showHistory ? (
             <div data-testid="builder-history-panel" style={{ padding: "4px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", padding: "8px 0" }}>
@@ -1301,8 +1210,8 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
               </div>
               {historyPanel}
             </div>
-          ) : writing && queriesOn ? (
-            <QuerySetup connectionId={connectionId} onClose={() => setWriting(null)} values={variablesOn ? current.values ?? {} : null}
+          ) : writing ? (
+            <QuerySetup connectionId={connectionId} onClose={() => setWriting(null)} values={current.values ?? {}}
               onKept={() => {
                 target.current = writing.section; adopt.current = true; adoptNote.current = "a query of your own placed by hand";
                 setWriting(null); reload();
@@ -1322,8 +1231,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                       <span key={k} className="aug-fs-xs" data-testid="dashboard-preview-withheld" style={{ color: "var(--t2)" }}>Withheld — {w}.</span>
                     )) : (
                       <span className="aug-fs-xs" data-testid="dashboard-preview-nothing" style={{ color: "var(--t3)" }}>
-                        {limitsOn ? "No row policy or mask holds back what these pieces read from this group."
-                          : `Limiting who sees which objects is off here, so a member of ${groups.find(g => g.id === previewing)?.name ?? previewing} reads what you read.`}
+                        No row policy or mask holds back what these pieces read from this group.
                       </span>
                     )}
                   </span>
@@ -1343,9 +1251,9 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                 </Callout>
               )}
               {composers}
-              {adding && structureOn && (
-                <PiecePicker spec={current} section={adding.section} connectionId={connectionId} schema={schema} wiringOn={wiringOn}
-                  queriesOn={queriesOn} breakdownsOn={breakdownsOn} onPlace={change} onClose={() => setAdding(null)}
+              {adding && (
+                <PiecePicker spec={current} section={adding.section} connectionId={connectionId} schema={schema}
+                  onPlace={change} onClose={() => setAdding(null)}
                   onHandOff={(kind, section) => {
                     setAdding(null); shut(); target.current = section;
                     if (kind === "query") { setShowHistory(false); setWriting({ section }); return; }
@@ -1395,7 +1303,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
 
       {newOpen && (
         <NewDashboard connectionId={connectionId} schema={schema} onClose={() => setNewOpen(false)}
-          fromObject={piecesOn && objectsOn} fromPack={templatesOn} sym={data?.currency_symbol || "$"}
+          sym={data?.currency_symbol || "$"}
           onKept={id => { setNewOpen(false); choose(id); reload(); }} />
       )}
 
@@ -1423,77 +1331,21 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
 
       {chosen === METRICS_DASHBOARD ? (
         <>
-          <MetricsDashboard connectionId={connectionId} schema={schema} rangesOn={rangesOn}
+          <MetricsDashboard connectionId={connectionId} schema={schema}
             value={chosenRange} onChange={setChosenRange} />
           {live.length === 0 && <div style={{ marginTop: 14 }}>{noneYetLine}</div>}
         </>
       ) : chosen.startsWith("shared:") ? (
         <SharedDashboardView connectionId={connectionId} schema={schema}
           owner={chosen.slice("shared:".length, chosen.lastIndexOf("/"))} dashboardId={chosen.slice(chosen.lastIndexOf("/") + 1)}
-          range={range} chosenRange={chosenRange} onRange={setChosenRange} rangesOn={rangesOn}
+          range={range} chosenRange={chosenRange} onRange={setChosenRange}
           onStarted={id => { choose(id); reload(); }} />
       ) : live.length === 0 ? noneYet : drawn && data ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-            {data.ranges_on && (
-              <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
-                showing={data.range.status === "standing" || reading ? null : data.range} />
-            )}
+            <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
+              showing={data.range.status === "standing" || reading ? null : data.range} />
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-              {!arranging && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="dashboard-card-new"
-                  onClick={() => { setComposing(true); setNoting(false); setImaging(false); }}>
-                  <Icon name="plus" /> Card
-                </Button>
-              )}
-              {!arranging && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy || noting} data-testid="dashboard-note-new"
-                  title="Your own words on this dashboard. By hand only: a model never writes a note."
-                  onClick={() => { setNoting(true); setComposing(false); setImaging(false); }}>
-                  <Icon name="plus" /> Note
-                </Button>
-              )}
-              {!arranging && !builderOn && questionsOn && (
-                <Button size="xs" variant="ghost" disabled={busy || questioning} data-testid="dashboard-question-new"
-                  title="A question the agent answers on a rhythm, as the Data Canvas does. By hand only."
-                  onClick={() => { setQuestioning(true); setNoting(false); setComposing(false); setImaging(false); }}>
-                  <Icon name="plus" /> Question
-                </Button>
-              )}
-              {!arranging && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="dashboard-image-new"
-                  title="An image of your own on this dashboard. By hand only: a model never chooses one."
-                  onClick={() => { setImaging(true); setComposing(false); setNoting(false); setPicking(false); }}>
-                  <Icon name="plus" /> Image
-                </Button>
-              )}
-              {!arranging && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy || picking} data-testid="dashboard-finding-new"
-                  title="Any finding the explorer has recorded on this connection, as a card: its query re-run through the guards."
-                  onClick={() => { setPicking(true); setComposing(false); setNoting(false); setImaging(false); }}>
-                  <Icon name="plus" /> Finding
-                </Button>
-              )}
-              {!arranging && piecesOn && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy || placing} data-testid="dashboard-piece-new"
-                  title="A process board, an objects table, an object detail or an action button — each reads what the ontology declares, by id."
-                  onClick={() => { setPlacing(true); setComposing(false); setNoting(false); setImaging(false); setPicking(false); }}>
-                  <Icon name="plus" /> From the ontology
-                </Button>
-              )}
-              {!arranging && !builderOn && (
-                <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="dashboard-publish-open"
-                  aria-expanded={publishing} title={app.title || "Share this dashboard, as it stands, with a group you belong to or a role you hold."}
-                  onClick={() => setPublishing(p => !p)}>
-                  <Icon name="send" /> {app.label}
-                </Button>
-              )}
-              {!arranging && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy} data-testid="dashboard-arrange-open"
-                  onClick={() => setArranging(JSON.parse(JSON.stringify(kept.spec)) as DashboardSpec)}>
-                  <Icon name="sliders" /> Arrange
-                </Button>
-              )}
               <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => {
                 // a resize kept since the page was read is not in its history yet: read it again once
                 if (!showHistory && burst.current.since) { burst.current.since = false; reload(); }
@@ -1501,92 +1353,32 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
               }}>
                 <Icon name="history" /> {showHistory ? "Hide history" : "History"}
               </Button>
-              {builderOn && (
-                <Button size="xs" variant="secondary" data-testid="dashboard-edit" disabled={busy || reading}
-                  title="Build this dashboard in place: its layout, each piece's setup, and sizes one grade at a time."
-                  onClick={() => { setShowHistory(false); setRefusal(null); setEditing(true); }}>
-                  <Icon name="edit" /> Edit
-                </Button>
-              )}
-              {!arranging && !builderOn && (
-                <Button size="xs" variant="ghost" disabled={busy} data-testid="dashboard-retire-open" aria-expanded={retiring}
-                  title="Take this dashboard off your strip for good. Its history stays in the record."
-                  onClick={() => setRetiring(r => !r)}>
-                  <Icon name="close" /> Retire
-                </Button>
-              )}
+              <Button size="xs" variant="secondary" data-testid="dashboard-edit" disabled={busy || reading}
+                title="Build this dashboard in place: its layout, each piece's setup, and sizes one grade at a time."
+                onClick={() => { setShowHistory(false); setRefusal(null); setEditing(true); }}>
+                <Icon name="edit" /> Edit
+              </Button>
             </span>
           </div>
 
-          {retiring && (
-            <Callout tone="amber" style={{ margin: "8px 0" }} data-testid="dashboard-retire-confirm">
-              <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                Retire this dashboard? It leaves your strip for good and cannot be brought back; its history stays in the record.
-                <Button size="xs" disabled={busy} onClick={() => {
-                  setRetiring(false);
-                  void write(() => retireDashboard(connectionId, data.cockpit_id), () => "Dashboard retired. Its history stays.");
-                }}>Retire it</Button>
-                <Button size="xs" variant="ghost" onClick={() => setRetiring(false)}>Keep it</Button>
-              </span>
-            </Callout>
-          )}
-
           {showHistory && historyPanel}
 
-          {arranging ? (
-            <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
-              <DashboardArrange spec={arranging} lines={lines} onChange={setArranging} disabled={busy} />
-              {unplaced.length > 0 && (
-                <div data-testid="dashboard-tray" style={{ marginTop: 12 }}>
-                  <div className="aug-label" style={{ marginBottom: 6 }}>Cards you have that are not on this dashboard</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {unplaced.map(c => (
-                      <Button key={c.id} size="xs" variant="outline" onClick={() => setArranging(s => (s ? placeCard(s, c.id) : s))}>
-                        + {c.title}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {withheld.length > 0 && (
-                <div className="aug-fs-sm" data-testid="dashboard-tray-withheld" style={{ marginTop: 8, color: "var(--t3)" }}>
-                  Not offered: {withheld.map(c => `${c.title} — ${c.not_offered}`).join("; ")}.
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <Button size="sm" disabled={busy || JSON.stringify(arranging) === JSON.stringify(kept.spec)}
-                  onClick={async () => {
-                    const ok = await write(() => keepDashboard(connectionId, data.cockpit_id, arranging, "arranged by hand"),
-                      k => (k.status === "unchanged" ? "Nothing changed." : `Kept as version ${k.version}.`));
-                    if (ok) setArranging(null);
-                  }}>Save</Button>
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setArranging(null); setRefusal(null); }}>Cancel</Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {composers}
-              {!builderOn && (
-                <AskChange connectionId={connectionId} dashboardId={data.cockpit_id} schema={schema} held={lines}
-                  onKept={() => { setPublishing(false); reload(); }} />
-              )}
-              {data.ontology && (
-                <PinStrip pin={data.ontology} spec={kept.spec} busy={busy}
-                  onRepin={() => void write(() => keepDashboard(connectionId, data.cockpit_id, kept.spec,
-                    `re-pinned to ${data.ontology?.current}`, true),
-                  k => (k.status === "unchanged" ? "Already pinned there." : `Re-pinned, as version ${k.version}.`))} />
-              )}
-              {reading && <Loading what={`the cards for ${choiceName(chosenRange)}`} style={{ padding: "12px 0" }} />}
-              {!reading && data.range.edge_note && (
-                <div className="aug-fs-sm" data-testid="dashboard-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>
-              )}
-              <div aria-busy={reading || undefined}
-                style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
-                <ComposedDashboard spec={draft ?? kept.spec} cards={cards} host={host} doors={builderOn ? readDoors : doors} sym={data.currency_symbol || "$"}
-                  images={images} range={range} schema={schema} connectionId={connectionId} dashboardId={`${connectionId}:${chosen}`} />
-              </div>
-            </>
+          {composers}
+          {data.ontology && (
+            <PinStrip pin={data.ontology} spec={kept.spec} busy={busy}
+              onRepin={() => void write(() => keepDashboard(connectionId, data.cockpit_id, kept.spec,
+                `re-pinned to ${data.ontology?.current}`, true),
+              k => (k.status === "unchanged" ? "Already pinned there." : `Re-pinned, as version ${k.version}.`))} />
           )}
+          {reading && <Loading what={`the cards for ${choiceName(chosenRange)}`} style={{ padding: "12px 0" }} />}
+          {!reading && data.range.edge_note && (
+            <div className="aug-fs-sm" data-testid="dashboard-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>
+          )}
+          <div aria-busy={reading || undefined}
+            style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
+            <ComposedDashboard spec={draft ?? kept.spec} cards={cards} host={host} doors={readDoors} sym={data.currency_symbol || "$"}
+              images={images} range={range} schema={schema} connectionId={connectionId} dashboardId={`${connectionId}:${chosen}`} />
+          </div>
         </>
       ) : !problem ? (
         <div className="aug-fs-sm" data-testid="dashboard-loading" style={{ color: "var(--t3)" }}>Reading the dashboard…</div>

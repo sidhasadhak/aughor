@@ -2,10 +2,9 @@
 
 Before: every save and withdrawal was a version (OC-1) and a change waited in a draft (OC-2), but nothing put a version
 back — a promise moved from five days to seven could be read as it was, and putting five back meant typing it again.
-Behind `ontology.put_back`: the version's fields go through the normal save path into the DRAFT, counted again by the
-kind's own measurement and classed like any change, so readers get it only when a person publishes. Refused with a
-sentence while releases are off, for an organisation's ontology and for a version the history does not hold. Off, the
-history door answers exactly as before and the put-back door refuses.
+Now the version's fields go through the normal save path into the DRAFT, counted again by the kind's own measurement
+and classed like any change, so readers get it only when a person publishes. Refused with a sentence for an
+organisation's ontology and for a version the history does not hold.
 
 Hermetic: the overrides tree, its draft layer and the ledger are per test; the door flow counts on the seeded samples
 warehouse, as the release suite does.
@@ -37,11 +36,6 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
 
 
-def _flags(monkeypatch, *on: str) -> None:
-    names = set(on)
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in names)
-
-
 def _promise_days(process: dict) -> int:
     return process["stages"][2]["promise"]["within_days"]
 
@@ -61,10 +55,9 @@ def _published_and_moved(client) -> int:
     return five[0]["version"]
 
 
-# ── on: through the doors ──────────────────────────────────────────────────────────────────────
+# ── through the doors ──────────────────────────────────────────────────────────────────────
 
 def test_a_version_put_back_waits_in_the_draft_classed_and_counted_until_published(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release", "ontology.put_back")
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     five = _published_and_moved(client)
     history = client.get("/ontology/history", params={**PARAMS, **PROCESS}).json()
@@ -94,7 +87,6 @@ def test_a_version_put_back_waits_in_the_draft_classed_and_counted_until_publish
 
 
 def test_putting_back_what_readers_read_takes_the_waiting_change_away(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release", "ontology.put_back")
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     _published_and_moved(client)
     seven = client.get("/ontology/history", params={**PARAMS, **PROCESS}).json()["versions"][0]["version"]
@@ -110,7 +102,6 @@ def test_putting_back_what_readers_read_takes_the_waiting_change_away(door, clie
 
 
 def test_refusals_are_said(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release", "ontology.put_back")
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     _published_and_moved(client)
     missing = client.post("/ontology/history/put-back", params=PARAMS, json={**PROCESS, "version": 99})
@@ -120,17 +111,11 @@ def test_refusals_are_said(door, client, monkeypatch):  # noqa: F811
     assert never.status_code == 404 and "no recorded version" in never.json()["detail"]
     unknown = client.post("/ontology/history/put-back", params=PARAMS, json={"kind": "widget", "target_id": "x", "version": 1})
     assert unknown.status_code == 400
-
-    _flags(monkeypatch, "ontology.put_back", "ontology.history")                 # releases off
-    off = client.post("/ontology/history/put-back", params=PARAMS, json={**PROCESS, "version": 1})
-    assert off.status_code == 409 and "needs releases on" in off.json()["detail"]
-    assert client.get("/ontology/history", params={**PARAMS, **PROCESS}).json()["put_back"]["enabled"] is False
     assert "outside releases" in PB.unavailable("org=acme")
     assert "outside releases" in PB.unavailable("domain:default")
 
 
 def test_a_version_that_no_longer_counts_is_refused_and_nothing_is_written(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release", "ontology.put_back")
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     five = _published_and_moved(client)
     monkeypatch.setattr("aughor.ontology.processes.resolve_process",
@@ -142,13 +127,10 @@ def test_a_version_that_no_longer_counts_is_refused_and_nothing_is_written(door,
 
 
 def test_a_withdrawn_version_puts_back_the_fields_it_had(monkeypatch):
-    _flags(monkeypatch, "ontology.release", "ontology.put_back")
     rule = OntologyOverride(target_kind="rule", target_id="dach", fields={
         "declared": True, "entity": "Customer", "kind": "value_set", "property": "country", "values": ["DE", "AT"]})
-    _flags(monkeypatch, "ontology.history")
-    save_override(CONN, SCHEMA, rule)
-    assert OV.delete_override(CONN, SCHEMA, "rule", "dach")                       # withdrawn, recorded with its fields
-    _flags(monkeypatch, "ontology.release", "ontology.put_back")
+    OV.publish_override(CONN, SCHEMA, rule)                                       # in force — the release's own door
+    assert OV.publish_withdrawal(CONN, SCHEMA, "rule", "dach")                    # withdrawn, recorded with its fields
     from aughor.ontology import history
     gone = history.versions(CONN, SCHEMA, "rule", "dach")[0]
     assert gone["state"] == "withdrawn" and gone["fields"]["values"] == ["DE", "AT"]
@@ -162,16 +144,3 @@ def test_a_withdrawn_version_puts_back_the_fields_it_had(monkeypatch):
     with viewing("published"):
         assert find_override(CONN, SCHEMA, "rule", "dach") is None               # nothing served until published
 
-
-# ── off: byte-identical ────────────────────────────────────────────────────────────────────────
-
-def test_off_the_history_door_answers_as_before_and_the_put_back_door_refuses(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release")
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
-    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
-    history = client.get("/ontology/history", params={**PARAMS, **PROCESS}).json()
-    assert set(history) == {"element", "kept", "versions"}
-    assert history["versions"] and all(set(v) == {"version", "state", "in_force_from", "recorded_at", "by", "note",
-                                                  "fields", "source", "changes"} for v in history["versions"])
-    refused = client.post("/ontology/history/put-back", params=PARAMS, json={**PROCESS, "version": 1})
-    assert refused.status_code == 409 and "off on this install" in refused.json()["detail"]

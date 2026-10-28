@@ -1,5 +1,5 @@
 """A pack's dashboard templates — a dashboard the industry usually keeps, which a person keeps as their own (Arc FA,
-FA-6; ROADMAP §3.60). Behind ``packs.dashboard_templates``.
+FA-6; ROADMAP §3.60).
 
 A template is ``dashboards/*.yaml`` in a pack (`PackDashboardTemplate`): a title, a short description, cards naming the
 pack's metrics by name, and sections laying them out. It is a declaration like the pack's mission templates — it never
@@ -26,17 +26,10 @@ from typing import Any, Optional
 
 from aughor.packs.models import Pack, PackDashboardTemplate
 
-FLAG = "packs.dashboard_templates"
-
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
 _KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 #: The widest a template's section is drawn.
 MAX_COLUMNS = 4
-
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 # ── the static gate ──────────────────────────────────────────────────────────────────────────

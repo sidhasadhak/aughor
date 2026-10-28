@@ -88,9 +88,9 @@ function component(name: WrittenName, grid: boolean, structure: boolean): string
   return `- ${name}: ${HOLDS[name]}. props: ${props}. ${holds}`;
 }
 
-/** The grammar. `grid` tells the writer of a dashboard about a section's grid, only while dashboards are built in place
- *  (`dashboard.builder`), and `structure` about sections split into sections, only while that is on (`dashboard.app_pieces`);
- *  without them the text is as it was before Arc AP. */
+/** The grammar. `grid` tells the writer of a dashboard about a section's grid (Arc AP-1), and `structure` about sections
+ *  split into sections (Arc AP-4); the server asks for both (`aughor/dashboards/validate.py`). Without them the text is as
+ *  it was before Arc AP. */
 export function grammar({ grid = false, structure = false }: { grid?: boolean; structure?: boolean } = {}): string {
   return [
     "A dashboard is one JSON object: {\"root\": <element key>, \"state\": {\"tab\": <tab name>}, \"elements\": {<key>: <element>}}.",

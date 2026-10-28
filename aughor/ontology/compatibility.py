@@ -380,7 +380,7 @@ def _moved(before: dict[str, str], after: dict[str, str]) -> list[str]:
 
 
 def replay(limit: int = 5000) -> dict[str, Any]:
-    """Arc OC-2's falsifier over the history every save and withdrawal keeps (`ontology.history`): each change a reader
+    """Arc OC-2's falsifier over the history every save and withdrawal keeps (`ontology/history.py`): each change a reader
     saw — from one version in force to the next, drafts skipped — classed by this catalogue, and, for the kinds it can
     judge, set beside the definitions it moved. A change that moved one and is classed SAFE is a ``miss``; one miss and
     the catalogue is wrong. A withdrawal is classed and not judged (``withdrawals``). Taken with every daily census

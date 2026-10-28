@@ -18,10 +18,8 @@ import os
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
-
-from aughor.custom_agents.grounding_read import require_open as require_grounding_open
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["doors"])
@@ -106,12 +104,11 @@ class DoorGround(BaseModel):
     schema_name: str = Field("", alias="schema")
 
 
-@router.post("/doors/agents/{agent_id}/grounding", dependencies=[Depends(require_grounding_open)])
+@router.post("/doors/agents/{agent_id}/grounding")
 def door_grounding(agent_id: str, body: DoorGround, request: Request):
     """What this agent would read for the question — every grounding block with its content, the absent ones with
-    why, whether the embedder was called and which — and no model is asked (flag ``agents.grounding_read``; off, the
-    door is a 404 whatever the key or the body). Journaled as ``agent.grounding_read`` without the question or the
-    content."""
+    why, whether the embedder was called and which — and no model is asked. Journaled as ``agent.grounding_read``
+    without the question or the content."""
     from aughor.custom_agents import grounding_read
     from aughor.custom_agents.reach import principal_for
     agent = _agent_or_401(agent_id, request)

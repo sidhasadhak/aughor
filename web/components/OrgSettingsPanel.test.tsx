@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   getOrgSettings: vi.fn(), getWorkspace: vi.fn(), getCapabilities: vi.fn(), getEffectiveSettings: vi.fn(),
   updateOrgSettings: vi.fn(), updateWorkspace: vi.fn(), listOwners: vi.fn(), linkOwner: vi.fn(), unlinkOwner: vi.fn(),
   getIndustryChoice: vi.fn(), updateIndustryChoice: vi.fn(), getAgentPolicy: vi.fn(), updateAgentPolicy: vi.fn(),
-  clearAgentPolicy: vi.fn(), getMyAccess: vi.fn(), getOrgLLM: vi.fn(),
+  clearAgentPolicy: vi.fn(), getMyAccess: vi.fn(), getOrgLLM: vi.fn(), getOrgAllows: vi.fn(),
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -61,6 +61,9 @@ beforeEach(() => {
     saved: null, environment: { level: null, connections: null, tools: null }, levels: ["read", "run", "act"],
   });
   api.getMyAccess.mockResolvedValue(null);
+  const off = { allowed: false, set: false };
+  api.getOrgAllows.mockResolvedValue({ share_aggregates: off, outside_row_model: off, reason_to_read_runs: off,
+                                       scheduled_model_work: off });
   // The playbook's count is read with a bare fetch; this test is about the figures, so it answers nothing.
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => [] })));
 });
@@ -114,5 +117,26 @@ describe("Settings ▸ Organization", () => {
     expect(screen.getByTestId("org-save")).toHaveTextContent("unsaved changes");
     fireEvent.click(within(screen.getByTestId("org-save")).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.updateOrgSettings).toHaveBeenCalledWith({ ...SETTINGS, company_name: "theLook" }));
+  });
+
+  // ROADMAP §3.65 — the four choices an organisation makes, off unless chosen; one the server's environment turns on
+  // while nobody has chosen says so, rather than looking off.
+  it("shows what Aughor may do, says which one is on only through the environment, and saves a choice", async () => {
+    const off = { allowed: false, set: false };
+    api.getOrgAllows.mockResolvedValue({ share_aggregates: off, reason_to_read_runs: off, scheduled_model_work: off,
+                                         outside_row_model: { allowed: true, set: false } });
+    render(<OrgSettingsPanel />);
+    const card = await screen.findByTestId("org-allows");
+    await waitFor(() => expect(screen.getByTestId("org-allows-outside_row_model")).toHaveAttribute("data-on", "true"));
+    expect(screen.getByTestId("org-allows-outside_row_model-from-server")).toHaveTextContent(
+      "On through this server's environment until you choose here.");
+    for (const k of ["share_aggregates", "reason_to_read_runs", "scheduled_model_work"]) {
+      expect(screen.getByTestId(`org-allows-${k}`)).toHaveAttribute("data-on", "false");
+      expect(screen.queryByTestId(`org-allows-${k}-from-server`)).toBeNull();
+    }
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Share summary statistics with other installs" }));
+    expect(screen.getByTestId("org-allows-share_aggregates")).toHaveAttribute("data-on", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateOrgSettings).toHaveBeenCalledWith(expect.objectContaining({ share_aggregates: true })));
   });
 });

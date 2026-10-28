@@ -4,8 +4,9 @@ Held on the seeded samples warehouse through the real compiler and the real obje
 policies — the fulfilment group sees shipped and delivered orders, support sees cancelled and refunded ones — and
 total_amount is visible to finance only. Ana (fulfilment) and Ben (support, finance) list the same orders and see
 different rows, and Ana sees the amount masked, each told why; Carl, in no group, sees none and is told which groups
-would; an agent acting for Ben reads only what both may. The falsifier: with enforcement off every one of those
-assertions fails — the last test turns it off and checks the reader sees everything again.
+would; an agent acting for Ben reads only what both may. Part of the platform since 2026-10-28: an entity that
+declares neither reads exactly as it did before, and the test that says so compiles it against the platform's own
+unfiltered check.
 """
 from __future__ import annotations
 
@@ -25,7 +26,6 @@ RETURNED = {"cancelled", "refunded"}
 @pytest.fixture
 def secured(graph, monkeypatch):  # noqa: F811
     from aughor.rbac.groups import add_member, upsert_group
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY", "1")
     for group, members in (("fulfilment", ["user:ana"]), ("support", ["user:ben"]),
                            ("finance", ["user:ben"])):
         upsert_group("default", group, group.capitalize())
@@ -140,8 +140,9 @@ def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, cli
     ok = client.put("/ontology/entities/Order/sensitive/total_amount", params=params,
                     json={"level": "pii", "visible_to": ["finance"]})
     assert ok.status_code == 200 and ok.json()["sensitive"]["visible_to"] == ["finance"]
-    from aughor.ontology.overrides import apply_overrides
-    served, _ = apply_overrides(graph, CONN, "ecommerce")
+    from aughor.ontology.overrides import apply_overrides, viewing
+    with viewing("draft"):                                                 # declared: waiting in the draft
+        served, _ = apply_overrides(graph, CONN, "ecommerce")
     assert served.entities["Order"].row_policies[0].group == "eu"
     assert served.entities["Order"].sensitive["total_amount"].level == "pii"
     assert client.delete("/ontology/entities/Order/sensitive/total_amount", params=params).status_code == 200
@@ -153,8 +154,6 @@ def test_a_count_kept_for_every_reader_says_it_spans_objects_this_one_may_not_se
     assert counts_said(secured.entities["Order"]) == ("counted over every Order, not only the ones user:ana may see — "
                                                      "a table of them lists only those")
     assert counts_said(secured.entities["Customer"]) is None                   # no policy: nothing to say
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY")
-    assert counts_said(secured.entities["Order"]) is None
 
 
 def test_a_release_says_who_sees_what_before_a_person_publishes_it():
@@ -170,20 +169,19 @@ def test_a_release_says_who_sees_what_before_a_person_publishes_it():
     assert not any("does not class it" in w["why"] for w in why)
 
 
-def test_off_every_reader_sees_every_order_and_every_amount_as_before(secured, db, monkeypatch):  # noqa: F811
-    """The falsifier: the assertions above must fail with enforcement off — here, off, nothing is filtered or masked
-    and the SQL is exactly what an entity with no policy compiles."""
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY", raising=False)
+def test_with_nothing_declared_every_reader_sees_every_order_and_every_amount_as_before(graph, db, monkeypatch):  # noqa: F811
+    """An entity that declares no row policy and no sensitive property reads exactly as before: nothing is filtered or
+    masked, and the SQL is what the platform's own unfiltered check compiles."""
+    from aughor.ontology.security import unfiltered
     _as(monkeypatch, "carl")
-    compiled, rows, total = _listing(secured, db)
+    compiled, rows, total = _listing(graph, db)
     statuses = {r[1] for r in rows}
     assert statuses & SHIPPED and statuses & RETURNED and all(r[2] is not None for r in rows)
-    bare = secured.model_copy(deep=True)
-    bare.entities["Order"].row_policies, bare.entities["Order"].sensitive = [], {}
-    plain = compile_object_listing(ObjectListing(entity="Order", columns=["status", "total_amount"], limit=200), bare,
-                                   dialect="duckdb")
+    with unfiltered():
+        plain = compile_object_listing(ObjectListing(entity="Order", columns=["status", "total_amount"], limit=200),
+                                       graph, dialect="duckdb")
     assert compiled.sql == plain.sql and compiled.caveats == plain.caveats
-    assert get_object(secured, db, "order", ORDER).properties                 # no withheld, no mask
+    assert get_object(graph, db, "order", ORDER).properties                   # no withheld, no mask
 
 
 # ── a process board counts what its reader may see (the user's call, 2026-10-10) ───────────────────────────────────
@@ -195,7 +193,6 @@ from tests.unit.test_object_processes import _isolated_overrides  # noqa: E402,F
 def test_a_board_counts_the_readers_own_objects_and_the_kept_measurement_counts_every_one(door, client, monkeypatch):  # noqa: F811
     from aughor.ontology.overrides import find_override
     from aughor.rbac.groups import add_member, upsert_group
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY", "1")
     upsert_group("default", "warehouse", "Warehouse")
     add_member("default", "warehouse", "user:ana")
     samples = door()
@@ -210,6 +207,7 @@ def test_a_board_counts_the_readers_own_objects_and_the_kept_measurement_counts_
     _as(monkeypatch, "ana")
     declared = client.post("/ontology/processes", params=PROCESS_PARAMS, json=FULFILMENT)   # declared BY a restricted reader
     assert declared.status_code == 200, declared.text
+    assert client.post("/ontology/release/publish", params=PROCESS_PARAMS).status_code == 200   # what readers read
     kept = find_override(PROCESS_PARAMS["connection_id"], "ecommerce", "process", "order_fulfilment").binding["process"]["measured"]
     assert kept["objects"] == every                                       # the platform's measurement: every order
     board = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}
@@ -220,6 +218,3 @@ def test_a_board_counts_the_readers_own_objects_and_the_kept_measurement_counts_
     _as(monkeypatch, "carl")
     carl = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}
     assert carl["order_fulfilment"]["objects"] == 0 and "in none of its groups" in carl["order_fulfilment"]["counted_over"]
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY")
-    off = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}
-    assert off["order_fulfilment"]["objects"] == every and "counted_over" not in off["order_fulfilment"]

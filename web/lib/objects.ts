@@ -196,7 +196,7 @@ export interface ObjectPage {
   timeseries?: ObjectTimeseries[];
   /** Arc OC-6 — held by the platform: no warehouse row, every property set by a declared action. */
   platform?: boolean;
-  /** Arc FA, FA-3 — present only while marking retiring is on: its entity's mark, or null when it carries none. */
+  /** Arc FA, FA-3 — its entity's mark, or null when it carries none; absent when it could not be read. */
   retiring?: RetiringMark | null;
   related: ObjectRelated;
 }
@@ -413,7 +413,7 @@ export async function getObjectTitles(
   return res.json();
 }
 
-/** Arc FA, FA-1 (flag `objects.find`) — one object whose name holds the words typed. `type` is the entity's api name,
+/** Arc FA, FA-1 — one object whose name holds the words typed. `type` is the entity's api name,
  *  what an object page's address takes. */
 export interface ObjectFindHit {
   type: string;
@@ -442,14 +442,13 @@ export interface ObjectFindAnswer {
   masked: string[];
 }
 
-/** Find objects by the name they go by, across entities. A 404 means the flag is off — the caller shows nothing. */
+/** Find objects by the name they go by, across entities. */
 export async function findObjects(
   q: string, connectionId?: string, schemaName?: string, signal?: AbortSignal,
-): Promise<ObjectFindAnswer | ObjectRefusal | null> {
+): Promise<ObjectFindAnswer | ObjectRefusal> {
   const res = await fetch(`${getApiBase()}/objects/find${scope(connectionId, schemaName)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q }), signal,
   });
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
 }
@@ -529,9 +528,9 @@ export interface ObjectQueryRequest {
   limit?: number;
 }
 
-/** Arc ED-6 (flag `objects.completeness`) — how complete an object read is, on every object door's answer: every row
- *  asked for · cut at the connection's cap with more to read · narrowed by a row policy or a masked property ·
- *  refused. `said` puts it in words, empty when complete. A server with it off sends none. */
+/** Arc ED-6 — how complete an object read is, on every object door's answer: every row asked for · cut at the
+ *  connection's cap with more to read · narrowed by a row policy or a masked property · refused. `said` puts it in
+ *  words, empty when complete. A server from before it sends none. */
 export interface ObjectCompleteness {
   state: "complete" | "truncated" | "withheld" | "refused";
   shown: number;
@@ -629,8 +628,9 @@ export interface ActionSend {
   note: string;
 }
 
-/** Arc OC-6 — the outbox of a connection's declared actions (empty and `enabled: false` while it is off). */
-export async function getSends(connectionId: string): Promise<{ enabled: boolean; sends: ActionSend[] }> {
+/** Arc OC-6 — the outbox of a connection's declared actions: each call kept, retried by why it failed, and handed to
+ *  a person when no retry will deliver it. */
+export async function getSends(connectionId: string): Promise<{ sends: ActionSend[] }> {
   const res = await fetch(`${getApiBase()}/actions/outbox?connection_id=${encodeURIComponent(connectionId)}`);
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();

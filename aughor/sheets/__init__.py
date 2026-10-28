@@ -16,30 +16,10 @@ doubt. Its oracle — the table as changed equals a fresh rebuild — is the fal
 To the rest of Aughor the sheets are one connection, *Sheets* (``connection.py``): the Catalog, the chat, dashboards
 and the Briefing read them as they read any table.
 
-Each wave is behind its own flag, off by default: ``sheets.core`` (SH-1: the sheets and their home), ``sheets.grid``
-(SH-2: editing), ``sheets.chat`` (SH-4: the chat beside a sheet), ``sheets.combine`` (SH-7: links, totals, a newer
-file, a query's rows kept), ``sheets.views`` (SH-3: groups with their totals, boards, calendars, rules, views kept to
-oneself), ``sheets.everywhere`` (SH-6, its first piece: a dashboard made from a sheet), ``sheets.sharing`` (SH-8:
-a sheet shared with chosen people and groups, ``sharing.py``) and ``sheets.model_columns`` (SH-5: a column a model
-writes for the rows of a view, ``model_columns.py``). Off, no route answers, the Sheets connection is not listed
-and nothing is written. A sheet already shared with chosen people stays shared only with them whatever the flag says:
-turning a wave off never opens what a person closed.
+The waves are part of the platform (ROADMAP §3.65): SH-1 (the sheets and their home), SH-2 (editing), SH-3 (groups
+with their totals, boards, calendars, rules, views kept to oneself), SH-4 (the chat beside a sheet), SH-5 (a column a
+model writes for the rows of a view, ``model_columns.py``), SH-6 (its first piece: a dashboard made from a sheet),
+SH-7 (links, totals, a newer file, a query's rows kept) and SH-8 (a sheet shared with chosen people and groups,
+``sharing.py``).
 """
 from __future__ import annotations
-
-CORE = "sheets.core"
-GRID = "sheets.grid"
-CHAT = "sheets.chat"
-COMBINE = "sheets.combine"
-VIEWS = "sheets.views"
-EVERYWHERE = "sheets.everywhere"
-SHARING = "sheets.sharing"
-MODEL_COLUMNS = "sheets.model_columns"
-
-
-def on(flag: str = CORE) -> bool:
-    """Whether a wave is on. Every wave stands on ``sheets.core``: with it off, none is."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(CORE):
-        return False
-    return flag == CORE or flag_enabled(flag)

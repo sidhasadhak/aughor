@@ -1,0 +1,115 @@
+{
+ "what": "PENDING item 19 / ROADMAP 3.38 — the first clean with-vs-without run for the DATA PROFILE block, at the user's word (2026-10-28: 'Run the one clean data-profiles test on the cheap model, and let its own rule decide keep or delete')",
+ "flag": "grounding.data_profiles",
+ "measured_on": "2026-10-28",
+ "connection": "samples (local DuckDB, 5 ecommerce tables), seeded and profiled in the run's own state: 5 tables, 35 columns; nothing read or written under the live state",
+ "mode": "--full-pipeline",
+ "coder_model": "claude-haiku-5-5 (anthropic, the install's cheap model; paid key, no free-tier rate limit)",
+ "temperature": 0.0,
+ "runs_per_question": 3,
+ "fallback": "disabled",
+ "sets": {
+  "golden": 53,
+  "ablation_samples_ecommerce": 12
+ },
+ "harness_defect_found_first": "evals/run_golden.py imported _parse_schema_tables from aughor.tools.schema, which stopped providing it on 2026-06-30 (af0994e1); the ImportError was swallowed, so linked_tables stayed empty: no Data Catalog, no fan-out guard, and the block rendered for no tables. The 2026-09-24 and 2026-10-04 runs therefore compared one prompt with itself (10-04: 107 of 117 statements byte-identical). Fixed in df151f9b, with a test that resolves every aughor import in the harness.",
+ "decision_rule_written_before_the_run": "KEEP only if, over all 65 questions (3 runs each, temperature 0), the block raises the per-question mean overall score with paired t >= 2.0 AND does not lower execution success; otherwise DELETE",
+ "arm_checks": {
+  "off_golden_sql_expanded": {
+   "arm": "off",
+   "flag": false,
+   "coder": "claude-haiku-5-5",
+   "renders": 0,
+   "nonempty": 0,
+   "chars": 0,
+   "calls": 166,
+   "tokens_in": 2169479,
+   "tokens_out": 133117
+  },
+  "off_ablation_samples_ecommerce": {
+   "arm": "off",
+   "flag": false,
+   "coder": "claude-haiku-5-5",
+   "renders": 0,
+   "nonempty": 0,
+   "chars": 0,
+   "calls": 36,
+   "tokens_in": 491715,
+   "tokens_out": 23778
+  },
+  "on_golden_sql_expanded": {
+   "arm": "on",
+   "flag": true,
+   "coder": "claude-haiku-5-5",
+   "renders": 159,
+   "nonempty": 159,
+   "chars": 262395,
+   "calls": 167,
+   "tokens_in": 2314745,
+   "tokens_out": 142439
+  },
+  "on_ablation_samples_ecommerce": {
+   "arm": "on",
+   "flag": true,
+   "coder": "claude-haiku-5-5",
+   "renders": 36,
+   "nonempty": 36,
+   "chars": 63288,
+   "calls": 38,
+   "tokens_in": 531533,
+   "tokens_out": 27028
+  }
+ },
+ "score": {
+  "n": 65,
+  "off": 0.6613,
+  "on": 0.6507,
+  "delta": -0.0106,
+  "paired_t": -1.01,
+  "better": 11,
+  "worse": 17,
+  "unchanged": 37
+ },
+ "execution_success": {
+  "n": 65,
+  "off": 0.9949,
+  "on": 1.0,
+  "delta": 0.0051,
+  "paired_t": 1.0,
+  "better": 1,
+  "worse": 0,
+  "unchanged": 64
+ },
+ "by_set": {
+  "golden_sql_expanded": {
+   "n": 53,
+   "off": 0.6384,
+   "on": 0.6306,
+   "delta": -0.0077,
+   "paired_t": -0.7,
+   "better": 9,
+   "worse": 14,
+   "unchanged": 30
+  },
+  "ablation_samples_ecommerce": {
+   "n": 12,
+   "off": 0.7628,
+   "on": 0.7393,
+   "delta": -0.0234,
+   "paired_t": -0.78,
+   "better": 2,
+   "worse": 3,
+   "unchanged": 7
+  }
+ },
+ "statements": {
+  "run_pairs_both_wrote_one": 194,
+  "byte_identical": 43,
+  "different": 151
+ },
+ "calls": 407,
+ "tokens_in": 5507472,
+ "tokens_out": 326362,
+ "cost_usd": 0.714,
+ "verdict": "DELETE — by the flag's own falsifier and the rule written before the run. With the block in every 'on' prompt (195 of 195, none in 'off') and the SQL changed in 151 of 194 run pairs, the mean score over 65 questions read 0.6613 -> 0.6507 (paired t -1.01; 11 better, 17 worse, 37 unchanged), lower on both sets; execution success 0.995 -> 1.000 (one question). No gain: the block is deleted with the flag."
+}

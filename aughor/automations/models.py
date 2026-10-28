@@ -193,7 +193,7 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # boundary that leaves the platform.
     "mcp_call":       ("server_id", "tool"),
     # Arc ED, ED-3 — WHAT the table's data must meet. Values a person types, so the kind is
-    # always ready; each expectation is validated at construction (`quality.expectations.parse`),
+    # always ready; each expectation is validated at construction (`quality/expectations.parse`),
     # because one that names nothing measurable would sit looking schedulable and measure
     # nothing at 03:00 — K1's lesson, again.
     "expectations":   ("expectations",),

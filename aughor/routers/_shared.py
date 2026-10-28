@@ -273,13 +273,9 @@ def run_pack_structure(conn_id: str, schema_name: str | None, emit) -> str:
 
 def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
     """PENDING item 11 — the birth rite's business-terms step: run the business explorer once on
-    a scope nobody has explored, when ``ontology.explore_on_connect`` is on. Returns what it did
-    (``off`` | ``skipped`` | ``done`` | ``failed``) and emits a ``birth.step`` for every outcome
-    but ``off`` — off, the rite is exactly what it was."""
+    a scope nobody has explored. Returns what it did (``skipped`` | ``done`` | ``failed``) and emits a
+    ``birth.step`` for every outcome."""
     from aughor.kernel.errors import tolerate
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.explore_on_connect"):
-        return "off"
     from aughor.licensing.capabilities import Capability
     from aughor.licensing.resolver import has_capability
     if not has_capability(Capability.ONTOLOGY_EDIT, conn_id=conn_id):
@@ -492,11 +488,10 @@ async def run_birth(
 
     # PENDING item 11 — the BUSINESS layer, once the build it reads exists: the explorer that
     # proposes entities, links, processes and rules (`POST /ontology/explore`, one model call),
-    # run for a scope nobody has explored yet. On by default since 2026-09-24
-    # (`ontology.explore_on_connect`), the user's call taken over the explorer's unrun paid
-    # quality re-check — its one live check fused two groups that should stay apart, and every
-    # proposal stays PROPOSED until a person confirms it. Off → the rite is exactly what it
-    # was, no step emitted.
+    # run for a scope nobody has explored yet — part of what connecting means since 2026-09-24,
+    # the user's call taken over the explorer's unrun paid quality re-check: its one live check
+    # fused two groups that should stay apart, and every proposal stays PROPOSED until a person
+    # confirms it.
     if intelligence_ok and not canvas_id:
         # 2026-10-10 — the packs deployed here shape what the build found first; the explorer fills what they left.
         await _pack_structure_step()

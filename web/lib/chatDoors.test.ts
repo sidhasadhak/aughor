@@ -1,7 +1,7 @@
 /**
- * PENDING item 15 — with `chat.buttons_reach_agent` off, a button's turn is sent exactly as before
- * (Quick → `/chat`, Agent → the deep-analysis door); on, both go through the unified `/ask` door,
- * where the conversation agent holds the ontology's tools.
+ * PENDING item 15 — both buttons go through the unified `/ask` door, where the conversation agent
+ * holds the ontology's tools: Quick at quick depth, Agent at deep. A send carrying more than a
+ * question keeps its own door (Quick → `/chat`, Agent → the deep-analysis door).
  */
 import { describe, expect, it } from "vitest";
 
@@ -12,25 +12,20 @@ import { doorFor, isPlainSend } from "@/lib/chatDoors";
 const AGENT: ChatMode = "investigate";
 
 describe("doorFor", () => {
-  it("changes nothing while the flag is off", () => {
-    expect(doorFor("ask", "auto", false)).toEqual({ mode: "ask", depth: "auto" });
-    expect(doorFor(AGENT, "auto", false)).toEqual({ mode: AGENT, depth: "auto" });
-    expect(doorFor("auto", "deep", false)).toEqual({ mode: "auto", depth: "deep" });
-  });
-
-  it("sends Quick to /ask at quick depth and Agent to /ask at deep depth when on", () => {
-    expect(doorFor("ask", "auto", true)).toEqual({ mode: "auto", depth: "quick" });
-    expect(doorFor(AGENT, "auto", true)).toEqual({ mode: "auto", depth: "deep" });
+  it("sends Quick to /ask at quick depth and Agent to /ask at deep depth", () => {
+    expect(doorFor("ask", "auto")).toEqual({ mode: "auto", depth: "quick" });
+    expect(doorFor(AGENT, "auto")).toEqual({ mode: "auto", depth: "deep" });
   });
 
   it("keeps a depth the person chose, and leaves turns already on /ask alone", () => {
-    expect(doorFor(AGENT, "quick", true)).toEqual({ mode: "auto", depth: "quick" });
-    expect(doorFor("auto", "auto", true)).toEqual({ mode: "auto", depth: "auto" });
+    expect(doorFor(AGENT, "quick")).toEqual({ mode: "auto", depth: "quick" });
+    expect(doorFor("auto", "auto")).toEqual({ mode: "auto", depth: "auto" });
+    expect(doorFor("auto", "deep")).toEqual({ mode: "auto", depth: "deep" });
   });
 
   it("leaves a send that carries more than a question on its own door", () => {
-    expect(doorFor(AGENT, "auto", true, false)).toEqual({ mode: AGENT, depth: "auto" });
-    expect(doorFor("ask", "auto", true, false)).toEqual({ mode: "ask", depth: "auto" });
+    expect(doorFor(AGENT, "auto", false)).toEqual({ mode: AGENT, depth: "auto" });
+    expect(doorFor("ask", "auto", false)).toEqual({ mode: "ask", depth: "auto" });
   });
 
   it("reads a send as plain only when it carries nothing but a depth or a schema", () => {

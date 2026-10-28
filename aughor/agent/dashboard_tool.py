@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 
 Emit = Callable[[str, dict], None]
 
-FLAG = "dashboard.composed"
-
 _CARD = {
     "type": "object",
     "properties": {

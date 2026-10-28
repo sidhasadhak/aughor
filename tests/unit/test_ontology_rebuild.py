@@ -39,6 +39,7 @@ def _graph(schema: str, *, generated_at: str | None = None, fingerprint: str = "
 def env(tmp_path, monkeypatch):
     """A temp ontology cache, no overrides or learned actions, no schema-cache side effects, a recorded profile."""
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     monkeypatch.setattr("aughor.memory.skills.load_learned_actions", lambda connection_id, schema_name: {})
     monkeypatch.setattr(router, "get_meta", lambda cid: {"schema_name": "main"})

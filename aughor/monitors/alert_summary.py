@@ -182,31 +182,11 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
         logger.debug("Digest: exploration section failed: %s", exc)
 
     # ── 3. Causal edges ─────────────────────────────────────────────────────
-    # Arc ED, ED-5: with impacts the one store, what bears on what is the connection's declared impacts, each in the
-    # words of its mechanism — never a cause the impacts store does not hold.
-    from aughor.lifecycle.causal import impacts_only
-    if impacts_only():
-        section = impacts_section(conn_id)
-        if section is not None:
-            sections.append(section)
-    else:
-        try:
-            from aughor.lifecycle.causal import load_causal_graph
-            graph = load_causal_graph(conn_id)
-            if graph:
-                edges = graph.get("edges") or []
-                # Surface the top-weight edges
-                top = sorted(edges, key=lambda e: abs(e.get("weight", 0)), reverse=True)[:5]
-                if top:
-                    items = [
-                        f"{e.get('source', '?')} → {e.get('target', '?')} "
-                        f"(strength: {e.get('weight', 0):.2f})"
-                        for e in top
-                    ]
-                    sections.append(AlertSummarySection(title="Top Causal Relationships", items=items,
-                                                         kind="causal_links"))
-        except Exception as exc:
-            logger.debug("Digest: causal graph section failed: %s", exc)
+    # Arc ED, ED-5: impacts are the one store — what bears on what is the connection's declared impacts, each in the
+    # words of its mechanism, never a cause the impacts store does not hold.
+    section = impacts_section(conn_id)
+    if section is not None:
+        sections.append(section)
 
     # ── 4. Open recommendations ─────────────────────────────────────────────
     try:

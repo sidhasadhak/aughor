@@ -1063,12 +1063,9 @@ def ensure_web_deps(root: Path, node: Node, steps: Steps) -> bool:
 
 
 def ensure_slack_supervisor_deps(root: Path, node: Node, steps: Steps) -> bool:
-    """AO-2b — when the API is to run the Slack supervisor itself (flag
-    `slack.managed_supervisor`, env `AUGHOR_SLACK_MANAGED_SUPERVISOR`), its packages are
-    installed the same way the web app's are. Off, nothing happens: the supervisor stays
-    a thing a person starts by hand, and its dependencies stay theirs to install."""
-    if (os.environ.get("AUGHOR_SLACK_MANAGED_SUPERVISOR") or "").strip().lower() in ("", "0", "false", "no"):
-        return False
+    """AO-2b — the API runs the Slack supervisor itself once its setup exists (ROADMAP §3.65),
+    so its packages are installed the same way the web app's are: a person who adds a Slack
+    bot later needs no terminal for it to start."""
     bots = root / "bots" / "slack"
     if not (bots / "package.json").is_file():
         steps.up_to_date("No Slack supervisor in this checkout (bots/slack); nothing to install")

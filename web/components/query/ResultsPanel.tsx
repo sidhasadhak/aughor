@@ -51,7 +51,7 @@ import { describeRunError, resultFigures, resultTools, unwrapRunSql } from "@/li
 
 // Arc SH — loaded only when a person keeps a result's rows as a sheet, so the editor carries none of it otherwise.
 const NewSheetDialog = lazy(() => import("@/components/sheets/NewSheetDialog").then(m => ({ default: m.NewSheetDialog })));
-import { getSystemFlags, type RelatedJoin, type TypedQueryPage, type TypedQueryResult } from "@/lib/api";
+import { type RelatedJoin, type TypedQueryPage, type TypedQueryResult } from "@/lib/api";
 import type { Cell } from "@/lib/query/resultFilter";
 import { Input } from "@/components/ui/input";
 
@@ -146,14 +146,8 @@ export function ResultsPanel({
 }) {
   const [showExport, setShowExport] = useState(false);
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
-  // Arc SH, SH-7 — "Keep the rows as a sheet", offered only while sheets are on.
-  const [sheetsOn, setSheetsOn] = useState(false);
+  // Arc SH, SH-7 — "Keep the rows as a sheet".
   const [keeping, setKeeping] = useState(false);
-  useEffect(() => {
-    let live = true;
-    getSystemFlags().then(f => { if (live) setSheetsOn(!!f["sheets.core"]?.value); }).catch(() => undefined);
-    return () => { live = false; };
-  }, []);
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -431,7 +425,7 @@ export function ResultsPanel({
   };
 
   const tools = resultTools({
-    hasRows: !empty, connected: !!connId, filtered: filters.length > 0, scheduleCount, sheets: sheetsOn,
+    hasRows: !empty, connected: !!connId, filtered: filters.length > 0, scheduleCount,
     act: { addChart: addViz, export: () => setShowExport(true), pin: () => void pin(),
       schedule: () => setShowSchedule(true), keepAsSheet: () => setKeeping(true) },
   });

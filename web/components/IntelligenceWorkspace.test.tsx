@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 /**
- * The Briefing asks for its brief when it MOUNTS — `POST /exploration/{conn}/briefing`, which the
+ * The Briefing asks for its brief when it MOUNTS — it opens on the Day, reads that range's kept
+ * Briefing, and when none is built asks for one: `POST /exploration/{conn}/briefing`, which the
  * server answers from its cache or by writing a narrative (a model call on a miss or a stale entry).
  * A mount nobody asked for is spend nobody asked for, so these tests count that request.
  *
@@ -16,7 +17,7 @@ import { act, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
-import { generateBriefingNarrative, getCatalogTree, getSystemFlags, type SystemFlag } from "@/lib/api";
+import { buildRangeBriefing, getCatalogTree, readRangeBriefing } from "@/lib/api";
 
 // Every async call in the API module stays pending unless a test answers it, so the real
 // BriefingPanel renders its loading state and nothing reaches the no-network guard. Synchronous
@@ -76,10 +77,16 @@ beforeEach(() => {
       }],
     }],
   });
-  vi.mocked(generateBriefingNarrative).mockReset().mockResolvedValue({
+  // The Day's Briefing is not built yet, so the panel asks for one: the request that can spend.
+  vi.mocked(readRangeBriefing).mockReset().mockResolvedValue({
+    narrative: "", headline_theme: "", citations: [], generated_at: null, available: false, built: false,
+  });
+  vi.mocked(buildRangeBriefing).mockReset().mockResolvedValue({
     narrative: "", headline_theme: "", citations: [], generated_at: null, available: false,
   });
 });
+
+const DAY = { preset: "yesterday" };
 
 describe("IntelligenceWorkspace — the Briefing asks for its brief only when it is opened", () => {
   it("never mounts the Briefing when the workspace opens on Profile, however often the shell re-renders", async () => {
@@ -89,13 +96,15 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
       rerender(shell("hub"));
       await settle();
     }
-    expect(generateBriefingNarrative).not.toHaveBeenCalled();
+    expect(readRangeBriefing).not.toHaveBeenCalled();
+    expect(buildRangeBriefing).not.toHaveBeenCalled();
   });
 
   it("asks once for an opened Briefing, through shell re-renders and a switch to Profile", async () => {
     const { rerender } = render(shell("briefing"));
-    await waitFor(() => expect(generateBriefingNarrative).toHaveBeenCalledTimes(1), { timeout: 5_000 });
-    expect(generateBriefingNarrative).toHaveBeenLastCalledWith(CONN, false, "sales", "default");
+    await waitFor(() => expect(buildRangeBriefing).toHaveBeenCalledTimes(1), { timeout: 5_000 });
+    expect(readRangeBriefing).toHaveBeenLastCalledWith(CONN, DAY, "sales", "default");
+    expect(buildRangeBriefing).toHaveBeenLastCalledWith(CONN, DAY, "sales", "default", false);
 
     rerender(shell("briefing"));   // the shell re-renders: ⌘K opens, a nav count lands
     await settle();
@@ -105,7 +114,8 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
     rerender(shell("hub"));        // and the shell re-renders again
     await settle();
 
-    expect(generateBriefingNarrative).toHaveBeenCalledTimes(1);
+    expect(readRangeBriefing).toHaveBeenCalledTimes(1);
+    expect(buildRangeBriefing).toHaveBeenCalledTimes(1);
     // The scope was resolved once. A re-render is no reason to re-read the catalog tree, which
     // opens every connection.
     expect(getCatalogTree).toHaveBeenCalledTimes(1);
@@ -113,12 +123,12 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 
   it("briefs a connection that declares its schema on that schema, without reading the catalog", async () => {
     const { rerender } = render(shell("briefing", "sales"));
-    await waitFor(() => expect(generateBriefingNarrative).toHaveBeenCalledTimes(1), { timeout: 5_000 });
+    await waitFor(() => expect(buildRangeBriefing).toHaveBeenCalledTimes(1), { timeout: 5_000 });
     rerender(shell("briefing", "sales"));
     await settle();
 
-    expect(generateBriefingNarrative).toHaveBeenCalledTimes(1);
-    expect(generateBriefingNarrative).toHaveBeenLastCalledWith(CONN, false, "sales", "default");
+    expect(buildRangeBriefing).toHaveBeenCalledTimes(1);
+    expect(buildRangeBriefing).toHaveBeenLastCalledWith(CONN, DAY, "sales", "default", false);
     expect(getCatalogTree).not.toHaveBeenCalled();
   });
 });
@@ -127,32 +137,20 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc CT-7)", () => {
   // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
   const tabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent?.trim());
-  const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
-    { "dashboard.composed": { value: on } as unknown as SystemFlag });
-
-  it("is there with the flag on, right after the Briefing, and opening it asks for no brief", async () => {
-    flags(true);
+  it("is there right after the Briefing, and opening it asks for no brief", async () => {
     render(shell("dashboards"));
     await waitFor(() => expect(tabs()).toContain("Dashboards"));
     expect(tabs().slice(0, 2)).toEqual(["Briefing", "Dashboards"]);
     await settle();
-    expect(generateBriefingNarrative).not.toHaveBeenCalled();
+    expect(readRangeBriefing).not.toHaveBeenCalled();
+    expect(buildRangeBriefing).not.toHaveBeenCalled();
   });
 
-  it("is not there with the flag off, and a link to it opens the Briefing", async () => {
-    flags(false);
+  it("is not there for a canvas, which is for questions and deep analysis, and a link to it opens the Briefing", async () => {
     const onLayerChange = vi.fn();
-    render(<IntelligenceWorkspace connectionId={CONN} layer="dashboards" onLayerChange={onLayerChange}
-      onInvestigate={noop} connections={[{ id: CONN, name: "Warehouse" }]} workspaceId="default" />);
-    await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
-    expect(tabs()).not.toContain("Dashboards");
-  });
-
-  it("is not there for a canvas, which is for questions and deep analysis", async () => {
-    flags(true);
-    render(<IntelligenceWorkspace connectionId={CONN} layer="briefing" onLayerChange={noop} onInvestigate={noop}
+    render(<IntelligenceWorkspace connectionId={CONN} layer="dashboards" onLayerChange={onLayerChange} onInvestigate={noop}
       canvasId="cv1" workspaceId="default" />);
-    await settle();
+    await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
     expect(tabs()).not.toContain("Dashboards");
   });
 });

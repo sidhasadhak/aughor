@@ -2,7 +2,7 @@
 
 Until now a declaration was served the moment its door wrote it, so the explorer's proposals reached the agent before
 anyone confirmed them, and moving a promise from two days to three silently changed what every claim computed under
-it meant. Behind `ontology.release`:
+it meant. So:
 
 * **A change waits in the draft.** The declaration store routes a write by what it says (`overrides._route`): a
   verdict written back stays where it was measured, a change waits in the draft layer, a withdrawal waits as a marker.
@@ -14,8 +14,8 @@ it meant. Behind `ontology.release`:
 * **Publishing is a person's act.** It is refused while an ERR stands. It moves each change into the published tree
   (each a version in the declaration's history), records the release — every element and the version it pins, and a
   hash of the whole — and restates every claim a MEANING change touches, so a number computed under the old meaning says so.
-* **Claims pin their release.** A claim booked while releases are on names the release in force in
-  `definition_version` (`<connection>/<schema>@<n>`).
+* **Claims pin their release.** A claim names the release in force in `definition_version`
+  (`<connection>/<schema>@<n>`).
 
 The first release of a scope is recorded at its first change: the declarations in force before anything waited. An
 organisation's ontology stays outside releases for now — its declarations are written as before.
@@ -35,11 +35,6 @@ KIND = "ontology_release"
 
 class ReleaseRefused(ValueError):
     """Publishing was refused — the reason is the message."""
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ontology.release")
 
 
 def _key(conn: str, schema: str) -> str:
@@ -120,9 +115,9 @@ def _record(conn: str, schema: str, *, by: str, note: str, changes: list[dict]) 
 
 
 def ensure_first_release(conn: str, schema: str) -> None:
-    """Record release 1 — the declarations in force before the scope's first change waited — once. A no-op when
-    releases are off or the scope already has one."""
-    if not enabled() or current(conn, schema) is not None:
+    """Record release 1 — the declarations in force before the scope's first change waited — once. A no-op when the
+    scope already has one."""
+    if current(conn, schema) is not None:
         return
     _record(conn, schema, by="", note="the declarations in force when releases were turned on", changes=[])
 
@@ -181,16 +176,14 @@ def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[
     out = {"claims": claims, "cards": cards,
            "automations": [{"id": a["id"], "name": a["name"], "how": a["how"]} for a in automations],
            "metrics": [{"id": m["id"], "name": m["name"], "how": m["how"]} for m in metrics]}
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("ontology.dashboard_pieces"):
-        # Arc OC-4 — a dashboard's pieces name the process, the entity, the segment and the action they read.
-        try:
-            from aughor.dashboards.pieces import dashboards_reading
-            out["cockpits"] = dashboards_reading(conn, names)
-        except Exception as exc:  # noqa: BLE001
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "the dashboards a change touches could not be read", counter="ontology.release")
-            out["cockpits"] = []
+    # Arc OC-4 — a dashboard's pieces name the process, the entity, the segment and the action they read.
+    try:
+        from aughor.dashboards.pieces import dashboards_reading
+        out["cockpits"] = dashboards_reading(conn, names)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the dashboards a change touches could not be read", counter="ontology.release")
+        out["cockpits"] = []
     return out
 
 
@@ -279,13 +272,11 @@ def _restate(conn: str, rows: list[dict], before_id: str, after_id: str, by: str
 
 
 def publish(conn: str, schema: str, *, by: str) -> dict:
-    """Publish the scope's draft as its next release. Refused (ReleaseRefused) while releases are off, when the draft is
-    empty, or while an ERR stands — with every reason."""
+    """Publish the scope's draft as its next release. Refused (ReleaseRefused) when the draft is empty, or while an ERR
+    stands — with every reason."""
     from aughor.ontology.overrides import (
         clear_draft_entry, draft_entries, organisation_scope, publish_override, publish_withdrawal,
     )
-    if not enabled():
-        raise ReleaseRefused("releases are off on this install — a declaration is published when it is saved")
     if organisation_scope(conn):
         raise ReleaseRefused("an organisation's ontology is not released yet — its declarations apply when saved")
     rows = changes(conn, schema)
@@ -309,11 +300,8 @@ def publish(conn: str, schema: str, *, by: str) -> dict:
     made = _record(conn, schema, by=by, note=f"{len(rows)} change{'s' if len(rows) != 1 else ''} published",
                    changes=summary)
     restated = _restate(conn, rows, before_id, made["id"], by)
-    out = {**made, "published": summary, "restated_claims": restated, "previous": before_id}
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("graph.declarations"):
-        out["graph"] = _refresh_graph(conn, schema)
-    return out
+    return {**made, "published": summary, "restated_claims": restated, "previous": before_id,
+            "graph": _refresh_graph(conn, schema)}
 
 
 def _refresh_graph(conn: str, schema: str) -> dict:

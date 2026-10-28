@@ -276,6 +276,15 @@ def _ki_action(config: dict, **kw) -> KineticAction:
     return KineticAction(**base)
 
 
+def _refused(result) -> str:
+    """The press, when its one call was refused (Arc OC-6, the outbox): the action ran, the call is kept and never sent
+    again by itself, and its check waits for a person, saying why. Returns the call's error — the words a refusal says."""
+    [send] = result.outcome["outbox"]
+    assert (result.status, send["status"], result.verification["status"]) == ("executed", "dead", "waits_for_a_person")
+    assert send["error"] in result.verification["why"]
+    return send["error"]
+
+
 def test_a_declared_action_starts_an_investigation_through_the_runner(monkeypatch):
     submitted = _capture_submit(monkeypatch, job_id="job-k")
     seen = _fake_ask(monkeypatch)
@@ -312,8 +321,7 @@ def test_a_question_referencing_an_undeclared_parameter_fails_loudly(monkeypatch
 
     result = execute_kinetic_action(action, {"order_id": "A-9"}, scope="conn-h5")
 
-    assert result.status == "dispatch_error"
-    assert "customer_id" in result.message
+    assert "customer_id" in _refused(result)
     assert submitted == [], "a question that could not be built still ran"
 
 
@@ -325,7 +333,7 @@ def test_an_action_with_no_connection_refuses_instead_of_submitting_a_doomed_job
 
     result = execute_kinetic_action(_ki_action({"question": "q"}), {"order_id": "A-9"}, scope="")
 
-    assert result.status == "dispatch_error" and "connection" in result.message
+    assert "connection" in _refused(result)
     assert submitted == []
 
 
@@ -339,8 +347,8 @@ def test_a_refused_persona_reaches_the_caller_verbatim(monkeypatch):
 
     result = execute_kinetic_action(action, {"order_id": "A-9"}, scope="conn-h5")
 
-    assert result.status == "dispatch_error"
-    assert "conn-other" in result.message and "conn-h5" in result.message
+    said = _refused(result)
+    assert "conn-other" in said and "conn-h5" in said
     assert submitted == []
 
 

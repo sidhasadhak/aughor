@@ -1,5 +1,5 @@
 /**
- * Arc BR-3 — the Briefing of any range (flag `briefing.ranges`, ROADMAP §3.48).
+ * Arc BR-3 — the Briefing of any range (ROADMAP §3.48).
  *
  * One control replaces the Standing · Day · Week · Month · Year switch: the standing view of
  * everything the platform knows, the four named periods (each the last one whose numbers have

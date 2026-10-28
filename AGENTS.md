@@ -23,8 +23,13 @@ reasoning lives in the wave arc docs under `docs/`.
 
 - **Provenance is required.** No store accepts a fact without a source, and no model
   authors one. There is deliberately no `llm_inferred` provenance.
-- **Flags are off by default and byte-identical when off**, with a test asserting it. A
-  flag graduates on a receipted `GraduationDecision`, never on green tests.
+- **No feature flags** (ROADMAP §3.65, the user, 2026-10-28). A feature merges on, as part
+  of the platform; work that is not ready stays on its branch, and is shown working on live
+  data before its PR. The only switches are an organisation's settings
+  (`aughor/orgsettings/allows.py`) — data leaving the install, model work nobody asked for,
+  a governance posture — each off by default, an admin's choice, tested both ways. Since
+  2026-10-28 no feature flag is registered: the machinery (`aughor/kernel/flags.py`) stays,
+  exercised only by test-only flags, so a new one is a decision, not a habit.
 - **One store per concept.** This repo has three times found the same bug: five
   mutually-unaware eval surfaces, thirteen spellings of "out of date", five audit sinks.
   Before adding a store, search for the four that already do most of what you want.

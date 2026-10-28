@@ -3,11 +3,12 @@
 `semantic_filter` has two ways to spend the strong ("champion") tier, and this harness runs both
 over the SAME rows and the SAME predicate and counts what each one spends:
 
-* **sampled** (today, flag off) — the cheap tier judges every row in batches of 25, the champion
-  re-judges an evenly spread sample of ``validate_sample`` rows, and if more than 20% of that sample
-  disagrees the champion re-runs EVERY row.
-* **banded** (JD-3, flag ``semops.banded_cascade``) — the cheap tier states a probability per row
-  through JD-1's seam, and only rows inside the 0.30-0.70 band (or unanswered) go to the champion.
+* **sampled** (production until 2026-10-28) — the cheap tier judges every row in batches of 25, the
+  champion re-judges an evenly spread sample of ``validate_sample`` rows, and if more than 20% of that
+  sample disagrees the champion re-runs EVERY row.
+* **banded** (JD-3; the flag ``semops.banded_cascade`` until it was made unconditional, 2026-10-28) —
+  the cheap tier states a probability per row through JD-1's seam, and only rows inside the 0.30-0.70
+  band (or unanswered) go to the champion.
 
 A third arm, **reference**, runs the champion alone on every row — the answer the sampled cascade
 converges to when it escalates, and the yardstick both arms are scored against. An optional fourth,
@@ -20,10 +21,12 @@ reference. **The falsifier**: banding spends MORE champion calls than sampling a
 then keep the sampled cascade. A run where the two arms' agreement differs by more than
 ``--tolerance`` settles nothing either way and says ``inconclusive``.
 
-**Every arm runs the production code.** `semantic_filter` itself, with the flag set per arm by
-``flag_overrides``; the harness only wraps the providers `get_provider` hands back, to count calls
-per tier. The Jev arm swaps the seam's ``judge`` for the cheap tier alone, so `_banded_filter` runs
-unchanged around it.
+**The banded and reference arms run the production code**: `semantic_filter` itself; the harness only
+wraps the providers `get_provider` hands back, to count calls per tier. The Jev arm swaps the seam's
+``judge`` for the cheap tier alone, so `_banded_filter` runs unchanged around it. The sampled arm left
+the operator when banding became unconditional (ROADMAP §3.65); it is kept here, as the baseline the
+receipts were measured against, on the operator's own per-batch verdicts (`_filter_verdicts`), so it
+spends exactly what it spent there.
 
 **What this touches.** Before importing `aughor` it isolates every store the way a live drive does
 (`scripts/dump_openapi._isolate_stores`), so no process but the running API opens `data/`. Models
@@ -60,8 +63,10 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-#: What production passes (`aughor/routers/query.py`), so the sampled arm is today's cascade.
+#: What production passes (`aughor/routers/query.py`).
 DEFAULT_SAMPLE = 8
+#: The sampled arm's bar: sample disagreement above this re-runs every row on the champion.
+SAMPLED_ESCALATE = 0.20
 DEFAULT_BATCH = 25
 #: Two arms "agree equally" when their agreement with the reference is within this.
 DEFAULT_TOLERANCE = 0.02
@@ -347,15 +352,45 @@ def _http_post(url: str, body: dict, headers: dict) -> dict:
 
 # ── running one arm through the production operator ───────────────────────────────────────────
 
+def _sampled_filter(result: Any, predicate: str, *, role: str, champion_role: str, sample: int,
+                    batch: int) -> Any:
+    """The sampled cascade, as `semantic_filter` ran it until 2026-10-28: the cheap tier judges every
+    row, the champion an evenly spread sample, and on more than ``SAMPLED_ESCALATE`` disagreement the
+    champion re-runs every row. Returns what the harness reads of an operator's result."""
+    from types import SimpleNamespace
+
+    from aughor.semops import operators as ops
+
+    rows, ci = result.rows, result.columns.index("text")
+    all_idx = list(range(len(rows)))
+    kept, _, notes = ops._filter_verdicts(rows, ci, predicate, ops.get_provider(role), batch, all_idx)
+    k = min(sample, len(rows))
+    sample_idx = all_idx[::max(1, len(rows) // k)][:k]            # evenly spread, deterministic
+    champ = ops.get_provider(champion_role)
+    champ_kept, _, _ = ops._filter_verdicts(rows, ci, predicate, champ, batch, sample_idx)
+    rate = sum(1 for gi in sample_idx if (gi in kept) != (gi in champ_kept)) / len(sample_idx)
+    if rate > SAMPLED_ESCALATE:
+        kept, _, esc_notes = ops._filter_verdicts(rows, ci, predicate, champ, batch, all_idx)
+        notes += esc_notes
+        notes.append(f"champion cascade: {rate:.0%} sample disagreement > {SAMPLED_ESCALATE:.0%} — "
+                     f"escalated all {len(rows)} rows to {champion_role}")
+    else:
+        notes.append(f"champion cascade: validated {len(sample_idx)} rows, {rate:.0%} disagreement — "
+                     f"cheap tier ({role}) trusted")
+    kept_rows = [rows[i] for i in sorted(kept)]
+    notes.insert(0, f"kept {len(kept_rows)} of {len(rows)} rows matching: {predicate}")
+    return SimpleNamespace(result=result.model_copy(update={"rows": kept_rows, "row_count": len(kept_rows)}),
+                           notes=notes)
+
+
 def run_arm(name: str, rows: Sequence[str], predicate: str, *, banded: bool,
             cheap: Any, champion: Any, sample: int = DEFAULT_SAMPLE, batch: int = DEFAULT_BATCH,
             role: str = "fast") -> ArmResult:
-    """One arm: `semantic_filter` as production runs it, with the flag set for this arm alone and
-    `get_provider` answering the two tiers this arm names. ``cheap`` is a provider, or a
-    :class:`JevBackend` for the Jev arm; ``champion`` is a provider."""
+    """One arm: `semantic_filter` as production runs it — or, for ``banded=False`` with a sample, the
+    sampled baseline above — with `get_provider` answering the two tiers this arm names. ``cheap`` is a
+    provider, or a :class:`JevBackend` for the Jev arm; ``champion`` is a provider."""
     from aughor.agent.state import QueryResult
     from aughor.judgment import seam
-    from aughor.kernel.flags import flag_overrides
     from aughor.semops import operators as ops
 
     arm = ArmResult(name, True)
@@ -392,7 +427,10 @@ def run_arm(name: str, rows: Sequence[str], predicate: str, *, banded: bool,
     ops.get_provider, seam.judge = get_provider, judge
     t0 = time.monotonic()
     try:
-        with flag_overrides({"semops.banded_cascade": banded}):
+        if not banded and sample > 0 and rows and role != ops.CHAMPION_ROLE:
+            out = _sampled_filter(result, predicate, role=role, champion_role=ops.CHAMPION_ROLE,
+                                  sample=sample, batch=batch)
+        else:
             out = ops.semantic_filter(result, "text", predicate, role=role, batch=batch,
                                       validate_sample=sample, max_rows=max(len(rows), 1))
     finally:

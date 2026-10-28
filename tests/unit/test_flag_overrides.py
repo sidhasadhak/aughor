@@ -36,16 +36,15 @@ from aughor.kernel.flags import (
     set_flag,
 )
 
-FLAG = "explore.route_wide"      # a registered, default-off flag — one of the LAST TWO
-# The nested-release assertion below expects OTHER's AMBIENT value to be off; this one
-# is an unsettled experiment, so it is off today. (Exemplars keep getting re-pointed as
-# the endgame deletes flags: ai_sql → obs.prompt_capture → semops.champion_validate →
-# explore.route_wide → these two, the grid-bound remainder of the registry.)
-OTHER = "federation.planner"
+FLAG = "_synthetic.default_off"   # a synthetic default-off flag (tests/conftest.py `synthetic_flags`) — no product flag is a switch since 2026-10-28
+# The nested-release assertion below expects OTHER's AMBIENT value to be off. (Exemplars kept being re-pointed as the
+# endgame deleted flags — ai_sql → obs.prompt_capture → semops.champion_validate → explore.route_wide — until no
+# product flag was a switch, 2026-10-28; a synthetic pair has played the part since.)
+OTHER = "_synthetic.other_off"   # the synthetic pair's second
 
 
 @pytest.fixture(autouse=True)
-def _no_override_leak():
+def _no_override_leak(synthetic_flags):
     yield
     for name in (FLAG, OTHER):
         clear_flag(name)
@@ -166,10 +165,10 @@ def test_graph_topology_reads_the_transport_only_at_compile_time(monkeypatch):
 
     # The flag-side half of the old test, on a surviving flag: a read INSIDE a
     # flag_overrides block sees the override; a value captured before does not.
-    assert flag_enabled("explore.route_wide") is False
-    with flag_overrides({"explore.route_wide": True}):
-        assert flag_enabled("explore.route_wide") is True
-    captured_flag = flag_enabled("explore.route_wide")
-    with flag_overrides({"explore.route_wide": True}):
+    assert flag_enabled("_synthetic.default_off") is False
+    with flag_overrides({"_synthetic.default_off": True}):
+        assert flag_enabled("_synthetic.default_off") is True
+    captured_flag = flag_enabled("_synthetic.default_off")
+    with flag_overrides({"_synthetic.default_off": True}):
         assert captured_flag is False
-    clear_flag("explore.route_wide")
+    clear_flag("_synthetic.default_off")

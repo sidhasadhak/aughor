@@ -57,6 +57,7 @@ def graph():
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 def one(db, sql: str):

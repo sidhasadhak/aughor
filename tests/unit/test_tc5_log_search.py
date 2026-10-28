@@ -1,4 +1,4 @@
-"""Arc TC, TC-5 — `obs.log_search`: the lines `/traces/{id}/logs` reads for one run, searched
+"""Arc TC, TC-5 — `GET /obs/logs`: the lines `/traces/{id}/logs` reads for one run, searched
 across every run of the last thirty days, from the journal's own rows (no copy).
 
 Each test seeds lines carrying a word of its own, so what other tests journaled into the same
@@ -13,8 +13,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aughor.kernel.ledger import Ledger
-
-_ENV = "AUGHOR_OBS_LOG_SEARCH"
 
 
 @pytest.fixture()
@@ -45,16 +43,7 @@ def _search(client, **params) -> dict:
     return r.json()
 
 
-def test_off_the_route_answers_as_if_it_did_not_exist(client, monkeypatch):
-    monkeypatch.delenv(_ENV, raising=False)
-    off = client.get("/obs/logs", params={"q": "anything"})
-    absent = client.get("/obs/no-such-route", params={"q": "anything"})
-    assert off.status_code == absent.status_code == 404
-    assert off.content == absent.content, "off, the route says more than an absent one"
-
-
-def test_a_search_reads_across_runs_newest_first_and_says_what_it_searched(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_a_search_reads_across_runs_newest_first_and_says_what_it_searched(client):
     w = _word()
     t1, t2 = f"tc5-tr-{uuid.uuid4().hex[:6]}", f"tc5-tr-{uuid.uuid4().hex[:6]}"
     first = _line("error.tolerated", {"reason": f"{w} could not read", "error": "KeyError", "counter": "x.y"}, trace=t1)
@@ -74,8 +63,7 @@ def test_a_search_reads_across_runs_newest_first_and_says_what_it_searched(clien
     assert body["next_cursor"] is None and body["stopped_early"] is False
 
 
-def test_the_level_is_read_from_the_line(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_the_level_is_read_from_the_line(client):
     w = _word()
     tr = f"tc5-tr-{uuid.uuid4().hex[:6]}"
     failed = _line("job.state", {"state": "FAILED", "w": w}, trace=tr)
@@ -88,8 +76,7 @@ def test_the_level_is_read_from_the_line(client, monkeypatch):
     assert client.get("/obs/logs", params={"q": w, "level": "loud"}).status_code == 422
 
 
-def test_the_kind_of_run_is_the_jobs_and_request_outside_one(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_the_kind_of_run_is_the_jobs_and_request_outside_one(client):
     w = _word()
     explored = _line("exploration.phase", {"phase": "profile", "w": w},
                      trace=f"tc5-tr-{uuid.uuid4().hex[:6]}", job=_job("exploration"))
@@ -102,8 +89,7 @@ def test_the_kind_of_run_is_the_jobs_and_request_outside_one(client, monkeypatch
     assert [ln["seq"] for ln in _search(client, q=w, run_kind="request")["lines"]] == [asked]
 
 
-def test_the_cursor_pages_without_repeats_or_gaps(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_the_cursor_pages_without_repeats_or_gaps(client):
     w = _word()
     tr = f"tc5-tr-{uuid.uuid4().hex[:6]}"
     seeded = [_line("job.state", {"state": "RUNNING", "n": i, "w": w}, trace=tr) for i in range(5)]
@@ -123,8 +109,7 @@ def test_the_cursor_pages_without_repeats_or_gaps(client, monkeypatch):
     assert bad.status_code == 422 and "cursor" in bad.json()["detail"]
 
 
-def test_a_line_older_than_the_window_is_not_searched(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_a_line_older_than_the_window_is_not_searched(client):
     w = _word()
     tr = f"tc5-tr-{uuid.uuid4().hex[:6]}"
     old = _line("job.state", {"state": "FAILED", "w": w}, trace=tr)
@@ -137,8 +122,7 @@ def test_a_line_older_than_the_window_is_not_searched(client, monkeypatch):
     assert [ln["seq"] for ln in _search(client, q=w)["lines"]] == [new]
 
 
-def test_a_wildcard_in_the_words_is_a_character(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_a_wildcard_in_the_words_is_a_character(client):
     w = _word()
     tr = f"tc5-tr-{uuid.uuid4().hex[:6]}"
     literal = _line("job.state", {"note": f"{w}a_b"}, trace=tr)

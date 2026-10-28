@@ -58,7 +58,7 @@ def door(monkeypatch):
 
 @pytest.mark.parametrize("ask", [RECEIPT_ASKS[5], RECEIPT_ASKS[7]])    # the two the gate paused
 def test_the_door_says_where_cockpits_are_made_instead_of_asking_which_metric(door, monkeypatch, ask):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "dashboard.composed")
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
     evs = _events(door.post("/ask", json={"question": ask, "connection_id": "c1"}).text)
     assert not any(e["type"] == "clarify" for e in evs)
     headline = next(e["headline"] for e in evs if e["type"] == "headline")
@@ -66,13 +66,6 @@ def test_the_door_says_where_cockpits_are_made_instead_of_asking_which_metric(do
     assert any(e["type"] == "done" for e in evs)
     # CP-4's envelope folds it, so a door that selects from the envelope says the same.
     assert evs[-1]["type"] == "envelope" and evs[-1]["envelope"]["headline"] == headline
-
-
-def test_with_cockpits_off_the_door_says_that_instead(door, monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
-    evs = _events(door.post("/ask", json={"question": RECEIPT_ASKS[0], "connection_id": "c1"}).text)
-    assert next(e["headline"] for e in evs if e["type"] == "headline").startswith(
-        "Dashboards are switched off on this install")
 
 
 def test_suggestions_without_a_model_serve_the_starters_and_say_why(monkeypatch):

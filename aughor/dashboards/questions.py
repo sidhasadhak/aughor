@@ -20,7 +20,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-FLAG = "dashboard.questions"
 #: How often a question is asked, as the cron its automation runs on: 09:00 UTC, as theLook's daily question is.
 #: Weekly asks on Mondays and monthly on the 1st, so each reads the period that has just closed.
 RHYTHMS: dict[str, Optional[str]] = {"daily": "0 9 * * *", "weekly": "0 9 * * mon", "monthly": "0 9 1 * *", "ask": None}
@@ -37,11 +36,6 @@ MAX_ANSWERS = 24
 
 class QuestionRefused(ValueError):
     """A question that cannot be kept or asked, in words a person can act on."""
-
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def _conditions(rhythm: str) -> list[dict]:
@@ -249,16 +243,6 @@ def held(spec: Any) -> dict[str, dict]:
     elements = spec.get("elements") if isinstance(spec, dict) else None
     return {str(key): dict(el.get("props") or {}) for key, el in (elements if isinstance(elements, dict) else {}).items()
             if isinstance(el, dict) and el.get("type") == KIND}
-
-
-def refused_off(spec: Any) -> list[str]:
-    """The keep is refused when the spec holds a question while questions are off here. Empty when it holds none,
-    whatever the flag says — a dashboard without one keeps exactly as before."""
-    keys = list(held(spec))
-    if not keys or on():
-        return []
-    return [f"The dashboard holds a question — {', '.join(keys[:6])}{'…' if len(keys) > 6 else ''} — and questions on a "
-            "dashboard are off on this install."]
 
 
 def not_resolved(connection_id: str, spec: Any) -> list[str]:

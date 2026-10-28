@@ -99,8 +99,8 @@ def _default_classifier(question: str) -> tuple:
 # one landscape), not a single ADA investigation. This is the SURVEY shape
 # (`question_shape.is_wide`): deterministic (no model in the routing decision — the R4 ablation
 # lesson), and it yields to causal/driver questions, which are investigations, so it never
-# poaches a real "why". Gated behind `explore.route_wide` (default-off); the already-built
-# explore subgraph is simply unreachable from /ask without it.
+# poaches a real "why". It reaches the wave when a person asks for depth (`body_for`, a starter's declared path); the
+# automatic route behind `explore.route_wide` was deleted 2026-10-28 (ROADMAP §3.65), off and never measured.
 
 
 def is_wide_question(question: str, verdict: ComplexityVerdict) -> bool:
@@ -108,16 +108,6 @@ def is_wide_question(question: str, verdict: ComplexityVerdict) -> bool:
     the explore wave — the survey shape. ``verdict`` is accepted for the callers that pass it;
     the causal yield reads the same lexicon the verdict counted."""
     return is_wide(question)
-
-
-def _route_wide_enabled() -> bool:
-    """Runtime read of the ``explore.route_wide`` flag, fail-safe to OFF — mirrors the graph's
-    ``_explore_parallel_enabled`` idiom. Only consulted when a question already looks wide."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled("explore.route_wide")
-    except Exception:
-        return False
 
 
 def decide_ask_route(
@@ -128,7 +118,6 @@ def decide_ask_route(
     insight_id: Optional[str] = None,
     has_deep: bool = True,
     classifier: Optional[Classifier] = None,
-    route_wide: Optional[bool] = None,
     mode_override: Optional[str] = None,
 ) -> AskRoute:
     """Decide whether a ``/ask`` turn runs the quick body or the deep body.
@@ -138,11 +127,9 @@ def decide_ask_route(
     ``insight_id`` (without ``deep_flag``) is a dossier drill. ``has_deep`` is the
     resolved ``DEEP_ANALYSIS`` capability — a deep route degrades to quick when it is
     False. ``classifier`` is injected for testing; it defaults to ``classify_question``
-    and is consulted only for borderline questions. ``route_wide`` forces the R9
-    wide→explore gate on/off (tests/evals); ``None`` reads the ``explore.route_wide`` flag.
-    ``mode_override`` (R13) is a named starter's declared path — ``investigate`` pins the
-    deep investigation, ``explore`` pins the landscape wave; deterministic, no model call,
-    and unlike the R9 gate it needs no flag (it is explicit per request).
+    and is consulted only for borderline questions. ``mode_override`` (R13) is a named starter's declared path —
+    ``investigate`` pins the deep investigation, ``explore`` pins the landscape wave; deterministic, no model call,
+    explicit per request.
     """
     verdict = assess_complexity(question or "")
     # The question's shape, read once by code. None on the borderline — a question no rule
@@ -189,12 +176,8 @@ def decide_ask_route(
 
     # 2) Auto — the shape decides, by code first. The obvious cases never touch the model. ──
 
-    # 2a) A survey → the explore wave (R9, deterministic, flag-gated). The flag is read only
-    #     AFTER the (pure) shape read says survey — so a normal question never touches the
-    #     flag store. Degrades to quick with no capability via ``_route``. With the wave off,
-    #     a survey is read for depth like any question before it was named (2c below).
-    if shape == "survey" and (route_wide if route_wide is not None else _route_wide_enabled()):
-        return _route("deep", "explore", shape_reading("survey"))
+    # 2a) A survey is read for depth like any question (2c below). Its automatic route to the explore wave (R9,
+    #     `explore.route_wide`) was off and never measured, and was deleted 2026-10-28 (ROADMAP §3.65).
 
     # 2b) A check is a verdict and its counts — a step or two; a diagnosis is an investigation.
     #     Left to the classifier a check was "investigate", and the deep body framed a metric, a
@@ -207,7 +190,7 @@ def decide_ask_route(
     # 2c) A describe is quick — unless the complexity assessment reads a multi-step question,
     #     which takes the analyst's budget and keeps its frame (depth, not kind). An
     #     under-specified read-ask ("how is performance lately?") is the borderline below.
-    #     A survey with the wave off follows the same depth rule.
+    #     A survey follows the same depth rule.
     causal = verdict.signals.get("causal", 0) > 0
     if shape in ("describe", "survey") and not verdict.ambiguous:
         if causal or verdict.tier == "complex":
@@ -216,8 +199,7 @@ def decide_ask_route(
         if verdict.tier == "simple" or shape == "describe":
             return _route("quick", "direct", "a direct lookup")
 
-    # 3) Borderline — a question no rule reads, an ambiguous read-ask, or a moderate survey with
-    #    the wave off: the LLM classifier breaks the tie, speaking the same four shapes. This is
+    # 3) Borderline — a question no rule reads, an ambiguous read-ask, or a moderate survey: the LLM classifier breaks the tie, speaking the same four shapes. This is
     #    the only path that pays for a routing model call.
     classify = classifier or _default_classifier
     try:

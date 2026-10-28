@@ -62,8 +62,9 @@ const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
  *  Actions and Org, redone to CLARITY. 514 → 444 the same day: Profile, Graph, Evidence, Memory, Brain map and Security's
  *  Activity, Gate map and Policies, redone to CLARITY. 444 → 463 the same day: Security's Activity lens was kept as
  *  it was (the user), and its 19 literals came back with it. 463 → 457 the same day: Agent Ops' Activity tab folded
- *  into the Overview, and the Usage view and the deep-run list it took with it went to CLARITY lists. */
-const FONT_SIZE_BASELINE = 457;
+ *  into the Overview, and the Usage view and the deep-run list it took with it went to CLARITY lists. 457 → 456
+ *  (2026-10-28): an off-path screen deleted with the flags (ROADMAP §3.65), measured. */
+const FONT_SIZE_BASELINE = 456;
 
 const RADIUS_RULES = [
   {

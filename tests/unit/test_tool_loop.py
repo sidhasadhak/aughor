@@ -410,7 +410,7 @@ def test_a_spent_budget_still_writes_up_with_the_preface(provider):
     assert faux.calls()[-1].kwargs["messages"][1]["content"] == "how many units?\n\nmeasured: 7027"
 
 
-# ── a concluding tool (P1, `analyst.conclude`) ────────────────────────────────────────────
+# ── a concluding tool (P1, the analyst's `conclude`) ────────────────────────────────────────────
 
 def _concluding(fn):
     return ToolSpec(name="conclude", description="end with the answer",

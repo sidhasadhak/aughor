@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Arc FA-2 — the Data Canvas carries what a reader chose on a dashboard. With `canvas.ask_about_chosen` on, the subject
+ * Arc FA-2 — the Data Canvas carries what a reader chose on a dashboard. The subject
  * stands above the input ("Asking about 12 orders · from Late dispatch"), a plain question sends it as `focus` through the
- * one door that reads one, and it can be taken off. A subject chosen on another connection is not this conversation's;
- * with the flag off nothing is shown and every turn's body is as it was. The chat transport is a double: no network.
+ * one door that reads one, and it can be taken off. A subject chosen on another connection is not this conversation's.
+ * The chat transport is a double: no network.
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,11 +20,10 @@ vi.mock("@/lib/useAughorChat", () => ({
   }),
 }));
 
-const flags = vi.hoisted(() => ({ value: {} as Record<string, { value: boolean }> }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getConnections: vi.fn(async () => []),
-  getSystemFlags: vi.fn(async () => flags.value),
+  getSystemFlags: vi.fn(async () => ({})),
   listUserAgents: vi.fn(async () => []),
   recordOverviewDrill: vi.fn(),
   cancelActiveDeepRun: vi.fn(),
@@ -37,7 +36,6 @@ const TICKED: AskSubject = { kind: "objects", connectionId: "thelook", noun: nou
 
 beforeEach(() => {
   sent.length = 0;
-  flags.value = { "canvas.ask_about_chosen": { value: true }, "chat.buttons_reach_agent": { value: true } };
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ suggestions: [], starters: [] }), { status: 200 })));
 });
 afterEach(() => {
@@ -79,18 +77,5 @@ describe("a question about what a reader chose", () => {
     expect(screen.queryByTestId("chat-subject")).toBeNull();
     ask("What do these have in common?");
     expect(sent[0].body).not.toHaveProperty("focus");
-  });
-
-  it("is neither shown nor sent while the flag is off: the turn's body is as it was", async () => {
-    flags.value = { "chat.buttons_reach_agent": { value: true } };
-    render(<ChatPanel connectionId="thelook" />);
-    await act(async () => {});
-    ask("What do these have in common?");
-    const before = sent[0].body;
-    sent.length = 0;
-    act(() => setAskSubject(TICKED));
-    ask("What do these have in common?");
-    expect(screen.queryByTestId("chat-subject")).toBeNull();
-    expect(sent[0].body).toEqual(before);
   });
 });

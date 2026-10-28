@@ -6,6 +6,9 @@ function name. About 3,000 words on one tab, written for the engineer who built 
 rather than the person deciding whether to turn it on. These checks keep the copy in the
 three layers `FLAG_META` declares: a label, a summary of at most two short sentences, facts
 drawn as chips, and plain details that end by saying what Off means.
+
+Since 2026-10-28 the registry holds no product flag (ROADMAP §3.65), so each check below has no flag to read and
+pytest reports it skipped on an empty parameter set; the rules stand for anything registered again.
 """
 from __future__ import annotations
 

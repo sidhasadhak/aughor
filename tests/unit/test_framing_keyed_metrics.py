@@ -1,8 +1,7 @@
 """Arc OC-3 — the question frame resolves an approved metric a person keyed to the entity it measures (ROADMAP §3.56).
 
 Before: an approved metric named in a question was a term that defined nothing, so "revenue from completed orders" was
-read as the rule alone, starting from Order, and the revenue was lost. Handed the keyed metrics (`ontology.keyed_metrics`
-on), the frame offers the metric as a declared definition, starts from its entity, applies the rules the question names
+read as the rule alone, starting from Order, and the revenue was lost. Handed the keyed metrics, the frame offers the metric as a declared definition, starts from its entity, applies the rules the question names
 from there through measured links, and compiles the metric's own statement through the object door. Handed none, it
 reads exactly as before. On theLook's frozen graph (`evals/framing_matcher_eval.py --keyed`) the twelve pre-registered
 metric questions went from 0 to 9 at first measurement, and to 12 after the two general fixes tested here.

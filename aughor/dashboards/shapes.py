@@ -13,15 +13,13 @@ refused. A shape is offered when the ontology says it fits, with one sentence of
 
 The starter offers one to three, the one that fits best first, and the person picks; every piece can be changed after.
 What a shape holds is read here — the sets, the coordinates, the moments, the links, the actions with how each parameter
-is filled — and laid out by the web (`web/lib/dashboards/shapes.ts`), so a person keeps a spec its rules accept. Nothing is
-offered that the install cannot build: a queue and one object need wiring, a map, a timeline and one object the pieces
-the picker adds. No model is asked.
+is filled — and laid out by the web (`web/lib/dashboards/shapes.ts`), so a person keeps a spec its rules accept. No
+model is asked.
 """
 from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-FLAG = "dashboard.shapes"
 #: The days a queue's set looks back over before a person says otherwise — what the desk of the mockup reads.
 WINDOW_DAYS = 14
 #: The most kinds of linked objects one object's dashboard shows — a table of each that can be listed, a count of each
@@ -35,11 +33,6 @@ MIN_LINKED_KINDS = 3
 
 _NUMERIC = ("INT", "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "NUMBER")
 _TEXT = ("CHAR", "STRING", "TEXT")
-
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def _words(name: str) -> str:
@@ -205,25 +198,24 @@ def _actions(graph: Any, entity: Any) -> list[dict]:
     return out
 
 
-def signals(graph: Any, entity: Any, *, wiring: bool, pieces: bool) -> dict:
+def signals(graph: Any, entity: Any) -> dict:
     """What the ontology says about ``entity`` that a shape is offered on — read from the graph alone, no warehouse
-    read. ``wiring`` and ``pieces`` say what this install can build."""
+    read."""
     actions = _actions(graph, entity)
     # a queue, a map, a timeline and one object each list the objects: a type the door cannot list gets an overview
     listed = listable(entity)
-    queue = _queue(graph, entity) if wiring and actions and listed else None
+    queue = _queue(graph, entity) if actions and listed else None
     name = name_of(entity)
     links = linked_to(graph, entity)
-    pieces = pieces and listed
     return {
         "entity": entity.api_name, "type_id": entity.id, "name": entity.display_name or _words(entity.id),
         # what each object is called by on a map, a timeline or a list — "" when it has no name (an order)
         "label": name,
         "queue": queue, "actions": actions,
-        "places": places_of(graph, entity) if pieces else None,
-        "moments": moments_of(entity) if pieces else None,
+        "places": places_of(graph, entity) if listed else None,
+        "moments": moments_of(entity) if listed else None,
         "one": {"label": name, "links": links[:MAX_LINKED], "kinds": len(links)}
-        if (wiring and pieces and name and len(links) >= MIN_LINKED_KINDS) else None,
+        if (listed and name and len(links) >= MIN_LINKED_KINDS) else None,
         # what a queue lists of the chosen one: the first kind linking to it that can be listed
         "lines": next((x for x in links if x["listable"]), None),
     }

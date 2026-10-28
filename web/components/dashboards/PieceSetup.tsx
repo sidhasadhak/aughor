@@ -269,9 +269,9 @@ function SectionPick({ spec, k, onChange }: { spec: DashboardSpec; k: string; on
 function MarkRow({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
   const marked = (p.marked ?? null) as { segment: string; tone: string; label?: string | null } | null;
   return (
-    <Row label="Marked by" testid="setup-marked"
+    <Row label="Mark rows in" testid="setup-marked"
       hint={marked ? "Rows it admits wear its colour; the legend says how many." : "A declared rule or segment whose rows are marked."}>
-      <Pick label="Marked by" value={marked?.segment ?? ""} none="Nothing"
+      <Pick label="Mark rows in" value={marked?.segment ?? ""} none="Nothing"
         options={keeping(ef.segments.map(s => ({ value: s, label: words(s) })), marked?.segment)}
         onPick={v => set({ marked: v ? { segment: v, tone: marked?.tone ?? "warn" } : null }, "a mark chosen by hand")} />
       {marked && (
@@ -714,8 +714,7 @@ function FigureWiring({ spec, p, set }: { spec: DashboardSpec; p: Props; set: (p
 
 // ── the panel ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export function PieceSetup({ spec, selected, onChange, connectionId, schema, cardTitle, entityTitle, wiringOn = false, marksOn = false,
-  cardSetup }: {
+export function PieceSetup({ spec, selected, onChange, connectionId, schema, cardTitle, entityTitle, cardSetup }: {
   spec: DashboardSpec;
   selected: string | null;
   onChange: Change;
@@ -724,10 +723,6 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
   cardTitle?: (id: string) => string | undefined;
   /** The name the ontology gives an entity, where the caller knows it. */
   entityTitle?: (id: string) => string | undefined;
-  /** Arc AP-2 — whether this install wires cockpits: what a piece reads and what it chooses are set up here then. */
-  wiringOn?: boolean;
-  /** Whether a table's or a list's rows may be marked by a declared rule or segment (`dashboard.marks`). */
-  marksOn?: boolean;
   /** Arc AP-7 — the setup of a card the page knows more of (a card of a person's own query), by its id. */
   cardSetup?: (cardId: string) => ReactNode | null;
 }) {
@@ -823,13 +818,13 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
         </Row>
       )}
       {el.type === "ActionButton" && <ActionSetup spec={spec} k={k} p={p} connectionId={connectionId} schema={schema} set={set} />}
-      {wiringOn && SET_READERS.includes(el.type as PieceName) && <ReadsRow spec={spec} k={k} p={p} entity={entity ?? ""} onChange={onChange} />}
-      {wiringOn && CHOOSERS.includes(el.type as PieceName) && el.type !== "ChooseOne" && <ChoicesRows spec={spec} k={k} p={p} noun={noun} set={set} />}
-      {wiringOn && el.type === "ObjectFigure" && <FigureWiring spec={spec} p={p} set={set} />}
-      {wiringOn && el.type === "ObjectFilters" && <CountsWithinRow spec={spec} k={k} p={p} onChange={onChange} />}
+      {SET_READERS.includes(el.type as PieceName) && <ReadsRow spec={spec} k={k} p={p} entity={entity ?? ""} onChange={onChange} />}
+      {CHOOSERS.includes(el.type as PieceName) && el.type !== "ChooseOne" && <ChoicesRows spec={spec} k={k} p={p} noun={noun} set={set} />}
+      {el.type === "ObjectFigure" && <FigureWiring spec={spec} p={p} set={set} />}
+      {el.type === "ObjectFilters" && <CountsWithinRow spec={spec} k={k} p={p} onChange={onChange} />}
       {el.type === "ActionButtons" && <ButtonsSetup spec={spec} k={k} onChange={onChange} connectionId={connectionId} schema={schema} />}
       {needsFields && el.type === "ObjectTable" && fieldsBody(f => <TableSetup p={p} ef={f} set={set} noun={noun} />)}
-      {needsFields && marksOn && (el.type === "ObjectTable" || el.type === "ObjectList")
+      {needsFields && (el.type === "ObjectTable" || el.type === "ObjectList")
         && fieldsBody(f => <MarkRow p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectFigure" && fieldsBody(f => <FigureSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectChart" && fieldsBody(f => <ChartSetup p={p} ef={f} set={set} />)}

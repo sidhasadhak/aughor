@@ -236,7 +236,7 @@ def list_monitors(connection_id: str, args: dict) -> dict:
             "kind": m.alert_on, "enabled": m.enabled, "cadence": m.check_cron,
         })
     from aughor.monitors.recovery import still_open
-    # TC-4 — a recovery waits on nobody, and with `monitors.recovery` on neither does an alert one closed.
+    # TC-4 — a recovery waits on nobody, and neither does an alert one closed.
     unacked = still_open(_store.get_alerts(conn_id=connection_id, unacknowledged_only=True, limit=100))
     recent = [{
         "monitor": a.monitor_name, "severity": a.severity,
@@ -413,9 +413,12 @@ def search_documents(connection_id: str, args: dict) -> dict:
         raw = _search(query, top_k=max(_MAX_DOC_HITS * 4, 16), connection_id=connection_id)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
+        from aughor.knowledge.indexer import DocumentSearchUnavailable
         tolerate(exc, "a failed document search answers empty, not with a broken turn",
                  counter="platform_tools.docs_search")
-        return {"count": 0, "hits": [], "why": "the document index could not be searched"}
+        # the indexer's refusal names what did not answer and where it is set — said, so the reader is told the fix
+        why = f": {exc}" if isinstance(exc, DocumentSearchUnavailable) else ""
+        return {"count": 0, "hits": [], "why": f"the document index could not be searched{why}"}
 
     if not raw:
         # An empty corpus and a genuine no-match arrive here identically (a failed search
@@ -468,7 +471,7 @@ def search_documents(connection_id: str, args: dict) -> dict:
     out = {"count": len(hits), "hits": hits,
            "note": ("Passages, not facts about the warehouse. Quote or paraphrase them as "
                     "documentation; a NUMBER still has to come from a query.")}
-    # FA-1 (`knowledge.hybrid_documents`) — passages the words matched while the embedder was down say so
+    # FA-1 — passages the words matched while the embedder was down say so
     from aughor.knowledge.indexer import matched_by_words
     words = matched_by_words(raw)
     if words:

@@ -202,6 +202,24 @@ export interface OrgSettings {
   /** Arc MC — how many approved headline metrics a Briefing measures; 0 = the platform's default (24 while the
    *  Briefing reads by area, 12 while it does not). */
   briefing_metric_cap?: number;
+  /** What Aughor may do (ROADMAP §3.65) — the organisation's four choices, each off by default; null = never set,
+   *  when the server's former flag variable answers (`getOrgAllows` says which). */
+  share_aggregates?: boolean | null;
+  outside_row_model?: boolean | null;
+  reason_to_read_runs?: boolean | null;
+  scheduled_model_work?: boolean | null;
+}
+
+/** The four choices an organisation makes about what Aughor may do (ROADMAP §3.65). */
+export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work";
+
+/** Each choice's answer, and whether an admin set it — one never set answers from the server's environment. */
+export type OrgAllows = Record<OrgAllowSetting, { allowed: boolean; set: boolean }>;
+
+export async function getOrgAllows(): Promise<OrgAllows> {
+  const res = await fetch(`${getApiBase()}/org-settings/allows`);
+  if (!res.ok) throw new Error("Failed to read what the organisation allows");
+  return res.json();
 }
 
 /** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
@@ -1204,18 +1222,16 @@ export interface MetricCoverage {
   areas: CoverageArea[]; unplaced_tables: string[]; said: string[];
   counts: { areas: number; with_data: number; covered: number; uncovered: number; unchecked: number; patterns: number;
             open_patterns?: number; writable?: number };
-  proposals: CoverageProposal[]; run: CoverageRun | null; flags: Record<string, boolean>;
+  proposals: CoverageProposal[]; run: CoverageRun | null;
 }
 
-/** The coverage view, or null while `metrics.coverage_map` is off (the door answers 404). ``figures`` reads the
- *  approved metrics' figures not read within the hour. */
-export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage | null> {
+/** The coverage view. ``figures`` reads the approved metrics' figures not read within the hour. */
+export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage> {
   const q = new URLSearchParams();
   if (schema) q.set("schema", schema);
   if (figures) q.set("figures", "true");
   const qs = q.toString();
   const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}${qs ? `?${qs}` : ""}`);
-  if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "The coverage could not be read"));
@@ -1798,7 +1814,7 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
   const q = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
     : `connection_id=${encodeURIComponent(connectionId)}`;
-  // Arc OC-2 — read by the ontology's own screens, so it asks for the draft (ignored while releases are off).
+  // Arc OC-2 — read by the ontology's own screens, so it asks for the draft.
   const res = await fetch(`${getApiBase()}/ontology?${q}&ontology_view=draft`);
   if (!res.ok) {
     const built = (res.headers.get("X-Ontology-Schemas") ?? "").split(",").filter(Boolean);
@@ -2704,7 +2720,7 @@ export interface CardRunResult {
   duration_ms?: number;
 }
 
-// ── Arc AP-7 — your own query on the dashboard (flag `dashboard.queries`) ───────────────────────────────────────────────
+// ── Arc AP-7 — your own query on the dashboard ──────────────────────────────────────────────────────────────────────────
 
 export type QueryShownAs = "table" | "figure" | "bar" | "line" | "area" | "scatter";
 export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
@@ -3021,7 +3037,7 @@ export async function runCard(cardId: string, range?: BriefingRange | null,
   return res.json();
 }
 
-// ── A person's dashboards in the Briefing (Arc CT-7 to CT-10, flag `dashboard.composed`) ───────────
+// ── A person's dashboards in the Briefing (Arc CT-7 to CT-10) ────────────────────────────────────────
 
 /** One kept version of a dashboard. The newest carries its `spec`; a history entry does not. */
 export interface DashboardVersion {
@@ -3046,7 +3062,7 @@ export interface DashboardVersion {
   published_by?: string;
   /** Arc OC-4 — the ontology release a version holding pieces was composed against. */
   ontology_release?: string;
-  /** Arc ED-4 (flag `dashboard.app_versions`) — where this version stands: a keep is a draft until it is published. */
+  /** Arc ED-4 — where this version stands: a keep is a draft until it is published. */
   state?: "draft" | "published" | "archived";
   /** Arc ED-4 — on the newest version only: the version the App's readers read, null while it reaches nobody. */
   published_version?: number | null;
@@ -3130,7 +3146,6 @@ export interface PersonDashboard {
   cockpit: DashboardVersion;
   cards: DashboardCard[];
   range: DashboardRange;
-  ranges_on: boolean;
   history: DashboardVersion[];
   /** The symbol a money figure is written with, as the Briefing resolves it. */
   currency_symbol?: string;
@@ -3222,11 +3237,9 @@ function rangeParams(range?: BriefingRange | null): URLSearchParams {
   return q;
 }
 
-/** The asker's dashboards on this connection. Null when the flag is off (the route answers 404),
- *  so a caller need not know the flag's name — and the Briefing draws its dashboard as before. */
-export async function listDashboards(connectionId: string): Promise<DashboardList | null> {
+/** The asker's dashboards on this connection. */
+export async function listDashboards(connectionId: string): Promise<DashboardList> {
   const res = await fetch(dashboardUrl("/dashboards", connectionId));
-  if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read your dashboards"));
@@ -3284,7 +3297,7 @@ export interface DashboardFromObject {
   listable?: boolean;
   actions: { id: string; label: string }[];
   caveats: string[];
-  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why; present while shapes are on. */
+  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why. */
   shapes?: ShapeOffer[];
   /** What the shapes are laid out from, read from the ontology (`aughor/dashboards/shapes.py`). */
   signals?: ShapeSignals;
@@ -3446,7 +3459,6 @@ export interface SharedDashboard {
   cockpit: DashboardVersion;
   cards: DashboardCard[];
   range: DashboardRange;
-  ranges_on: boolean;
   currency_symbol?: string;
   images?: Record<string, DashboardImageStamp>;
   published_by: string;
@@ -4287,29 +4299,6 @@ export async function getProcessMap(connId: string, entityId: string, schemaName
     `${getApiBase()}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}${q.size ? `?${q}` : ""}`,
   );
   if (!res.ok) return null;
-  return res.json();
-}
-
-// ── Causal Graph ──────────────────────────────────────────────────────────────
-
-export interface CausalEdge {
-  id: string;
-  from_signal: string;
-  to_signal: string;
-  from_entity: string | null;
-  to_entity: string | null;
-  weight: number;
-  confirmed_by: string[];
-  conn_id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export async function getCausalGraph(connId: string): Promise<CausalEdge[]> {
-  const res = await fetch(
-    `${getApiBase()}/connections/${encodeURIComponent(connId)}/causal-graph`,
-  );
-  if (!res.ok) return [];
   return res.json();
 }
 
@@ -5381,7 +5370,7 @@ export interface MonitorAlert {
   caveat?: string | null;
   acknowledged: boolean;
   acknowledged_at: string | null;
-  /** Arc TC, TC-4 (`monitors.recovery` on) — the recovery that closed this alert, and when. Absent while it is open. */
+  /** Arc TC, TC-4 — the recovery that closed this alert, and when. Absent while it is open. */
   closed_by?: string;
   closed_at?: string;
   /** On a recovery (`alert_on: "recovered"`): the alert it closes — the one its message names. */
@@ -5571,8 +5560,7 @@ export type ConditionKind =
   // HB-3 — the hub's two triggers: a declared promise measured broken, a new finding
   // recorded. Both publish a payload the chain binds as `trigger.<key>`.
   | "promise_breached" | "finding_created"
-  // Arc FA, FA-5 — the objects a rule or segment newly admits; offered only while
-  // `automations.objects_admitted` is on (the served palette says so).
+  // Arc FA, FA-5 — the objects a rule or segment newly admits.
   | "objects_admitted"
   // DS-17. Named for what it is from the chain's side: something outside calls it. The
   // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
@@ -6320,13 +6308,16 @@ export async function createSlackApp(body: {
   return res.json();
 }
 
-/** AO-2b — what the API knows about the supervisor it runs (flag `slack.managed_supervisor`). */
+/** AO-2b — what the API knows about the supervisor it runs. `off` is a process that does not run it (serverless, no
+ *  clocks); `waiting` is one whose setup is missing — `waiting_on` says, in a sentence, what and how to add it. */
 export interface ManagedSupervisorStatus {
-  flag: boolean; managed: boolean;
-  state: "off" | "starting" | "running" | "restarting" | "stopped" | "failed";
+  managed: boolean;
+  state: "off" | "waiting" | "starting" | "running" | "restarting" | "stopped" | "failed";
   pid: number | null; started_at: string; restarts: number;
   last_exit_code: number | null; last_error: string;
   command: string[]; cwd: string; preconditions: string[];
+  /** "" once it runs; otherwise what is missing and where it is added. */
+  waiting_on: string;
   /** AO-2b receipt — where the child's own output lands, and the freshest heartbeat any
    *  supervisor sent (a running pid that never beat is not listening). */
   log_path: string;
@@ -6358,8 +6349,8 @@ export interface AgentDoorsInfo {
   webhook: { state: string; url: string };
   a2a: { state: string; card: string; url: string };
   teams: { state: string; bots: TeamsBotSummary[] };
-  /** Arc FA, FA-7 — present only while the grounding read is on: what the agent would read, no model asked. */
-  grounding?: { state: string; url: string; tool: string; how: string };
+  /** Arc FA, FA-7 — the grounding read: what the agent would read, no model asked. */
+  grounding: { state: string; url: string; tool: string; how: string };
 }
 
 export interface TeamsBotSummary {
@@ -6555,8 +6546,8 @@ export interface AutomationRun {
   error: string;
   /** DS-8 — engine-internal resume state. Present only while `outcome === "paused"`. */
   checkpoint?: Record<string, unknown>;
-  /** TC-3 — the version this run ran under. Absent while versions are off; null when the run
-   *  kept none (it ran before versions were on, or its version could not be kept). */
+  /** TC-3 — the version this run ran under. Absent from a server before versions; null when the
+   *  run kept none (it ran before versions were kept, or its version could not be kept). */
   version?: number | null;
 }
 
@@ -6581,7 +6572,7 @@ export interface AutomationVersions {
   why_not: string;
 }
 
-/** TC-3 — an automation's kept versions, newest first; null while versions are off (404). */
+/** TC-3 — an automation's kept versions, newest first; null when there is no such automation and no version (404). */
 export async function getAutomationVersions(id: string): Promise<AutomationVersions | null> {
   const res = await fetch(`${getApiBase()}/automations/${id}/versions`);
   if (res.status === 404) return null;
@@ -6677,8 +6668,8 @@ export interface HubMapRow {
   cost: HubCost;
   probation: HubProbation;
   exposed_as_tool: boolean;
-  /** Arc TC, TC-5 (`hub.failure_rate`) — present only while the flag is on. */
-  failure_rate?: HubFailureRate;
+  /** Arc TC, TC-5 — how often its runs failed over the map's failure window. */
+  failure_rate: HubFailureRate;
 }
 
 /** How often a node's runs failed over the window, as the server counted it. "no runs" is
@@ -6700,7 +6691,7 @@ export interface HubMapResponse {
   window_days: number;
   generated_at: string;
   totals: { automations: number; monitors: number; live: number; probation: number };
-  failure_window?: { days: number; since: string };
+  failure_window: { days: number; since: string };
 }
 
 /** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel
@@ -7380,7 +7371,7 @@ export interface BriefSubscription {
   id: string;
   conn_id: string;
   name: string;
-  /** "month" | "year" exist only with the `briefing.by_period` flag on (idea 3). */
+  /** "month" | "year" send the Briefing written for the period (idea 3). */
   period: "week" | "day" | "month" | "year";
   send_cron: string;
   /** What it sends: the alert summary (absent = "alert_summary", every row saved before idea 3) or
@@ -7784,7 +7775,7 @@ export interface BriefingPeriodBlock {
   unmeasured: { name: string; reason: string }[];
 }
 
-/** Arc BR-3 — a Briefing for any range (`briefing.ranges`). "standing" is the view of
+/** Arc BR-3 — a Briefing for any range. "standing" is the view of
  *  everything the platform knows; the presets resolve on the server against the connection's
  *  settling lag; "custom" carries its first and last day (inclusive, ISO). */
 export type RangePreset =
@@ -7828,7 +7819,7 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Arc MC — the area of the map it reads on, while the Briefing reads by area (`briefing.metric_cap`). */
+  /** Arc MC — the area of the map it reads on; the Briefing reads by area. */
   area?: { id: string; name: string } | null;
   /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
    *  the range; `ownFigures` reads it as not measured, as the server now says it. */
@@ -8274,23 +8265,15 @@ export async function generateBriefingNarrative(
   refresh = false,
   schema?: string,
   workspaceId?: string,
-  period?: BriefingPeriod,
 ): Promise<BriefingNarrativeResponse> {
   const q = new URLSearchParams();
   if (refresh) q.set("refresh", "true");
   if (schema) q.set("schema", schema);
   if (workspaceId) q.set("workspace_id", workspaceId);
-  if (period && period !== "history") q.set("period", period);
   const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
-  if (!res.ok) {
-    // A period brief the install has switched off says so; the reason is the server's words.
-    const detail = period && period !== "history"
-      ? await res.json().then((b) => (typeof b?.detail === "string" ? b.detail : null)).catch(() => null)
-      : null;
-    throw new Error(detail ?? "Failed to generate briefing narrative");
-  }
+  if (!res.ok) throw new Error("Failed to generate briefing narrative");
   return res.json();
 }
 
@@ -9527,7 +9510,7 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
   return res.ok;
 }
 
-// ── Arc FA, FA-6 — the installed version and the upgrade (flag `packs.installed_versions`) ──────
+// ── Arc FA, FA-6 — the installed version and the upgrade ──────────────────────────────────────
 
 /** One thing a pack offers on a connection, as an upgrade's diff lists it (`aughor/packs/upgrade.py`). */
 export interface PackOfferedItem {
@@ -9589,9 +9572,8 @@ export interface PackUpgraded {
 }
 
 /** Where a pack is bound and the version installed there — null while installed versions are off (the route 404s). */
-export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] } | null> {
+export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] }> {
   const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/installs`);
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Where the pack is installed could not be read"));
   return res.json();
 }
@@ -9612,7 +9594,7 @@ export async function upgradePack(packId: string, connectionId: string, schema?:
   return res.json();
 }
 
-// ── Arc FA, FA-6 — a pack's dashboard templates (flag `packs.dashboard_templates`) ──────────────
+// ── Arc FA, FA-6 — a pack's dashboard templates ─────────────────────────────────────────────────
 
 export interface PackTemplateCard { key: string; metric: string; title: string; ready: boolean; why: string }
 
@@ -9631,13 +9613,12 @@ export interface PackTemplate {
   source: string;
 }
 
-/** The templates of the packs bound on this connection — null while templates are off (the route 404s). */
+/** The templates of the packs bound on this connection. */
 export async function listPackTemplates(
   connectionId: string, schema?: string,
-): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> } | null> {
+): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> }> {
   const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
   const res = await fetch(`${getApiBase()}/packs/templates?${q}`);
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The pack templates could not be read"));
   return res.json();
 }

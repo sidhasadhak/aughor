@@ -1,10 +1,11 @@
 """Arc ED, ED-2 (ROADMAP §3.58) — every outside caller is someone.
 
-Two halves. `security.principal_scopes`: a service principal a person minted may carry a grant — the areas it may work
-in, the entities and declared actions it may name, the connections it may reach — that narrows the organisation's agent
-policy on every request it makes, refused with a stable code, and its contract is cut to it. `mcp.caller_principals`:
-over HTTP an outside program connects to the MCP server as that principal instead of with the server's shared token,
-every call runs as it, and `tools/list` shows only what its grant admits.
+Two halves, part of the platform since 2026-10-28. The grant (`rbac/principal_grant.py`): a service principal a person
+minted may carry a grant — the areas it may work in, the entities and declared actions it may name, the connections it
+may reach — that narrows the organisation's agent policy on every request it makes, refused with a stable code, and
+its contract is cut to it. The caller (`mcp/callers.py`): over HTTP an outside program connects to the MCP server as
+that principal instead of with the server's shared token, every call runs as it, and `tools/list` shows only what its
+grant admits; a client presenting the shared token is served as before.
 
 The falsifier is ROADMAP's: two principals with different grants see the same `tools/list` → stop. It is driven here
 through a real streamable-HTTP session against the real API in-process, not a list built by hand.
@@ -26,9 +27,7 @@ from tests.unit.test_object_actions import db, graph  # noqa: F401 — fixtures 
 
 
 @pytest.fixture
-def held(monkeypatch):
-    monkeypatch.setenv("AUGHOR_SECURITY_PRINCIPAL_SCOPES", "1")
-    monkeypatch.setenv("AUGHOR_MCP_CALLER_PRINCIPALS", "1")
+def held():
     callers.forget()
     S.forget_policy()
     yield
@@ -57,13 +56,6 @@ def test_the_api_says_who_a_presented_principal_is_and_refuses_a_bad_key(client,
     bad = client.get("/ledger/v1/principals/service/me", headers={**headers, SP.KEY_HEADER: "not-the-key"})
     assert bad.status_code == 401
     assert client.get("/ledger/v1/principals/service/me").status_code == 404
-
-
-def test_off_the_api_says_callers_are_off(client, held, monkeypatch):
-    _, headers = _mint(client)
-    monkeypatch.delenv("AUGHOR_MCP_CALLER_PRINCIPALS")
-    r = client.get("/ledger/v1/principals/service/me", headers=headers)
-    assert r.status_code == 404 and "off on this install" in r.json()["detail"]
 
 
 def test_a_grant_is_kept_on_rotation_and_an_unknown_area_is_refused(client, held):
@@ -108,12 +100,6 @@ def test_an_entity_an_action_and_a_connection_off_the_grant_are_each_refused(cli
     within = client.post("/objects/v1/list", params={"connection_id": "c1"}, headers=headers,
                          json={"entity": "order", "columns": ["status"]})
     assert within.status_code != 403, within.text                      # past the gate: the door answers for itself
-
-
-def test_off_the_grant_is_not_held(client, held, monkeypatch):
-    _, headers = _mint(client, areas=["ledger:read"])
-    monkeypatch.delenv("AUGHOR_SECURITY_PRINCIPAL_SCOPES")
-    assert client.get("/jobs", headers=headers).status_code == 200
 
 
 def test_the_contract_is_cut_to_the_grant():
@@ -187,7 +173,6 @@ def test_a_principal_reads_the_contract_its_grant_names(client, held, graph, mon
     """The builders' contract door, on the samples ontology: the entities and declared actions the grant names, and a
     count of what it left out."""
     from tests.unit.test_object_actions import CONN
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", "1")
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     _, headers = _mint(client, areas=["objects:read"], entities=["Order"])
     whole = client.get("/ontology/v1/contract", params={"connection_id": CONN})

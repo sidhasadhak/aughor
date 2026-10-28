@@ -29,8 +29,9 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-LOOP_FLAG = "agents.learning_loop"
-CENTRE_FLAG = "agents.testing_centre"
+#: Both the loop and the nightly centre make model calls nobody pressed for, so the organisation decides
+#: (ROADMAP §3.65): one setting, `scheduled_model_work`, where two flags were.
+SETTING = "scheduled_model_work"
 
 #: Every Nth verdict on an agent re-runs its evaluation (AO-7d).
 REEVAL_EVERY_N_VERDICTS = 5
@@ -41,9 +42,9 @@ CORRECTED_BEFORE_CHARS = 160
 DRAFT_BATCH = 6
 
 
-def _flag(name: str) -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(name)
+def _allowed() -> bool:
+    from aughor.orgsettings.allows import allows
+    return allows(SETTING)
 
 
 # ── AO-7a · the brief's lessons ──────────────────────────────────────────────────
@@ -51,7 +52,7 @@ def _flag(name: str) -> bool:
 def corrected_before_block(agent_id: str) -> str:
     """The agent's own last rejected/corrected answers, as a bounded block for its brief.
     "" when the loop is off or nothing was ever corrected."""
-    if not agent_id or not _flag(LOOP_FLAG):
+    if not agent_id or not _allowed():
         return ""
     from aughor.feedback.verdicts import list_corrections
     rows = list_corrections(agent_id=agent_id, limit=CORRECTED_BEFORE_ROWS)
@@ -80,7 +81,7 @@ def on_verdict(agent_id: str, *, verdict: str, investigation_id: str, question: 
                sql: str, headline: str) -> dict[str, Any]:
     """Called after a verdict on one of the agent's answers landed. Returns what it did."""
     did: dict[str, Any] = {"candidate": None, "reevaluated": False}
-    if not _flag(LOOP_FLAG):
+    if not _allowed():
         return did
     from aughor.custom_agents.store import add_candidate
     if verdict == "accept" and question and sql:
@@ -98,7 +99,7 @@ def on_verdict(agent_id: str, *, verdict: str, investigation_id: str, question: 
 
 def on_configuration_change(agent_id: str) -> bool:
     """A revision was recorded: re-run the evaluation so the chip measures THIS agent."""
-    if not _flag(LOOP_FLAG):
+    if not _allowed():
         return False
     return reevaluate(agent_id, reason="configuration changed")
 
@@ -142,8 +143,10 @@ def draft_synthetic_goldens(agent, *, n: int = DRAFT_BATCH) -> list[dict]:
     catalogue and the agent's purpose — one model call — and stage them as candidates.
     The model drafts questions; it may not certify answers, so no SQL is written here.
     Raises RuntimeError when the centre's flag is off."""
-    if not _flag(CENTRE_FLAG):
-        raise RuntimeError("the testing centre is off (flag agents.testing_centre)")
+    if not _allowed():
+        from aughor.orgsettings.allows import WHERE
+        raise RuntimeError(f"the testing centre is off: the organisation has not let Aughor run model work on its own "
+                           f"schedule ({WHERE})")
     from pydantic import BaseModel, Field
     from aughor.llm.provider import get_provider
     from aughor.custom_agents.store import add_candidate
@@ -210,7 +213,7 @@ def nightly(*, now: Optional[datetime] = None, force: bool = False) -> dict[str,
     """Once a UTC day: re-evaluate every enabled agent that has certified goldens, and
     write the diff against its previous stamp onto the result. Behind the centre's flag."""
     global _last_nightly_day
-    if not _flag(CENTRE_FLAG):
+    if not _allowed():
         return {"skipped": "off"}
     day = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
     if _last_nightly_day == day and not force:
@@ -260,8 +263,8 @@ def learning_summary(agent_id: str) -> dict[str, Any]:
     prev = previous_eval(agent_id)
     return {
         "agent_id": agent_id,
-        "loop_on": _flag(LOOP_FLAG),
-        "centre_on": _flag(CENTRE_FLAG),
+        "loop_on": _allowed(),
+        "centre_on": _allowed(),
         "verdicts": count_verdicts_for_agent(agent_id),
         "corrections": len(list_corrections(agent_id=agent_id, limit=200)),
         "candidates_from_use": sum(1 for g in goldens if g.get("status") == "candidate" and g.get("source") == "use"),

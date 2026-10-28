@@ -6,8 +6,7 @@ a rule at all. The ``objects_admitted`` trigger names an entity and a segment on
 segment, or a promise's ``overdue_<noun>`` — and on each check lists the segment's KEYS, nothing else, through the
 object door's own compiler (`semantic.object_query.compile_object_listing`) on the automation's connection.
 
-Behind ``automations.objects_admitted`` (off; with it off the trigger is not offered, a save naming it is refused at
-the door, and a stored one reads nothing and says so). Its laws, each the user's or the house's:
+Its laws, each the user's or the house's:
 
 * **The first check records, and fires later** (the user's call 1). When the trigger first runs, or what it reads
   changes — the segment's definition, the entity's key, or the row policy it is listed under — the check records who
@@ -47,7 +46,6 @@ from aughor.automations.models import Automation, Condition
 
 logger = logging.getLogger(__name__)
 
-FLAG = "automations.objects_admitted"
 KIND = "objects_admitted"
 
 #: The most keys a trigger tracks. Above it a check says how many there are and does not fire: a set this large is a
@@ -65,11 +63,6 @@ _PROBE_ID = "__objects_admitted__"
 #: the next check finds the same keys new again (at-least-once, never lost).
 _STASH: dict[tuple[str, str], list[str]] = {}
 _STASH_LOCK = threading.Lock()
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def target_of(cond: Condition, conn_id: str) -> str:
@@ -130,7 +123,7 @@ def as_owner(owner: Owner) -> Iterator[None]:
 # ── what the trigger reads ─────────────────────────────────────────────────────────────────────────────────────────
 
 def _graph_for(conn_id: str, cond: Condition):
-    """The served ontology — the graph `GET /ontology` returns, a release once releases are on. A read, never a build."""
+    """The served ontology — the graph `GET /ontology` returns, the published release. A read, never a build."""
     from aughor.routers.ontology import served_ontology_graph
     return served_ontology_graph(conn_id, str(cond.config.get("schema_name", "") or "") or None)
 
@@ -313,8 +306,6 @@ def evaluate_admitted_condition(cond: Condition, automation: Automation) -> tupl
     from aughor.automations.store import drop_admitted, get_admitted_keys, get_probe_baseline, record_admitted
 
     label = f"objects_admitted({cond.entity}.{cond.segment})"
-    if not enabled():
-        return False, f"{label}: off on this deployment ({FLAG}) — nothing was read", {}
     owner = owner_of(automation)
     target = target_of(cond, automation.conn_id)
     seen = observe(cond, automation, owner)

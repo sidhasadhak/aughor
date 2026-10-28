@@ -107,19 +107,20 @@ function Column({ label, value, columns, onPick, none, only }: {
 }
 
 /** Arc AP-8 — what a value of the dashboard's is called and holds, as the setup offers it and tries a query with it. */
+const NO_VALUES: Record<string, DashboardValueDef> = {};
 const KIND_WORDS: Record<string, string> = { days: "days", number: "a number", text: "words", date: "a day" };
 const startText = (def: DashboardValueDef) =>
   (def.from?.by ?? "author") === "author" || def.from?.by === "reader" ? (def.value === null || def.value === undefined ? "" : String(def.value)) : "";
 
-export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
+export function QuerySetup({ connectionId, card, onKept, onClose, values = NO_VALUES }: {
   connectionId: string;
   /** The card of the person's own query being changed; none — a new one. */
   card?: DashboardCard | null;
   /** The card kept — a new one, or the one that replaces `card` — for the page to place or to swap in. */
   onKept: (kept: DashboardCard, replaced: string | null) => void;
   onClose?: () => void;
-  /** Arc AP-8 — the dashboard's values, while variables are on: each may be read in the SQL as `{{name}}`. */
-  values?: Record<string, DashboardValueDef> | null;
+  /** Arc AP-8 — the dashboard's values: each may be read in the SQL as `{{name}}`. */
+  values?: Record<string, DashboardValueDef>;
 }) {
   const render = (card?.render ?? {}) as { shown?: QueryShown; columns?: TypedColumn[] };
   const [sql, setSql] = useState(card?.sql ?? "");
@@ -162,7 +163,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
     const out: ValuesSent = {};
     const said: string[] = [];
     for (const name of reads) {
-      const def = values?.[name];
+      const def = values[name];
       if (!def) { said.push(`{{${name}}} is not one of this dashboard's values.`); continue; }
       const v = typedValue(def.kind, tried[name] ?? startText(def));
       if (v === null) said.push(`Give ${def.label} ${KIND_WORDS[def.kind] ?? "a value"} to try the query with.`);
@@ -223,12 +224,10 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
           <Button size="xs" variant="ghost" aria-expanded={showTables} data-testid="query-tables-open" onClick={() => { setShowTables(o => !o); setShowValues(false); }}>
             <Icon name="db" size={13} /> Tables
           </Button>
-          {values && (
-            <Button size="xs" variant="ghost" aria-expanded={showValues} data-testid="query-values-open" onClick={() => { setShowValues(o => !o); setShowTables(false); }}
-              title="One of the dashboard's values, read as a bound parameter: the engine binds it, never pasted into the statement.">
-              <Icon name="plus" size={13} /> A variable
-            </Button>
-          )}
+          <Button size="xs" variant="ghost" aria-expanded={showValues} data-testid="query-values-open" onClick={() => { setShowValues(o => !o); setShowTables(false); }}
+            title="One of the dashboard's values, read as a bound parameter: the engine binds it, never pasted into the statement.">
+            <Icon name="plus" size={13} /> A variable
+          </Button>
           <Button size="xs" variant="secondary" data-testid="query-run" disabled={!sql.trim() || !!busy} onClick={() => void run()} style={{ marginLeft: "auto" }}>
             <Icon name="run" size={13} /> {busy === "run" ? "Running…" : "Run"}
           </Button>
@@ -242,7 +241,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
                 ))}
           </div>
         )}
-        {showValues && values && (
+        {showValues && (
           <div data-testid="query-values" role="list" style={{ display: "flex", flexDirection: "column", maxHeight: 160, overflow: "auto", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
             {Object.keys(values).length === 0
               ? <span className="aug-fs-xs" style={{ padding: 6, color: "var(--t3)" }}>This dashboard holds no value yet: add one in Variables.</span>
@@ -259,7 +258,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
           <div data-testid="query-tried" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Tried here with these; on the page it reads what the page holds.</span>
             {reads.map(name => {
-              const def = values?.[name];
+              const def = values[name];
               return (
                 <label key={name} className="aug-fs-xs" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 120px", alignItems: "center", gap: 6, color: "var(--t2)" }}>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

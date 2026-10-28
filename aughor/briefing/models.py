@@ -13,13 +13,13 @@ from aughor.util.time import now_iso_z as _now
 DEFAULT_CRON = {
     "week": "0 8 * * 1",   # Monday 08:00 UTC
     "day":  "0 8 * * *",   # Every day 08:00 UTC
-    # idea 3 — reachable only with `briefing.by_period` on (the router refuses them otherwise)
+    # idea 3 — a subscription that sends the Briefing written for its period
     "month": "0 8 1 * *",  # the 1st of each month 08:00 UTC
     "year":  "0 8 1 1 *",  # 1 January 08:00 UTC
 }
 
 #: What a subscription sends. "alert_summary" is what every subscription has always sent;
-#: "briefing" (idea 3, flag `briefing.by_period`) is the Briefing written for its period.
+#: "briefing" (idea 3) is the Briefing written for its period.
 CONTENTS = ("alert_summary", "briefing")
 
 #: Arc BR-5 — a subscription that replaces an automation pauses it after this many delivered

@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 from aughor.dashboards import queries as Q
 from aughor.db.connection import open_connection
 from aughor.demo.setup import _seed_ecommerce
-from aughor.kernel.flags import flag_overrides
 
 CONN = "queries-t"
 SALES = ("SELECT o.order_date, c.country, o.total_amount, o.customer_id, o.status FROM ecommerce.orders o "
@@ -228,20 +227,16 @@ def test_a_query_over_a_table_a_row_policy_narrows_is_refused_while_policies_hol
                           backing=Backing(table="users", primary_key="id"))
     graph = OntologyGraph(connection_id=CONN, schema_name="ecommerce", schema_fingerprint="fp")
     graph.entities = {"Order": order, "User": user}
-    with flag_overrides({"ontology.security": True}):
-        assert Q.policy_refusal(graph, ["users", "orders"]) == (
-            "This query reads orders straight from its table, and Order has a row policy: a query cannot be narrowed to "
-            "each reader. Read Order through a set instead.")
-        assert Q.policy_refusal(graph, ["users"]) is None
-    with flag_overrides({"ontology.security": False}):
-        assert Q.policy_refusal(graph, ["orders"]) is None
+    assert Q.policy_refusal(graph, ["users", "orders"]) == (
+        "This query reads orders straight from its table, and Order has a row policy: a query cannot be narrowed to "
+        "each reader. Read Order through a set instead.")
+    assert Q.policy_refusal(graph, ["users"]) is None
     # an entity read through a keyed query still names the tables it is made of
     keyed = OntologyEntity(id="Line", display_name="Line", source_tables=["order_items"], identity_key="id", grain_verified=True,
                            backing=Backing(kind="query", sql="SELECT * FROM order_items", primary_key="id"),
                            row_policies=[RowPolicy(group="support", conditions=[])])
     graph.entities = {"Line": keyed}
-    with flag_overrides({"ontology.security": True}):
-        assert "Line has a row policy" in (Q.policy_refusal(graph, ["order_items"]) or "")
+    assert "Line has a row policy" in (Q.policy_refusal(graph, ["order_items"]) or "")
 
 
 # ── stopped after the time limit ──────────────────────────────────────────────────────────────────────────────────────
@@ -279,22 +274,7 @@ def client(db, monkeypatch):
     return TestClient(app)
 
 
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True, "dashboard.queries": True}):
-        yield
-
-
-def test_off_the_doors_answer_404_and_a_card_runs_as_it_always_did(client):
-    conn = f"q{uuid.uuid4().hex[:6]}"
-    with flag_overrides({"dashboard.composed": True, "dashboard.queries": False}):
-        r = client.post("/dashboards/queries/preview", params={"connection_id": conn}, json={"sql": "SELECT 1"})
-        assert r.status_code == 404 and "off on this install" in r.text
-        r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": "SELECT 1"})
-        assert r.status_code == 404
-
-
-def test_a_preview_says_the_columns_the_first_rows_and_the_card_as_shown(client, on):
+def test_a_preview_says_the_columns_the_first_rows_and_the_card_as_shown(client):
     conn = f"q{uuid.uuid4().hex[:6]}"
     r = client.post("/dashboards/queries/preview", params={"connection_id": conn}, json={
         "sql": SALES, "shown": {"as": "bar", "x": "order_date", "split": "country", "series": [{"column": "total_amount"}]}})
@@ -307,7 +287,7 @@ def test_a_preview_says_the_columns_the_first_rows_and_the_card_as_shown(client,
     assert body["tables"] == ["orders", "customers"]
 
 
-def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(client, on):
+def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(client):
     from aughor.cards.store import list_cards
     conn = f"q{uuid.uuid4().hex[:6]}"
     r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": "DELETE FROM ecommerce.orders"})
@@ -319,7 +299,7 @@ def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(cli
     assert list_cards(connection_id=conn) == []
 
 
-def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(client, on):
+def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(client):
     from aughor.cards.store import get_card
     conn = f"q{uuid.uuid4().hex[:6]}"
     shown = {"as": "bar", "x": "order_date", "bucket": "month", "series": [{"column": "total_amount", "agg": "sum"}]}
@@ -335,14 +315,12 @@ def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(c
     second = r.json()["card"]
     assert second["id"] != first["id"] and second["title"] == "Sales by month"
     assert get_card(first["id"]).provenance.superseded_by == second["id"]
-    # the run draws it as it is shown; with queries off the same card runs as every card always did
+    # the run draws it as it is shown
     run = client.post(f"/cards/{second['id']}/run").json()
     assert run["error"] is None and run["shown"]["as"] == "bar" and len(run["shown"]["points"]) == 24
-    with flag_overrides({"dashboard.queries": False}):
-        assert "shown" not in client.post(f"/cards/{second['id']}/run").json()
 
 
-def test_a_change_to_a_card_that_is_not_the_person_s_own_is_refused(client, on):
+def test_a_change_to_a_card_that_is_not_the_person_s_own_is_refused(client):
     from aughor.cards.models import StoredCard
     from aughor.cards.store import upsert_card
     conn = f"q{uuid.uuid4().hex[:6]}"
@@ -367,13 +345,12 @@ def _policed():
     return graph
 
 
-def test_the_door_keeps_no_query_over_a_table_a_row_policy_narrows_and_a_kept_one_stops_running_once_one_does(client, on, monkeypatch):
+def test_the_door_keeps_no_query_over_a_table_a_row_policy_narrows_and_a_kept_one_stops_running_once_one_does(client, monkeypatch):
     conn = f"q{uuid.uuid4().hex[:6]}"
     shown = {"as": "figure", "series": [{"column": "total_amount", "agg": "sum"}]}
     kept = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown}).json()["card"]
     monkeypatch.setattr("aughor.dashboards.pieces.served_graph", lambda c: _policed())
-    with flag_overrides({"ontology.security": True}):
-        r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown})
-        assert r.status_code == 422 and "Order has a row policy" in r.json()["detail"]["refused"][0]
-        run = client.post(f"/cards/{kept['id']}/run").json()
-        assert run["shown"] is None and "Order has a row policy" in run["error"]
+    r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown})
+    assert r.status_code == 422 and "Order has a row policy" in r.json()["detail"]["refused"][0]
+    run = client.post(f"/cards/{kept['id']}/run").json()
+    assert run["shown"] is None and "Order has a row policy" in run["error"]

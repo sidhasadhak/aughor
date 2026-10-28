@@ -70,11 +70,18 @@ def test_the_conversion_ended_in_an_unconditional_trigger():
         "the trigger description outlives the flag — the receipt still names why it fired"
 
 
-def test_federation_planner_stays_an_experiment():
-    """The batch's premise-check finding, pinned: the planner auto-federates fresh
-    /ask turns, so it must not silently re-enter a graduation queue as
-    'invocation-gated'."""
-    from aughor.kernel.flags import EXPERIMENT, FLAG_DEFAULT
+def test_federation_planner_is_kept_and_no_longer_routes_chat_on_its_own(client):
+    """The batch's premise-check finding stood until 2026-10-28: the planner auto-federated fresh /ask turns,
+    unmeasured. The user kept the planner ("We may need cross querying across connections in the future") and the
+    flag went (ROADMAP §3.65): the planner is part of the platform, served through its own doors with nothing set,
+    and /ask no longer sends a turn to it."""
+    import aughor.routers.investigations as inv
+    from aughor.kernel import flags as F
 
-    assert "federation.planner" in EXPERIMENT
-    assert "federation.planner" not in FLAG_DEFAULT
+    for registry in (F.FLAG_ENV, F.FLAG_META, F.ALWAYS_ON, F.EXPERIMENT, F.FLAG_DEFAULT, F.GRADUATION_QUEUE):
+        assert "federation.planner" not in registry
+    # each door serves: it reaches its own validation (one connection is refused by name), never a 404
+    for door in ("/query/federated-answer", "/query/auto-federated-answer"):
+        r = client.post(door, json={"question": "x", "conn_ids": ["only-one"]})
+        assert r.status_code == 400 and "at least two" in r.text, (door, r.status_code, r.text)
+    assert not hasattr(inv, "_federation_eligible") and not hasattr(inv, "_stream_federated")

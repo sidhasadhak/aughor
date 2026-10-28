@@ -7,7 +7,7 @@
  *   • Nav actions   — static destinations within the app
  *   • Investigations — recent history (fetched from /investigations)
  *   • Tables         — schema tables for the selected connection
- *   • Objects        — FA-1 (flag `objects.find`): an object by the name it goes by, across entities, fetched from
+ *   • Objects        — FA-1: an object by the name it goes by, across entities, fetched from
  *                      the server as you type — outside the Fuse index, like the Spotlight row
  *
  * Keyboard: ↑↓ navigate, Enter activate, Escape close.
@@ -27,7 +27,6 @@ import { useAughorChat } from "@/lib/useAughorChat";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getSystemFlags } from "@/lib/api";
 import { findObjects, type ObjectFindAnswer } from "@/lib/objects";
 import { objectHref } from "@/lib/objectLinks";
 
@@ -299,29 +298,20 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   }, [paletteSchema]);
 
   // ── FA-1: objects found by name ──────────────────────────────────────────
-  // Read only while `objects.find` is on, from two characters, a beat after the last keystroke; a newer query
-  // aborts the one in flight. Off, nothing is fetched and the palette searches what it always did.
-  const [findOn, setFindOn] = useState(false);
+  // Read from two characters, a beat after the last keystroke; a newer query aborts the one in flight.
   const [found, setFound] = useState<ObjectFindAnswer | null>(null);
   useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setFindOn(!!f["objects.find"]?.value); })
-      .catch(() => { if (alive) setFindOn(false); });
-    return () => { alive = false; };
-  }, [open]);
-  useEffect(() => {
     const words = findWords(query);
-    if (!open || !findOn || mode !== "search" || words.length < 2) return;   // an answer to other words is never shown
+    if (!open || mode !== "search" || words.length < 2) return;   // an answer to other words is never shown
     const ctl = new AbortController();
     const t = setTimeout(() => {
       findObjects(words, selectedConn, undefined, ctl.signal)
-        .then(a => { if (!ctl.signal.aborted) setFound(a && a.path === "found" ? a : null); })
+        .then(a => { if (!ctl.signal.aborted) setFound(a.path === "found" ? a : null); })
         .catch(() => { if (!ctl.signal.aborted) setFound(null); });
     }, 250);
     return () => { clearTimeout(t); ctl.abort(); };
-  }, [query, open, findOn, mode, selectedConn]);
-  const foundNow = findOn && found && found.q === findWords(query) && (!selectedConn || found.connection_id === selectedConn)
+  }, [query, open, mode, selectedConn]);
+  const foundNow = found && found.q === findWords(query) && (!selectedConn || found.connection_id === selectedConn)
     ? found : null;
   const openObjectRef = useRef(onOpenObject);
   useEffect(() => { openObjectRef.current = onOpenObject; });

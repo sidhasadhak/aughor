@@ -406,14 +406,13 @@ def save_chat_turn(
     except Exception:
         _a = None
         agent_id = ""
-    # Arc TC-1 — with `agents.revision_on_answers` on, the turn names the agent that answered it as its receipt
-    # does, revision included, so "which revision said this" is answerable from the turn. Off: no key, and the
-    # report is what it always was.
+    # Arc TC-1 — the turn names the agent that answered it as its receipt does, revision included, so "which
+    # revision said this" is answerable from the turn.
     _agent_stamp = None
     if _a is not None:
         try:
-            from aughor.custom_agents.context import answer_stamp, revision_on_answers
-            _agent_stamp = answer_stamp(_a) if revision_on_answers() else None
+            from aughor.custom_agents.context import answer_stamp
+            _agent_stamp = answer_stamp(_a)
         except Exception:                   # noqa: BLE001 — a turn is never lost for want of its stamp
             _agent_stamp = None
     # ``inv_id`` (CP-4) — the caller's id when the turn already has one elsewhere (the

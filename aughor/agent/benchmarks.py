@@ -247,7 +247,6 @@ def run_benchmarks(connection_id: str) -> BenchmarkRun:
                 sql_examples_section="",
                 metrics_section="",
                 exploration_section="",
-                causal_section="",
                 document_section="",
             )
             if dialect_block:

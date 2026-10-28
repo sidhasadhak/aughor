@@ -7,7 +7,7 @@ Ana could count every order in an answer while her object listing showed her own
 
 The falsifier is ROADMAP's: the same reader gets one count from the object door and another from a statement through
 the connection's door → stop. Held here on the seeded samples warehouse through the real DuckDB connection and the
-real object compiler. With `ontology.security_sql` off, every statement reads as it did.
+real object compiler. A connection whose released ontology declares nothing reads every statement as it did.
 """
 from __future__ import annotations
 
@@ -24,8 +24,7 @@ COUNT = "SELECT COUNT(*) FROM orders"
 
 
 @pytest.fixture
-def sql_door(secured, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY_SQL", "1")
+def sql_door(secured):  # noqa: F811
     return secured
 
 
@@ -105,24 +104,13 @@ def test_a_statement_that_reads_a_masked_property_is_refused_with_why(sql_door, 
 
 # ── what it leaves alone ────────────────────────────────────────────────────────
 
-def test_off_every_statement_reads_as_it_did(secured, db, as_reader, monkeypatch):  # noqa: F811
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY_SQL", raising=False)
+def test_with_nothing_declared_every_statement_reads_as_it_did(graph, db, as_reader):  # noqa: F811
     as_reader("ana")
     n, result = _count(db)
     assert n == _every(db) and not result.caveats and "object-policy:Order" not in result.doors
     assert not db.execute("q", "SELECT SUM(total_amount) FROM orders").error
     from aughor.db.connection import enforce_row_policy
     assert enforce_row_policy(db, "q", COUNT) == (COUNT, None)
-
-
-def test_it_needs_object_security_on(secured, db, as_reader, monkeypatch):  # noqa: F811
-    """Off without it, and nothing read: the door does not open the ontology for a statement it will not narrow."""
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY_SQL", "1")
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY", raising=False)
-    every = _every(db)
-    monkeypatch.setattr(security_sql, "_graphs", lambda conn: pytest.fail("read the ontology with security off"))
-    as_reader("ana")
-    assert _count(db)[0] == every
 
 
 def test_a_schedule_and_the_platforms_own_statements_count_every_order(sql_door, db, as_reader):  # noqa: F811
@@ -148,8 +136,6 @@ def test_two_readers_never_share_a_cached_result(sql_door, as_reader, monkeypatc
     as_reader("ben")
     ben = result_cache_tenancy()
     assert ana and ben and ana != ben
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY_SQL", raising=False)
-    assert result_cache_tenancy() is None
 
 
 # ── edit history ────────────────────────────────────────────────────────────────
@@ -246,8 +232,8 @@ def test_the_sql_editor_and_the_object_listing_agree_over_http(sql_door, db, cli
 
 
 def test_a_process_that_never_loaded_the_policies_refuses_rather_than_runs_unfiltered(sql_door, db, as_reader):  # noqa: F811
-    """The door reads the policies through a registry the agent fills at bootstrap. A host that forgot to fill it, with
-    the flags on, must not run a request's statement as if nothing were declared."""
+    """The door reads the policies through a registry the agent fills at bootstrap. A host that forgot to fill it must
+    not run a request's statement as if nothing were declared."""
     from aughor.agent.bootstrap import _register_object_policies
     from aughor.kernel.registries import object_policies
     as_reader("ana")

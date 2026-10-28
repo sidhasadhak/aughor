@@ -191,7 +191,6 @@ def test_the_plural_of_a_name():
 # ── the door ──────────────────────────────────────────────────────────────────────────────────
 
 CONN = "from-object-door-t"
-ON = {"dashboard.composed", "ontology.dashboard_pieces", "ontology.object_dashboards"}
 
 
 @pytest.fixture
@@ -211,12 +210,12 @@ def door(tmp_path, monkeypatch):
                                                           connection_id=CONN))
 
 
-def _flags(monkeypatch, on: set) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in on)
+def _flags(monkeypatch) -> None:
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
 
 
 def test_the_door_offers_a_cockpit_measured_on_the_warehouse(door, client, monkeypatch):
-    _flags(monkeypatch, ON)
+    _flags(monkeypatch)
     res = client.get("/dashboards/from-object", params={"entity": "order", "connection_id": CONN,
                                                       "schema_name": "ecommerce"})
     assert res.status_code == 200, res.text
@@ -224,14 +223,8 @@ def test_the_door_offers_a_cockpit_measured_on_the_warehouse(door, client, monke
     assert body["entity"] == "order" and body["total"] == 5000 and body["filters"] and body["chart"]
 
 
-def test_the_door_is_shut_while_its_flag_is_off(door, client, monkeypatch):
-    _flags(monkeypatch, ON - {"ontology.object_dashboards"})
-    res = client.get("/dashboards/from-object", params={"entity": "order", "connection_id": CONN})
-    assert res.status_code == 404 and "off" in res.json()["detail"]
-
-
 def test_an_object_that_does_not_exist_is_refused_with_the_names_that_do(door, client, monkeypatch):
-    _flags(monkeypatch, ON)
+    _flags(monkeypatch)
     res = client.get("/dashboards/from-object", params={"entity": "shipment", "connection_id": CONN,
                                                       "schema_name": "ecommerce"})
     assert res.status_code == 422
@@ -259,19 +252,13 @@ def no_edits(monkeypatch):
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
 
 
-def test_the_three_pieces_are_refused_while_their_flag_is_off(monkeypatch, no_edits):
-    _flags(monkeypatch, {"ontology.dashboard_pieces"})
-    [said] = pieces.not_resolved("c", _spec(f=FILTERS, g=FIGURE, h=CHART), graph=_graph())
-    assert "3 filter column, figure, chart or breakdown piece(s)" in said and "off on this install" in said
-
-
 def test_the_three_pieces_keep_when_every_query_they_make_compiles(monkeypatch, no_edits):
-    _flags(monkeypatch, ON)
+    _flags(monkeypatch)
     assert pieces.not_resolved("c", _spec(f=FILTERS, g=FIGURE, h=CHART), graph=_graph()) == []
 
 
 def test_a_piece_naming_what_the_object_does_not_hold_is_refused_in_the_compiler_s_words(monkeypatch, no_edits):
-    _flags(monkeypatch, ON)
+    _flags(monkeypatch)
     bad = {"type": "ObjectFilters", "props": {"entity": "order", "properties": [{"path": "status", "label": "Status"},
                                                                              {"path": "colour", "label": "Colour"}]},
            "children": []}

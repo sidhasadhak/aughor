@@ -4,7 +4,7 @@ unknown one checked by the action's own verification read before anything is sen
 The executor runs for real (approval off); the far end is a stand-in `dispatch_effect` that answers what each test
 needs, and the action's check is a stand-in `verify` — so each property is held without a network: a call that did
 not go out goes again later; one that got no answer is never sent blind; one the far end refused is never sent again
-by itself; two workers never hold one row; and with the flag off nothing changes.
+by itself; two workers never hold one row.
 """
 from __future__ import annotations
 
@@ -59,30 +59,18 @@ def far_end(monkeypatch):
     return state
 
 
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "actions.outbox")
-
-
 def _press(conn: str, action: KineticAction | None = None):
     return execute_kinetic_action(action or _carrier(), {"order_id": "O-7"}, actor="ana", scope=conn, approved=True)
 
 
-def test_off_a_call_goes_out_once_inline_as_before_and_nothing_is_kept(far_end, monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
-    r = _press("ob-off")
-    assert r.status == "executed" and far_end["calls"] == 1 and "outbox" not in r.outcome
-    assert outbox.list_sends("ob-off") == []
-
-
-def test_a_call_delivered_in_the_press_is_checked_at_once(far_end, on):
+def test_a_call_delivered_in_the_press_is_checked_at_once(far_end):
     r = _press("ob-1")
     assert r.status == "executed" and r.verification["status"] == "passed"
     [send] = outbox.list_sends("ob-1")
     assert (send.status, send.attempts, send.entry) == ("delivered", 1, "")
 
 
-def test_a_call_that_did_not_go_out_goes_again_later_and_its_check_is_booked_when_it_lands(far_end, on):
+def test_a_call_that_did_not_go_out_goes_again_later_and_its_check_is_booked_when_it_lands(far_end):
     far_end["answers"] = [KineticDispatchError("refused connection", cause="not_delivered")]
     r = _press("ob-2")
     assert r.status == "executed" and r.verification["status"] == "pending"
@@ -94,7 +82,7 @@ def test_a_call_that_did_not_go_out_goes_again_later_and_its_check_is_booked_whe
     assert executions("open_claim", "ob-2")[0]["verification"]["status"] == "passed"   # booked on the entry
 
 
-def test_a_call_with_no_answer_is_checked_before_anything_is_sent_again(far_end, on):
+def test_a_call_with_no_answer_is_checked_before_anything_is_sent_again(far_end):
     far_end["answers"] = [KineticDispatchError("read timeout", cause="unknown")]
     r = _press("ob-3")
     assert "may have landed" in r.verification["why"] and "before it sends anything again" in r.verification["why"]
@@ -105,7 +93,7 @@ def test_a_call_with_no_answer_is_checked_before_anything_is_sent_again(far_end,
     assert far_end["calls"] == 1                                          # the check found it: never sent twice
 
 
-def test_an_unknown_call_its_check_does_not_find_is_sent_again_and_one_it_cannot_say_waits_for_a_person(far_end, on):
+def test_an_unknown_call_its_check_does_not_find_is_sent_again_and_one_it_cannot_say_waits_for_a_person(far_end):
     far_end["answers"] = [KineticDispatchError("read timeout", cause="unknown")]
     _press("ob-4")
     far_end["check"] = "failed"
@@ -123,7 +111,7 @@ def test_an_unknown_call_its_check_does_not_find_is_sent_again_and_one_it_cannot
     ({"kind": "http", "http_status": 429, "ok": False}, "queued", "rate_limited"),
     (KineticDispatchError("SSRF guard", cause="refused"), "dead", "refused"),
 ])
-def test_what_happens_next_follows_why_the_call_failed(far_end, on, answer, status, cause):
+def test_what_happens_next_follows_why_the_call_failed(far_end, answer, status, cause):
     far_end["answers"] = [answer]
     r = _press("ob-6")
     [send] = outbox.list_sends("ob-6")
@@ -137,7 +125,7 @@ def test_what_happens_next_follows_why_the_call_failed(far_end, on, answer, stat
         assert wait >= timedelta(seconds=60)
 
 
-def test_a_call_out_of_attempts_waits_for_a_person_who_may_send_it_again_or_leave_it(far_end, on):
+def test_a_call_out_of_attempts_waits_for_a_person_who_may_send_it_again_or_leave_it(far_end):
     far_end["answers"] = [KineticDispatchError("refused", cause="not_delivered")] * outbox.MAX_ATTEMPTS
     _press("ob-7")
     for _ in range(outbox.MAX_ATTEMPTS):
@@ -153,7 +141,7 @@ def test_a_call_out_of_attempts_waits_for_a_person_who_may_send_it_again_or_leav
     assert (left.status, left.note) == ("dismissed", "the carrier closed that account")
 
 
-def test_two_workers_never_hold_one_call_and_one_that_stopped_mid_send_is_unknown(far_end, on):
+def test_two_workers_never_hold_one_call_and_one_that_stopped_mid_send_is_unknown(far_end):
     send = outbox.enqueue(_carrier(), 0, {"order_id": "O-9"}, "ob-9")
     first, second = outbox._claim(send.id, "w1"), outbox._claim(send.id, "w2")
     assert first is not None and second is None
@@ -161,7 +149,7 @@ def test_two_workers_never_hold_one_call_and_one_that_stopped_mid_send_is_unknow
     assert outbox.get(send.id).status == "unknown"
 
 
-def test_a_writeback_that_fails_leaves_the_edits_and_every_other_call_undone(far_end, on):
+def test_a_writeback_that_fails_leaves_the_edits_and_every_other_call_undone(far_end):
     action = _carrier(side_effects=[{"kind": "http", "config": {"url": "https://erp.example/hold"}, "lane": "writeback"},
                                     {"kind": "http", "config": {"url": "https://carrier.example/claims"}}])
     far_end["answers"] = [{"kind": "http", "http_status": 409, "ok": False}]

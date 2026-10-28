@@ -257,7 +257,7 @@ describe("CLARITY — the result opens on its figures", () => {
 });
 
 describe("CLARITY — the result's ways out are one Tools ▾", () => {
-  it("holds a chart, the other formats, Pin and Schedule — each one opens what it did", async () => {
+  it("holds a chart, the other formats, Pin, Schedule and Keep as a sheet — each one opens what it did", async () => {
     api.pinQueryToDashboard.mockResolvedValue({});
     mount(result({ truncated: false, cut_by: null }));
     // No footer of buttons any more.
@@ -265,7 +265,7 @@ describe("CLARITY — the result's ways out are one Tools ▾", () => {
     expect(screen.queryByTestId("results-schedule")).toBeNull();
     fireEvent.keyDown(screen.getByTestId("results-tools"), { key: "Enter" });
     const items = (await screen.findAllByRole("menuitem")).map(i => i.textContent);
-    expect(items).toEqual(["Add a chart", "Other formats…", "Pin to the dashboard", "Schedule…"]);
+    expect(items).toEqual(["Add a chart", "Other formats…", "Pin to the dashboard", "Schedule…", "Keep the rows as a sheet…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Pin to the dashboard" }));
     await waitFor(() => expect(api.pinQueryToDashboard).toHaveBeenCalledWith("c1", SQL, "Query — t"));
   });

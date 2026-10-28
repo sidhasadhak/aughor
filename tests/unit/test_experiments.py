@@ -30,12 +30,12 @@ from aughor.llm import provider as P
 # they DO. Both are EXPERIMENT-dispositioned so they outlive the endgame's hardwiring
 # waves; the two predecessors were re-pointed for exactly that reason (evidence_stubs
 # deleted 2026-08-01, evidence_dedup hardwired by Wave 2d).
-FLAG = "explore.route_wide"
-OTHER = "federation.planner"
+FLAG = "_synthetic.default_off"   # a synthetic default-off flag (tests/conftest.py `synthetic_flags`) — no product flag is a switch since 2026-10-28
+OTHER = "_synthetic.other_off"   # the synthetic pair's second
 
 
 @pytest.fixture(autouse=True)
-def _measurable(monkeypatch):
+def _measurable(monkeypatch, synthetic_flags):
     """Default every test into a measurable environment; the guard has its own tests."""
     monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
     yield

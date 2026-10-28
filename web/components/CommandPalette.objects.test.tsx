@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * Arc FA, FA-1 (flag `objects.find`) — ⌘K finds an object by the name it goes by, across entities.
+ * Arc FA, FA-1 — ⌘K finds an object by the name it goes by, across entities.
  *
  * The group is fetched from the server as the reader types — outside the Fuse index, like the Spotlight row — and
- * says what it read: "searched 2 of 5 entities". A hit opens the object's page. With the flag off nothing is
- * fetched, and the palette lists what it always did. The API is mocked: jsdom would reach the live server otherwise.
+ * says what it read: "searched 2 of 5 entities". A hit opens the object's page. The API is mocked: jsdom would reach
+ * the live server otherwise.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -25,13 +25,10 @@ const ANSWER = {
   more: [], withheld: [], withheld_said: [], masked: [],
 };
 
-function serve(flagOn: boolean, answer: object = ANSWER) {
+function serve(answer: object = ANSWER) {
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     calls.push(String(url));
-    if (String(url).includes("/system/flags")) {
-      return new Response(JSON.stringify({ "objects.find": { value: flagOn } }), { status: 200 });
-    }
     if (String(url).includes("/objects/find")) return new Response(JSON.stringify(answer), { status: 200 });
     return new Response("[]", { status: 200 });
   }));
@@ -42,7 +39,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 it("finds an object by name, says how many entities it searched, and opens its page", async () => {
   Element.prototype.scrollIntoView = vi.fn();
-  const calls = serve(true);
+  const calls = serve();
   const onOpenObject = vi.fn();
   const user = userEvent.setup();
   render(<CommandPalette open onClose={vi.fn()} selectedConn="c1" onNavigate={vi.fn()} onGoToChat={vi.fn()}
@@ -64,7 +61,7 @@ it("finds an object by name, says how many entities it searched, and opens its p
 
 it("says what it searched when nothing is named so", async () => {
   Element.prototype.scrollIntoView = vi.fn();
-  serve(true, { ...ANSWER, q: "zebra", hits: [], withheld: ["Customer"],
+  serve({ ...ANSWER, q: "zebra", hits: [], withheld: ["Customer"],
                 withheld_said: ["only the Customer objects user:ana may see are shown"] });
   const user = userEvent.setup();
   render(<CommandPalette open onClose={vi.fn()} selectedConn="c1" onNavigate={vi.fn()} onGoToChat={vi.fn()} />);
@@ -78,23 +75,11 @@ it("says what it searched when nothing is named so", async () => {
 
 it("names an entity with more matches by the name a reader knows it by", async () => {
   Element.prototype.scrollIntoView = vi.fn();
-  serve(true, { ...ANSWER, q: "levi", hits: [{ type: "inventory_item", type_id: "InventoryItem", key: "15195",
+  serve({ ...ANSWER, q: "levi", hits: [{ type: "inventory_item", type_id: "InventoryItem", key: "15195",
     title: "Larry Levine Women's Down Jacket", entity_label: "Inventory Item" }], more: ["inventory_item"] });
   const user = userEvent.setup();
   render(<CommandPalette open onClose={vi.fn()} selectedConn="c1" onNavigate={vi.fn()} onGoToChat={vi.fn()} />);
   await user.type(screen.getByPlaceholderText(/search/i), "levi");
   await waitFor(() => expect(screen.getByTestId("objects-said").textContent).toBe(
     "searched 2 of 5 entities · more in Inventory Item"));
-});
-
-it("with the flag off, nothing is fetched and no Objects group is shown", async () => {
-  Element.prototype.scrollIntoView = vi.fn();
-  const calls = serve(false);
-  const user = userEvent.setup();
-  render(<CommandPalette open onClose={vi.fn()} selectedConn="c1" onNavigate={vi.fn()} onGoToChat={vi.fn()} />);
-
-  await user.type(screen.getByPlaceholderText(/search/i), "alice smith");
-  await new Promise(r => setTimeout(r, 400));
-  expect(calls.some(u => u.includes("/objects/find"))).toBe(false);
-  expect(screen.queryByText("Objects")).toBeNull();
 });

@@ -30,7 +30,7 @@ const history = (over: Partial<AutomationVersions> = {}): AutomationVersions => 
 });
 
 describe("runVersionLabel", () => {
-  it("says nothing while versions are off — the run card is what it was", () => {
+  it("says nothing for a run from a server before versions — the run card is what it was", () => {
     expect(runVersionLabel(run())).toBe("");
   });
   it("says a run kept no version, rather than leaving a blank", () => {
@@ -55,7 +55,7 @@ describe("versionLine", () => {
 });
 
 describe("VersionsList", () => {
-  it("draws nothing while versions are off", () => {
+  it("draws nothing when there are no versions to read", () => {
     const { container } = render(<VersionsList versions={null} />);
     expect(container).toBeEmptyDOMElement();
   });
@@ -69,7 +69,7 @@ describe("VersionsList", () => {
     expect(screen.getAllByText(/^v\d$/).map(n => n.textContent)).toEqual(["v2", "v1"]);
   });
   it("says why the current definition is not among them", () => {
-    const why = "its current definition was saved while versions were off";
+    const why = "its current definition was saved before versions were kept";
     render(<VersionsList versions={history({ current_version: null, current_kept: false, why_not: why })} />);
     expect(screen.getByText("Versions")).toBeInTheDocument();
     expect(screen.getByText(why)).toBeInTheDocument();

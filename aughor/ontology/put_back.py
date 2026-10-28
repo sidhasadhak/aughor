@@ -1,8 +1,8 @@
 """Arc FA, FA-3 — an earlier version of a declaration, put back into the draft (ROADMAP §3.60).
 
-Every save and withdrawal of a declaration is a version (Arc OC-1, `ontology.history`), and a change waits in a draft
-until a person publishes it (Arc OC-2, `ontology.release`). What was missing is the way back: what a promise said on
-1 October could be read, but putting it back meant typing it again. Behind `ontology.put_back`:
+Every save and withdrawal of a declaration is a version (Arc OC-1, `ontology/history.py`), and a change waits in a
+draft until a person publishes it (Arc OC-2, `ontology/release.py`). What was missing is the way back: what a promise
+said on 1 October could be read, but putting it back meant typing it again. So:
 
 * **A version's fields go back through the normal save path** — `overrides.save_override`, whose routing puts a
   change into the DRAFT. So a put back is classed like any change (`ontology.compatibility`) and reaches readers only
@@ -13,8 +13,8 @@ until a person publishes it (Arc OC-2, `ontology.release`). What was missing is 
   — and every SQL field is EXPLAIN-bound (`bind_overrides`). A version is what the declaration SAID, never its
   verdicts, so it is measured rather than restored with the counts it once had; one that no longer resolves or counts
   on this ontology is refused with the reason and nothing is written, as the kind's own door refuses.
-* **Refused with a sentence** while releases are off (it would be served the moment it was written), for an
-  organisation's ontology (outside releases for now), and for a version the history does not hold.
+* **Refused with a sentence** for an organisation's ontology (outside releases for now), and for a version the
+  history does not hold.
 
 No model call: a version is a person's earlier words, and putting it back is a person's act.
 """
@@ -23,8 +23,6 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
-
-FLAG = "ontology.put_back"
 
 #: A declaration kind as a reader names it (the store's frozen `object_set` is a segment).
 KIND_WORDS = {"entity": "entity", "object_set": "segment", "computed_property": "computed property",
@@ -41,22 +39,12 @@ class PutBackRefused(ValueError):
         self.status = status
 
 
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
-
-
 def unavailable(conn: str) -> str:
     """Why an earlier version cannot be put back on ``conn`` now, or "" when it can."""
-    if not enabled():
-        return "putting an earlier version back is off on this install"
-    from aughor.ontology.overrides import drafts_enabled, organisation_scope
+    from aughor.ontology.overrides import organisation_scope
     if organisation_scope(conn):
         return ("an organisation's ontology is outside releases — an earlier version is not put back into it; "
                 "declare it again through its own door")
-    if not drafts_enabled():
-        return ("putting an earlier version back needs releases on — it lands in the draft and reaches readers only "
-                "when a person publishes it; with releases off it would be served the moment it was written")
     return ""
 
 

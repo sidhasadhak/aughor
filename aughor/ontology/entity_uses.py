@@ -7,7 +7,7 @@ dashboard whose pieces read it, whoever keeps it; and the SQL audit holds every 
 This module composes them for the entity's own page and stores nothing. What cannot be read is said:
 no bound table means nothing is counted, and an unreadable log says so instead of counting zero.
 
-Arc FA, FA-3 (ROADMAP §3.60) folds *usage* in here — one concept, one flag: the reads of the last thirty days, the
+Arc FA, FA-3 (ROADMAP §3.60) folds *usage* in here — one concept, one read: the reads of the last thirty days, the
 day an entity was last read and how many people read it, and every entity of a scope ranked by those reads, the least
 read first, for the person cleaning up. Who read is the person the session log names for the run that issued the
 statement; a read whose run it does not name is counted and said, never given a reader. A statement naming a table
@@ -17,16 +17,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-FLAG = "ontology.entity_usage"
 #: Calendar months of reads shown, the current one included.
 MONTHS = 12
 #: Days the recent window covers, today included.
 WINDOW_DAYS = 30
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def bound_tables(body: dict) -> list[str]:

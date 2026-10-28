@@ -8,7 +8,7 @@ check, so every table's health read "not checked".
 An **expectation** (the glossary's word; the code's `Rule`) is one statement a table's data must meet — a column never
 empty, a key never repeated, the newest row younger than a day. An automation step now measures a list of them,
 read-only, through the connection's own door, and records each verdict in the one store (`dispatch` in the automation
-engine, behind ``quality.expectations``). What it records:
+engine). What it records:
 
 * the count of rows that break it, never the rows — the store has no clearance model;
 * for the two drift kinds, the reading, judged against the last one (the first is the baseline, and says so);
@@ -24,17 +24,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-FLAG = "quality.expectations"
 _TABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,2}$")
 _COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 #: How far a drift may move before it is not met: row count by percent, distinct values by count of new ones.
 DEFAULT_MAX_CHANGE_PCT = 50.0
 DEFAULT_MAX_NEW_VALUES = 0
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def parse(raw: Any) -> list:

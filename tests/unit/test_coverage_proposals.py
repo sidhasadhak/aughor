@@ -9,14 +9,12 @@ call, and a proposal reading a table its area was not given, or citing a pattern
 """
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import date, timedelta
 
 import duckdb
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 from aughor.semantic import coverage_proposals as CP
 
 TODAY = date.today()
@@ -85,56 +83,50 @@ def _bind(conn: str, order_item: dict) -> None:
 def test_a_recipe_bound_to_a_table_whose_every_row_is_a_return_is_proposed_refused_and_not_adoptable(shop, monkeypatch):
     conn, _ = shop
     _bind(conn, {"table": "returns", "columns": {"returned_at": "return_date"}})
-    with flag_overrides({CP.FLAG_PROPOSALS: True}):
-        out = CP.run(conn, None)
-        rate = next(p for p in out["proposals"] if p["name"] == "return_rate")
-        assert rate["state"] == CP.STATE_GATE_FAILED and rate["area"] == "returns"
-        assert rate["gates"]["binding"]["ok"] is False
-        assert "returns.return_date is never empty" in rate["gates"]["binding"]["why"]
-        assert rate["gates"]["moves"]["ok"] is False and "it reads 1 in every one" in rate["gates"]["moves"]["why"]
-        assert rate["reason"].startswith("its roles are bound to the right columns — no: the formula counts a row")
+    out = CP.run(conn, None)
+    rate = next(p for p in out["proposals"] if p["name"] == "return_rate")
+    assert rate["state"] == CP.STATE_GATE_FAILED and rate["area"] == "returns"
+    assert rate["gates"]["binding"]["ok"] is False
+    assert "returns.return_date is never empty" in rate["gates"]["binding"]["why"]
+    assert rate["gates"]["moves"]["ok"] is False and "it reads 1 in every one" in rate["gates"]["moves"]["why"]
+    assert rate["reason"].startswith("its roles are bound to the right columns — no: the formula counts a row")
 
-        from aughor.semantic.metric_catalogue import catalogue_for
-        row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
-        assert (row.source, row.state, row.area) == ("industry", "gate_failed", "returns")
-        assert row.reason == rate["reason"]
+    from aughor.semantic.metric_catalogue import catalogue_for
+    row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
+    assert (row.source, row.state, row.area) == ("industry", "gate_failed", "returns")
+    assert row.reason == rate["reason"]
 
-        from aughor import govern
-        monkeypatch.setattr(govern, "guard", lambda *a, **k: None)
-        from fastapi.testclient import TestClient
+    from aughor import govern
+    monkeypatch.setattr(govern, "guard", lambda *a, **k: None)
+    from fastapi.testclient import TestClient
 
-        from aughor.api import app
-        with TestClient(app) as client:
-            got = client.post(f"/metrics/catalogue/{conn}/adopt", json={"items": [{"name": "return_rate"}]}).json()
+    from aughor.api import app
+    with TestClient(app) as client:
+        got = client.post(f"/metrics/catalogue/{conn}/adopt", json={"items": [{"name": "return_rate"}]}).json()
     assert got["adopted"] == []
     assert got["skipped"][0]["reason"].startswith("it failed a check when it was proposed: its roles are bound")
-    # off, the catalogue lists the recipe as the package does — the verdict is not read
-    from aughor.semantic.metric_catalogue import catalogue_for
-    assert next(r for r in catalogue_for(conn) if r.name == "return_rate").state == "proposed"
 
 
 def test_bound_to_the_sold_lines_the_same_recipe_passes_every_gate(shop):
     conn, _ = shop
     _bind(conn, {"table": "order_items", "columns": {"returned_at": "returned_at"}})
-    with flag_overrides({CP.FLAG_PROPOSALS: True}):
-        out = CP.run(conn, None)
-        rate = next(p for p in out["proposals"] if p["name"] == "return_rate")
-        assert rate["state"] == CP.STATE_PROPOSED, rate["reason"]
-        assert set(rate["gates"]) >= {"runs", "dated", "window", "binding", "moves", "sane_range"}
-        assert rate["time_column"] == "order_items.created_at"
-        from aughor.semantic.metric_catalogue import catalogue_for
-        row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
-        assert row.state == "proposed" and row.gates["sane_range"]["ok"] is True
+    out = CP.run(conn, None)
+    rate = next(p for p in out["proposals"] if p["name"] == "return_rate")
+    assert rate["state"] == CP.STATE_PROPOSED, rate["reason"]
+    assert set(rate["gates"]) >= {"runs", "dated", "window", "binding", "moves", "sane_range"}
+    assert rate["time_column"] == "order_items.created_at"
+    from aughor.semantic.metric_catalogue import catalogue_for
+    row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
+    assert row.state == "proposed" and row.gates["sane_range"]["ok"] is True
 
 
 def test_a_verdict_read_under_a_binding_that_changed_is_not_applied(shop):
     conn, _ = shop
     _bind(conn, {"table": "returns", "columns": {"returned_at": "return_date"}})
-    with flag_overrides({CP.FLAG_PROPOSALS: True}):
-        CP.run(conn, None)
-        _bind(conn, {"table": "order_items", "columns": {"returned_at": "returned_at"}})
-        from aughor.semantic.metric_catalogue import catalogue_for
-        row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
+    CP.run(conn, None)
+    _bind(conn, {"table": "order_items", "columns": {"returned_at": "returned_at"}})
+    from aughor.semantic.metric_catalogue import catalogue_for
+    row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
     assert row.state == "proposed" and row.gates is None
 
 
@@ -145,16 +137,14 @@ def test_a_measure_three_findings_keep_computing_is_proposed_in_its_area(shop, m
     from aughor.explorer import store as explorer_store
     findings = [{"id": f"f{i}", "sql": f"SELECT SUM(refund) FROM returns WHERE return_id > {i}"} for i in range(3)]
     monkeypatch.setattr(explorer_store, "get_findings", lambda *a, **k: findings)
-    with flag_overrides({CP.FLAG_BLIND: True}):
-        out = CP.run(conn, None)
+    out = CP.run(conn, None)
     spot = next(p for p in out["proposals"] if p["source"] == CP.SOURCE_BLIND_SPOT)
     assert (spot["name"], spot["area"], spot["findings"]) == ("total_refund", "returns", 3)
     assert spot["sql"] == "SELECT SUM(refund) AS total_refund FROM returns"
     assert spot["state"] == CP.STATE_PROPOSED, spot["reason"]
     # two findings are not enough, and a measure a metric reads is not a blind spot
     monkeypatch.setattr(explorer_store, "get_findings", lambda *a, **k: findings[:2])
-    with flag_overrides({CP.FLAG_BLIND: True}):
-        assert not [p for p in CP.run(conn, None)["proposals"] if p["source"] == CP.SOURCE_BLIND_SPOT]
+    assert not [p for p in CP.run(conn, None)["proposals"] if p["source"] == CP.SOURCE_BLIND_SPOT]
 
 
 # ── MC-5 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -188,8 +178,7 @@ def test_the_writer_gets_one_call_per_uncovered_area_and_its_mistakes_are_refuse
     })
     from aughor.llm import provider as llm_provider
     monkeypatch.setattr(llm_provider, "get_provider", lambda *a, **k: provider)
-    with flag_overrides({CP.FLAG_WRITER: True}):
-        out = CP.run(conn, None, write=True, why="the connection was profiled")
+    out = CP.run(conn, None, write=True, why="the connection was profiled")
     spend = out["spend"]
     assert spend["calls"] == len(provider.prompts) == len(spend["areas"]) >= 3
     assert spend["model"] == "test-model"
@@ -208,24 +197,21 @@ def test_the_writer_gets_one_call_per_uncovered_area_and_its_mistakes_are_refuse
     orders = next(a for a in spend["areas"] if a["area"] == "orders_sales")
     assert orders["skipped"] == [{"pattern": "ec_net_revenue", "why": "no discount column"}]
     # the catalogue lists the writer's proposals as their own source, a refused one not adoptable
-    with flag_overrides({CP.FLAG_WRITER: True}):
-        from aughor.semantic.metric_catalogue import catalogue_for
-        rows = {r.name: r for r in catalogue_for(conn) if r.source == "coverage"}
+    from aughor.semantic.metric_catalogue import catalogue_for
+    rows = {r.name: r for r in catalogue_for(conn) if r.source == "coverage"}
     assert rows["gmv"].state == "proposed" and rows["gmv"].why_it_matters == ("the knowledge base's Gross Merchandise "
                                                                              "Value (GMV)")
     assert rows["sessions_seen"].state == "gate_failed"
 
 
-def test_nothing_is_proposed_and_no_call_made_while_every_coverage_flag_is_off(shop, monkeypatch):
+def test_a_run_that_is_not_asked_to_write_makes_no_model_call(shop, monkeypatch):
+    """The run door proposes by code only; the writer writes when the connection is profiled, or on its own door."""
     conn, _ = shop
     from aughor.llm import provider as llm_provider
     monkeypatch.setattr(llm_provider, "get_provider", lambda *a, **k: pytest.fail("a model was called"))
-    assert CP.run_in_background(conn, None, write=True, why="profiled") is False
-    out = CP.run(conn, None, write=True)
-    assert out["proposals"] == [] and out["spend"] is None
-    from aughor.semantic.metric_catalogue import catalogue_for
-    assert not [r for r in catalogue_for(conn) if r.source == "coverage"]
-    assert json.dumps(out["flags"]) == json.dumps({CP.FLAG_PROPOSALS: False, CP.FLAG_WRITER: False, CP.FLAG_BLIND: False})
+    out = CP.run(conn, None)
+    assert out["spend"] is None and "flags" not in out
+    assert not [p for p in out["proposals"] if p["source"] in (CP.SOURCE_PATTERN, CP.SOURCE_AREA)]
 
 
 def test_an_area_a_metric_already_covers_is_still_written_for_its_open_patterns_and_told_what_is_measured(shop, monkeypatch):
@@ -239,8 +225,7 @@ def test_an_area_a_metric_already_covers_is_still_written_for_its_open_patterns_
     provider = _Provider({})
     from aughor.llm import provider as llm_provider
     monkeypatch.setattr(llm_provider, "get_provider", lambda *a, **k: provider)
-    with flag_overrides({CP.FLAG_WRITER: True}):
-        CP.run(conn, None, write=True)
+    CP.run(conn, None, write=True)
     orders = next(u for u in provider.prompts if "AREA: Orders & sales" in u)
     assert "ALREADY MEASURED here (do not write these again): GMV" in orders
     assert "PATTERN ec_gmv " not in orders and "PATTERN ec_aov " in orders

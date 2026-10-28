@@ -159,9 +159,8 @@ def upsert_monitor(monitor: Monitor) -> Monitor:
     if not monitor.created_at:
         monitor = monitor.model_copy(update={"created_at": now})
     monitor = monitor.model_copy(update={"updated_at": now})
-    # TC-3 — with `automations.versions` on, the definition is kept as a version before the row
-    # is replaced (and the one it replaces first, if nothing kept it); a save whose version
-    # cannot be kept is refused. Off, this reads nothing.
+    # TC-3 — the definition is kept as a version before the row is replaced (and the one it
+    # replaces first, if nothing kept it); a save whose version cannot be kept is refused.
     from aughor.automations.versions import keep_monitor_version
     keep_monitor_version(monitor)
 
@@ -371,7 +370,7 @@ def get_alerts(
 
 def alert_timeline(monitor_ids: list[str]) -> list[dict]:
     """Every alert of these monitors, oldest first, as ``id · monitor_id · triggered_at · alert_on · severity`` only —
-    what `monitors.recovery.links` reads to say which alerts a recovery closed. [] for no monitors."""
+    what `monitors/recovery.links` reads to say which alerts a recovery closed. [] for no monitors."""
     if not monitor_ids:
         return []
     marks = ",".join("?" * len(monitor_ids))

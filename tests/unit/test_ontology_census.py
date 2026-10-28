@@ -1,5 +1,5 @@
 """Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of it,
-and what leans on it, counted the same way every time and journaled once a day behind `ontology.census`.
+and what leans on it, counted the same way every time and journaled once a day.
 
 The live receipt is in the arc's status: on the study's six scopes the census reproduced the hand count of
 `docs/ONTOLOGY_FIRST_STUDY_2026-10-09.md` §5 exactly, and found four built scopes the hand count had missed.
@@ -159,19 +159,7 @@ def journal(tmp_path, monkeypatch):
     return ledger
 
 
-def _flag(monkeypatch, on: bool):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: on and name == "ontology.census")
-
-
-def test_off_nothing_is_read_or_written(journal, monkeypatch):
-    _flag(monkeypatch, False)
-    monkeypatch.setattr(CEN, "take_census", lambda: pytest.fail("the census was read with the flag off"))
-    assert CEN.record_if_due() is None
-    assert journal.events(kind=CEN.EVENT_KIND) == []
-
-
-def test_on_one_reading_a_day(journal, monkeypatch):
-    _flag(monkeypatch, True)
+def test_one_reading_a_day(journal, monkeypatch):
     now = datetime.now(timezone.utc)
     assert CEN.record_if_due(now) is not None
     assert CEN.record_if_due(now + timedelta(hours=2)) is None          # not due again the same day
@@ -193,7 +181,6 @@ def test_the_door_serves_the_reading_and_the_kept_readings(journal, monkeypatch)
     from fastapi.testclient import TestClient
 
     from aughor.api import app
-    _flag(monkeypatch, True)
     CEN.record_if_due()
     body = TestClient(app).get("/ontology/census").json()
     assert body["reading"]["totals"] == {"declared": {"entities": 52}}

@@ -91,6 +91,10 @@ TRIGGERS: tuple[PaletteEntry, ...] = (
     # payload the chain binds as `trigger.<key>`.
     PaletteEntry("promise_breached", "trigger", "Promise breached",
                  "A declared promise is measured broken", "alert", 50),
+    # Arc FA, FA-5: the objects a rule or segment newly admits, after the promise trigger it sits
+    # beside (both are about the ontology's declarations rather than a table).
+    PaletteEntry("objects_admitted", "trigger", "Objects admitted",
+                 "Objects a rule or segment newly admits — their keys, the count said", "filter", 55),
     PaletteEntry("finding_created", "trigger", "New finding",
                  "The explorer recorded a new finding", "spark", 60),
 )
@@ -136,21 +140,6 @@ ACTIONS: tuple[PaletteEntry, ...] = (
 )
 
 ENTRIES: tuple[PaletteEntry, ...] = TRIGGERS + ACTIONS
-
-#: Entries offered only while their flag is on — off, the palette is `ENTRIES`, byte for byte.
-#: Arc FA, FA-5: the objects a rule or segment newly admits, after the promise trigger it sits
-#: beside (both are about the ontology's declarations rather than a table).
-FLAGGED: tuple[tuple[str, PaletteEntry], ...] = (
-    ("automations.objects_admitted",
-     PaletteEntry("objects_admitted", "trigger", "Objects admitted",
-                  "Objects a rule or segment newly admits — their keys, the count said", "filter", 55)),
-)
-
-
-def offered() -> tuple[PaletteEntry, ...]:
-    """What this deployment offers: every entry, and each flagged one whose flag is on."""
-    from aughor.kernel.flags import flag_enabled
-    return ENTRIES + tuple(entry for flag, entry in FLAGGED if flag_enabled(flag))
 
 
 @dataclass(frozen=True)
@@ -310,7 +299,7 @@ def entries(conn_id: Optional[str] = None) -> list[dict]:
 
     prereqs = _prereqs(conn_id)
     out: list[dict] = []
-    for entry in offered():
+    for entry in ENTRIES:
         availability, reason = READY, ""
         prereq = prereqs.get(entry.kind)
         if prereq is not None:

@@ -27,8 +27,8 @@ _DB_PATH = resolve_db_path("AUGHOR_PACK_BINDINGS_DB", Path(__file__).parent.pare
 _MIGRATIONS = [
     Migration(2, "schema_name on pack_bindings (3-key → 4-key)",
               lambda c: add_column_if_missing(c, "pack_bindings", "schema_name", "TEXT NOT NULL DEFAULT ''")),
-    # Arc FA, FA-6 (`packs.installed_versions`): who bound the pack, and what it offered when it was bound — the
-    # snapshot an upgrade is diffed against. Written only while the flag is on; '' on every row bound without it.
+    # Arc FA, FA-6: who bound the pack, and what it offered when it was bound — the snapshot an upgrade is diffed
+    # against. '' on every row bound before it (or without it — a script's save).
     Migration(3, "bound_by and offered_json on pack_bindings (installed versions)", lambda c: _add_install_columns(c)),
 ]
 
@@ -79,7 +79,7 @@ def save_binding(
     a role→{table,column,value,confidence,evidence} map. `verified` flags that every recipe
     dry-ran successfully. `schema` distinguishes datasets on a multi-schema connection.
 
-    ``installed`` (Arc FA, FA-6 — `packs.installed_versions`) is ``{"bound_by", "offered"}``: who bound it and the
+    ``installed`` (Arc FA, FA-6) is ``{"bound_by", "offered"}``: who bound it and the
     snapshot of what the pack offered at ``version``. Without it the row is written exactly as it always was, and the
     two columns are left as they stand."""
     org = current_org_id()

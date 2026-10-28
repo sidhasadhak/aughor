@@ -235,15 +235,8 @@ def all_runs(conn_id: Optional[str] = None, limit: int = 100):
 
 # ── TC-3 · versions, and a run's version and trigger ───────────────────────────
 #
-# Each 404s while `automations.versions` is off, so the surface is what it was. Declared before
-# `/automations/{automation_id}` with the other static `runs` route (FastAPI matches in order).
-
-def _versions_on() -> None:
-    from aughor.automations.versions import keeping
-    if not keeping():
-        raise HTTPException(status_code=404,
-                            detail="versions need the 'automations.versions' flag")
-
+# Declared before `/automations/{automation_id}` with the other static `runs` route (FastAPI
+# matches in order).
 
 def _owned_run(run_id: str, request: Request):
     """The run, or 404; and 403 when its connection is another organisation's."""
@@ -261,7 +254,6 @@ def run_version(run_id: str, request: Request):
     """The version this run ran under and the trigger that started it, as kept — the tick, who
     asked, each condition's verdict and the payload a trigger handed the chain (capped, and the
     cap said). A run that kept neither says so, and says whether it can be replayed and why not."""
-    _versions_on()
     from aughor.automations.versions import stamp_view
     return stamp_view(_owned_run(run_id, request))
 
@@ -273,7 +265,6 @@ def replay_run(run_id: str, request: Request):
     Nothing is sent, no action runs, no model is called and nothing is written — the B2 dry-run
     seam, handed the run's version and trigger. Refused with 409, by name, when the run's version
     or its trigger payload was not kept. Returns the same ``{run, graph}`` a dry run returns."""
-    _versions_on()
     from aughor.automations.versions import NotReplayable, replay
     run = _owned_run(run_id, request)
     try:
@@ -485,18 +476,14 @@ def _keyed_triggers(payload: dict) -> dict:
 
 
 def _admitted_triggers(payload: dict) -> dict:
-    """Arc FA, FA-5 — an `objects_admitted` trigger is refused at the save door while its flag is off, and, on, when
-    the segment it names cannot be listed on the automation's connection: the listing is compiled once, as the person
+    """Arc FA, FA-5 — an `objects_admitted` trigger is refused at the save door when the segment it names cannot be
+    listed on the automation's connection: the listing is compiled once, as the person
     saving, and nothing is run. 422 with the compiler's own words — a trigger that cannot read its segment would sit
     looking schedulable and say so only on its first check."""
     for c in payload.get("conditions") or []:
         if not (isinstance(c, dict) and c.get("kind") == "objects_admitted"):
             continue
-        from aughor.automations.admitted import FLAG, enabled, listing_problem
-        if not enabled():
-            raise HTTPException(status_code=422, detail=(
-                f"the objects_admitted trigger is off on this deployment ({FLAG}) — turn it on to act on the objects "
-                "a rule admits"))
+        from aughor.automations.admitted import listing_problem
         try:
             cond = Condition(**c)
         except ValidationError as exc:
@@ -839,11 +826,8 @@ def graph(automation_id: str, run: str = ""):
 @router.get("/automations/{automation_id}/runs")
 def runs(automation_id: str, limit: int = 50):
     rows = get_runs(automation_id=automation_id, limit=limit)
-    from aughor.automations.versions import keeping
-    if not keeping():
-        return {"runs": [r.model_dump() for r in rows]}
     # TC-3 — each run names the version it ran under (null when it kept none: a run from before
-    # versions were on, or one whose version could not be kept — its own route says which).
+    # versions were kept, or one whose version could not be kept — its own route says which).
     from aughor.automations.store import get_run_stamps
     stamps = get_run_stamps([r.id for r in rows])
     return {"runs": [{**r.model_dump(), "version": (stamps.get(r.id) or {}).get("version")}
@@ -855,7 +839,6 @@ def automation_versions(automation_id: str, request: Request, limit: int = 50):
     """TC-3 — every kept version of this automation, newest first, each with who saved it, when,
     and how it came to be kept; and which one is current. Superseded, never deleted: an automation
     that was deleted still answers with its versions."""
-    _versions_on()
     from aughor.automations.versions import (AUTOMATION_KIND, automation_definition, history)
     from aughor.security.authz import check_owner, get_principal
     a = get_automation(automation_id)

@@ -12,9 +12,9 @@ role needs the role itself, or the permission that administers roles. Who may RE
 list from the other side: a dashboard reaches a person through a group they are in or a role they
 hold. With identity off there is one operator, who is every group's nobody and the owner role.
 
-**What a reader reads** (Arc ED, ED-4, behind ``dashboard.app_versions``): who a dashboard reaches is its newest
-version's audience, and what they read is the version last published (:func:`versions.published`) — a keep since then
-is the owner's draft until they publish it. Off: they read the newest version, as before.
+**What a reader reads** (Arc ED, ED-4): who a dashboard reaches is its newest version's audience, and what they read is
+the version last published (:func:`versions.published`) — a keep since then is the owner's draft until they publish
+it.
 """
 from __future__ import annotations
 
@@ -129,12 +129,10 @@ def shared_with(connection_id: str, user_id: str) -> list[dict]:
         owner, cockpit_id = _owner_and_id(key, connection_id)
         if owner == user_id or not reaches(payload["published_to"], audience):
             continue
-        spec, number, at = payload.get("spec"), row.get("version"), row.get("created_at") or ""
-        if versions.app_versions():                      # Arc ED-4 — named by the version its readers read
-            read = versions.published(key)
-            if read is None or not read.get("spec"):
-                continue
-            spec, number, at = read["spec"], read["version"], read["kept_at"]
+        read = versions.published(key)                  # Arc ED-4 — named by the version its readers read
+        if read is None or not read.get("spec"):
+            continue
+        spec, number, at = read["spec"], read["version"], read["kept_at"]
         out.append({"owner": owner, "cockpit_id": cockpit_id, "title": versions.title_of(spec),
                     "version": number, "kept_at": at,
                     "published_by": payload.get("published_by") or "", "published_to": list(payload["published_to"])})
@@ -143,8 +141,7 @@ def shared_with(connection_id: str, user_id: str) -> list[dict]:
 
 def read_shared(connection_id: str, owner: str, cockpit_id: str, *, reader: str) -> dict:
     """A published dashboard as its readers read it, for a reader it reaches: ``{"home", "cockpit"}``. The
-    owner reads their own through here too, as a reader would — with App versions on, the version last
-    published, never their draft."""
+    owner reads their own through here too, as a reader would — the version last published, never their draft."""
     from aughor.dashboards import versions
     home = Home(connection_id, owner, cockpit_id)
     kept = versions.latest(home)
@@ -152,12 +149,10 @@ def read_shared(connection_id: str, owner: str, cockpit_id: str, *, reader: str)
         raise Refused("This dashboard is not shared with you, or it was retired.")
     if owner != reader and not reaches(kept.get("published_to"), audience_of(reader)):
         raise Refused("This dashboard is not shared with you.")
-    if versions.app_versions():
-        read = versions.published(home.key)
-        if read is None or not read.get("spec"):
-            raise Refused("This App has no published version to read.")
-        kept = read
-    return {"home": home, "cockpit": kept}
+    read = versions.published(home.key)
+    if read is None or not read.get("spec"):
+        raise Refused("This App has no published version to read.")
+    return {"home": home, "cockpit": read}
 
 
 def copy_for(connection_id: str, owner: str, cockpit_id: str, *, reader: str, approved_by: str) -> dict:

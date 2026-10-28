@@ -879,8 +879,7 @@ gaps remain · LOW = evidence cannot discriminate.
 lever exists (a missing cost column is not a reason to go empty); prioritise metric \
 targets in warning/critical.
 - closing_summary: the bottom line that CLOSES the report, never a copy of \
-executive_summary. data_gaps: hypotheses this schema cannot test. causal_links: only \
-cause→effect pairs the evidence defends."""
+executive_summary. data_gaps: hypotheses this schema cannot test."""
 
 
 #: The long-form register of the same rules, kept for BASELINE-tier models — the small
@@ -889,10 +888,6 @@ cause→effect pairs the evidence defends."""
 #: contract above and the post-generation checks; a baseline model keeps the guidance.
 #: (PE-2's tiering rule: prose that a stronger model makes unnecessary is a RESTRICTION
 #: — scale it with the model; the CHECKS are verification and run for every tier.)
-#: Arc ED, ED-5 — the rule for ``causal_links``, carried only while that field is asked for: with the declared impacts
-#: the one store (``ontology.impacts_only``) the field is not asked for, and a rule for a field the call does not carry
-#: is a rule for nothing.
-CAUSAL_LINKS_RULE = " causal_links: only cause→effect pairs the evidence defends."
 
 
 BASELINE_GUARDRAILS = """\
@@ -1099,14 +1094,9 @@ class AnswerRecommendationModel(BaseModel):
         "Only when the data or the question names when; otherwise empty — never an invented date."))
 
 
-class CausalLinkModel(BaseModel):
-    from_signal: str = Field(description="The upstream cause signal, e.g. 'elevated stockout rate'")
-    to_signal: str = Field(description="The downstream effect signal, e.g. 'increased refund rate'")
-    from_entity: Optional[str] = Field(default=None, description="Business entity id if identifiable, e.g. 'Inventory'")
-    to_entity: Optional[str] = Field(default=None, description="Business entity id if identifiable, e.g. 'Order'")
-    confidence: float = Field(default=0.5, description="Your confidence in this causal link, 0–1")
-
-
+# Arc ED, ED-5 (the user, 2026-10-24: "Impacts are the one store") — no ``causal_links``: what one promise does to
+# another is a declared impact (``ontology/impacts.py``), never a cause the narrator proposes. (No docstring: it would
+# ride into the schema the narrator is asked for.)
 class ADASynthesisModel(BaseModel):
     headline: str
     executive_summary: str
@@ -1122,10 +1112,6 @@ class ADASynthesisModel(BaseModel):
     confidence_justification: str
     recommendations: list[AnswerRecommendationModel]
     data_gaps: list[str] = Field(default_factory=list)
-    causal_links: list[CausalLinkModel] = Field(
-        default_factory=list,
-        description="Directional cause→effect pairs identified in this investigation. Only include links with clear evidence.",
-    )
 
 
 #: P4 — what the narrator is asked for when no waterfall can exist: `ADASynthesisModel` minus
@@ -1142,25 +1128,11 @@ def _build_synthesis_ask_model(name: str = "SynthesisAsk", drop: frozenset = fro
 
 
 SynthesisAsk = _build_synthesis_ask_model()
-#: Arc ED, ED-5 — the same two models without ``causal_links``, asked for while the declared impacts are the one store.
-_WITHOUT_LINKS = {
-    True: _build_synthesis_ask_model("SynthesisAskWithoutLinks", frozenset({"causal_links"})),
-    False: _build_synthesis_ask_model("SynthesisAskWithoutLinksOrWaterfall",
-                                      frozenset({"attribution_waterfall", "causal_links"})),
-}
-
-
-def _links_asked() -> bool:
-    from aughor.lifecycle.causal import impacts_only
-    return not impacts_only()
 
 
 def synthesis_ask_model(waterfall: bool):
     """The response model for one narrator call: the full model when a waterfall is asked for,
-    else the same model without that field — and, with the declared impacts the one store (ED-5), without
-    ``causal_links`` either."""
-    if not _links_asked():
-        return _WITHOUT_LINKS[bool(waterfall)]
+    else the same model without that field."""
     return ADASynthesisModel if waterfall else SynthesisAsk
 
 
@@ -1203,8 +1175,7 @@ def synthesis_system_prompt(waterfall: bool = True) -> str:
         "Every number must trace to the evidence log. No fabrication. "
         "Be definitive where evidence is strong; honest about uncertainty where it isn't."
     )
-    core = SYNTHESIS_CORE_RULES if _links_asked() else SYNTHESIS_CORE_RULES.replace(CAUSAL_LINKS_RULE, "")
-    rules = core + ("\n" + WATERFALL_RULE if waterfall else "")
+    rules = SYNTHESIS_CORE_RULES + ("\n" + WATERFALL_RULE if waterfall else "")
     parts = [base, ARGUMENT_STYLE_ADDENDUM, rules]
     # PE-2 tiering: the long-form guardrails ride along only for BASELINE-tier
     # narrators. Fail to the conservative register — an unresolvable binding means a

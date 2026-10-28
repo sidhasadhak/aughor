@@ -29,6 +29,7 @@ def client(tmp_path, monkeypatch):
     from aughor.ontology import store as ST
     from aughor.util.json_store import KeyedJsonStore
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
     monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
@@ -39,8 +40,9 @@ def test_an_action_declared_from_the_screen_is_kept_where_the_screen_reads_it(cl
     params = {"connection_id": CONN, "schema_name": "main"}                      # the configured name, never built
     r = client.put("/ontology/kinetic-actions/escalate_to_carrier", params=params, json=ESCALATE)
     assert r.status_code == 200, r.text
-    assert find_override(CONN, "ecommerce", "action", "escalate_to_carrier") is not None
-    assert find_override(CONN, "main", "action", "escalate_to_carrier") is None
-    served = client.get("/ontology", params=params)
+    with OV.viewing("draft"):                                                   # a change waits in the draft (Arc OC-2)
+        assert find_override(CONN, "ecommerce", "action", "escalate_to_carrier") is not None
+        assert find_override(CONN, "main", "action", "escalate_to_carrier") is None
+    served = client.get("/ontology", params={**params, "ontology_view": "draft"})   # as the editing screen reads it
     assert served.status_code == 200, served.text
     assert "escalate_to_carrier" in served.json()["kinetic_actions"]

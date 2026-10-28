@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 MONTHS = 6
 #: The fewest months with a figure before "it reads the same in every one" is a finding.
 MIN_MONTHS = 3
-FLAG = "metrics.figure_gates"
 
 REFUSALS = {"moves": "reads_constant", "sane_range": "outside_sane_range", "binding": "binding_mistyped"}
 
@@ -329,9 +328,3 @@ def not_read(verdict: dict) -> str:
              if (verdict.get(g) or {}).get("ok") is None and (verdict.get(g) or {}).get("why")
              and (verdict.get(g) or {}).get("applies", True)]
     return "; ".join(parts)
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
-

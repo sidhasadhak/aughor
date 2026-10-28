@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 
 ORDERS = """order_id,customer_id,order_status,order_purchase_timestamp,order_estimated_delivery_date,price,paid
 e481f51c,9ef432eb,delivered,2017-10-02 10:56:33,2017-10-18 00:00:00,29.99,yes
@@ -29,8 +28,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides({"sheets.core": True, "sheets.grid": True, "sheets.views": True}):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -83,16 +81,6 @@ def test_a_grouping_says_how_many_groups_it_did_not_list(env, monkeypatch):
     sheet = _orders(env)
     got = views.groups(sheet, conditions=[], group=sheet.column("order_id").id)
     assert len(got["groups"]) == 2 and got["groups_total"] == 7 and got["groups_not_listed"] == 5
-
-
-def test_groups_without_totals_count_the_same_rows(env):
-    from aughor.sheets import views
-    sheet = _orders(env)
-    status = sheet.column("order_status").id
-    bare = views.groups(sheet, conditions=[], group=status, with_totals=False)
-    full = views.groups(sheet, conditions=[], group=status)
-    assert [(g["value"], g["rows"]) for g in bare["groups"]] == [(g["value"], g["rows"]) for g in full["groups"]]
-    assert all(g["totals"] == {} for g in bare["groups"])
 
 
 # ── a board ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -267,33 +255,6 @@ def test_a_view_shows_its_count_in_the_definition(env):
                                           filter=[Condition(column=status, op="is", value="shipped")]), by="user:ana")
     counts = views.view_rows(sheet, sheet.views)
     assert counts[sheet.views[0].id] == 7 and counts[sheet.views[-1].id] == 3
-
-
-# ── off ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-def test_off_no_board_calendar_or_rule_answers_and_no_such_view_is_kept(env):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from aughor.routers import sheets as sheets_router
-    sheet = _orders(env)
-    status = sheet.column("order_status").id
-    app = FastAPI()
-    app.include_router(sheets_router.router)
-    client = TestClient(app)
-    with flag_overrides({"sheets.views": False}):
-        assert client.get(f"/sheets/{sheet.id}/board", params={"column": status}).status_code == 404
-        assert client.get(f"/sheets/{sheet.id}/calendar", params={"column": status}).status_code == 404
-        assert client.put(f"/sheets/{sheet.id}/rules", json={"rule": {"id": "", "name": "x"}}).status_code == 404
-        refused = client.put(f"/sheets/{sheet.id}/views", json={"view": {"name": "b", "kind": "board", "group": status}})
-        assert refused.status_code == 404
-        # a grouping still reads, without its totals
-        got = client.get(f"/sheets/{sheet.id}/groups", params={"group": status}).json()
-        assert all(g["totals"] == {} for g in got["groups"]) and "marks" not in got
-        assert "marks" not in client.get(f"/sheets/{sheet.id}/rows").json()
-    assert [v.kind for v in _fresh(sheet).views] == ["grid"]
-    with flag_overrides({"sheets.views": True}):
-        assert client.get(f"/sheets/{sheet.id}/board", params={"column": status}).status_code == 200
 
 
 def test_a_new_view_is_kept_through_the_route_without_an_id(env):

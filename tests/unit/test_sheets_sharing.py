@@ -13,7 +13,6 @@ import json
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 
 ORDERS = """order_id,customer_id,order_status,price
 e481f51c,9ef432eb,delivered,29.99
@@ -24,9 +23,6 @@ CUSTOMERS = """customer_id,city
 9ef432eb,sao paulo
 b0830fb4,campinas
 """
-
-ON = {"sheets.core": True, "sheets.grid": True, "sheets.chat": True, "sheets.combine": True, "sheets.sharing": True}
-
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
@@ -39,8 +35,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(rbac_store, "_DB_PATH", tmp_path / "rbac.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides(ON):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -73,26 +68,22 @@ def _share(sheet, shares, by="user:ana"):
 BO_READS_CY_EDITS = [{"kind": "person", "id": "bo", "level": "view"}, {"kind": "person", "id": "cy", "level": "edit"}]
 
 
-# ── off, and never shared ────────────────────────────────────────────────────────────────────────────────────────────
+# ── never shared ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-def test_a_sheet_never_shared_keeps_its_definition_and_its_reads_as_they_were(env):
-    """Byte-identical: a sheet never shared stores no sharing in its definition, and with the flag off the home and the
-    sheet read exactly the keys they read before SH-8."""
+def test_a_sheet_never_shared_keeps_its_definition_as_it_was_and_is_listed_as_the_workspaces(env):
+    """A sheet never shared stores no sharing in its definition; its home and the sheet say it is the workspace's, and
+    what the reader may do."""
     from aughor.kernel.ledger import Ledger
     from aughor.sheets import model
     sheet = _make(env)
     for art in Ledger.default().artifacts_of_kind(model.KIND, conn_id=model.SHEETS_CONNECTION, org_id="default"):
         body = art["payload"]["_body"]
         assert "sharing" not in body and "shared_with" not in body
-    with flag_overrides({"sheets.sharing": False}):
-        listed = _client().get("/sheets").json()["sheets"][0]
-        read = _client().get(f"/sheets/{sheet.id}").json()
+    listed = _client().get("/sheets").json()["sheets"][0]
+    read = _client().get(f"/sheets/{sheet.id}").json()
     assert set(listed) == {"id", "name", "table", "rows", "columns", "came_from", "source", "last_change", "created_by",
-                           "created_at", "version", "shared_with"}
-    assert listed["shared_with"] == "workspace" and "access" not in read
-    with flag_overrides({"sheets.sharing": False}):
-        assert _client().get(f"/sheets/{sheet.id}/sharing").status_code == 404
-        assert _client().put(f"/sheets/{sheet.id}/sharing", json={"sharing": "workspace"}).status_code == 404
+                           "created_at", "version", "shared_with", "shares", "access"}
+    assert listed["shared_with"] == "workspace" and listed["shares"] == 0 and read["access"] == "own"
 
 
 def test_shared_back_with_the_workspace_the_definition_is_plain_again(env):
@@ -213,15 +204,6 @@ def test_an_editor_changes_it_but_only_its_maker_reshares_or_removes_it(env, mon
     changed = client.put(f"/sheets/{sheet.id}/sharing", json={"sharing": "workspace"}).json()
     assert changed["sharing"] == "workspace" and changed["may_change"]
     assert client.delete(f"/sheets/{sheet.id}").status_code == 200
-
-
-def test_turning_sharing_off_never_opens_what_was_closed(env, monkeypatch):
-    sheet = _make(env)
-    _share(sheet, BO_READS_CY_EDITS)
-    _as(monkeypatch, "dee")
-    with flag_overrides({"sheets.sharing": False}):
-        assert _client().get(f"/sheets/{sheet.id}/rows").status_code == 403
-        assert _client().get("/sheets").json()["sheets"][0]["rows"] is None
 
 
 # ── every other door ─────────────────────────────────────────────────────────────────────────────────────────────────

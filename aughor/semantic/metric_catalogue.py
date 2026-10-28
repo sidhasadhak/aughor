@@ -74,7 +74,7 @@ SOURCE_DEFINED = "defined"
 SOURCE_INDUSTRY = "industry"
 SOURCE_EXPLORER = "explorer"
 #: Arc MC — proposed for an area of the map the data covers (`coverage_proposals`): derived from the ontology, written
-#: from the knowledge base's patterns, or a measure the explorer keeps computing. Listed while a coverage flag is on.
+#: from the knowledge base's patterns, or a measure the explorer keeps computing.
 SOURCE_COVERAGE = "coverage"
 _PRECEDENCE = (SOURCE_DEFINED, SOURCE_INDUSTRY, SOURCE_EXPLORER, SOURCE_COVERAGE)
 
@@ -272,11 +272,7 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
 
 def _with_recipe_verdict(entry: CatalogueEntry, connection_id: str, schema_name: Optional[str], binding: dict) -> None:
     """Arc MC, MC-3 — the last coverage run's gates on a bound recipe, while the binding it read still stands: its area,
-    its verdicts, and — when a gate refused it — the state that keeps it from being adopted. Nothing while
-    `metrics.coverage_proposals` is off."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("metrics.coverage_proposals"):
-        return
+    its verdicts, and — when a gate refused it — the state that keeps it from being adopted."""
     try:
         from aughor.semantic.coverage_proposals import recipe_verdict
         verdict = recipe_verdict(connection_id, schema_name, entry.name, binding)
@@ -296,11 +292,8 @@ def _with_recipe_verdict(entry: CatalogueEntry, connection_id: str, schema_name:
 
 def _coverage_entries(connection_id: str, schema_name: Optional[str]) -> list[CatalogueEntry]:
     """The last coverage run's proposals that are not a package's recipe (those are the industry rows): derived from
-    the ontology, written from the knowledge base, or a measure the explorer keeps computing. [] while no coverage flag
-    is on, so the catalogue lists exactly what it did."""
+    the ontology, written from the knowledge base, or a measure the explorer keeps computing."""
     from aughor.semantic import coverage_proposals as CP
-    if not CP.any_on():
-        return []
     try:
         rows = CP.stored(connection_id, schema_name)
     except Exception as exc:  # noqa: BLE001 — proposals unread are not listed, and the coverage view says it

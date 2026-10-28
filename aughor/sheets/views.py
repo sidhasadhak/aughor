@@ -167,7 +167,7 @@ def _total_exprs(sheet: Sheet) -> tuple[list[str], list[tuple[str, str]]]:
 
 
 def groups(sheet: Sheet, *, conditions: list[Condition], search: str = "", sort: Optional[list[dict]] = None,
-           group: str, per_group: int = GROUP_ROWS, with_totals: bool = True, org: str = "") -> dict:
+           group: str, per_group: int = GROUP_ROWS, org: str = "") -> dict:
     """The view's rows grouped by a column, the largest group first: each group's value, how many rows it holds, its
     totals over its own rows, and its first rows in the view's order."""
     g = _counted_by(sheet, group, "a grouping")
@@ -186,7 +186,7 @@ def groups(sheet: Sheet, *, conditions: list[Condition], search: str = "", sort:
         listed = cur.execute(top, params).fetchall()
         sums: dict[Any, dict] = {}
         exprs, keys = _total_exprs(sheet)
-        if with_totals and exprs and listed:
+        if exprs and listed:
             got = cur.execute(
                 f"WITH top AS ({top}) SELECT t.{col}, {', '.join(exprs)} FROM {table} t JOIN top "
                 f"ON t.{col} IS NOT DISTINCT FROM top.__gv WHERE {where} GROUP BY 1", [*params, *params]).fetchall()
@@ -213,7 +213,7 @@ def groups(sheet: Sheet, *, conditions: list[Condition], search: str = "", sort:
     out = []
     for value, n in listed:
         v = projection.jsonable(value)
-        out.append({"value": v, "rows": int(n), "totals": sums.get(v, {}) if with_totals else {},
+        out.append({"value": v, "rows": int(n), "totals": sums.get(v, {}),
                     "shown": shown.get(v, [])})
     return {"group": g.id, "total": total, "totals": overall, "groups": out, "groups_total": n_groups,
             "groups_not_listed": max(0, n_groups - len(out)), "columns": [c.id for c in sheet.columns]}

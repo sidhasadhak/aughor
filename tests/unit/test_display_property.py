@@ -51,6 +51,7 @@ def graph():
 @pytest.fixture
 def tree(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     return tmp_path
 
 
@@ -139,7 +140,7 @@ def test_a_persons_declaration_binds_is_measured_and_titles_the_object_whatever_
     ov = OV.OntologyOverride(target_kind="entity", target_id="Customer", fields={"display_property": "city"})
     OV.bind_overrides(ov, graph, lambda sql: None)
     assert ov.binding["display_property"] == {"bound": True, "note": "", "property": "city"}
-    OV.save_override("samples", "ecommerce", ov)
+    OV.publish_override("samples", "ecommerce", ov)                   # in force: the release's own door
     report = measure_override_display_properties("samples", "ecommerce", db, graph)
     assert report.overrides_measured == ["Customer"]
     served = copy.deepcopy(graph)
@@ -161,7 +162,7 @@ def test_a_declaration_the_type_cannot_honour_never_binds_and_never_titles_anyth
     OV.bind_overrides(ov, graph, lambda sql: None)
     assert ov.binding["display_property"]["bound"] is False
     assert "no property 'nickname'" in ov.binding["display_property"]["note"]
-    OV.save_override("samples", "ecommerce", ov)
+    OV.publish_override("samples", "ecommerce", ov)                   # in force: the release's own door
     _, report = OV.apply_overrides(graph, "samples", "ecommerce")
     assert graph.entities["Customer"].display_property.name == "full_name"      # the proposal stands
     assert any(line.startswith("entity:Customer") for line in report.skipped)
@@ -170,7 +171,7 @@ def test_a_declaration_the_type_cannot_honour_never_binds_and_never_titles_anyth
 def test_re_declaring_the_same_property_keeps_its_measurement(db, graph, tree):
     ov = OV.OntologyOverride(target_kind="entity", target_id="Customer", fields={"display_property": "city"})
     OV.bind_overrides(ov, graph, lambda sql: None)
-    OV.save_override("samples", "ecommerce", ov)
+    OV.publish_override("samples", "ecommerce", ov)                   # in force: the release's own door
     measure_override_display_properties("samples", "ecommerce", db, graph)
     again = OV.find_override("samples", "ecommerce", "entity", "Customer")
     OV.bind_overrides(again, graph, lambda sql: None)

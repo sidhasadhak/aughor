@@ -2,8 +2,8 @@
 
 The declared business terms are what lift answers (§3.15: LuxExperience 5/16 → 16/16), and a new
 connection had none until a person pressed Explore. The birth rite now runs the business explorer
-once per scope, behind `ontology.explore_on_connect` — on by default since 2026-09-24 (the user's
-call), and switched off the rite is exactly what it was.
+once per scope — on by default since 2026-09-24 (the user's call), part of the platform since
+2026-10-28 (ROADMAP §3.65).
 """
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from types import SimpleNamespace
 import pytest
 
 from aughor.routers import _shared
-
-FLAG_ENV = "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT"
 
 
 @pytest.fixture
@@ -41,20 +39,7 @@ def explorer(monkeypatch):
     return calls
 
 
-def test_on_by_default(monkeypatch, seen, explorer):
-    monkeypatch.delenv(FLAG_ENV, raising=False)
-    assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "done"
-    assert explorer == [("c1", "shop")]
-
-
-def test_switched_off_the_rite_is_unchanged(monkeypatch, seen, explorer):
-    monkeypatch.setenv(FLAG_ENV, "0")
-    assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "off"
-    assert seen == [] and explorer == []                   # no step emitted, no model call
-
-
-def test_on_it_explores_a_new_scope_once(monkeypatch, seen, explorer):
-    monkeypatch.setenv(FLAG_ENV, "1")
+def test_it_explores_a_new_scope_once(monkeypatch, seen, explorer):
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "done"
     assert explorer == [("c1", "shop")]
     assert [(s, st) for s, st, _ in seen] == [("business_terms", "started"), ("business_terms", "done")]
@@ -62,7 +47,6 @@ def test_on_it_explores_a_new_scope_once(monkeypatch, seen, explorer):
 
 
 def test_a_scope_already_explored_is_skipped_so_a_restart_spends_nothing(monkeypatch, seen, explorer):
-    monkeypatch.setenv(FLAG_ENV, "1")
     import aughor.ontology.drafts as drafts
     monkeypatch.setattr(drafts, "load_draft", lambda conn, schema: SimpleNamespace(runs=[object()]))
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
@@ -70,7 +54,6 @@ def test_a_scope_already_explored_is_skipped_so_a_restart_spends_nothing(monkeyp
 
 
 def test_a_plan_without_ontology_edits_is_skipped_and_says_why(monkeypatch, seen, explorer):
-    monkeypatch.setenv(FLAG_ENV, "1")
     import aughor.licensing.resolver as resolver
     monkeypatch.setattr(resolver, "has_capability", lambda cap, conn_id=None: False)
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
@@ -78,7 +61,6 @@ def test_a_plan_without_ontology_edits_is_skipped_and_says_why(monkeypatch, seen
 
 
 def test_a_failed_explorer_is_recorded_and_the_rite_stands(monkeypatch, seen, explorer):
-    monkeypatch.setenv(FLAG_ENV, "1")
     import aughor.routers.ontology as ontology
 
     def refuse(connection_id, schema_name=None):
@@ -91,7 +73,6 @@ def test_a_failed_explorer_is_recorded_and_the_rite_stands(monkeypatch, seen, ex
 def test_no_ontology_built_yet_is_a_skip_not_a_failure(monkeypatch, seen, explorer):
     """The first real rite (2026-09-23): the intelligence step reported done on a build that was
     a skip, and the explorer refused with a 404 — recorded as a failure it was not."""
-    monkeypatch.setenv(FLAG_ENV, "1")
     import aughor.ontology.store as ontology_store
     monkeypatch.setattr(ontology_store, "load_latest_ontology", lambda conn, schema=None: None)
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
@@ -102,7 +83,6 @@ def test_no_ontology_built_yet_is_a_skip_not_a_failure(monkeypatch, seen, explor
 def test_the_already_explored_check_reads_the_scope_the_explorer_writes(monkeypatch, seen, explorer):
     """A connection registered with a schema in its meta: the explorer files its run under that
     schema, so the skip must read it there — reading "default" never found the run (branch review)."""
-    monkeypatch.setenv(FLAG_ENV, "1")
     import aughor.ontology.drafts as drafts
     import aughor.routers.ontology as ontology
     monkeypatch.setattr(ontology, "resolve_effective_schema", lambda conn, schema=None: schema or "shop")

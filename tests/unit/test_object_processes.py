@@ -30,7 +30,7 @@ from aughor.ontology.business_rules import (
 )
 from aughor.ontology.derived import derived_for, find_derived_metric
 from aughor.ontology.models import EntityProperty, OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, apply_overrides, save_override
+from aughor.ontology.overrides import OntologyOverride, apply_overrides
 from aughor.ontology.processes import (
     declared_process,
     describe_process,
@@ -93,6 +93,7 @@ def graph():
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 def declare(graph: OntologyGraph, db, spec: dict):
@@ -422,7 +423,7 @@ def test_the_overlay_rebuilds_a_measured_process_and_forgets_the_count_when_its_
     fields, measured = declare(graph, db, FULFILMENT)
     ov = OntologyOverride(target_kind="process", target_id="order_fulfilment", fields=fields,
                           binding={"process": process_entry(fields, measured)})
-    save_override(*SCOPE, ov)
+    OV.publish_override(*SCOPE, ov)                                 # in force: the release's own door
     served = fresh_graph()
     _, report = apply_overrides(served, *SCOPE)
     assert "process:order_fulfilment (<declared>)" in report.applied
@@ -584,6 +585,8 @@ def test_the_overlay_keeps_what_a_scoping_rule_measured_until_what_it_scopes_cha
 
 CONN = "object-processes-door-t"
 PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
+#: …read as the ontology's editing screens read: a declaration waits in the draft until a person publishes it (Arc OC-2).
+DRAFT = {**PARAMS, "ontology_view": "draft"}
 
 
 @pytest.fixture
@@ -608,81 +611,81 @@ def door(tmp_path, monkeypatch):
 
 
 def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_http(door, client):
-    declared = client.post("/ontology/processes", params=PARAMS, json=FULFILMENT)
+    declared = client.post("/ontology/processes", params=DRAFT, json=FULFILMENT)
     assert declared.status_code == 200, declared.text
     process = declared.json()["process"]
     shipping = process["stages"][1]["promise"]
     assert (process["verified"], shipping["grain"], shipping["segment"], shipping["verified"]) == (
         True, "order_item", "late_shipping", True)
-    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 409
-    hours = client.post("/ontology/processes", params=PARAMS, json=PACKING)   # the door's model carries `within_hours`
+    assert client.post("/ontology/processes", params=DRAFT, json=FULFILMENT).status_code == 409
+    hours = client.post("/ontology/processes", params=DRAFT, json=PACKING)   # the door's model carries `within_hours`
     assert hours.status_code == 400 and "placed_at" in hours.json()["detail"], hours.text
-    unknown = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "id": "other", "entity": "Shipment"})
+    unknown = client.post("/ontology/processes", params=DRAFT, json={**FULFILMENT, "id": "other", "entity": "Shipment"})
     assert unknown.status_code == 400 and "no object type 'Shipment'" in unknown.json()["detail"]
-    malformed = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "id": "Bad Id"})
+    malformed = client.post("/ontology/processes", params=DRAFT, json={**FULFILMENT, "id": "Bad Id"})
     assert malformed.status_code == 400
 
-    rate = client.post("/objects/query", params=PARAMS, json={
+    rate = client.post("/objects/query", params=DRAFT, json={
         "object_type": "order_item", "measures": [{"metric": "shipping_breach_rate", "scale": 100, "decimals": 2}]}).json()
     assert rate["path"] == "compiled", rate
     assert abs(float(rate["rows"][0][0]) - 100 * shipping["breached"] / shipping["reached"]) < 0.006
 
-    listed = client.get("/ontology/processes", params=PARAMS).json()
+    listed = client.get("/ontology/processes", params=DRAFT).json()
     assert [p["id"] for p in listed["processes"]] == ["order_fulfilment"]
-    line = client.get("/object-types/order_item", params=PARAMS).json()
+    line = client.get("/object-types/order_item", params=DRAFT).json()
     assert line["processes"][0]["roles"] == ["keeps its shipping promise"]
     assert "late_shipping" in [d["name"] for d in line["derived"]["segments"]]
-    mapped = client.get("/object-types", params=PARAMS).json()
+    mapped = client.get("/object-types", params=DRAFT).json()
     assert mapped["processes"][0]["promises"][0]["name"] == "shipping"
 
-    rule = client.post("/ontology/rules", params=PARAMS, json=EU_CORE)
+    rule = client.post("/ontology/rules", params=DRAFT, json=EU_CORE)
     assert rule.status_code == 200, rule.text
     assert (rule.json()["rule"]["missing"], rule.json()["rule"]["verified"]) == (["XX"], True)
-    scoping = client.post("/ontology/rules", params=PARAMS, json=FULFILLED)
+    scoping = client.post("/ontology/rules", params=DRAFT, json=FULFILLED)
     assert scoping.status_code == 200 and scoping.json()["rule"]["scopes"] == ["revenue"], scoping.text
-    rail = client.get("/object-types", params=PARAMS).json()["rules"]
+    rail = client.get("/object-types", params=DRAFT).json()["rules"]
     assert next(r for r in rail if r["id"] == "fulfilled_orders")["scopes"] == ["revenue"]
-    shadow = client.post("/ontology/rules", params=PARAMS, json={
+    shadow = client.post("/ontology/rules", params=DRAFT, json={
         "id": "active_orders", "entity": "Order", "conditions": [{"path": "status", "op": "=", "value": "shipped"}]})
     assert shadow.status_code == 400 and "already has a segment" in shadow.json()["detail"]
 
-    measured = client.post("/ontology/measure", params=PARAMS).json()
+    measured = client.post("/ontology/measure", params=DRAFT).json()
     assert [(p["process"], p["verified"]) for p in measured["processes"]] == [("order_fulfilment", True)]
     assert measured["processes"][0]["promises"][0]["breached"] == shipping["breached"]
     assert [r["rule"] for r in measured["rules"]] == ["eu_core", "fulfilled_orders"]
 
-    assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 200
-    assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 404
-    gone = client.post("/objects/query", params=PARAMS, json={
+    assert client.delete("/ontology/processes/order_fulfilment", params=DRAFT).status_code == 200
+    assert client.delete("/ontology/processes/order_fulfilment", params=DRAFT).status_code == 404
+    gone = client.post("/objects/query", params=DRAFT, json={
         "object_type": "order_item", "segment": "late_shipping", "measures": [{"agg": "count"}]}).json()
     assert gone["path"] == "refused" and "no segment 'late_shipping'" in gone["refused"]
-    assert client.delete("/ontology/rules/eu_core", params=PARAMS).status_code == 200
-    assert client.delete("/ontology/rules/fulfilled_orders", params=PARAMS).status_code == 200
-    assert client.get("/ontology/processes", params=PARAMS).json() == {
+    assert client.delete("/ontology/rules/eu_core", params=DRAFT).status_code == 200
+    assert client.delete("/ontology/rules/fulfilled_orders", params=DRAFT).status_code == 200
+    assert client.get("/ontology/processes", params=DRAFT).json() == {
         "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": [], "impacts": []}
 
 
 def test_a_declared_process_is_changed_in_place_through_the_same_law(door, client):
     # Arc OC-1: a promise moved from five days to seven is a change of the same process — resolved and counted again —
     # where before it could only be withdrawn and declared afresh.
-    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
+    assert client.post("/ontology/processes", params=DRAFT, json=FULFILMENT).status_code == 200
     longer = copy.deepcopy(FULFILMENT)
     longer["stages"][2]["promise"]["within_days"] = 7
-    changed = client.put("/ontology/processes/order_fulfilment", params=PARAMS, json=longer)
+    changed = client.put("/ontology/processes/order_fulfilment", params=DRAFT, json=longer)
     assert changed.status_code == 200, changed.text
     delivery = changed.json()["process"]["stages"][2]["promise"]
     assert delivery["within_days"] == 7 and delivery["verified"] is True
-    listed = client.get("/ontology/processes", params=PARAMS).json()["processes"]
+    listed = client.get("/ontology/processes", params=DRAFT).json()["processes"]
     assert [p["id"] for p in listed] == ["order_fulfilment"]
-    unknown = client.put("/ontology/processes/other", params=PARAMS, json={**longer, "id": "other"})
+    unknown = client.put("/ontology/processes/other", params=DRAFT, json={**longer, "id": "other"})
     assert unknown.status_code == 404
-    renamed = client.put("/ontology/processes/order_fulfilment", params=PARAMS, json={**longer, "id": "fulfilment"})
+    renamed = client.put("/ontology/processes/order_fulfilment", params=DRAFT, json={**longer, "id": "fulfilment"})
     assert renamed.status_code == 400 and "does not change" in renamed.json()["detail"]
     broken = copy.deepcopy(longer)
     broken["stages"][2]["timestamp"] = "no_such_column"
-    refused = client.put("/ontology/processes/order_fulfilment", params=PARAMS, json=broken)
+    refused = client.put("/ontology/processes/order_fulfilment", params=DRAFT, json=broken)
     assert refused.status_code == 400
-    assert client.get("/ontology/processes", params=PARAMS).json()["processes"][0]["stages"][2]["promise"][
+    assert client.get("/ontology/processes", params=DRAFT).json()["processes"][0]["stages"][2]["promise"][
         "within_days"] == 7                                         # a refused change writes nothing
 
 
@@ -690,21 +693,23 @@ def test_a_declared_process_and_rule_survive_an_export_and_an_import_into_an_emp
     import aughor.routers.ontology as onto
     from aughor.ontology import overrides as overrides_tree
     monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
-    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
-    assert client.post("/ontology/rules", params=PARAMS, json=FULFILLED).status_code == 200
-    assert client.post("/ontology/export", params=PARAMS).status_code == 200
+    assert client.post("/ontology/processes", params=DRAFT, json=FULFILMENT).status_code == 200
+    assert client.post("/ontology/rules", params=DRAFT, json=FULFILLED).status_code == 200
+    assert client.post("/ontology/export", params=DRAFT).status_code == 200
     targets = (("process", "order_fulfilment"), ("rule", "fulfilled_orders"))
-    stored = {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields for kind, target in targets}
+    with overrides_tree.viewing("draft"):                              # declared through the doors: in the draft
+        stored = {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields for kind, target in targets}
     for kind, target in targets:
         assert overrides_tree.delete_override(CONN, "ecommerce", kind, target)
 
-    imported = client.post("/ontology/import", params=PARAMS)
+    imported = client.post("/ontology/import", params=DRAFT)
     assert imported.status_code == 200, imported.text
     assert [(d["kind"], d["target"], d["declared"]) for d in imported.json()["declared"]] == [
         ("process", "order_fulfilment", True), ("rule", "fulfilled_orders", True)]
-    assert {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields
-            for kind, target in targets} == stored                     # declared again, the same fields stored
-    listed = client.get("/ontology/processes", params=PARAMS).json()
+    with overrides_tree.viewing("draft"):
+        again = {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields for kind, target in targets}
+    assert again == stored                                             # declared again, the same fields stored
+    listed = client.get("/ontology/processes", params=DRAFT).json()
     assert ([p["id"] for p in listed["processes"]], [r["id"] for r in listed["rules"]]) == (
         ["order_fulfilment"], ["fulfilled_orders"])
 
@@ -743,14 +748,14 @@ def test_the_process_and_rule_doors_keep_the_provenance_they_are_given(door, cli
     """E5 — a declaration names who proposed it. The process and rule doors keep `provenance`, which their request
     models dropped before the store ever saw it (a person confirming a model's proposal lost the model's name)."""
     said = "model:some-model@1"
-    process = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "provenance": said})
+    process = client.post("/ontology/processes", params=DRAFT, json={**FULFILMENT, "provenance": said})
     assert process.status_code == 200, process.text
     assert process.json()["process"]["provenance"] == said
-    assert client.get("/ontology/processes", params=PARAMS).json()["processes"][0]["provenance"] == said
-    rule = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "provenance": said})
+    assert client.get("/ontology/processes", params=DRAFT).json()["processes"][0]["provenance"] == said
+    rule = client.post("/ontology/rules", params=DRAFT, json={**EU_CORE, "provenance": said})
     assert rule.status_code == 200, rule.text
     assert rule.json()["rule"]["provenance"] == said
-    too_long = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "id": "eu_core_two", "provenance": "m" * 201})
+    too_long = client.post("/ontology/rules", params=DRAFT, json={**EU_CORE, "id": "eu_core_two", "provenance": "m" * 201})
     assert too_long.status_code == 422
 
 

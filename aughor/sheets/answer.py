@@ -1,4 +1,4 @@
-"""The rows a question asked beside a sheet is about, put on the grid (Arc SH, SH-4; flag ``sheets.chat``).
+"""The rows a question asked beside a sheet is about, put on the grid (Arc SH, SH-4).
 
 Asked beside a sheet "which orders have no carrier date?", the conversation answered as it would anywhere: a breakdown
 by status and a chart, with no count of the rows asked about, and one of the seven groups its own query returned left
@@ -185,8 +185,7 @@ def citable_counts(ref: str) -> list[list]:
     """The sheet's own counts the conversation is handed in its grounding — the rows the sheet holds, and the rows the
     view on screen shows when it has a filter — as result rows the answer's numbers may be held to. Counted as the
     grounding counts them; none when the sheet cannot be read, which only leaves the check as strict as it was."""
-    from aughor import sheets
-    if not ref or not sheets.on(sheets.CHAT):
+    if not ref:
         return []
     try:
         sheet, view = _sheet_and_view(ref)
@@ -202,10 +201,9 @@ def citable_counts(ref: str) -> list[list]:
 
 
 def sheet_tools(ref: str, *, emit: Optional[Callable[[str, dict], None]] = None) -> list[ToolSpec]:
-    """The tools a question summoned from a sheet gets beside the conversation's own — none while the chat beside a
-    sheet is off, so every other turn is handed exactly the tools it was."""
-    from aughor import sheets
-    if not ref or not sheets.on(sheets.CHAT):
+    """The tools a question summoned from a sheet gets beside the conversation's own — none for a turn not summoned
+    from a sheet, so every other turn is handed exactly the tools it was."""
+    if not ref:
         return []
     return [ToolSpec(
         name="show_rows",

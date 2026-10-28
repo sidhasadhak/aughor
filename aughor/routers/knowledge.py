@@ -641,10 +641,10 @@ def delete_document_endpoint(doc_id: str):
 @router.post("/documents/search")
 def search_documents_endpoint(body: dict, request: Request):
     """Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
-    body, another connection's schema docs are left out, as they are for a question. FA-1 (flag
-    ``knowledge.hybrid_documents``): when the embedder is down and the store is up, the hits are the
-    passages matched by their words, each carrying ``matched_by: "words"`` and the sentence ``said``;
-    503 only when the store cannot be read either."""
+    body, another connection's schema docs are left out, as they are for a question. FA-1: when the
+    embedder is down and the store is up, the hits are the passages matched by their words, each
+    carrying ``matched_by: "words"`` and the sentence ``said``; 503 only when the store cannot be
+    read either, naming where the store is set."""
     from aughor.knowledge.indexer import search_documents
     from aughor.security.authz import check_owner, get_principal
     query = body.get("query", "")

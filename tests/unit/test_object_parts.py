@@ -30,7 +30,7 @@ from aughor.ontology.declared import (
 )
 from aughor.ontology.bindings import describe_with
 from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, apply_overrides, save_override
+from aughor.ontology.overrides import OntologyOverride, apply_overrides
 from aughor.ontology.parts import absorb_problem, detail_from, lapsed_parts, part_of, parts_of
 from aughor.semantic.object_instances import get_object
 from aughor.semantic.object_query import (
@@ -71,6 +71,7 @@ def graph():
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 # ── nothing built before changes ────────────────────────────────────────────────────────────
@@ -251,7 +252,7 @@ def declare_payment(db, graph, spec=PAYMENT) -> OntologyOverride:
     entry = measure_declared_backing(db, fields, describe_with(db))
     assert entry["bound"], entry
     ov = OntologyOverride(target_kind="entity", target_id=spec["id"], fields=fields, binding={"backing": entry})
-    save_override(*SCOPE, ov)
+    OV.publish_override(*SCOPE, ov)                                 # in force: the release's own door
     return ov
 
 
@@ -306,7 +307,7 @@ def test_a_declaration_whose_source_cannot_be_read_never_reaches_the_graph(db, g
     assert entry["bound"] is False and "could not be read" in entry["note"]
     ov = OntologyOverride(target_kind="entity", target_id="Payment", fields=fields, binding={"backing": entry})
     assert declared_entity(ov, graph) is None
-    save_override(*SCOPE, ov)
+    OV.publish_override(*SCOPE, ov)
     _, report = apply_overrides(graph, *SCOPE)
     assert "Payment" not in graph.entities and any("entity:Payment" in s for s in report.skipped)
     missing_key = measure_declared_backing(db, entity_fields({**PAYMENT, "backing": {"table": "payments", "primary_key": "nope"}}),
@@ -322,7 +323,7 @@ def declare_link(db, graph, spec=PAYS_FOR) -> OntologyOverride:
     entry = measure_declared_link(db, graph, fields)
     assert entry["bound"], entry
     ov = OntologyOverride(target_kind="link", target_id=link_id(fields), fields=fields, binding={"link": entry})
-    save_override(*SCOPE, ov)
+    OV.publish_override(*SCOPE, ov)                                 # in force: the release's own door
     return ov
 
 
@@ -394,7 +395,7 @@ def test_a_declared_link_whose_type_is_withdrawn_stops_applying(db, graph):
     declare_payment(db, graph)
     apply_overrides(graph, *SCOPE)
     declare_link(db, graph)
-    OV.delete_override(*SCOPE, "entity", "Payment")
+    OV.publish_withdrawal(*SCOPE, "entity", "Payment")
     fresh = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     _, report = apply_overrides(fresh, *SCOPE)
     assert "Payment_pays_for_Order" not in fresh.relationships
@@ -404,7 +405,8 @@ def test_a_declared_link_whose_type_is_withdrawn_stops_applying(db, graph):
 # ── the doors ───────────────────────────────────────────────────────────────────────────────
 
 CONN = "object-parts-door-t"
-PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
+#: Read as the ontology's editing screens read: a declaration waits in the draft until a person publishes it (Arc OC-2).
+PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "draft"}
 
 
 @pytest.fixture

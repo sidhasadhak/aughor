@@ -63,11 +63,13 @@ def _connection(connection_id: str, *, canvas_id: Optional[str] = None,
     return resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope).open()
 
 
-def _visible_schema(connection_id: str, *, canvas_id: Optional[str] = None,
-                    schema_scope: Optional[str] = None) -> str:
-    """The schema text a turn may see: the scoped connection's own, narrowed to a canvas's
-    table list when it has one (a table-list scope carries no schema name, so the pin alone
-    constrains nothing — the quick body filters the same way)."""
+def _read_schema(connection_id: str, *, canvas_id: Optional[str] = None,
+                 schema_scope: Optional[str] = None) -> tuple[str, dict[str, list[str]]]:
+    """``(text, withheld)``: the schema text a turn may see — the scoped connection's own, narrowed to a canvas's
+    table list when it has one (a table-list scope carries no schema name, so the pin alone constrains nothing — the
+    quick body filters the same way) — and, while the ontology's declarations apply to the request
+    (`security_sql.applies`), read as the reader may read it: a policied table's row count, sample values and value
+    lists and a masked column's values withheld, each said per table (`security_sql.schema_as_read`)."""
     schema = _connection(connection_id, canvas_id=canvas_id, schema_scope=schema_scope).get_schema()
     if canvas_id:
         from aughor.canvas.scope import resolve_execution_scope
@@ -77,7 +79,14 @@ def _visible_schema(connection_id: str, *, canvas_id: Optional[str] = None,
             narrowed = get_schema_for_tables(schema, list(scope.tables))
             if narrowed and narrowed.strip():
                 schema = narrowed
-    return schema
+    from aughor.ontology.security_sql import schema_as_read
+    return schema_as_read(connection_id, schema)
+
+
+def _visible_schema(connection_id: str, *, canvas_id: Optional[str] = None,
+                    schema_scope: Optional[str] = None) -> str:
+    """The schema text a turn may see (`_read_schema`), without what it says it withheld."""
+    return _read_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)[0]
 
 
 def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
@@ -165,11 +174,12 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         # The real columns of the table the error names, read from the schema the turn may see —
         # the fixer's own diagnosis (`diagnose_sql_error`). Without it the model got the driver's
         # text and its HINT ("perhaps you meant o.order_id"), listed the whole schema, and wrote
-        # the same column again (the analyst, 99201af8, 2026-10-14).
+        # the same column again (the analyst, 99201af8, 2026-10-14). A policy's refusal names no
+        # column to repair: it is said, never diagnosed.
         try:
             from aughor.db.schema_render import parse_schema_tables
             from aughor.sql.writer import diagnose_sql_error
-            _diag = diagnose_sql_error(
+            _diag = "" if out["repair"].get("kind") == "policy" else diagnose_sql_error(
                 result.error, sql,
                 parse_schema_tables(_visible_schema(connection_id, canvas_id=canvas_id,
                                                     schema_scope=schema_scope)),
@@ -184,7 +194,24 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         _surface_primitive_answer(emit, connection_id, out.get("sql") or sql, result,
                                   out["guard_receipts"],
                                   user_question=user_question, canvas_id=canvas_id)
+    if emit is not None:
+        receipt = policy_receipt(result)
+        if receipt is not None:
+            emit("guard_receipt", receipt)
     return out
+
+
+def policy_receipt(result: Any) -> Optional[dict]:
+    """What the reader's access policy did to this read — narrowed it to their rows, or refused it — as the guard
+    receipt that says it on the reader's answer, not only to the model in ``caveats``: its caveats are folded into the
+    answer envelope, each sentence once however many statements the turn ran (`answer.envelope.EnvelopeFolder`).
+    None when no policy touched the read, so every other answer's frames are unchanged. Both answering bodies emit it:
+    this conversation's `run_sql` and the quick body (`routers/investigations.answer_core`)."""
+    from aughor.ontology.security_sql import policy_said
+    action, said = policy_said(result)
+    if not said:
+        return None
+    return {"guard": "object_policy", "action": action, "detail": "; ".join(said), "caveats": said}
 
 
 # The conversation's `query_objects` tool — ON-2's compiled door offered to the model behind
@@ -249,14 +276,24 @@ def route_error(error: str, sql: str = "", dialect: str = "") -> dict:
     """A repair instruction the model can act on, not a driver string to decode.
 
     ``retryable`` is False when the model cannot fix it by rewriting SQL — a
-    guard BLOCK (the statement is disallowed, not wrong) or a warehouse fault
-    (connection / permission / timeout). Retrying those burns budget; the model
-    should tell the user instead. Everything else names the class, the specific
+    guard BLOCK (the statement is disallowed, not wrong), a refusal by the reader's
+    access policy (a row policy or a masked property: the reader may not see it), or a
+    warehouse fault (connection / permission / timeout). Retrying those burns budget; the
+    model should tell the user instead. Everything else names the class, the specific
     diagnosis when a pattern matches, and the next tool to call.
     """
+    from aughor.ontology.security_sql import refusal_of
     from aughor.tools.error_classifier import (
         classify_error_type, classify_sql_error, error_class_guidance,
     )
+    why = refusal_of(error)
+    if why:
+        # Arc ED, ED-1 — what the reader may not see; read through the type classifier it was a "type or
+        # expression mismatch" to cast around, and a rewrite that reached the value another way would be the leak.
+        return {"retryable": False, "kind": "policy",
+                "instruction": (f"Refused by the reader's access policy, not mistyped: {why}. Do not rewrite the "
+                                "query to reach around it — tell the user, in the policy's own words, what was "
+                                "withheld and why, and answer from what they may read.")}
     e = (error or "").lower()
     if error.lstrip().startswith("[EXCLUDED]"):
         # exploration principles §6 — a person turned the table off; another table may still answer
@@ -446,15 +483,20 @@ def list_tables(connection_id: str, args: dict, *, canvas_id: Optional[str] = No
 
     Only the turn's scope: a table the turn may not query is not listed, and the manifest
     says which scope it is, so "this dataset has no city column" is a statement about the
-    scope rather than a hunt through every other dataset on the connection."""
+    scope rather than a hunt through every other dataset on the connection.
+
+    Only what the reader may read: a table their row policy narrows is listed without its row count and a masked
+    column without its values, and ``withheld`` says each (`_read_schema`) — absent when nothing was."""
     from aughor.db.schema_render import schema_manifest
 
-    schema = _visible_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
+    schema, withheld = _read_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
     out: dict = {"tables": schema_manifest(schema) or schema,
                  "detail": "names, types and row counts only — call describe_table for a "
                            "table's sample values and column notes before filtering on a value"}
     if schema_scope and not canvas_id:
         out["scope"] = f"schema {schema_scope} only — the tables this conversation may query"
+    if withheld:
+        out["withheld"] = [w for said in withheld.values() for w in said]
     return out
 
 
@@ -465,19 +507,23 @@ def describe_table(connection_id: str, args: dict, *, canvas_id: Optional[str] =
 
     ``schema`` is the table's own block from the schema text — types, its row count and the
     sample values the renderer wrote where it had them. The tool's description has always
-    promised those; it returned names only until PENDING item 18."""
+    promised those; it returned names only until PENDING item 18. Read as the reader may read it
+    (`_read_schema`): what it withholds of this table is said in ``withheld``."""
     from aughor.db.schema_render import parse_schema_tables, schema_block
 
     name = str(args.get("table") or "").strip()
     if not name:
         return {"error": "no table supplied"}
 
-    schema = _visible_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
+    schema, withheld = _read_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
     tables = parse_schema_tables(schema)
     bare = name.rsplit(".", 1)[-1].lower()
     for table, columns in tables.items():
         if table.lower() == name.lower() or table.rsplit(".", 1)[-1].lower() == bare:
-            return {"table": table, "columns": columns, "schema": schema_block(schema, table)}
+            found = {"table": table, "columns": columns, "schema": schema_block(schema, table)}
+            if withheld.get(table):
+                found["withheld"] = list(withheld[table])
+            return found
     # A named table that is not there is an ANSWER, not an error (P2): the model asked
     # about something that does not exist, and the near-misses are what let it recover
     # rather than guess a column list.
@@ -737,21 +783,6 @@ def ground_answer_numbers(answer: str, rows: list, *, question: str = "",
     }
 
 
-def converse_available() -> bool:
-    """Whether the converse body may serve a turn (`ask.converse`, on by default since SP-14).
-
-    Read at CALL time, never at import: a module-level read makes the flag unflippable
-    in a running process and silently turns `monkeypatch.setenv` into a no-op — the trap
-    that once had tests spending the real LLM budget.
-
-    PENDING item 17: the conversation and the analyst are tool loops, so a coder binding
-    that cannot make a tool call cannot serve them — the quick body and the phase script
-    answer instead, exactly as with the flag off.
-    """
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ask.converse") and binding_calls_tools()
-
-
 #: Coder bindings — ``(backend, model)`` — that refused a tool call in this process. Held in
 #: memory like a quota cooldown: the refusal is the binding's own answer, and asking again
 #: on every turn would open each one with the same error.
@@ -773,7 +804,13 @@ def tools_unsupported(exc: BaseException) -> bool:
 def binding_calls_tools() -> bool:
     """False when the coder binding is known not to call tools: its model declares no tool
     calling (``model_supports_tools`` is False — never merely unknown), or it refused a tool
-    call in this process (`remember_tools_refused`)."""
+    call in this process (`remember_tools_refused`).
+
+    PENDING item 17: the conversation and the analyst are tool loops, so a coder binding
+    that cannot make a tool call cannot serve them — the quick body and the phase script
+    answer instead. This is the whole of whether the converse body may serve a turn since
+    the flag `ask.converse` was made unconditional (2026-10-28, ROADMAP §3.65). Read at CALL
+    time, never at import, so a test that patches it reaches the bodies that need no tools."""
     from aughor.llm.provider import model_supports_tools, resolve_binding
     try:
         backend, model, _ = resolve_binding("coder")

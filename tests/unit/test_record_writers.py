@@ -70,8 +70,7 @@ def test_an_answer_that_concluded_nothing_or_ran_no_query_books_no_observation()
     assert out["receipt_id"] and out["claim_id"] is None
 
 
-def test_the_observation_names_its_falsifier_and_next_check_when_the_recheck_is_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ANSWERS_RECHECK", "1")
+def test_the_observation_names_its_falsifier_and_next_check():
     conn = _conn()
     out = inv.write_answer_receipt(kind="chat_answer", natural_key=f"chat:{conn}:c", question="q",
                                    sqls=["SELECT SUM(x) FROM t WHERE d >= DATE '2026-09-01'"],

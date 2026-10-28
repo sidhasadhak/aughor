@@ -2,7 +2,7 @@
 
 Before it, a press dispatched every call once, inline: one that got no answer was reported as "may have been
 delivered" and left there — nothing tried again, nothing checked, and a person who pressed again could do the thing
-twice. Here (behind `actions.outbox`) each call an action makes AFTER its edits is a row. It is sent at once, in the
+twice. Here each call an action makes AFTER its edits is a row. It is sent at once, in the
 press, and whatever it did not finish a worker finishes: it claims a row by compare-and-set with a lease (one
 statement, on SQLite as on Postgres, so two workers never hold one row), and what it does next depends on why the
 last attempt failed —
@@ -90,11 +90,6 @@ class Send(BaseModel):
     def effect(self) -> dict:
         effects = list((self.action or {}).get("side_effects") or [])
         return effects[self.effect_index] if 0 <= self.effect_index < len(effects) else {}
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("actions.outbox")
 
 
 def _now(at: Optional[datetime] = None) -> str:

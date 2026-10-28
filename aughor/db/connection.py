@@ -419,8 +419,8 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
     Injects on the DuckDB-form SQL these transpile-from-DuckDB engines receive (before translate/normalize),
     so the wrapped subqueries transpile with the rest of the statement.
 
-    Arc ED, ED-1 — then the released ontology's own declarations (`ontology.security_sql`, off): the reader's objects
-    and masked properties, as the object doors apply them (`_enforce_object_policies`)."""
+    Arc ED, ED-1 — then the released ontology's own declarations: the reader's objects and masked properties, as the
+    object doors apply them (`_enforce_object_policies`)."""
     try:
         ctx = _row_policy_principal()
         if ctx is None:
@@ -447,9 +447,9 @@ def enforce_row_policy(conn: "DatabaseConnection", hypothesis_id: str,
 
 def _enforce_object_policies(conn: "DatabaseConnection", hypothesis_id: str,
                              sql: str) -> "tuple[str, QueryResult | None]":
-    """Arc ED, ED-1 — the released ontology's row policies and sensitive properties at the connection's door
-    (`ontology.security_sql`, off: ``(sql, None)``, untouched). A statement that reads what the reader may not is
-    refused with why; one whose policies cannot be applied is refused rather than run unfiltered (fail-closed)."""
+    """Arc ED, ED-1 — the released ontology's row policies and sensitive properties at the connection's door (none
+    declared: ``(sql, None)``, untouched). A statement that reads what the reader may not is refused with why; one whose
+    policies cannot be applied is refused rather than run unfiltered (fail-closed)."""
     from aughor.kernel.registries import object_policies
     try:
         if not object_policies.applies():
@@ -489,8 +489,8 @@ def result_cache_tenancy() -> "str | None":
     fingerprint cannot be computed, returns a per-call unique token so the entry can be neither shared nor
     reused (the cache is effectively bypassed for that call) — never the legacy key.
 
-    Arc ED, ED-1 — while the ontology's own declarations apply to the request (`ontology.security_sql`), the reader and
-    their groups are folded in too: two readers share an entry only when they are the same parties in the same groups."""
+    Arc ED, ED-1 — while the ontology's own declarations apply to the request (`kernel/registries/object_policies`), the
+    reader and their groups are folded in too: two readers share an entry only when they are the same parties in the same groups."""
     try:
         ctx = _row_policy_principal()
         from aughor.kernel.registries.object_policies import tenancy

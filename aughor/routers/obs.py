@@ -547,18 +547,14 @@ def get_trace_logs(trace_id: str, limit: int = 200):
 @router.get("/obs/logs")
 def search_run_logs(q: str = "", level: Optional[str] = None, run_kind: Optional[str] = None,
                     cursor: Optional[str] = None, limit: int = 50):
-    """Arc TC, TC-5 (`obs.log_search`, off by default) — the lines `/traces/{id}/logs` reads
-    for one run, searched across every run of the last thirty days: words, a level (``error`` ·
-    ``warning`` · ``info``) and the kind of run, newest first, a page at a time from an opaque
-    cursor. No copy of the lines: the journal's own rows, read in place.
+    """Arc TC, TC-5 — the lines `/traces/{id}/logs` reads for one run, searched across every
+    run of the last thirty days: words, a level (``error`` · ``warning`` · ``info``) and the
+    kind of run, newest first, a page at a time from an opaque cursor. No copy of the lines:
+    the journal's own rows, read in place.
 
     The answer says what it searched — the runs and lines in the window and the oldest line
     kept there — because the journal sweeps some kinds within days, and a search that read two
-    days must not read as thirty. Off: the answer of a route that does not exist, byte for byte,
-    and a run's lines are read one trace at a time."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("obs.log_search"):
-        raise HTTPException(status_code=404, detail="Not Found")
+    days must not read as thirty."""
     from aughor.obs import log_search
     try:
         return log_search.search(q=q, level=level or None, run_kind=run_kind or None,
@@ -591,9 +587,9 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     precisely because `session_events` once had "four in-process readers and zero HTTP
     exposure" — the same gap, one fold later.
 
-    Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: with the
-    flag on, converse serves every quick turn that is not an escalation, a dossier drill
-    or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
+    Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: converse
+    serves every quick turn a tool-calling binding can take that is not an escalation, a
+    dossier drill or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
     graduation change", which is genuinely unknown until traffic runs — but it does not
     answer "does a conversation answer better". That question belongs to the other two
     parts of the flag's exit criterion, the scripted faux receipt and the parity
@@ -603,8 +599,8 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     `converse_share` is null rather than 0.0 when no `/ask` turn has finished: a share of
     zero turns is undefined, and 0% would read as "converse is never chosen".
 
-    The numbers are WINDOWED, and `window` in the response says how. The flag is off by
-    default, so most of the log predates converse being able to run at all; counting those
+    The numbers are WINDOWED, and `window` in the response says how. The flag was off by
+    default until SP-14, so most of the log predates converse being able to run at all; counting those
     turns put a denominator around a population they were never part of, and the first
     live reading said 0.016 when the honest figure was 4 of 4. The window defaults to the
     first converse turn. `since_seq` overrides it — the flag's flip, a deploy, the start

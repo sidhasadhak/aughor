@@ -96,24 +96,17 @@ def health():
     # the columns the migration would have added fails until it migrates, so it is named here.
     from aughor.db.migrations import migration_report
     migrations = migration_report()
-    # Arc SV-2 — the rolling backups, only while `state.backups` is on: off, this block is absent and the status is
-    # decided as before. On, a backup that failed, was skipped for space, or has not been checked for two hours is
-    # degraded — the last good copy is older than it should be, and nothing else would say so.
-    backups = None
+    # Arc SV-2 — the rolling backups: a backup that failed, was skipped for space, or has not been checked for two hours
+    # is degraded — the last good copy is older than it should be, and nothing else would say so. Where the clock never
+    # runs (serverless, or the in-process clocks off) the block says so with `ok` None, and that is not degraded.
     try:
-        from aughor.kernel.flags import flag_enabled
-        backups_on = flag_enabled("state.backups")
-    except Exception:
-        backups_on = False      # a flag that cannot be read is the ledger failing, which `ledger` above already says
-    if backups_on:
-        try:
-            from aughor.db.backups import health_block
-            backups = health_block()
-        except Exception as exc:
-            backups = {"ok": False, "detail": f"the backups could not be read ({type(exc).__name__}: {exc})"}
+        from aughor.db.backups import health_block
+        backups = health_block()
+    except Exception as exc:
+        backups = {"ok": False, "detail": f"the backups could not be read ({type(exc).__name__}: {exc})"}
     return {
         "status": "degraded" if (ledger_error or wal_drifted or not migrations["ok"]
-                                 or (backups is not None and not backups["ok"])) else "ok",
+                                 or backups["ok"] is False) else "ok",
         "ledger": {"ok": not ledger_error, "error": ledger_error},
         "migrations": {
             **migrations,
@@ -123,7 +116,7 @@ def health():
                 f"{len(migrations['backed_up'])} store(s) copied before migrating since this process started"
             ),
         },
-        **({"backups": backups} if backups is not None else {}),
+        "backups": backups,
         "stores": {
             "ok": not wal_drifted,
             "wal_drifted": wal_drifted,
@@ -206,9 +199,11 @@ class _FlagPatch(BaseModel):
 
 @router.put("/system/flags/{name}")
 def set_system_flag(name: str, body: _FlagPatch):
-    from aughor.kernel.flags import FLAG_ENV, clear_flag, list_flags, set_flag
+    from aughor.kernel.flags import ALWAYS_ON, FLAG_ENV, AlwaysOn, clear_flag, list_flags, set_flag
     if name not in FLAG_ENV:
         raise HTTPException(status_code=404, detail=f"unknown flag '{name}'")
+    if name in ALWAYS_ON:     # part of the platform now (ROADMAP §3.65) — said, never silently ignored
+        raise HTTPException(status_code=409, detail=str(AlwaysOn(name)))
     if body.state is not None:
         st = body.state.strip().lower()
         if st == "auto":

@@ -24,8 +24,8 @@ recall needs no new store and no model:
    through the departure gate like every message that leaves; a web answer shows it on the
    answer. The same change is never told twice.
 
-On by default since 2026-09-24, the user's call (flag ``answers.recheck``). Switched off → nothing
-runs, nothing is written, nothing sent.
+On by default since 2026-09-24, the user's call; part of the platform since 2026-10-28 (it was the flag
+``answers.recheck``, ROADMAP §3.65).
 """
 from __future__ import annotations
 
@@ -33,8 +33,6 @@ import contextlib
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Optional
-
-FLAG = "answers.recheck"
 
 #: Answers given in the last this-many days are re-checked; older ones are history.
 WINDOW_DAYS = 14
@@ -46,14 +44,6 @@ RECHECK_EVERY_HOURS = 20
 NAMED_CHANGES = 3
 
 RunSql = Callable[[str], tuple]
-
-
-def enabled() -> bool:
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return flag_enabled(FLAG)
-    except Exception:  # noqa: BLE001 — an unreadable flag registry is "off"
-        return False
 
 
 def _noise_rel() -> float:
@@ -497,11 +487,9 @@ _last_run_day: Optional[str] = None
 
 def run_rechecks_daily(*, force: bool = False, now: Optional[datetime] = None,
                        runner: Optional[Callable[[str], RunSql]] = None) -> dict:
-    """Re-check the recent answers once a UTC day, from the heartbeat. Off → nothing. Returns
+    """Re-check the recent answers once a UTC day, from the heartbeat. Returns
     ``{"checked", "changed", "told", "skipped"}``."""
     global _last_run_day
-    if not enabled():
-        return {"skipped": "off"}
     now = now or datetime.now(timezone.utc)
     today = now.date().isoformat()
     if _last_run_day == today and not force:

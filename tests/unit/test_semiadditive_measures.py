@@ -83,6 +83,7 @@ def warehouse(tmp_path_factory):
 @pytest.fixture
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     g.entities["StockSnapshot"] = snapshot_type()
     g.relationships["StockSnapshot_RELATES_TO_Product"] = snapshot_link()
@@ -356,14 +357,14 @@ def test_the_declaration_is_checked_against_the_graph(graph):
 
 
 def test_the_overlay_applies_a_bound_declaration_and_never_a_stale_one(graph):
-    from aughor.ontology.overrides import OntologyOverride, save_override
-    save_override("c27", "main", OntologyOverride(
+    from aughor.ontology.overrides import OntologyOverride, publish_override
+    publish_override("c27", "main", OntologyOverride(
         target_kind="entity", target_id="StockSnapshot",
         fields={"semiadditive": {"on_hand": {"over": "snapshot_date", "note": ""}}},
         binding={"semiadditive": {"on_hand": {"bound": True, "note": "", "over": "snapshot_date"}}}))
     served, _ = OV.apply_overrides(graph, "c27", "main")
     assert served.entities["StockSnapshot"].semiadditive["on_hand"].over == "snapshot_date"
-    save_override("c27", "main", OntologyOverride(
+    publish_override("c27", "main", OntologyOverride(
         target_kind="entity", target_id="StockSnapshot",
         fields={"semiadditive": {"on_hand": {"over": "snapshot_date", "note": "", "take": "last"}}},
         binding={"semiadditive": {"on_hand": {"bound": True, "note": "", "over": "snapshot_date"}}}))
@@ -371,7 +372,7 @@ def test_the_overlay_applies_a_bound_declaration_and_never_a_stale_one(graph):
     fresh.entities["StockSnapshot"] = snapshot_type()
     served, _ = OV.apply_overrides(fresh, "c27", "main")
     assert served.entities["StockSnapshot"].semiadditive["on_hand"].take == "last"
-    save_override("c27", "main", OntologyOverride(
+    publish_override("c27", "main", OntologyOverride(
         target_kind="entity", target_id="StockSnapshot",
         fields={"semiadditive": {"on_hand": {"over": "snapshot_date", "note": ""}}},
         binding={"semiadditive": {"on_hand": {"bound": True, "note": "", "over": "another_date"}}}))
@@ -511,6 +512,7 @@ def door(tmp_path, monkeypatch):
     from aughor.ontology.semiadditive import forget_declared
     from aughor.util.json_store import KeyedJsonStore
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     g.entities["StockSnapshot"] = snapshot_type()
@@ -538,11 +540,13 @@ def test_declared_and_withdrawn_over_http_and_the_trust_checks_follow_at_once(do
                       json={"over": "snapshot_date"}).status_code == 404
     ok = client.put(url, params=PARAMS, json={"over": "snapshot_date", "note": "counted each morning"})
     assert ok.status_code == 200, ok.text
+    assert client.post("/ontology/release/publish", params=PARAMS).status_code == 200   # readers read it once published
     query = {"object_type": "stock_snapshot", "measures": [{"name": "s", "agg": "sum", "path": "on_hand"}]}
     refused = client.post("/objects/query", params={**PARAMS, "execute": "false"}, json=query).json()
     assert refused["path"] == "refused" and "counted each morning" in refused["refused"]
     assert flagged() == ["semiadditive-sum"]
     assert client.delete(url, params=PARAMS).status_code == 200
+    assert client.post("/ontology/release/publish", params=PARAMS).status_code == 200
     assert client.post("/objects/query", params={**PARAMS, "execute": "false"}, json=query).json()["path"] == "compiled"
     assert flagged() == []                                  # the withdrawal reaches the checks now, not in 30s
     assert client.delete(url, params=PARAMS).status_code == 404

@@ -31,8 +31,6 @@ QUESTION = os.environ.get("AUGHOR_PROBE_Q", "How many orders are there in total?
 
 
 def main() -> int:
-    os.environ["AUGHOR_ASK_CONVERSE"] = "1"                # the whole point
-
     from aughor.llm.provider import get_provider
     p = get_provider("coder")
     print(f"binding   : backend={p.backend!r} model={p._model!r}")
@@ -54,8 +52,8 @@ def main() -> int:
         SimpleNamespace(depth="quick"))
     print(f"eligible  : {eligible}")
     if not eligible:
-        print("VERDICT: the route would NOT pick converse — the flag or the predicate is "
-              "not what this probe assumes. Nothing was spent.")
+        print("VERDICT: the route would NOT pick converse — the binding cannot call tools, or "
+              "the predicate is not what this probe assumes. Nothing was spent.")
         return 2
 
     frames: list[tuple[str, dict]] = []

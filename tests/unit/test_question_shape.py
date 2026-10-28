@@ -67,7 +67,7 @@ def test_the_describe_rule_asks_for_the_answer_not_a_cause():
     described = analyst_system_prompt("c", {}, 12, shape="describe")
     diagnosed = analyst_system_prompt("c", {}, 12)
     assert "asks to SEE the data" in described and "`totals`" in described
-    assert "one that announces what follows" in described, "Q2's opener announced its table (2026-10-02)"
+    assert "never a sentence that announces what follows" in described, "Q2's opener announced its table (2026-10-02)"
     assert "cause is named WITH ITS SIZE" not in described
     assert "cause is named WITH ITS SIZE" in diagnosed
 
@@ -231,8 +231,8 @@ def test_run_sql_hands_the_model_code_computed_totals(monkeypatch):
 
 def test_the_describe_rule_leads_with_the_answer_and_shows_every_group():
     described = analyst_system_prompt("c", {}, 12, shape="describe")
-    assert "Open with the answer itself in one sentence" in described
-    assert "never a definition or a restatement of the question" in described
+    assert "Its headline is one line" in described
+    assert "stating what leads, what trails and by how much — a figure read from a row" in described
     assert "Show every group of a cut, or say how many you left out" in described
     assert "never at the top" in described
 
@@ -265,7 +265,7 @@ def test_the_analyst_measures_on_the_measures_table_and_acts_on_a_caveat():
         assert "re-measure the way it says, then answer from that result" in p
         assert "Leaving out the rows a guard flagged is not a re-measure." in p
     p = analyst_system_prompt("c", {}, 10, shape="describe")
-    assert "Groups within a few percent of each other are alike" in p
+    assert "groups within a few percent of each other are alike" in p
     assert "never one group's value, never an average of the groups' averages" in p
 
 
@@ -309,9 +309,10 @@ def test_the_describe_rules_give_an_answer_no_figure_to_copy():
     """Re-run #6 (2026-10-01): the alike rule's example, "every centre takes 3.95–4.01 days", was the fulfilment
     question's own range of total days — a sum of two averages no row holds — and that answer then had a sentence
     withheld as untraced. A figure in a rule is a figure an answer can copy; the range is read from the rows."""
-    from aughor.agent.analyst import _describe_rules
+    from aughor.agent.analyst import _HEADLINE_WORDS, _describe_rules
     text = " ".join(_describe_rules(7))
-    assert re.findall(r"\d", text) == ["7"]                 # the budget, and no other figure
+    # the budget and the headline's length bound, and no other figure
+    assert re.findall(r"\d", text) == ["7", *str(_HEADLINE_WORDS)]
     assert "each read from a row" in text
 
 
@@ -451,10 +452,8 @@ def test_depth_follows_the_shape_under_auto():
               (ASKED[0], CHECKS[0], "Why did revenue drop in August?")]
     assert all(_routed_by_code(r) for r in routes)
     assert [r.depth for r in routes] == ["quick", "quick", "deep"]
-    r = decide_ask_route("Profile our product catalog", classifier=_no_model, route_wide=True)
-    assert _routed_by_code(r) and (r.depth, r.mode, r.shape) == ("deep", "explore", "survey")
-    # The wave off: a survey is read for depth like any question before it was named.
-    off = decide_ask_route("Profile our product catalog", classifier=_no_model, route_wide=False)
+    # A survey is read for depth like any question (R9's automatic wave route left 2026-10-28, ROADMAP §3.65).
+    off = decide_ask_route("Profile our product catalog", classifier=_no_model)
     assert _routed_by_code(off) and (off.depth, off.shape) == ("quick", "survey")
     # An under-specified read-ask is the borderline: the classifier is asked, and a failing one
     # leaves the turn deep rather than shallow.

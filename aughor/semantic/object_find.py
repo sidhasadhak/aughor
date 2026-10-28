@@ -1,4 +1,4 @@
-"""Arc FA, FA-1 — find an object by the name it goes by, across entities (ROADMAP §3.60), behind ``objects.find``.
+"""Arc FA, FA-1 — find an object by the name it goes by, across entities (ROADMAP §3.60).
 
 An object could be found only from inside its entity: a search box's ``contains`` condition reads one entity's title,
 so finding "Jane Doe" meant knowing she is a customer first. Here one read looks across the served entities. Each

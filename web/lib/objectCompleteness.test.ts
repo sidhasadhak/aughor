@@ -17,7 +17,7 @@ describe("answerSays — what a piece says of an object query's answer (ED-6)", 
     expect(answerSays({ caveats: [], completeness: read("complete") })).toEqual([]);
   });
 
-  it("a server with completeness off says its caveats as before", () => {
+  it("a server from before completeness says its caveats as before", () => {
     expect(answerSays({ caveats: ["a caveat"] })).toEqual(["a caveat"]);
     expect(answerSays({})).toEqual([]);
   });

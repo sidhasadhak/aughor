@@ -1,24 +1,22 @@
 // @vitest-environment jsdom
 
 /**
- * Arc FA-4 in the builder — a set becomes a segment. With `ontology.set_segments` on, a set's setup shows its chain step
- * by step, a count at each (a set it is combined with counted beside it), and keeps a set of fixed conditions as a
- * segment: declared by the person as a condition rule with the author's values in place, said to be in the draft while
- * releases are on. A set a segment cannot hold says why; one already kept says under which name. Off, the setup is as it
- * was. Every read is mocked: no test here reaches an API.
+ * Arc FA-4 in the builder — a set becomes a segment. A set's setup shows its chain step by step, a count at each (a set
+ * it is combined with counted beside it), and keeps a set of fixed conditions as a segment: declared by the person as a
+ * condition rule with the author's values in place, said to be in the draft. A set a segment cannot hold says why; one
+ * already kept says under which name. Every read is mocked: no test here reaches an API.
  */
 import { fireEvent, render, screen, waitFor } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SetSetup } from "@/components/dashboards/WiringSetup";
 import type { DashboardSpec } from "@/lib/dashboards/edit";
-import { forgetFlags } from "@/lib/flagOn";
 
 const objects = vi.hoisted(() => ({ queryObjects: vi.fn(), cachedObjectCatalog: vi.fn() }));
 vi.mock("@/lib/objects", async (original) => ({ ...(await original<typeof import("@/lib/objects")>()), ...objects }));
 const types = vi.hoisted(() => ({ getObjectType: vi.fn(), getProcesses: vi.fn(), declareRule: vi.fn() }));
 vi.mock("@/lib/objectTypes", async (original) => ({ ...(await original<typeof import("@/lib/objectTypes")>()), ...types }));
-const api = vi.hoisted(() => ({ getSystemFlags: vi.fn() }));
+const api = vi.hoisted(() => ({ getSystemFlags: vi.fn(async () => ({})) }));
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 
 const ORDER = { id: "order", object_type: "order", segments: [], links: [], derived: { segments: [], properties: [], metrics: [] },
@@ -51,8 +49,6 @@ const draw = (name: string) => render(<SetSetup spec={desk()} name={name} onChan
 
 beforeEach(() => {
   vi.clearAllMocks();
-  forgetFlags();
-  api.getSystemFlags.mockResolvedValue({ "ontology.set_segments": { value: true }, "ontology.release": { value: true } });
   objects.queryObjects.mockImplementation(async (b: { filters?: { op: string; value?: unknown }[] }) =>
     ({ path: "compiled", rows: [[held(b.filters)]], caveats: [], error: null }));
   objects.cachedObjectCatalog.mockResolvedValue({ object_types: [{ object_type: "order", id: "Order", display_name: "Order" }] });
@@ -106,14 +102,5 @@ describe("keeping a set as a segment", () => {
     expect(await screen.findByTestId("set-segment-refused")).toHaveTextContent(
       "The set \"By status\" reads \"Status\", a value the reader sets on the page, and a segment's conditions are fixed.");
     expect(screen.queryByTestId("set-segment-keep")).toBeNull();
-  });
-
-  it("is not offered, and the chain not drawn, while the flag is off", async () => {
-    api.getSystemFlags.mockResolvedValue({ "ontology.set_segments": { value: false } });
-    draw("waiting");
-    await waitFor(() => expect(screen.getByTestId("set-holds")).toHaveTextContent("1,327"));
-    expect(screen.queryByTestId("set-chain")).toBeNull();
-    expect(screen.queryByTestId("set-segment")).toBeNull();
-    expect(types.declareRule).not.toHaveBeenCalled();
   });
 });

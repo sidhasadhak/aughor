@@ -50,7 +50,6 @@ const COVERAGE: MetricCoverage = {
   ],
   run: { run_at: "2026-10-26T18:00:00+00:00", why: "the connection was profiled", said: [],
          spend: { calls: 4, model: "test-model", at: "2026-10-26T18:00:00+00:00", why: "the connection was profiled", areas: [] } },
-  flags: { "metrics.coverage_proposals": true, "metrics.coverage_writer": true, "metrics.blind_spot_proposals": false },
 };
 
 const catalogueRow = (over: Partial<CatalogueMetric>): CatalogueMetric => ({
@@ -66,13 +65,6 @@ beforeEach(() => {
 });
 
 describe("CoverageCard", () => {
-  it("is absent while the coverage view is off", async () => {
-    api.getMetricCoverage.mockResolvedValue(null);
-    const { container } = render(<CoverageCard connId="dcc63d83" rows={[]} onAdopted={() => {}} />);
-    await waitFor(() => expect(api.getMetricCoverage).toHaveBeenCalled());
-    expect(container.querySelector('[data-testid="metric-coverage"]')).toBeNull();
-  });
-
   it("lists the areas in the map's order, each with its state, and says the model calls made", async () => {
     render(<CoverageCard connId="dcc63d83" schema="luxexperience" rows={[]} onAdopted={() => {}} />);
     const card = await screen.findByTestId("metric-coverage");

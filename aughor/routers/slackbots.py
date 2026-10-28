@@ -245,20 +245,19 @@ def slack_bot_oauth_callback(code: str = "", state: str = "", error: str = ""):
 
 @router.get("/slack-bots/supervisor")
 def managed_supervisor_status():
-    """What the API knows about the supervisor it runs (flag `slack.managed_supervisor`):
-    off, running (pid), restarting, stopped or failed — with the reason named."""
+    """What the API knows about the supervisor it runs: off (not run by this process),
+    waiting (on its setup), running (pid), restarting, stopped or failed — with the reason
+    named, and `waiting_on` saying what is missing while it does not run."""
     from aughor.slackbots.managed import managed_status
     return managed_status()
 
 
 @router.post("/slack-bots/supervisor/restart")
 def managed_supervisor_restart():
-    from aughor.slackbots.managed import host, managed_status
+    from aughor.slackbots.managed import host, managed_status, not_run_here
     h = host()
     if h is None:
-        raise HTTPException(status_code=409, detail="the API is not managing a supervisor "
-                            "(flag slack.managed_supervisor is off, or the API started "
-                            "without it) — nothing to restart")
+        raise HTTPException(status_code=409, detail=not_run_here())
     h.restart()
     return managed_status()
 

@@ -89,7 +89,8 @@ export function providerState(p: IntegrationProvider, bots: SlackBotSummary[]): 
 }
 
 const SUPERVISOR_WORD: Record<ManagedSupervisorStatus["state"], string> = {
-  running: "Running", off: "Run by hand", starting: "Starting", restarting: "Restarting", stopped: "Stopped", failed: "Failed",
+  running: "Running", off: "Run by hand", waiting: "Waiting on setup", starting: "Starting", restarting: "Restarting",
+  stopped: "Stopped", failed: "Failed",
 };
 
 /** One fact in a Details block: a muted name and its value. */
@@ -349,6 +350,9 @@ export function IntegrationsPanel() {
   const heartbeat = supervisor?.heartbeat ?? null;
   const supervisorDown = !!supervisor && supervisor.managed && (supervisor.state === "failed" || supervisor.state === "stopped");
   const supervisorDeaf = !!supervisor && supervisor.state === "running" && !!heartbeat && !heartbeat.fresh;
+  // Its setup is missing (bots/slack's packages, Node.js): nothing was tried, and what is missing is said — a fault only
+  // once there is a bot it leaves unanswered.
+  const supervisorWaiting = !!supervisor && supervisor.state === "waiting";
 
   if (!loaded) {
     return <Loading what="integrations" style={{ padding: 24 }} />;
@@ -399,6 +403,12 @@ export function IntegrationsPanel() {
           detail={supervisor.last_error || supervisor.preconditions.join("; ") || "no reason recorded"}
           actions={<Button variant="secondary" size="xs" disabled={busy === "supervisor"} onClick={() => void restartSupervisor()}>Restart</Button>} />,
       );
+    } else if (supervisorWaiting && enabledBots.length > 0) {
+      needs.push(
+        <NeedsRow key="supervisor-waiting" testId="needs-supervisor" title="The Slack supervisor is waiting on its setup — no bot is answering"
+          detail={supervisor.waiting_on || supervisor.preconditions.join("; ") || "no reason recorded"}
+          actions={<Button variant="secondary" size="xs" disabled={busy === "supervisor"} onClick={() => void restartSupervisor()}>Restart</Button>} />,
+      );
     } else if (supervisorDeaf && heartbeat) {
       needs.push(
         <NeedsRow key="supervisor-deaf" testId="needs-supervisor" title="The Slack supervisor is not listening"
@@ -419,7 +429,7 @@ export function IntegrationsPanel() {
         );
       }
       // A stopped supervisor is said once, above — not again for every bot it leaves deaf.
-      if (b.enabled && !b.listening && !supervisorDown && !supervisorDeaf) {
+      if (b.enabled && !b.listening && !supervisorDown && !supervisorDeaf && !supervisorWaiting) {
         needs.push(
           <NeedsRow key={`deaf-${b.id}`} testId="needs-bot" title={`${b.name} is not listening`}
             detail={b.liveness_hint || "Start the supervisor"}
@@ -874,6 +884,7 @@ export function IntegrationsPanel() {
       st === "running" && !heartbeat ? "no heartbeat yet" : "",
       st === "running" && heartbeat && !heartbeat.fresh ? `not heard since ${formatDateTime(heartbeat.last_seen_at)}` : "",
       st === "off" ? "started outside the app — how, in Details" : "",
+      st === "waiting" ? (supervisor.waiting_on || supervisor.preconditions.join("; ")) : "",
       st === "failed" || st === "stopped" ? (supervisor.last_error || "no reason recorded") : "",
       supervisor.restarts ? `restarted ${supervisor.restarts}×` : "",
     ].filter(Boolean).join(" · ");
@@ -905,7 +916,9 @@ export function IntegrationsPanel() {
             <div data-testid="supervisor-details" style={FACTS}>
               <Fact name="Run by">{supervisor.managed ? "the API" : "hand"}</Fact>
               {st === "off" && (
-                <Fact name="Start it" mono>cd bots/slack &amp;&amp; npm run dev — or turn on slack.managed_supervisor to let the API run it</Fact>
+                supervisor.waiting_on
+                  ? <Fact name="Why">{supervisor.waiting_on}</Fact>
+                  : <Fact name="Start it" mono>cd bots/slack &amp;&amp; npm run dev</Fact>
               )}
               {supervisor.pid != null && <Fact name="Process" mono>{`pid ${supervisor.pid}`}</Fact>}
               {supervisor.started_at && <Fact name="Since">{formatDateTime(supervisor.started_at)}</Fact>}
@@ -946,11 +959,12 @@ export function IntegrationsPanel() {
         )}
         {slack && supervisorShown && supervisor && (
           <Figure label="Supervisor" testId="fig-supervisor" value={SUPERVISOR_WORD[supervisor.state]}
-            tone={supervisorDown || supervisorDeaf ? "amber" : undefined}
+            tone={supervisorDown || supervisorDeaf || (supervisorWaiting && enabledBots.length > 0) ? "amber" : undefined}
             sub={supervisor.state === "running"
               ? (heartbeat ? (heartbeat.fresh ? `heard ${relTime(heartbeat.last_seen_at)} ago` : `not heard since ${dayMonth(heartbeat.last_seen_at)}`)
                 : "no heartbeat yet") + (supervisor.managed ? " · run by the API" : "")
               : supervisor.state === "off" ? "started outside the app"
+              : supervisor.state === "waiting" ? "its setup is missing"
               : supervisor.last_error ? supervisor.last_error.slice(0, 60) : "no reason recorded"} />
         )}
       </Figures>

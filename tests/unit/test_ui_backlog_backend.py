@@ -10,26 +10,26 @@ from aughor.routers.query import _PostprocRequest, query_postproc
 
 
 class TestFeatureFlags:
-    def test_override_wins_then_env_fallback(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-        clear_flag("federation.planner")
-        assert flag_enabled("federation.planner") is False   # no override, env unset
-        set_flag("federation.planner", True)
-        assert flag_enabled("federation.planner") is True    # runtime override wins
-        set_flag("federation.planner", False)
-        monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
-        assert flag_enabled("federation.planner") is False   # override still wins over env
-        clear_flag("federation.planner")
-        assert flag_enabled("federation.planner") is True    # cleared → env decides
-        monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-        clear_flag("federation.planner")
+    def test_override_wins_then_env_fallback(self, monkeypatch, synthetic_flags):
+        monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+        clear_flag("_synthetic.default_off")
+        assert flag_enabled("_synthetic.default_off") is False   # no override, env unset
+        set_flag("_synthetic.default_off", True)
+        assert flag_enabled("_synthetic.default_off") is True    # runtime override wins
+        set_flag("_synthetic.default_off", False)
+        monkeypatch.setenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", "1")
+        assert flag_enabled("_synthetic.default_off") is False   # override still wins over env
+        clear_flag("_synthetic.default_off")
+        assert flag_enabled("_synthetic.default_off") is True    # cleared → env decides
+        monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+        clear_flag("_synthetic.default_off")
 
-    def test_list_flags_shape(self):
+    def test_list_flags_shape(self, synthetic_flags):
         # snapshot_receipts left the registry with flag endgame Wave 2 (2026-08-06);
         # a surviving experiment flag carries the shape claim.
         f = list_flags()
-        assert "federation.planner" in f and "snapshot_receipts" not in f
-        assert {"value", "source", "env_var", "label", "description"} <= set(f["federation.planner"])
+        assert "_synthetic.default_off" in f and "snapshot_receipts" not in f
+        assert {"value", "source", "env_var", "label", "description"} <= set(f["_synthetic.default_off"])
 
 
 class TestPostprocEndpoint:

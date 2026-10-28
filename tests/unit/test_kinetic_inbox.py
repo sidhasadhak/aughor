@@ -105,7 +105,7 @@ def test_accept_dispatches_exactly_once_under_a_double_accept(flag_on, graph_of)
     graph_of(_action(submission_criteria=[]))
     calls: list = []
 
-    def rec_dispatch(action, params, scope=""):
+    def rec_dispatch(action, params, scope="", **_k):
         calls.append((action.id, params, scope))
         return {"ok": True}
 
@@ -144,7 +144,7 @@ def test_accept_still_enforces_submission_criteria(flag_on, graph_of):
     calls: list = []
     import aughor.actions.executor as ex
     orig = ex.default_dispatch
-    ex.default_dispatch = lambda a, p, s="": calls.append(1)
+    ex.default_dispatch = lambda a, p, s="", **_k: calls.append(1)
     try:
         p = inbox.stage_proposal(_proposal(connection_id="conn-crit", params={"order_id": "9999"}))
         r, _ = inbox.accept_proposal(p.id, actor="human")

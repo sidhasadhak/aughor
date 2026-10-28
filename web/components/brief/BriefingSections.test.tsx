@@ -48,14 +48,14 @@ describe("the switches", () => {
     expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["verdict", "measured", "moves", "key_metrics", "synthesis", "findings", "cockpit", "patterns"]);
   });
 
-  it("names the dashboard that rides with the Briefing, only where dashboards are on", () => {
+  it("names the dashboard that rides with the Briefing, where it has the Dashboards tab beside it", () => {
     const onChange = show();
     change(screen.getByTestId("briefing-strip-pick"), { target: { value: "growth-1" } });
     expect(onChange.mock.calls[0][0]).toEqual({ ...DEFAULT_SECTIONS, strip: "growth-1" });
     expect(onChange.mock.calls[0][1]).toBe("“Growth review” rides with your Briefing.");
   });
 
-  it("with dashboards off there is no dashboard to choose", () => {
+  it("a canvas's Briefing, with no Dashboards tab, has no dashboard to choose", () => {
     show(DEFAULT_SECTIONS, false);
     expect(screen.queryByTestId("briefing-strip-pick")).toBeNull();
   });

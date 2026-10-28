@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from aughor.actions import authority
-from aughor.actions.executor import KineticDispatchError, default_dispatch
+from aughor.actions.executor import KineticDispatchError, default_dispatch, dispatch_effect
 from aughor.notifications.models import ActionLog, ActionTrigger
 from aughor.ontology.models import KineticAction
 
@@ -73,6 +73,12 @@ def test_a_message_goes_to_the_saved_destination_and_its_delivery_log_is_the_pro
                         "why": "the platform's own record: delivered to Carrier desk (delivery log-1)"}
 
 
+def _send(action: KineticAction, params: dict) -> dict:
+    """One call, as the outbox delivers it (Arc OC-6): what did not land raises here, and the outbox keeps it by its
+    cause with these words (`test_action_outbox.py`)."""
+    return dispatch_effect(action.side_effects[0], action, params)
+
+
 @pytest.mark.parametrize("status, says", [
     ("skipped", "is turned off in Notifications — nothing was sent"),
     ("timeout", "may have been delivered — no answer came back"),
@@ -81,14 +87,17 @@ def test_a_message_goes_to_the_saved_destination_and_its_delivery_log_is_the_pro
 def test_a_message_that_did_not_land_is_a_dispatch_error_in_words(sent, status, says):
     sent["status"] = status
     with pytest.raises(KineticDispatchError, match=says):
-        default_dispatch(tell(), {"order": "6", "reason": "x"})
+        _send(tell(), {"order": "6", "reason": "x"})
+    # through the press's dispatcher it is kept, with the same words
+    [kept] = default_dispatch(tell(), {"order": "6", "reason": "x"})["outbox"]
+    assert says in kept["error"]
 
 
 def test_a_destination_removed_since_or_a_message_naming_an_unasked_answer_is_said(sent):
     with pytest.raises(KineticDispatchError, match="no destination 'gone' is saved"):
-        default_dispatch(tell(side_effects=[{"kind": "notify", "config": {"destination": "gone"}}]), {})
+        _send(tell(side_effects=[{"kind": "notify", "config": {"destination": "gone"}}]), {})
     with pytest.raises(KineticDispatchError, match="does not declare"):
-        default_dispatch(tell(side_effects=[{"kind": "notify", "config": {"destination": "t-desk", "message": "{who}"}}]), {})
+        _send(tell(side_effects=[{"kind": "notify", "config": {"destination": "t-desk", "message": "{who}"}}]), {})
 
 
 def test_an_investigation_is_proved_by_its_accepted_job_and_a_missing_record_is_never_called_failed():

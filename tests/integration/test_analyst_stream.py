@@ -81,7 +81,6 @@ def test_deep_turn_streams_through_the_analyst(client, builtin_conn_id,
                                                analyst_seams, faux_llm, monkeypatch):
     from aughor.llm.faux import FauxToolCall
 
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
     faux_llm.set_responses([
         FauxToolCall(payload={"dimension": "payment_method"}, name="decompose"),
         "Card payments carry the December rise — about +12% of the move.",
@@ -123,10 +122,10 @@ def test_deep_turn_streams_through_the_analyst(client, builtin_conn_id,
     assert inv["report"]["headline"] == "Card carries the December move"
 
 
-def test_flag_off_keeps_the_phase_script(client, builtin_conn_id, monkeypatch):
-    """§5's ladder: with the experiment off, a deep turn reaches the phase script —
-    the analyst body must not have replaced the fallback."""
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, off is explicit
+def test_a_binding_without_tools_keeps_the_phase_script(client, builtin_conn_id, monkeypatch):
+    """§5's ladder: with a coder binding that cannot make a tool call, a deep turn reaches the
+    phase script — the analyst body must not have replaced the fallback."""
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
     seen = {}
 
     async def _fake_job_stream(question, conn_id, request, **kw):

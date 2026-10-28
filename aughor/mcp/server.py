@@ -459,8 +459,7 @@ async def list_objects(
 ) -> dict:
     """Arc OC-8 — one page of a business entity's objects, or of a segment of them (late, overdue, a rule's
     objects), read through the published ontology: the key, the properties asked for, the total the set holds and
-    the release it was read under. Each object is named `<object_type>:<key>` — the form a propose tool takes. Off
-    unless an administrator turned on the doors for builders."""
+    the release it was read under. Each object is named `<object_type>:<key>` — the form a propose tool takes."""
     body = {"entity": entity, "segment": segment or "", "columns": list(columns or []), "limit": limit,
             "offset": offset}
     return await _client.list_objects(connection, body, schema=schema)
@@ -712,18 +711,17 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
     return added
 
 
-#: Arc FA, FA-7 — the grounding read's tool, listed only while the API has `agents.grounding_read` on.
+#: Arc FA, FA-7 — the grounding read's tool, listed while the install has a custom agent.
 GROUNDING_TOOL = "ground_agent"
 
 
 async def _grounding_roster(api: "AughorClient") -> list[dict]:
-    """One row while the grounding read is on, none while it is off — so the live refresh adds and removes the tool.
-    Read off the custom agents the API lists, whose rows carry ``grounding_read`` only while the flag is on: the same
-    answer the agents roster has just read, so a server with the flag off asks the API nothing it did not before. An
-    install with no custom agent has nothing to ground, and is offered no tool."""
+    """One row while the install has a custom agent, none while it has none — so the live refresh adds and removes
+    the tool. Read off the custom agents the API lists: the same answer the agents roster has just read, so the
+    refresh asks the API nothing more. An install with no custom agent has nothing to ground."""
     recent = getattr(api, "recent_user_agents", None)
     rows = await recent(_LIVE_TTL) if recent else await api.list_user_agents()
-    return [{"name": GROUNDING_TOOL}] if any(r.get("grounding_read") for r in rows or []) else []
+    return [{"name": GROUNDING_TOOL}] if rows else []
 
 
 def _grounding_runner(api: "AughorClient"):
@@ -770,14 +768,13 @@ _GROUNDING_DESCRIPTION = (
 
 
 async def register_grounding_tool(client: "AughorClient | None" = None) -> list[str]:
-    """Arc FA, FA-7 — `ground_agent`, a READ, while the API has `agents.grounding_read` on; nothing while it is off,
-    so the list is as it was. Same posture as the registrars above: never raises, returns what it added, and skips a
-    name another tool holds."""
+    """Arc FA, FA-7 — `ground_agent`, a READ, while the install has a custom agent; nothing while it has none. Same
+    posture as the registrars above: never raises, returns what it added, and skips a name another tool holds."""
     api = client or _client
     try:
         rows = await _grounding_roster(api)
     except Exception as exc:                       # the API is down, or the route is old
-        _log.warning("could not read whether the grounding read is on: %s", exc)
+        _log.warning("could not read the custom agents for the grounding read: %s", exc)
         return []
     if not rows:
         return []
@@ -1095,7 +1092,7 @@ class BearerGate:
 
     Arc ED, ED-2 — or presents a service principal (its name and key) that the API recognises, and is then served as
     that principal (`mcp/callers.py`). A name and key the API refuses are refused here, whatever token comes with
-    them; while the API's switch is off, the shared token is the door as before."""
+    them."""
 
     def __init__(self, app: Any, token: str, client: "AughorClient | None" = None) -> None:
         if not token:
@@ -1120,7 +1117,7 @@ class BearerGate:
         caller = callers.presented(scope.get("headers") or [])
         if caller is not None:
             status, _ = await callers.answer(caller[0], caller[1], self._client or _client)
-            if status == 200 or (status == 404 and token_ok):
+            if status == 200:
                 return await self.app(scope, receive, send)
             return await self._refuse(send, callers.refused_because(status).encode("utf-8"))
         if token_ok:

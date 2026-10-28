@@ -26,7 +26,7 @@
  *     boundary of its own that draws NOTHING when a component throws; the boundary here
  *     sits inside it, so the library's never gets the chance.
  *
- * The Briefing draws a person's dashboards with it (`BriefingDashboards`), behind `dashboard.composed`.
+ * The Briefing draws a person's dashboards with it (`BriefingDashboards`).
  */
 import {
   Children, Component, createContext, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,

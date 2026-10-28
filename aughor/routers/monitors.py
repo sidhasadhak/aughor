@@ -151,6 +151,23 @@ def list_monitors_route(
     ]
 
 
+# Declared before `/monitors/{monitor_id}`: FastAPI matches in order, and below it the summary's path was read as a monitor's
+# id — the door answered "Monitor not found" to every caller (found taking ED-5's receipt, 2026-10-28).
+@router.get("/monitors/digest")
+def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
+    """Build and return the intelligence digest for a connection."""
+    from aughor.security.authz import check_owner, get_principal
+    check_owner("connection", conn_id, get_principal(request))  # DATA-06: no cross-org digest
+    if period not in ("week", "day"):
+        raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
+    try:
+        from aughor.monitors.alert_summary import build_alert_summary
+        result = build_alert_summary(conn_id=conn_id, period=period)
+        return {**result.model_dump(), "markdown": result.to_markdown()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get("/monitors/{monitor_id}")
 def get_monitor_route(monitor_id: str) -> dict:
     m = get_monitor(monitor_id)
@@ -217,8 +234,8 @@ def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
 
 
 def _upsert(monitor: Monitor) -> Monitor:
-    """Save, turning TC-3's refusal into a 503 that says it: with versions on, a save whose
-    version cannot be kept saves nothing, and that is not the author's mistake to fix."""
+    """Save, turning TC-3's refusal into a 503 that says it: a save whose version cannot be kept
+    saves nothing, and that is not the author's mistake to fix."""
     from aughor.automations.versions import VersionNotKept
     try:
         return upsert_monitor(monitor)
@@ -229,11 +246,9 @@ def _upsert(monitor: Monitor) -> Monitor:
 @router.get("/monitors/{monitor_id}/versions")
 def monitor_versions(monitor_id: str, limit: int = 50) -> dict:
     """TC-3 — every kept version of this monitor, newest first, each with who saved it, when and
-    how it came to be kept; and which one is current. 404 while ``automations.versions`` is off.
-    Superseded, never deleted: a deleted monitor still answers with its versions."""
-    from aughor.automations.versions import MONITOR_KIND, history, keeping, monitor_definition
-    if not keeping():
-        raise HTTPException(status_code=404, detail="versions need the 'automations.versions' flag")
+    how it came to be kept; and which one is current. Superseded, never deleted: a deleted
+    monitor still answers with its versions."""
+    from aughor.automations.versions import MONITOR_KIND, history, monitor_definition
     m = get_monitor(monitor_id)
     out = history(MONITOR_KIND, monitor_id, monitor_definition(m) if m is not None else None,
                   limit=limit)
@@ -294,8 +309,7 @@ def get_monitor_alerts(
     if not get_monitor(monitor_id):
         raise HTTPException(status_code=404, detail="Monitor not found")
     from aughor.monitors.recovery import annotate
-    # TC-4 — with `monitors.recovery` on, a closed alert says which recovery closed it and when, and a recovery which
-    # alert it closes. Off, the rows are as they were.
+    # TC-4 — a closed alert says which recovery closed it and when, and a recovery which alert it closes.
     return annotate([a.model_dump() for a in get_alerts(
         monitor_id=monitor_id, limit=limit, unacknowledged_only=unacknowledged_only
     )])
@@ -318,7 +332,7 @@ def get_all_alerts(
 
     allowed = accessible_catalog_ids(workspace_id)
     org_conns = org_visible_conn_ids()  # DATA-06: cross-org alerts never leak into the feed
-    return annotate([   # TC-4 — a closed alert names its recovery when `monitors.recovery` is on
+    return annotate([   # TC-4 — a closed alert names its recovery
         a.model_dump()
         for a in get_alerts(
             conn_id=conn_id, limit=limit, unacknowledged_only=unacknowledged_only
@@ -337,20 +351,6 @@ def ack_alert(alert_id: str) -> dict:
 
 
 # ── Alert summary ──────────────────────────────────────────────────────────────
-
-@router.get("/monitors/digest")
-def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
-    """Build and return the intelligence digest for a connection."""
-    from aughor.security.authz import check_owner, get_principal
-    check_owner("connection", conn_id, get_principal(request))  # DATA-06: no cross-org digest
-    if period not in ("week", "day"):
-        raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
-    try:
-        from aughor.monitors.alert_summary import build_alert_summary
-        result = build_alert_summary(conn_id=conn_id, period=period)
-        return {**result.model_dump(), "markdown": result.to_markdown()}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Idea 6 · alerts that prove they work ───────────────────────────────────────

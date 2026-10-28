@@ -88,14 +88,15 @@ def _own_the_log(monkeypatch):
     else's events. The window lives in the same ledger and is just as leaky: one
     left open would silently record prompt CONTENT into a later test's payloads.
 
-    It owns the FLAG state for the same reason. These tests reconstruct a quick `/ask`
-    turn from what the fast path logs; with `ask.converse` on, the converse body serves
-    that turn and logs a different shape, so the assertions describe a door the run is
-    not using. Pinned off explicitly — `route_mix` above is precisely the reader that
-    counts BOTH shapes, and it sets its own events rather than driving a live turn."""
+    It owns the BODY for the same reason. These tests reconstruct a quick `/ask` turn from
+    what the fast path logs; the converse body serves that turn when the binding calls
+    tools and logs a different shape, so the assertions would describe a door the run is not
+    using. Pinned to the fast path explicitly — a binding that cannot call tools, the turn the
+    conversation never serves — and `route_mix` above is precisely the reader that counts BOTH
+    shapes, and it sets its own events rather than driving a live turn."""
     from aughor.obs import prompt_window
 
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, off is explicit
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
     Ledger.default().session_events_clear()
     prompt_window.close_window()
     yield

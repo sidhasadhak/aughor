@@ -121,9 +121,9 @@ CREATE TABLE IF NOT EXISTS automation_layouts (
 
 -- TC-3: what a run kept beside its row — the version of the definition it ran under and
 -- the trigger that started it, as received. A sidecar keyed by run id, for `probe_state`'s
--- reason: written only while `automations.versions` is on, so with it off the run row, the
--- model and every response that serialises one stay what they were. `version` is NULL when
--- none was kept, and `why_not` then says why — a missing version is said, never implied.
+-- reason: the run row, the model and every response that serialises one stay what they were
+-- before versions began. `version` is NULL when none was kept, and `why_not` then says why —
+-- a missing version is said, never implied.
 CREATE TABLE IF NOT EXISTS automation_run_stamps (
     run_id         TEXT PRIMARY KEY,
     automation_id  TEXT NOT NULL,
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS automation_run_stamps (
 -- key, keyed PER AUTOMATION and per target like `probe_state` (whose row for the same target holds
 -- what the keys were listed under). A sidecar in the base DDL for `probe_state`'s reason — IF NOT
 -- EXISTS converges fresh and existing stores alike, so it needs no migration number — and written
--- only by that trigger, so with `automations.objects_admitted` off it stays empty.
+-- only by that trigger.
 CREATE TABLE IF NOT EXISTS admitted_keys (
     automation_id TEXT NOT NULL,
     target        TEXT NOT NULL,
@@ -426,10 +426,10 @@ def upsert_automation(automation: Automation) -> Automation:
     if not automation.created_at:
         automation = automation.model_copy(update={"created_at": now})
     automation = automation.model_copy(update={"updated_at": now})
-    # TC-3 — with `automations.versions` on, the definition is kept as a version BEFORE the
-    # row is replaced, and the one it replaces is kept first if nothing kept it yet. Before
-    # the row, so the store never holds a definition whose version was not kept: a save
-    # that cannot keep its version is refused (`VersionNotKept`). Off, this reads nothing.
+    # TC-3 — the definition is kept as a version BEFORE the row is replaced, and the one it
+    # replaces is kept first if nothing kept it yet. Before the row, so the store never holds a
+    # definition whose version was not kept: a save that cannot keep its version is refused
+    # (`VersionNotKept`).
     from aughor.automations.versions import keep_automation_version
     keep_automation_version(automation)
 

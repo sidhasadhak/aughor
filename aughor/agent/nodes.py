@@ -637,15 +637,6 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
         from aughor.semantic.kb_retriever import retrieve_for_planning
         return retrieve_for_planning(h.description)
 
-    def _get_causal() -> str:
-        # Causal context from prior verified investigations. Best-effort (as before).
-        try:
-            from aughor.lifecycle.causal import build_causal_context_section
-            _cc = build_causal_context_section(h.description, conn_id=state.get("connection_id"))
-            return (_cc + "\n") if _cc else ""
-        except Exception:
-            return ""
-
     def _get_priors() -> tuple[str, bool, list]:
         # P1 close-the-loop: read past human corrections for this database BACK into planning,
         # so a mistake a reviewer already flagged is not planned again. Empty (zero-cost) when
@@ -667,13 +658,11 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     with _fanout_region("ada.preflight"), ContextThreadPoolExecutor(max_workers=4) as _pool:
         _f_schema = _pool.submit(_get_schema)
         _f_kb = _pool.submit(_get_kb)
-        _f_causal = _pool.submit(_get_causal)
         _f_priors = _pool.submit(_get_priors)
         # .result() re-raises a retrieval error exactly as the serial path would (schema/KB
-        # were unguarded before; causal/priors return their fallback), so behavior is identical.
+        # were unguarded before; priors return their fallback), so behavior is identical.
         schema_for_hypothesis = _f_schema.result()
         kb_patterns = _f_kb.result()
-        causal_section = _f_causal.result()
         priors_section, priors_fired, _cited_nodes = _f_priors.result()
     # Republish the worker's citations onto the request context so the Trust Receipt can
     # attribute them (Wave P1). Outside the `with`, i.e. after the pool has drained.
@@ -697,7 +686,7 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     llm = get_provider("coder")
     plan: QueryPlanV2 = llm.complete(
         system="You are a senior data analyst planning how to test a hypothesis. Do NOT write SQL.",
-        user=rules_block + causal_section + priors_section + PLAN_QUERIES_PROMPT.format(
+        user=rules_block + priors_section + PLAN_QUERIES_PROMPT.format(
             hypothesis_id=h.id,
             hypothesis_description=h.description,
             schema=schema_for_hypothesis,

@@ -1,8 +1,6 @@
 """Arc CT, CT-7 and CT-10 (ROADMAP §3.50) — a person's dashboards over HTTP.
 
-The flag is off by default, and off it must change nothing: the routes answer 404 and the
-Briefing's own card routes answer exactly as they did. On, one route calls a model — the
-draft for an area — and every other route calls none.
+One route calls a model — the draft for an area — and every other route calls none.
 
 Identity is off in the suite, so every request is the same person ("default"). Each desk is
 therefore on a connection of its own: a person's cards and dashboards are keyed by connection,
@@ -23,7 +21,6 @@ from aughor.dashboards import cards, compose, host, validate as V, versions
 from aughor.dashboards.home import FIRST, Home, approver
 from aughor.cards import store as card_store
 from aughor.cards.models import StoredCard
-from aughor.kernel.flags import flag_overrides
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -39,12 +36,6 @@ ME = "default"          # identity is off: the one operator
 def client():
     from aughor.api import app
     return TestClient(app)
-
-
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True}):
-        yield
 
 
 class Desk:
@@ -77,49 +68,10 @@ def desk() -> Desk:
     return Desk()
 
 
-# ── off ───────────────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("method,path,body", [
-    ("get", "/dashboards", None),
-    ("get", "/dashboards/{id}", None),
-    ("put", "/dashboards/{id}", {"spec": {}}),
-    ("post", "/dashboards/start", None),
-    ("post", "/dashboards/draft", {"area": "returns"}),
-    ("post", "/dashboards/move", {"canvas_id": "cv1"}),
-    ("post", "/dashboards/{id}/restore", {"version": 1}),
-    ("post", "/dashboards/{id}/retire", {}),
-    ("get", "/dashboards/images/abc", None),
-])
-def test_off_every_route_answers_404_and_nothing_is_kept(client, desk, method, path, body):
-    r = getattr(client, method)(path.format(id=desk.cockpit_id), params=desk.q,
-                                **({"json": body} if body is not None else {}))
-    assert r.status_code == 404
-    assert "dashboard.composed" in r.json()["detail"]
-    assert versions.latest(desk.home) is None
-
-
-def test_off_the_briefings_cards_answer_exactly_as_they_do_on(client, desk):
-    """Byte-identical when off: the flag adds routes of its own and touches no other answer."""
-    card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
-                                         scope_ref=desk.connection, kind="kpi", title="Pinned"))
-    params = {"connection_id": desk.connection, "scope": "connection", "scope_ref": desk.connection}
-    off = client.get("/cards", params=params)
-    with flag_overrides({"dashboard.composed": True}):
-        on = client.get("/cards", params=params)
-    assert off.status_code == on.status_code == 200
-    assert off.content == on.content
-
-
-def test_the_flag_is_registered_off_and_queued_to_graduate():
-    from aughor.kernel import flags
-    assert flags.flag_enabled("dashboard.composed") is False
-    assert flags.flag_disposition("dashboard.composed") == "graduation_queue"
-
-
 # ── the person's dashboards ─────────────────────────────────────────────────────
 
 @needs_rules
-def test_the_list_is_the_persons_cockpits_and_what_they_may_start_from(client, desk, on):
+def test_the_list_is_the_persons_cockpits_and_what_they_may_start_from(client, desk):
     card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
                                          scope_ref=desk.connection, kind="kpi", title="Pinned"))
     empty = client.get("/dashboards", params=desk.q).json()
@@ -132,13 +84,13 @@ def test_the_list_is_the_persons_cockpits_and_what_they_may_start_from(client, d
     assert client.get("/dashboards", params={"connection_id": "elsewhere"}).json()["cockpits"] == []
 
 
-def test_a_cockpit_never_kept_is_404(client, desk, on):
+def test_a_cockpit_never_kept_is_404(client, desk):
     assert client.get(desk.path, params=desk.q).status_code == 404
     assert client.get("/dashboards/Not An Id", params=desk.q).status_code == 404
 
 
 @needs_rules
-def test_reading_writes_nothing(client, desk, on):
+def test_reading_writes_nothing(client, desk):
     from aughor.kernel.ledger import Ledger
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
     count = lambda: Ledger.default()._conn.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0]  # noqa: E731
@@ -150,7 +102,7 @@ def test_reading_writes_nothing(client, desk, on):
 
 
 @needs_rules
-def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(client, desk, on, monkeypatch):
+def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(client, desk, monkeypatch):
     """The dashboard draws a figure at the scale its metric's unit states — the Briefing's own
     reading of it — and says what stands behind it."""
     import types
@@ -172,33 +124,22 @@ def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(clie
 
 
 @needs_rules
-def test_a_range_needs_the_briefings_own_flag(client, on):
+def test_a_range_is_read_for_the_cockpits_connection(client):
     desk = Desk(connection="thelook")
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
-    with flag_overrides({"briefing.ranges": False}):
-        r = client.get(desk.path, params={**desk.q, "preset": "last_month"})
-        assert r.status_code == 404 and "briefing.ranges" in r.json()["detail"]
-        assert client.get(desk.path, params=desk.q).json()["ranges_on"] is False
+    r = client.get(desk.path, params={**desk.q, "preset": "last_month"})
+    assert r.status_code == 200, r.text
+    block = r.json()["range"]
+    assert block["status"] == "final" and block["preset"] == "last_month"
+    assert block["covers"] and block["start"] < block["last_day"]
+    assert "ranges_on" not in r.json()
 
+    to_date = client.get(desk.path, params={**desk.q, "preset": "month_to_date"}).json()["range"]
+    assert to_date["status"] == "to_date"
 
-@needs_rules
-def test_a_range_is_read_for_the_cockpits_connection(client, on):
-    desk = Desk(connection="thelook")
-    client.put(desk.path, params=desk.q, json={"spec": desk.spec})
-    with flag_overrides({"briefing.ranges": True}):
-        r = client.get(desk.path, params={**desk.q, "preset": "last_month"})
-        assert r.status_code == 200, r.text
-        block = r.json()["range"]
-        assert block["status"] == "final" and block["preset"] == "last_month"
-        assert block["covers"] and block["start"] < block["last_day"]
-        assert r.json()["ranges_on"] is True
-
-        to_date = client.get(desk.path, params={**desk.q, "preset": "month_to_date"}).json()["range"]
-        assert to_date["status"] == "to_date"
-
-        bad = client.get(desk.path, params={**desk.q, "preset": "fortnight"})
-        assert bad.status_code == 422 and "a range is one of" in bad.json()["detail"]
-        assert client.get(desk.path, params={**desk.q, "start": "28/09/2026"}).status_code == 422
+    bad = client.get(desk.path, params={**desk.q, "preset": "fortnight"})
+    assert bad.status_code == 422 and "a range is one of" in bad.json()["detail"]
+    assert client.get(desk.path, params={**desk.q, "start": "28/09/2026"}).status_code == 422
 
 
 # ── the range's status, from its dates ────────────────────────────────────────
@@ -233,7 +174,7 @@ def test_the_host_says_only_words_the_web_declares():
 # ── keeping, by a person's own hand ───────────────────────────────────────────
 
 @needs_rules
-def test_a_spec_is_kept_and_then_read(client, desk, on):
+def test_a_spec_is_kept_and_then_read(client, desk):
     r = client.put(desk.path, params=desk.q, json={"spec": desk.spec, "note": "the first cut"})
     assert r.status_code == 200, r.text
     assert r.json() == {"status": "kept", "kept": True, "version": 1, "cockpit_id": desk.cockpit_id,
@@ -262,7 +203,7 @@ def test_an_identified_person_is_named_by_their_id():
 
 
 @needs_rules
-def test_a_refusal_is_an_error_that_carries_its_reasons(client, desk, on):
+def test_a_refusal_is_an_error_that_carries_its_reasons(client, desk):
     bad = json.loads(json.dumps(desk.spec))
     bad["elements"]["card-rate"]["watch"] = {"/tab": {"action": "anything"}}
     r = client.put(desk.path, params=desk.q, json={"spec": bad})
@@ -274,7 +215,7 @@ def test_a_refusal_is_an_error_that_carries_its_reasons(client, desk, on):
     assert versions.latest(desk.home) is None
 
 
-def test_when_the_rules_cannot_run_the_answer_is_503_never_200(client, desk, on, monkeypatch):
+def test_when_the_rules_cannot_run_the_answer_is_503_never_200(client, desk, monkeypatch):
     monkeypatch.setattr(V, "_node_bin", lambda: None)
     r = client.put(desk.path, params=desk.q, json={"spec": desk.spec})
     assert r.status_code == 503
@@ -284,7 +225,7 @@ def test_when_the_rules_cannot_run_the_answer_is_503_never_200(client, desk, on,
 
 
 @needs_rules
-def test_a_person_may_put_a_number_in_their_own_title(client, desk, on):
+def test_a_person_may_put_a_number_in_their_own_title(client, desk):
     spec = json.loads(json.dumps(desk.spec))
     spec["elements"]["sec-headline"]["props"]["title"] = "Top 1000 accounts"
     r = client.put(desk.path, params=desk.q, json={"spec": spec})
@@ -322,7 +263,7 @@ def test_the_first_cockpit_keeps_the_order_the_person_arranged():
 
 
 @needs_rules
-def test_my_cockpit_is_started_from_the_pinned_cards_in_the_persons_order(client, on):
+def test_my_cockpit_is_started_from_the_pinned_cards_in_the_persons_order(client):
     desk = Desk(with_cards=False)
     pins = [card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
                                                  scope_ref=desk.connection, kind="kpi", title=t, sql="SELECT 1"))
@@ -344,7 +285,7 @@ def test_my_cockpit_is_started_from_the_pinned_cards_in_the_persons_order(client
     assert again.status_code == 409 and "already have" in again.json()["detail"]["sentences"][0]
 
 
-def test_with_nothing_pinned_there_is_nothing_to_start_from_and_it_says_so(client, on):
+def test_with_nothing_pinned_there_is_nothing_to_start_from_and_it_says_so(client):
     empty = Desk(with_cards=False)
     r = client.post("/dashboards/start", params=empty.q)
     assert r.status_code == 422
@@ -356,7 +297,7 @@ def test_with_nothing_pinned_there_is_nothing_to_start_from_and_it_says_so(clien
 # ── going back, and retiring ──────────────────────────────────────────────────
 
 @needs_rules
-def test_going_back_and_retiring_over_http(client, desk, on):
+def test_going_back_and_retiring_over_http(client, desk):
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
     edited = json.loads(json.dumps(desk.spec))
     edited["elements"]["sec-headline"]["props"]["title"] = "At a glance"
@@ -378,7 +319,7 @@ def test_going_back_and_retiring_over_http(client, desk, on):
 
 # ── the draft for an area: the one route that calls a model ──────────────────
 
-def test_the_draft_route_hands_the_area_and_the_person_to_the_drafter(client, desk, on, monkeypatch):
+def test_the_draft_route_hands_the_area_and_the_person_to_the_drafter(client, desk, monkeypatch):
     asked = []
 
     def drafter(connection_id, owner, area, *, schema=None):
@@ -418,7 +359,7 @@ class Canvas:
 
 
 @needs_rules
-def test_a_canvas_cockpit_is_offered_and_moved_in_one_act(client, desk, on):
+def test_a_canvas_cockpit_is_offered_and_moved_in_one_act(client, desk):
     cv = Canvas(desk)
     offered = client.get("/dashboards", params=desk.q).json()["from_canvases"]
     assert [(o["canvas_id"], o["title"], o["version"]) for o in offered] == [(cv.id, "Returns", 3)]
@@ -447,7 +388,7 @@ def test_a_canvas_cockpit_is_offered_and_moved_in_one_act(client, desk, on):
 
 
 @needs_rules
-def test_a_move_that_cannot_be_kept_puts_the_cards_back(client, desk, on, monkeypatch):
+def test_a_move_that_cannot_be_kept_puts_the_cards_back(client, desk, monkeypatch):
     cv = Canvas(desk)
     monkeypatch.setattr(V, "_node_bin", lambda: None)
     r = client.post("/dashboards/move", params=desk.q, json={"canvas_id": cv.id})
@@ -458,7 +399,7 @@ def test_a_move_that_cannot_be_kept_puts_the_cards_back(client, desk, on, monkey
     assert versions.canvas_latest(cv.id)["retired"] is False
 
 
-def test_a_canvas_on_another_connection_is_not_moved_here(client, desk, on):
+def test_a_canvas_on_another_connection_is_not_moved_here(client, desk):
     cv = Canvas(desk)
     r = client.post("/dashboards/move", params={"connection_id": "elsewhere"}, json={"canvas_id": cv.id})
     assert r.status_code == 422 and "not on this connection" in r.json()["detail"]["sentences"][0]
@@ -467,7 +408,7 @@ def test_a_canvas_on_another_connection_is_not_moved_here(client, desk, on):
 # ── no model ──────────────────────────────────────────────────────────────────
 
 @needs_rules
-def test_no_route_but_the_draft_calls_a_model(client, on, monkeypatch):
+def test_no_route_but_the_draft_calls_a_model(client, monkeypatch):
     """What was kept is drawn, and a person's own edits are kept, at no model cost. Every model
     call in the product goes through one of LLMProvider's three methods, whoever built the
     provider and however it was imported, so that is where this stands guard."""
@@ -498,18 +439,11 @@ def test_no_route_but_the_draft_calls_a_model(client, on, monkeypatch):
 
 # ── renamed 2026-10-23: dashboards were dashboards ──────────────────────────────────────
 
-def test_an_old_cockpits_path_is_served_as_the_dashboards_one(client, on, desk):
+def test_an_old_cockpits_path_is_served_as_the_dashboards_one(client, desk):
     """A bookmark, a script or a cached page that still says /cockpits lands on the same route, before routing — so
     the answer, its RBAC policy and its guards are the new route's (PENDING 54)."""
     new = client.get("/dashboards", params=desk.q)
     old = client.get("/cockpits", params=desk.q)
     assert new.status_code == 200, new.text
     assert old.status_code == 200, old.text
-    assert old.json() == new.json()
-
-
-def test_an_old_cockpits_path_is_refused_exactly_as_the_new_one_while_off(client, desk):
-    new = client.get("/dashboards", params=desk.q)
-    old = client.get("/cockpits", params=desk.q)
-    assert new.status_code == old.status_code == 404
     assert old.json() == new.json()

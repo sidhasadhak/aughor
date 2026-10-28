@@ -1,4 +1,4 @@
-"""Arc TC, TC-5 — `hub.failure_rate`: each node on the hub map says how often its runs failed over
+"""Arc TC, TC-5 — each node on the hub map says how often its runs failed over
 a window, counted at the run store.
 
 Three answers are kept apart and each is asserted as itself: a measured rate (a tick that broke,
@@ -16,8 +16,6 @@ from fastapi.testclient import TestClient
 
 from aughor.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
 from aughor.automations.store import append_run, upsert_automation
-
-_ENV = "AUGHOR_HUB_FAILURE_RATE"
 
 
 @pytest.fixture()
@@ -50,36 +48,9 @@ def _rows(client, conn_id: str, **params) -> dict:
     return {r["id"]: r for r in body["rows"]}
 
 
-def test_off_the_map_is_byte_identical_and_reads_no_window(client, monkeypatch):
-    """Off is the default and must be today's map: no new key on a row or on the body, and
-    `window_days` changes nothing. The comparison is against the same map with the flag on and
-    the two additions taken off, so a change to any other column under the flag fails here."""
-    import aughor.automations.models as models
-    monkeypatch.setattr(models, "now_iso_z", lambda: "2026-10-26T09:00:00Z")
-    conn_id = _conn()
-    a = _automation(conn_id)
-    _run(a, "error")
-    _run(a, "fired")
-
-    monkeypatch.delenv(_ENV, raising=False)
-    off = client.get("/hub/map", params={"conn_id": conn_id}).json()
-    off_window = client.get("/hub/map", params={"conn_id": conn_id, "window_days": 30}).json()
-    assert off == off_window, "window_days changed the map while the flag was off"
-    assert "failure_window" not in off
-    assert all("failure_rate" not in r for r in off["rows"])
-
-    monkeypatch.setenv(_ENV, "1")
-    on = client.get("/hub/map", params={"conn_id": conn_id}).json()
-    on.pop("failure_window")
-    for r in on["rows"]:
-        r.pop("failure_rate")
-    assert on == off, "turning the flag on changed something other than the failure rate"
-
-
-def test_a_measured_rate_counts_broken_ticks_and_failed_steps(client, monkeypatch):
+def test_a_measured_rate_counts_broken_ticks_and_failed_steps(client):
     """A failed step is recorded as a STATUS on a fired run, never as an `error` outcome, so a
     rate read off outcomes alone would say 0% for a chain whose every send failed."""
-    monkeypatch.setenv(_ENV, "1")
     conn_id = _conn()
     a = _automation(conn_id)
     for _ in range(3):
@@ -97,10 +68,9 @@ def test_a_measured_rate_counts_broken_ticks_and_failed_steps(client, monkeypatc
     assert rate["window_days"] == 7
 
 
-def test_a_node_with_no_runs_says_no_runs_never_zero(client, monkeypatch):
+def test_a_node_with_no_runs_says_no_runs_never_zero(client):
     """No runs in the window is not a 0% failure rate: a gated tick never started, and a run
     from before the window is outside it."""
-    monkeypatch.setenv(_ENV, "1")
     conn_id = _conn()
     a = _automation(conn_id)
     _run(a, "gated")
@@ -113,8 +83,7 @@ def test_a_node_with_no_runs_says_no_runs_never_zero(client, monkeypatch):
     assert rate["gated"] == 1
 
 
-def test_the_window_is_the_callers(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
+def test_the_window_is_the_callers(client):
     conn_id = _conn()
     a = _automation(conn_id)
     _run(a, "error", days_ago=10)
@@ -132,7 +101,6 @@ def test_the_window_is_the_callers(client, monkeypatch):
 def test_a_node_the_reader_may_not_see_says_not_permitted_and_stays(client, monkeypatch):
     """The reader's organisation does not hold this node's connection: the node stays on the map
     and its rate says not permitted, with no count — never dropped, never a number."""
-    monkeypatch.setenv(_ENV, "1")
     conn_id = _conn()
     mine, theirs = _automation(conn_id, "Mine"), _automation(_conn(), "Theirs")
     _run(mine, "fired")
@@ -149,7 +117,6 @@ def test_a_node_the_reader_may_not_see_says_not_permitted_and_stays(client, monk
 
 
 def test_a_permission_check_that_cannot_run_withholds_and_says_why(client, monkeypatch):
-    monkeypatch.setenv(_ENV, "1")
     conn_id = _conn()
     a = _automation(conn_id)
     _run(a, "fired")

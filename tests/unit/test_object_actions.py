@@ -74,13 +74,15 @@ def db(tmp_path_factory):
 
 
 def _declare(graph, action_id: str, fields: dict) -> None:
-    OV.save_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="action", target_id=action_id, fields=fields))
+    """An action declared and in force — written by the release's own door, as a published declaration is."""
+    OV.publish_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="action", target_id=action_id, fields=fields))
     OV.apply_overrides(graph, CONN, "ecommerce")
 
 
 @pytest.fixture
 def graph(tmp_path, monkeypatch, db):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [])
     OVL.purge_connections([CONN])
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))

@@ -528,8 +528,8 @@ def route_mix(*, org_id: Optional[str] = None, scan: int = 5000,
     this codebase keeps paying for.
 
     THE WINDOW IS THE OTHER HALF OF THAT SAME MISTAKE, and this function shipped with it.
-    The flag is off by default, so most of the log is traffic from before converse could
-    run at all. Dividing by every turn ever recorded put 302 turns in a denominator that
+    The flag was off by default until SP-14, so most of the log was traffic from before
+    converse could run at all. Dividing by every turn ever recorded put 302 turns in a denominator that
     could never have contained them, and the first live reading came back 0.016 when the
     true figure was 4 of 4. A ratio's denominator must contain only things that could have
     had the property — the rule this repo has now paid for seven times, here inside the

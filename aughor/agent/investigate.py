@@ -11151,7 +11151,7 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     from aughor.agent.prompts_investigate import ADASynthesisModel
     concluded = state.get("_analyst_conclude") or {}
     if (concluded.get("headline") or "").strip():
-        # P1 (`analyst.conclude`) — the analyst named its own headline and answer; nothing to cut.
+        # P1 (`conclude`) — the analyst named its own headline and answer; nothing to cut.
         headline, body = concluded["headline"].strip(), (concluded.get("answer") or conclusion).strip()
         if (concluded.get("gaps") or "").strip():
             body = f"{body}\n\n{concluded['gaps'].strip()}".strip()
@@ -11371,7 +11371,6 @@ def ada_synthesize(state: AgentState) -> dict:
             from aughor.playbook.retriever import (
                 retrieve_for_metric_and_phases,
                 build_playbook_prompt_section,
-                build_causal_playbook_section,
                 filter_by_approach,
             )
             labels: list[str] = []
@@ -11391,8 +11390,7 @@ def ada_synthesize(state: AgentState) -> dict:
             # inside a prompt whose own note said the question is not temporal.
             matched = filter_by_approach(
                 matched, cross_sectional=bool(intake_data.get("cross_sectional")))
-            causal_section = build_causal_playbook_section(question, conn_id=state.get("connection_id", ""))
-            playbook_section = causal_section + build_playbook_prompt_section(matched)
+            playbook_section = build_playbook_prompt_section(matched)
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "playbook section is advisory; synthesis proceeds without playbook "
@@ -11599,30 +11597,6 @@ def ada_synthesize(state: AgentState) -> dict:
             tolerate(_exc, "report checks are best-effort; an unverified report is the "
                            "pre-PE-2 behaviour, not a failure",
                      counter="deep_analysis.report_checks")
-
-    # Save causal proposals from this investigation (outcome-gated promotion)
-    inv_id = state.get("investigation_id") or ""
-    conn_id = state.get("connection_id") or ""
-    if synth and inv_id and hasattr(synth, "causal_links") and synth.causal_links:
-        try:
-            from aughor.lifecycle.causal import CausalProposal, save_proposals
-            proposals = [
-                CausalProposal(
-                    from_signal=cl.from_signal,
-                    to_signal=cl.to_signal,
-                    from_entity=cl.from_entity,
-                    to_entity=cl.to_entity,
-                    confidence=cl.confidence,
-                    inv_id=inv_id,
-                    conn_id=conn_id,
-                )
-                for cl in synth.causal_links
-            ]
-            save_proposals(inv_id, proposals)
-        except Exception as _exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(_exc, "causal-proposal save is best-effort; the synthesis output is "
-                           "already complete", counter="deep_analysis.synth_causal_save")
 
     # ── Honest confidence floor ───────────────────────────────────────────────
     # A run that gathered no usable data can never be HIGH/MEDIUM confidence,

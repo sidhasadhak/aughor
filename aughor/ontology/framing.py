@@ -23,7 +23,7 @@ rules. What they resolve to is the FRAME:
 
 A builder-made segment or metric is recorded as a term and defines nothing: the validator proves a guessed filter
 EXECUTES, never that the business means it. Only what was declared and measured — a process, a promise, a rule — is a
-definition, and (Arc OC-3, behind `ontology.keyed_metrics`) an approved metric a person keyed to the entity it
+definition, and (Arc OC-3) an approved metric a person keyed to the entity it
 measures: the question then starts from that entity, the rules it names apply from there, and the metric's own statement
 is what the object door compiles.
 
@@ -844,8 +844,7 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
     """Resolve ``question``'s words against the names declared on ``graph`` and return the frame. ``synonyms`` are a
     person's (`Synonym` rows, or ``(subject_kind, subject_id, synonym)``). ``choice`` names one of the outcome
     candidates — a model's choice among them; a name that is not a candidate chooses nothing and says so. ``metrics``
-    are the approved metrics a person keyed to an entity (Arc OC-3, `object_query.keyed_metrics_for` — empty while
-    `ontology.keyed_metrics` is off, so the frame reads exactly as before)."""
+    are the approved metrics a person keyed to an entity (Arc OC-3, `object_query.keyed_metrics_for`)."""
     metrics = list(metrics or ())
     from aughor.semantic.object_query import MAX_LINK_HOPS
     hops = max(1, min(int(hops or DEFAULT_HOPS), MAX_LINK_HOPS))

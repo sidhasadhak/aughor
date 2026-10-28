@@ -46,6 +46,7 @@ RANDOM_ID = "c0ffee42"
 def fresh_install(tmp_path, monkeypatch):
     """An install that declared nothing, whose connection this machine happened to mint as c0ffee42."""
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(OV, "_SEED_ROOT", REPO / "data" / "shipped" / "ontology_overrides")
     keys: dict[str, str] = {}
     import aughor.db.registry as registry
@@ -114,7 +115,7 @@ def test_the_frame_matcher_scores_the_rebuilt_graphs_as_it_scores_the_snapshots(
 def test_withdrawing_a_shipped_declaration_hides_it_on_this_install_only(fresh_install):
     path, schema = HOSTS["luxexperience"]
     fresh_install[RANDOM_ID] = "luxexperience"
-    assert OV._unlink(RANDOM_ID, schema, "rule", "vip_customers") is True
+    assert OV.publish_withdrawal(RANDOM_ID, schema, "rule", "vip_customers") is True   # published: the release's door
     graph, _ = OV.apply_overrides(_stripped(json.loads((REPO / path).read_text())), RANDOM_ID, schema)
     assert "vip_customers" not in graph.rules and "eu_markets" in graph.rules
     assert (REPO / "data/shipped/ontology_overrides/key=luxexperience/luxexperience/rule/vip_customers.yaml").exists()

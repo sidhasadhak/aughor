@@ -34,8 +34,11 @@ def client(monkeypatch):
 
 
 def _flags(monkeypatch, *on):
+    """The loop and the testing centre are one organisation setting since 2026-10-28 (ROADMAP §3.65)."""
     import aughor.kernel.flags as flags
-    monkeypatch.setattr(flags, "flag_enabled", lambda name: name in on or name == "agents.user_defined")
+    import aughor.orgsettings.allows as allows
+    monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "agents.user_defined")
+    monkeypatch.setattr(allows, "allows", lambda setting: bool(on) and setting == "scheduled_model_work")
 
 
 def _turn(monkeypatch, *, agent_id="", sql="SELECT 1", headline="There were 49.",
@@ -276,7 +279,7 @@ def test_the_learning_receipt(client, monkeypatch):
     body = client.get(f"/agents/custom/{a.id}/learning").json()
     assert body["verdicts"] == 2 and body["corrections"] == 1
     assert body["certified_from_use"] == 1 and body["candidates_from_use"] == 0
-    assert body["loop_on"] is True and body["centre_on"] is False, "the flags' states are on the receipt"
+    assert body["loop_on"] is True and body["centre_on"] is True, "one organisation setting, said on the receipt"
     assert body["before"] is None and body["after"] is None
 
 

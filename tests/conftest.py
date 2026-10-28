@@ -28,11 +28,26 @@ os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
 # gate (`tests/test_govern_actions.py`, `test_govern_action_coverage.py`) unset or set the
 # variable themselves, so the default is still proven. setdefault: an operator's own value wins.
 os.environ.setdefault("AUGHOR_ACTION_APPROVAL", "0")
-# Arc OC's graduated flags (2026-10-10) are default-on for an install; the suite was written against their off path,
-# byte-identical by construction, so it runs there unless a test turns one on — each flag's own tests do.
-for _oc_flag_var in ("AUGHOR_ONTOLOGY_HISTORY", "AUGHOR_ONTOLOGY_RELEASE", "AUGHOR_ONTOLOGY_DASHBOARD_PIECES",
-                     "AUGHOR_ACTIONS_OUTBOX", "AUGHOR_ONTOLOGY_BUILDER_DOORS"):
-    os.environ.setdefault(_oc_flag_var, "0")
+# The flags that are part of the platform (ALWAYS_ON, ROADMAP §3.65, 2026-10-28 — Arc OC's five set the precedent on
+# 2026-10-10) are on for an install; the suite was written against their off paths, byte-identical by construction, so
+# it runs there until stage 2 deletes each off path — a test of one sets it on, or unsets it, since on is the default.
+# Read from the registry's SOURCE, not imported: nothing from aughor may load before the stores below are redirected.
+def _always_on_vars() -> list[str]:
+    import ast as _ast
+    src = (Path(__file__).resolve().parents[1] / "aughor" / "kernel" / "flags.py").read_text()
+    found: dict[str, dict] = {}
+    for node in _ast.parse(src).body:
+        target = (node.targets[0] if isinstance(node, _ast.Assign) else getattr(node, "target", None))
+        name = getattr(target, "id", None)
+        if name in ("FLAG_ENV", "ALWAYS_ON") and isinstance(node.value, _ast.Dict):
+            found[name] = {k.value: getattr(v, "value", None) for k, v in zip(node.value.keys, node.value.values)}
+    return [found["FLAG_ENV"][n] for n in found["ALWAYS_ON"]]
+
+
+# (The four that were already default-on before 2026-10-28 and ran on here — `_RAN_ON` — were made unconditional
+# with the answering area, 2026-10-28; the set went with them.)
+for _always_var in _always_on_vars():
+    os.environ.setdefault(_always_var, "0")
 # Hermetic kernel ledger — tests must never write to data/system.db.
 #
 # ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An
@@ -179,10 +194,8 @@ for _env, _file in (
     # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
     # got a seeded playbook written into its `data/`.
     ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
-    # Phase 5 of the 2027 study — the review now writes the confirmed-cause graph
-    # (`lifecycle/causal.py`), so both of its files join the hermetic set in the same commit.
-    ("AUGHOR_CAUSAL_PROPOSALS_FILE", "causal_proposals.json"),
-    ("AUGHOR_CAUSAL_GRAPH_FILE", "causal_graph.json"),
+    # (AUGHOR_CAUSAL_PROPOSALS_FILE / AUGHOR_CAUSAL_GRAPH_FILE left 2026-10-28 with `lifecycle/causal.py`: what one
+    # promise does to another is a declared impact, Arc ED-5, and nothing reads or writes those files.)
     # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
     # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
     ("AUGHOR_INDUSTRIES_FILE", "industries.json"),
@@ -253,7 +266,7 @@ os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "on
 # …and its shipped seed layer (data/shipped/ontology_overrides), left ABSENT: no test reads a shipped override either,
 # and one that tests the layering names its own.
 os.environ["AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_seed")
-# Arc OC-2 — the draft layer above the instance tree (data/ontology_overrides_draft), written while `ontology.release` is on.
+# Arc OC-2 — the draft layer above the instance tree (data/ontology_overrides_draft), where every ontology change waits.
 os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DRAFT_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_draft")
 os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
 # …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).
@@ -524,6 +537,8 @@ SYNTHETIC_DEFAULT_ON = "_synthetic.default_on"
 SYNTHETIC_DEFAULT_ON_VAR = "AUGHOR_SYNTHETIC_DEFAULT_ON"
 SYNTHETIC_DEFAULT_OFF = "_synthetic.default_off"
 SYNTHETIC_DEFAULT_OFF_VAR = "AUGHOR_SYNTHETIC_DEFAULT_OFF"
+SYNTHETIC_OTHER_OFF = "_synthetic.other_off"
+SYNTHETIC_OTHER_OFF_VAR = "AUGHOR_SYNTHETIC_OTHER_OFF"
 
 
 def _register_synthetic(monkeypatch, name: str, var: str, default: bool) -> str:
@@ -553,6 +568,22 @@ def synthetic_default_on(monkeypatch):
     yield name
     # Safe against the real store: conftest points AUGHOR_SYSTEM_DB at a tempdir.
     _flags.clear_flag(name)
+
+
+@pytest.fixture
+def synthetic_flags(monkeypatch):
+    """Two registered DEFAULT-OFF experiment flags that exist only inside the requesting test — the exemplars the flag
+    machinery's own tests need (run-scoped overrides, the eval grid's flag axis) now that no product flag is a switch
+    (ROADMAP §3.65, 2026-10-28)."""
+    from aughor.kernel import flags as _flags
+
+    names = (_register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_OFF, SYNTHETIC_DEFAULT_OFF_VAR, default=False),
+             _register_synthetic(monkeypatch, SYNTHETIC_OTHER_OFF, SYNTHETIC_OTHER_OFF_VAR, default=False))
+    for name in names:
+        monkeypatch.setitem(_flags.EXPERIMENT, name, "test-only: an exemplar for the flag machinery")
+    yield names
+    for name in names:
+        _flags.clear_flag(name)
 
 
 @pytest.fixture
@@ -729,6 +760,23 @@ def _no_provider_credentials(request):
                          "AUGHOR_NARRATOR_MODEL", "AUGHOR_FAST_NARRATOR_MODEL"):
                 mp.delenv(_var, raising=False)
             mp.setenv("AUGHOR_FALLBACK_BACKENDS", "none")
+        yield
+    finally:
+        mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _no_coverage_run_after_profiling():
+    """Arc MC — a profile that is built starts a coverage run on a thread, and that run's writer makes one model call
+    per uncovered area (`coverage_proposals.run_in_background`, unconditional since 2026-10-28). In the suite the hook
+    starts nothing: a thread would outlive the test that profiled and call a model, or write another test's stores. A
+    test of a coverage run calls `coverage_proposals.run` itself, with its provider stubbed.
+
+    A private MonkeyPatch, for the teardown-order reason `_no_provider_credentials` gives."""
+    from aughor.semantic import coverage_proposals as _cp
+    mp = pytest.MonkeyPatch()
+    mp.setattr(_cp, "run_in_background", lambda *a, **k: False)
+    try:
         yield
     finally:
         mp.undo()

@@ -25,7 +25,6 @@ import { dropWire, freshWireName, putSet, putValue, renameValue, type DashboardS
 import { lineOf, setTitles, wireWords } from "@/lib/dashboards/names";
 import { choicesOf, doorConditions, isRefused, readSet, readersOf, segmentId, segmentRule } from "@/lib/dashboards/sets";
 import { typedValue, valueFits, valueWords } from "@/lib/dashboards/values";
-import { useFlagOn } from "@/lib/flagOn";
 import { formatCount, formatSeconds } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
@@ -187,10 +186,9 @@ function CountOf({ spec, set, sum, connectionId, schema }: { spec: DashboardSpec
   return <>{useSetCount(spec, set, connectionId, schema, sum).text}</>;
 }
 
-/** The Data tab: the sets, the choices and the values, and the doors to new ones. Arc AP-8 — while variables are on,
- *  the Variables pane: the values first, each with where it comes from, what it holds now and how many read it; then
- *  the sets; then what the pieces output — a row chosen, rows ticked, a figure clicked. */
-export function DataPane({ spec, selected, onSelect, onChange, connectionId, schema, variablesOn = false, cardReads }: {
+/** The Variables pane (Arc AP-8): the values first, each with where it comes from, what it holds now and how many read
+ *  it; then the sets; then what the pieces output — a row chosen, rows ticked, a figure clicked — and the doors to new ones. */
+export function DataPane({ spec, selected, onSelect, onChange, connectionId, schema, cardReads }: {
   spec: DashboardSpec;
   /** `set:<name>`, `value:<name>` or `choice:<name>` while one is chosen. */
   selected: string | null;
@@ -198,7 +196,6 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
   onChange: Change;
   connectionId: string;
   schema?: string;
-  variablesOn?: boolean;
   /** The values a card of the person's own query reads, by the card's id. */
   cardReads?: (cardId: string) => string[];
 }) {
@@ -230,51 +227,32 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
           {c.kind === "chosen" ? "a row clicked" : c.kind === "ticked" ? "rows ticked" : "a figure clicked"} in {c.madeBy.map(k => lineOf(spec.elements, k, undefined, undefined, setTitles(spec)).split(" · ").pop()).join(", ")}
         </span>
       </span>
-      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-        {variablesOn ? `used in ${readersAll(spec, c.name, cardReads).count}` : `read by ${readersOf(spec, c.name).elements.length + readersOf(spec, c.name).sets.length}`}
-      </span>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>used in {readersAll(spec, c.name, cardReads).count}</span>
     </Button>
   ));
-  if (variablesOn) {
-    return (
-      <div data-testid="builder-data" data-variables="on" style={{ padding: "0 6px 8px" }}>
-        <Label right={`${values.length} of ${MAX_VALUES}`}>Values</Label>
-        {values.map(n => {
-          const v = spec.values?.[n];
-          if (!v) return null;
-          const used = readersAll(spec, n, cardReads).count;
-          return (
-            <Button key={n} variant="ghost" data-testid="data-value" data-name={n} aria-pressed={selected === `value:${n}`} onClick={() => onSelect(`value:${n}`)}
-              className="aug-fs-sm" style={{ ...ROW, background: selected === `value:${n}` ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
-              <span aria-hidden="true" className="aug-fs-xs" style={{ color: "var(--amb3)" }}>{KIND_MARK[v.kind] ?? "#"}</span>
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.label}</span>
-                <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{valueLine(spec, v)}</span>
-              </span>
-              <span className="aug-fs-xs" style={{ textAlign: "right", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
-                <ValueNowText spec={spec} v={v} connectionId={connectionId} schema={schema} />
-                <span style={{ display: "block", color: "var(--t3)" }}>{used ? `used in ${used}` : "not used yet"}</span>
-              </span>
-            </Button>
-          );
-        })}
-        {values.length < MAX_VALUES && <Button size="xs" variant="ghost" data-testid="data-new-value" onClick={newValue}><Icon name="plus" /> New value</Button>}
-        <Label right={`${sets.length} of ${MAX_SETS}`}>Sets</Label>
-        {sets.map(n => (
-          <SetLine key={n} spec={spec} name={n} selected={selected === `set:${n}`} onSelect={() => onSelect(`set:${n}`)} connectionId={connectionId} schema={schema} />
-        ))}
-        {!sets.length && <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 10px 6px" }}>None yet: every piece reads its own entity.</div>}
-        {sets.length < MAX_SETS && (
-          <Button size="xs" variant="ghost" data-testid="data-new-set" disabled={!firstEntity} onClick={newSet}><Icon name="plus" /> New set</Button>
-        )}
-        <Label>From the pieces</Label>
-        {choiceRows}
-        {!choices.length && <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 10px 6px" }}>None: a table&rsquo;s setup names what a click chooses.</div>}
-      </div>
-    );
-  }
   return (
     <div data-testid="builder-data" style={{ padding: "0 6px 8px" }}>
+      <Label right={`${values.length} of ${MAX_VALUES}`}>Values</Label>
+      {values.map(n => {
+        const v = spec.values?.[n];
+        if (!v) return null;
+        const used = readersAll(spec, n, cardReads).count;
+        return (
+          <Button key={n} variant="ghost" data-testid="data-value" data-name={n} aria-pressed={selected === `value:${n}`} onClick={() => onSelect(`value:${n}`)}
+            className="aug-fs-sm" style={{ ...ROW, background: selected === `value:${n}` ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
+            <span aria-hidden="true" className="aug-fs-xs" style={{ color: "var(--amb3)" }}>{KIND_MARK[v.kind] ?? "#"}</span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.label}</span>
+              <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{valueLine(spec, v)}</span>
+            </span>
+            <span className="aug-fs-xs" style={{ textAlign: "right", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
+              <ValueNowText spec={spec} v={v} connectionId={connectionId} schema={schema} />
+              <span style={{ display: "block", color: "var(--t3)" }}>{used ? `used in ${used}` : "not used yet"}</span>
+            </span>
+          </Button>
+        );
+      })}
+      {values.length < MAX_VALUES && <Button size="xs" variant="ghost" data-testid="data-new-value" onClick={newValue}><Icon name="plus" /> New value</Button>}
       <Label right={`${sets.length} of ${MAX_SETS}`}>Sets</Label>
       {sets.map(n => (
         <SetLine key={n} spec={spec} name={n} selected={selected === `set:${n}`} onSelect={() => onSelect(`set:${n}`)} connectionId={connectionId} schema={schema} />
@@ -283,22 +261,9 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
       {sets.length < MAX_SETS && (
         <Button size="xs" variant="ghost" data-testid="data-new-set" disabled={!firstEntity} onClick={newSet}><Icon name="plus" /> New set</Button>
       )}
-      <Label>Chosen by the reader</Label>
+      <Label>From the pieces</Label>
       {choiceRows}
       {!choices.length && <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 10px 6px" }}>None: a table&rsquo;s setup names what a click chooses.</div>}
-      <Label right={`${values.length} of ${MAX_VALUES}`}>Values</Label>
-      {values.map(n => {
-        const v = spec.values?.[n];
-        return (
-          <Button key={n} variant="ghost" data-testid="data-value" aria-pressed={selected === `value:${n}`} onClick={() => onSelect(`value:${n}`)}
-            className="aug-fs-sm" style={{ ...ROW, background: selected === `value:${n}` ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
-            <span aria-hidden="true" style={{ color: "var(--amb3)" }}>#</span>
-            <span>{v?.label ?? n}</span>
-            <span className="aug-fs-xs" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>{String(v?.value ?? "")}{v?.kind === "days" ? " days" : ""}</span>
-          </Button>
-        );
-      })}
-      {values.length < MAX_VALUES && <Button size="xs" variant="ghost" data-testid="data-new-value" onClick={newValue}><Icon name="plus" /> New value</Button>}
     </div>
   );
 }
@@ -383,10 +348,8 @@ function Pick({ label, value, options, onPick, none }: { label: string; value: s
 
 /** A set's setup: what it is called, what it starts from, the segment and conditions it keeps, the chosen object it links
  *  to, what it holds now and what reads it. */
-export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, variablesOn = false }: {
+export function SetSetup({ spec, name, onChange, onGone, connectionId, schema }: {
   spec: DashboardSpec; name: string; onChange: Change; onGone: () => void; connectionId: string; schema?: string;
-  /** Arc AP-8 — a condition may compare with any value of the dashboard's, as its kind allows. */
-  variablesOn?: boolean;
 }) {
   const set = spec.sets?.[name];
   const entities = useEntities(connectionId);
@@ -440,7 +403,7 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
       </Row>
       <Row label="And where" testid="set-where" hint={where.length >= MAX_WHERE ? `At most ${MAX_WHERE} conditions of its own.` : "A property, and what it must be. A number of days counts back from today."}>
         {where.map((c, i) => (
-          <Condition key={`${c.path}-${i}`} spec={spec} c={c} fields={props} variablesOn={variablesOn}
+          <Condition key={`${c.path}-${i}`} spec={spec} c={c} fields={props}
             onChange={next => put({ ...set, where: where.map((x, j) => (j === i ? next : x)) }, "a set's condition changed by hand")}
             onDrop={() => put({ ...set, where: where.filter((_, j) => j !== i) }, "a set's condition taken off by hand")} />
         ))}
@@ -457,38 +420,34 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
             onPick={v => put({ ...set, linked_to: { choice: set.linked_to!.choice, path: v } }, "a set's link chosen by hand")} />
         )}
       </Row>
-      {variablesOn && (
-        <Row label="Gets its linked objects" testid="set-traverse"
-          hint="The objects its objects link to — the customers of the waiting orders. The set then holds those, each once.">
-          <Pick label="Gets its linked objects" value={set.traverse?.link ?? ""} none={`No — its own ${words(entity).toLowerCase()} objects`}
-            options={[...(fields?.reaches ?? []).map(l => ({ value: l.name, label: `${l.toName} · through ${words(l.name)}` })),
-              ...(set.traverse && !(fields?.reaches ?? []).some(l => l.name === set.traverse!.link) ? [{ value: set.traverse.link, label: words(set.traverse.link) }] : [])]}
-            onPick={v => {
-              const l = (fields?.reaches ?? []).find(x => x.name === v);
-              put({ ...set, traverse: v && l ? { link: v, entity: l.to } : null, combine: null }, v ? "a set's linked objects chosen by hand" : "a set's linked objects let go by hand");
-            }} />
-        </Row>
-      )}
-      {variablesOn && (
-        <Row label="Combined with" testid="set-combine"
-          hint="Another set of the same objects: either one, both, or this one but not that one.">
-          <Pick label="How it is combined" value={set.combine?.op ?? ""} none="Not combined"
-            options={SET_COMBINES.map(o => ({ value: o, label: COMBINE_WORDS[o] }))}
-            onPick={v => {
-              if (!v) { put({ ...set, combine: null }, "a set's combination let go by hand"); return; }
-              const with_ = set.combine?.set ?? combinable[0];
-              if (with_) put({ ...set, combine: { op: v as SetCombine, set: with_ } }, "a set combined by hand");
-            }} />
-          {set.combine && (
-            <Pick label="The set it is combined with" value={set.combine.set}
-              options={[...combinable, ...(combinable.includes(set.combine.set) ? [] : [set.combine.set])].map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
-              onPick={v => put({ ...set, combine: { op: set.combine!.op, set: v } }, "a set combined by hand")} />
-          )}
-          {!set.combine && !combinable.length && (
-            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>No other set holds {words(reached || entity).toLowerCase()} objects yet.</span>
-          )}
-        </Row>
-      )}
+      <Row label="Gets its linked objects" testid="set-traverse"
+        hint="The objects its objects link to — the customers of the waiting orders. The set then holds those, each once.">
+        <Pick label="Gets its linked objects" value={set.traverse?.link ?? ""} none={`No — its own ${words(entity).toLowerCase()} objects`}
+          options={[...(fields?.reaches ?? []).map(l => ({ value: l.name, label: `${l.toName} · through ${words(l.name)}` })),
+            ...(set.traverse && !(fields?.reaches ?? []).some(l => l.name === set.traverse!.link) ? [{ value: set.traverse.link, label: words(set.traverse.link) }] : [])]}
+          onPick={v => {
+            const l = (fields?.reaches ?? []).find(x => x.name === v);
+            put({ ...set, traverse: v && l ? { link: v, entity: l.to } : null, combine: null }, v ? "a set's linked objects chosen by hand" : "a set's linked objects let go by hand");
+          }} />
+      </Row>
+      <Row label="Combined with" testid="set-combine"
+        hint="Another set of the same objects: either one, both, or this one but not that one.">
+        <Pick label="How it is combined" value={set.combine?.op ?? ""} none="Not combined"
+          options={SET_COMBINES.map(o => ({ value: o, label: COMBINE_WORDS[o] }))}
+          onPick={v => {
+            if (!v) { put({ ...set, combine: null }, "a set's combination let go by hand"); return; }
+            const with_ = set.combine?.set ?? combinable[0];
+            if (with_) put({ ...set, combine: { op: v as SetCombine, set: with_ } }, "a set combined by hand");
+          }} />
+        {set.combine && (
+          <Pick label="The set it is combined with" value={set.combine.set}
+            options={[...combinable, ...(combinable.includes(set.combine.set) ? [] : [set.combine.set])].map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
+            onPick={v => put({ ...set, combine: { op: set.combine!.op, set: v } }, "a set combined by hand")} />
+        )}
+        {!set.combine && !combinable.length && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>No other set holds {words(reached || entity).toLowerCase()} objects yet.</span>
+        )}
+      </Row>
       <Row label="Holds now" hint="Read through the object door; each reader's row policies and masks hold on it.">
         <span className="aug-fs-sm" data-testid="set-holds" style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
           {isRefused(r) ? r.refused : count.text}
@@ -503,13 +462,8 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
   );
 }
 
-export const SEGMENTS_FLAG = "ontology.set_segments";
-
-/** Arc FA-4 — while `ontology.set_segments` is on: the set as its chain, a count at each step, and the door that keeps
- *  it as a segment of the ontology. Off, nothing — the setup is as it was. */
+/** Arc FA-4 — the set as its chain, a count at each step, and the door that keeps it as a segment of the ontology. */
 function SetSegments({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
-  const on = useFlagOn(SEGMENTS_FLAG);
-  if (!on) return null;
   return (
     <>
       <SetChain spec={spec} name={name} connectionId={connectionId} schema={schema} />
@@ -572,7 +526,6 @@ const conditionKey = (c: Record<string, unknown>) => JSON.stringify(Object.keys(
  *  says why, in a sentence; one already kept says under which name. The set itself stays as it is. */
 function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
   const rule = segmentRule(spec, name);
-  const releaseOn = useFlagOn("ontology.release");
   const [declared, setDeclared] = useState<{ id: string; admitted: number | null } | null>(null);
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
@@ -608,7 +561,7 @@ function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSp
         </span>
         {declared && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            {releaseOn ? "In the draft: readers get it when the ontology is published." : "Served now, to every reader of this connection."}
+            In the draft: readers get it when the ontology is published.
           </span>
         )}
       </Row>
@@ -625,7 +578,7 @@ function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSp
   };
   return (
     <Row label="Keep as a segment" testid="set-segment"
-      hint={`Declares ${id} in the ontology as yours, counted first${releaseOn ? "; readers get it when the ontology is published" : ""}. The set stays as it is.`}>
+      hint={`Declares ${id} in the ontology as yours, counted first; readers get it when the ontology is published. The set stays as it is.`}>
       <span>
         <Button size="xs" variant="secondary" data-testid="set-segment-keep" disabled={busy} onClick={keep}>
           {busy ? "Keeping…" : "Keep as a segment"}
@@ -636,15 +589,14 @@ function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSp
   );
 }
 
-function Condition({ spec, c, fields, onChange, onDrop, variablesOn = false }: {
+function Condition({ spec, c, fields, onChange, onDrop }: {
   spec: DashboardSpec; c: NonNullable<DashboardSetDef["where"]>[number]; fields: EntityField[];
-  onChange: (next: NonNullable<DashboardSetDef["where"]>[number]) => void; onDrop: () => void; variablesOn?: boolean;
+  onChange: (next: NonNullable<DashboardSetDef["where"]>[number]) => void; onDrop: () => void;
 }) {
   const f = fields.find(x => x.path === c.path);
   const time = !!f && isTime(f);
   const number = !!f && isNumber(f);
   const ops = SET_OPS.filter(o => (o === "in_last" ? time : true));
-  const days = Object.entries(spec.values ?? {}).filter(([, v]) => v.kind === "days");
   const yesno = !!f && /BOOL/i.test(f.type);
   // Arc AP-8 — the values this condition may compare with, as their kinds allow: days counted back by "in the last";
   // a day for a moment, a number for a number, words for anything else — words only by "is" and "is not". Arc AP-8c — a
@@ -680,7 +632,7 @@ function Condition({ spec, c, fields, onChange, onDrop, variablesOn = false }: {
     const next = v as SetOp;
     if (next === "is_null" || next === "not_null") { keep({ path: c.path, op: next }); return; }
     // a variable it compares with that the new comparison also takes is kept (Arc AP-8)
-    if (variablesOn && c.value_from && comparable(next).some(([n]) => n === c.value_from)) { keep({ path: c.path, op: next, value_from: c.value_from }); return; }
+    if (c.value_from && comparable(next).some(([n]) => n === c.value_from)) { keep({ path: c.path, op: next, value_from: c.value_from }); return; }
     if (next === "in_last") { setText("14"); keep({ path: c.path, op: next, value: 14 }); return; }
     // a comparison keeps the value it had, when it had one that is not a number of days; else it waits for one
     const had = c.op !== "in_last" && c.value != null && c.value !== "" ? c.value : null;
@@ -699,11 +651,7 @@ function Condition({ spec, c, fields, onChange, onDrop, variablesOn = false }: {
       <Button size="xs" variant="ghost" aria-label={`Take the condition on ${words(c.path)} off`} onClick={onDrop}><Icon name="close" size={12} /></Button>
       <Pick label="Is" value={op} options={ops.map(o => ({ value: o, label: OP_WORDS[o] }))} onPick={pickOp} />
       <span />
-      {!variablesOn && op === "in_last" && days.length > 0 && (
-        <Pick label="Days from" value={c.value_from ?? ""} none="A number of days" options={days.map(([n, v]) => ({ value: n, label: `${v.label} · ${String(v.value)} days` }))}
-          onPick={v => keep({ ...c, value_from: v || null, value: v ? null : 14 })} />
-      )}
-      {variablesOn && comparable(op).length > 0 && (
+      {comparable(op).length > 0 && (
         <Pick label="Compared with" value={op === c.op ? c.value_from ?? "" : ""} none={op === "in_last" ? "A number of days typed here" : "A value typed here"}
           options={comparable(op).map(([n, v]) => ({ value: n, label: `The variable ${v.label}${v.from?.by === "reader" ? " · the reader's" : ""}` }))}
           onPick={v => {
@@ -727,12 +675,12 @@ function Condition({ spec, c, fields, onChange, onDrop, variablesOn = false }: {
   );
 }
 
-/** A value's setup: its name, its kind and the value sets read. Arc AP-8 — while variables are on: its name, what it
- *  holds (days, a number, words, a day), where it comes from (you; the reader on the page, from choices you offer or as
- *  they type; a set's count; the chosen object's property), what it holds now, and everything that reads it. */
-export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, connectionId = "", schema, cardReads, cardTitle, onRenamed, queryCards = [] }: {
+/** A value's setup (Arc AP-8): its name, what it holds (days, a number, words, a day), where it comes from (you; the
+ *  reader on the page, from choices you offer or as they type; a set's count; the chosen object's property), what it
+ *  holds now, and everything that reads it. */
+export function ValueSetup({ spec, name, onChange, onGone, connectionId = "", schema, cardReads, cardTitle, onRenamed, queryCards = [] }: {
   spec: DashboardSpec; name: string; onChange: Change; onGone: () => void;
-  variablesOn?: boolean; connectionId?: string; schema?: string;
+  connectionId?: string; schema?: string;
   cardReads?: (cardId: string) => string[]; cardTitle?: (cardId: string) => string | undefined;
   /** Arc AP-8c — the cards of the person's own query the dashboard places, a value may read the first value of. */
   queryCards?: { id: string; title: string }[];
@@ -757,12 +705,11 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
   // Arc AP-8c — a sum's property is one of its set's entity
   const summed = v?.from?.by === "sum" ? readSet(spec, v.from.set) : null;
   const sumEntity = summed && !isRefused(summed) ? summed.entity : "";
-  const fields = useFields(variablesOn ? chosenEntity || sumEntity : "", connectionId, schema);
+  const fields = useFields(chosenEntity || sumEntity, connectionId, schema);
   if (!v) return null;
   const put = (def: DashboardValueDef, note: string) => onChange(putValue(spec, name, def), note);
   const by = v.from?.by ?? "author";
-  // off, a value is what it was before AP-8: days, a number or a word, set by its author
-  const kinds = VALUE_KINDS.filter(k => variablesOn || !["date", "yesno", "list"].includes(k));
+  const kinds = VALUE_KINDS;
   const kindLabel = (k: string) => (k === "days" ? "A number of days" : k === "number" ? "A number" : k === "date" ? "A day"
     : k === "yesno" ? "Yes or no" : k === "list" ? "A list" : "A word");
   const startFor = (k: string): DashboardValueDef["value"] => (k === "text" ? (typeof v.value === "string" && v.value) || "words"
@@ -840,91 +787,85 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
     <div data-testid="value-setup" data-name={name}>
       <div style={{ padding: "12px 14px 8px", borderBottom: "1px solid var(--b1)" }}>
         <div className="aug-fs-xs" style={{ color: "var(--accent-11)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-          {variablesOn ? `Variable · ${KIND_SAID[v.kind] ?? v.kind}` : "Value"}
+          Variable · {KIND_SAID[v.kind] ?? v.kind}
         </div>
         <div className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 600, marginTop: 2 }}>{v.label}</div>
       </div>
-      {variablesOn && (
-        <Row label="Name" hint={<>In a query of your own, <span style={{ fontFamily: "var(--font-mono)" }}>{`{{${name}}}`}</span>.</>}>
-          <Input aria-label="The value's name" value={label} maxLength={MAX_LABEL} onChange={e => setLabel(e.target.value)}
-            onBlur={() => {
-              const t = label.trim();
-              if (!t || t === v.label) { setLabel(v.label); return; }
-              // its name in SQL follows while nothing reads it yet
-              const moved = renameValue(spec, name, t, readersAll(spec, name, cardReads).count > 0);
-              onChange(moved.spec, "a value renamed by hand");
-              if (moved.name !== name) onRenamed?.(moved.name);
-            }}
-            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
-        </Row>
-      )}
-      {variablesOn && (
-        <Row label="Comes from" testid="value-comes-from"
-          hint={by === "reader" ? "A control on the page. Each reader's own, kept in their browser — never in the dashboard."
-            : by === "count" ? "How many objects the set holds as the page reads it — each reader's row policies hold."
-              : by === "sum" ? "A number added up over the set's objects as the page reads them — each reader's row policies hold."
-                : by === "query" ? "The query's first value — every row's, for a list — run as written, never cut to the page's range."
-                  : by === "chosen" ? "A property of the object a reader chose — nothing until one is chosen."
-                    : "Set once, here, for every reader."}>
-          <Pick label="Comes from" value={by} onPick={comesFrom} options={[
-            { value: "author", label: "Set by you" }, { value: "reader", label: "Set by the reader on the page" },
-            ...(setNames.length ? [{ value: "count", label: "Counted from a set" }, { value: "sum", label: "Summed over a set" }] : []),
-            ...(queryCards.length ? [{ value: "query", label: "Read from a query of yours" }] : []),
-            ...(chosen.length ? [{ value: "chosen", label: "Read from the chosen object" }] : []),
-          ]} />
-          {v.from?.by === "sum" && (
-            <>
-              <Pick label="The set it sums over" value={v.from.set} options={setNames.map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
-                onPick={set => put({ ...v, from: { by: "sum", set, path: (v.from as { path: string }).path } }, "a value's set chosen by hand")} />
-              <Pick label="The number it adds up" value={v.from.path}
-                options={[...(fields?.fields ?? []).filter(f => isNumber(f)).map(f => ({ value: f.path, label: f.label })),
-                  ...((fields?.fields ?? []).some(f => f.path === (v.from as { path: string }).path) ? [] : [{ value: v.from.path, label: words(v.from.path) }])]}
-                onPick={path => put({ ...v, from: { by: "sum", set: (v.from as { set: string }).set, path } }, "a value's number chosen by hand")} />
-            </>
-          )}
-          {v.from?.by === "query" && (
-            <>
-              <Pick label="The query it reads" value={v.from.card}
-                options={[...queryCards.map(c => ({ value: c.id, label: c.title })),
-                  ...(queryCards.some(c => c.id === (v.from as { card: string }).card) ? [] : [{ value: v.from.card, label: "A query no longer placed" }])]}
-                onPick={card => put({ ...v, from: { by: "query", card, ...((v.from as { column?: string | null }).column ? { column: (v.from as { column: string }).column } : {}) } }, "a value's query chosen by hand")} />
-              <QueryColumn column={v.from.column ?? ""} onSet={column => put({ ...v, from: { by: "query", card: (v.from as { card: string }).card, ...(column ? { column } : {}) } }, "a value's column chosen by hand")} />
-            </>
-          )}
-          {v.from?.by === "count" && (
-            <Pick label="The set it counts" value={v.from.set} options={setNames.map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
-              onPick={set => put({ ...v, from: { by: "count", set } }, "a value's set chosen by hand")} />
-          )}
-          {v.from?.by === "chosen" && (
-            <>
-              <Pick label="The choice it reads" value={v.from.choice} options={chosen.map(c => ({ value: c.name, label: words(c.name) }))}
-                onPick={choice => put({ ...v, from: { by: "chosen", choice, path: (v.from as { path: string }).path } }, "a value's choice chosen by hand")} />
-              <Pick label="The property it reads" value={v.from.path} options={[...direct.map(f => ({ value: f.path, label: f.label })),
-                ...(direct.some(f => f.path === (v.from as { path: string }).path) ? [] : [{ value: v.from.path, label: words(v.from.path) }])]}
-                onPick={path => {
-                  const f = direct.find(x => x.path === path);
-                  const kind = f && isTime(f) ? "date" : f && isNumber(f) ? "number" : "text";
-                  put({ ...v, kind, from: { by: "chosen", choice: (v.from as { choice: string }).choice, path } }, "a value's property chosen by hand");
-                }} />
-            </>
-          )}
-        </Row>
-      )}
-      {variablesOn && by === "query" && (
+      <Row label="Name" hint={<>In a query of your own, <span style={{ fontFamily: "var(--font-mono)" }}>{`{{${name}}}`}</span>.</>}>
+        <Input aria-label="The value's name" value={label} maxLength={MAX_LABEL} onChange={e => setLabel(e.target.value)}
+          onBlur={() => {
+            const t = label.trim();
+            if (!t || t === v.label) { setLabel(v.label); return; }
+            // its name in SQL follows while nothing reads it yet
+            const moved = renameValue(spec, name, t, readersAll(spec, name, cardReads).count > 0);
+            onChange(moved.spec, "a value renamed by hand");
+            if (moved.name !== name) onRenamed?.(moved.name);
+          }}
+          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+      </Row>
+      <Row label="Comes from" testid="value-comes-from"
+        hint={by === "reader" ? "A control on the page. Each reader's own, kept in their browser — never in the dashboard."
+          : by === "count" ? "How many objects the set holds as the page reads it — each reader's row policies hold."
+            : by === "sum" ? "A number added up over the set's objects as the page reads them — each reader's row policies hold."
+              : by === "query" ? "The query's first value — every row's, for a list — run as written, never cut to the page's range."
+                : by === "chosen" ? "A property of the object a reader chose — nothing until one is chosen."
+                  : "Set once, here, for every reader."}>
+        <Pick label="Comes from" value={by} onPick={comesFrom} options={[
+          { value: "author", label: "Set by you" }, { value: "reader", label: "Set by the reader on the page" },
+          ...(setNames.length ? [{ value: "count", label: "Counted from a set" }, { value: "sum", label: "Summed over a set" }] : []),
+          ...(queryCards.length ? [{ value: "query", label: "Read from a query of yours" }] : []),
+          ...(chosen.length ? [{ value: "chosen", label: "Read from the chosen object" }] : []),
+        ]} />
+        {v.from?.by === "sum" && (
+          <>
+            <Pick label="The set it sums over" value={v.from.set} options={setNames.map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
+              onPick={set => put({ ...v, from: { by: "sum", set, path: (v.from as { path: string }).path } }, "a value's set chosen by hand")} />
+            <Pick label="The number it adds up" value={v.from.path}
+              options={[...(fields?.fields ?? []).filter(f => isNumber(f)).map(f => ({ value: f.path, label: f.label })),
+                ...((fields?.fields ?? []).some(f => f.path === (v.from as { path: string }).path) ? [] : [{ value: v.from.path, label: words(v.from.path) }])]}
+              onPick={path => put({ ...v, from: { by: "sum", set: (v.from as { set: string }).set, path } }, "a value's number chosen by hand")} />
+          </>
+        )}
+        {v.from?.by === "query" && (
+          <>
+            <Pick label="The query it reads" value={v.from.card}
+              options={[...queryCards.map(c => ({ value: c.id, label: c.title })),
+                ...(queryCards.some(c => c.id === (v.from as { card: string }).card) ? [] : [{ value: v.from.card, label: "A query no longer placed" }])]}
+              onPick={card => put({ ...v, from: { by: "query", card, ...((v.from as { column?: string | null }).column ? { column: (v.from as { column: string }).column } : {}) } }, "a value's query chosen by hand")} />
+            <QueryColumn column={v.from.column ?? ""} onSet={column => put({ ...v, from: { by: "query", card: (v.from as { card: string }).card, ...(column ? { column } : {}) } }, "a value's column chosen by hand")} />
+          </>
+        )}
+        {v.from?.by === "count" && (
+          <Pick label="The set it counts" value={v.from.set} options={setNames.map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
+            onPick={set => put({ ...v, from: { by: "count", set } }, "a value's set chosen by hand")} />
+        )}
+        {v.from?.by === "chosen" && (
+          <>
+            <Pick label="The choice it reads" value={v.from.choice} options={chosen.map(c => ({ value: c.name, label: words(c.name) }))}
+              onPick={choice => put({ ...v, from: { by: "chosen", choice, path: (v.from as { path: string }).path } }, "a value's choice chosen by hand")} />
+            <Pick label="The property it reads" value={v.from.path} options={[...direct.map(f => ({ value: f.path, label: f.label })),
+              ...(direct.some(f => f.path === (v.from as { path: string }).path) ? [] : [{ value: v.from.path, label: words(v.from.path) }])]}
+              onPick={path => {
+                const f = direct.find(x => x.path === path);
+                const kind = f && isTime(f) ? "date" : f && isNumber(f) ? "number" : "text";
+                put({ ...v, kind, from: { by: "chosen", choice: (v.from as { choice: string }).choice, path } }, "a value's property chosen by hand");
+              }} />
+          </>
+        )}
+      </Row>
+      {by === "query" && (
         <Row label="Is" hint="What its first value is read as; a list reads every row's.">
           <Pick label="Kind" value={v.kind} options={kinds.filter(k => k !== "days").map(k => ({ value: k, label: kindLabel(k) }))}
             onPick={k => put({ ...v, kind: k as DashboardValueDef["kind"] }, "a value's kind chosen by hand")} />
         </Row>
       )}
-      {(by === "author" || by === "reader" || !variablesOn) && (
-        <Row label={variablesOn && by === "reader" ? "Starts from" : "Is"}>
-          {(!variablesOn || (by !== "count" && by !== "sum")) && (
-            <Pick label="Kind" value={v.kind} options={kinds.map(k => ({ value: k, label: kindLabel(k) }))}
-              onPick={k => {
-                const start = startFor(k);
-                put({ ...v, kind: k as DashboardValueDef["kind"], value: start, ...(v.from?.by === "reader" ? { from: { by: "reader" as const } } : {}) }, "a value's kind chosen by hand");
-              }} />
-          )}
+      {(by === "author" || by === "reader") && (
+        <Row label={by === "reader" ? "Starts from" : "Is"}>
+          <Pick label="Kind" value={v.kind} options={kinds.map(k => ({ value: k, label: kindLabel(k) }))}
+            onPick={k => {
+              const start = startFor(k);
+              put({ ...v, kind: k as DashboardValueDef["kind"], value: start, ...(v.from?.by === "reader" ? { from: { by: "reader" as const } } : {}) }, "a value's kind chosen by hand");
+            }} />
           {v.kind === "yesno" ? (
             <Segmented label="The value" value={v.value === false ? "no" : "yes"} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]}
               onChange={x => { if ((x === "yes") !== v.value) put({ ...v, value: x === "yes" }, "a value changed by hand"); }} />
@@ -935,26 +876,22 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
           )}
         </Row>
       )}
-      {variablesOn && by === "reader" && v.kind !== "yesno" && (
+      {by === "reader" && v.kind !== "yesno" && (
         <Row label="The reader chooses from" hint={`Choices with a comma between — ${v.kind === "days" ? "7, 14, 30, 90" : v.kind === "text" ? "China, Brasil, Japan" : "the values offered"}; none, the reader types their own. At most ${MAX_VALUE_OPTIONS}.`}>
           <Input aria-label="The choices offered" value={choicesText} placeholder="Any the reader types" onChange={e => setChoicesText(e.target.value)}
             onBlur={commitChoices} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
         </Row>
       )}
       {said && <div className="aug-fs-xs" data-testid="value-setup-said" style={{ color: "var(--t2)", padding: "0 14px" }}>{said}</div>}
-      {variablesOn && (
-        <Row label="Holds now" testid="value-holds">
-          <span className="aug-fs-sm" style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
-            <ValueNowText spec={spec} v={v} connectionId={connectionId} schema={schema} />
-          </span>
-        </Row>
-      )}
+      <Row label="Holds now" testid="value-holds">
+        <span className="aug-fs-sm" style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
+          <ValueNowText spec={spec} v={v} connectionId={connectionId} schema={schema} />
+        </span>
+      </Row>
       <ReadBy spec={spec} name={name} onChange={onChange} onGone={onGone} cardReads={cardReads} cardTitle={cardTitle} />
-      {variablesOn && (
-        <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "4px 14px 12px", lineHeight: 1.45 }}>
-          Taken away only when nothing reads it. In SQL it is a bound parameter: the statement never changes.
-        </div>
-      )}
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "4px 14px 12px", lineHeight: 1.45 }}>
+        Taken away only when nothing reads it. In SQL it is a bound parameter: the statement never changes.
+      </div>
     </div>
   );
 }

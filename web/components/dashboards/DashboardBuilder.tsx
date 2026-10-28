@@ -124,9 +124,8 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
-export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
-  marksOn = false,
-  structureOn = false, onAddPiece, checks, cardSetup, variablesOn = false, cardReads, queryCards, children }: {
+export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema,
+  onAddPiece, checks, cardSetup, cardReads, queryCards, children }: {
   spec: DashboardSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: DashboardSpec, note: string) => void;
@@ -143,20 +142,12 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   above?: ReactNode;
   connectionId: string;
   schema?: string;
-  /** Arc AP-2 — whether this install wires cockpits: the Data tab, and what pieces read, then. */
-  wiringOn?: boolean;
-  /** Whether a table's or a list's rows may be marked by a declared rule or segment (`dashboard.marks`). */
-  marksOn?: boolean;
-  /** Arc AP-4 — whether a dashboard may be split into sections: a section's split, its sections inside, a copy, a width. */
-  structureOn?: boolean;
   /** Arc AP-4 — open the piece picker for a section: the one chosen, the one a chosen piece sits in, or none. */
   onAddPiece?: (section: string | null) => void;
   /** Arc AP-6 — what each element drawn read, by key: the checks chip counts them and lists the ones to fix. */
   checks?: Record<string, ReadState>;
   /** Arc AP-7 — the setup of a card the page knows more of (a card of a person's own query), by its id; null for none. */
   cardSetup?: (cardId: string) => ReactNode | null;
-  /** Arc AP-8 — whether this install has variables: the Data tab is Variables, and a value says where it comes from. */
-  variablesOn?: boolean;
   /** Arc AP-8 — the dashboard's values a card of the person's own query reads, by the card's id. */
   cardReads?: (cardId: string) => string[];
   /** Arc AP-8c — the cards of the person's own query the dashboard places: a value may read one's first value. */
@@ -171,7 +162,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   const [wire, setWire] = useState<string | null>(null);
   const wireName = wire ? wire.slice(wire.indexOf(":") + 1) : "";
   const wireKind = wire ? wire.slice(0, wire.indexOf(":")) : "";
-  const reads = wire ? readingElements(spec, wireName, variablesOn ? cardReads : undefined) : [];
+  const reads = wire ? readingElements(spec, wireName, cardReads) : [];
   const entityTitle = useEntityTitles(connectionId);
   const handle = useRef<DashboardHandle | null>(null);
   // an element taken off, by hand or by an undo, is no longer chosen; nor is an element while a set is
@@ -225,7 +216,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
     if (selected && kind) handle.current?.step(selected, dw, dh);
   };
   // Arc AP-4 — a section chosen: where it may be split, what it holds, its width among columns
-  const section = structureOn && el?.type === "Section" ? selected : null;
+  const section = el?.type === "Section" ? selected : null;
   const laidOut = !!section && !!el?.props.layout;
   const sectionW = section && inColumns(spec, section) ? Number(el?.props.w) || null : null;
   const split = (side: Side) => {
@@ -247,15 +238,13 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
       {bar}
       <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "232px minmax(0, 1fr) 304px" }}>
         <aside aria-label="Layout" style={{ minHeight: 0, overflow: "auto", borderRight: "1px solid var(--b1)", background: "var(--bg-1)", display: "flex", flexDirection: "column" }}>
-          {wiringOn && (
-            <div style={{ padding: "10px 10px 0" }}>
-              <Segmented label="The left pane" value={tab} options={[{ value: "layout", label: "Layout" }, { value: "data", label: variablesOn ? "Variables" : "Data" }]}
-                onChange={v => { setTab(v as "layout" | "data"); if (v === "layout") setWire(null); }} />
-            </div>
-          )}
-          {tab === "data" && wiringOn ? (
+          <div style={{ padding: "10px 10px 0" }}>
+            <Segmented label="The left pane" value={tab} options={[{ value: "layout", label: "Layout" }, { value: "data", label: "Variables" }]}
+              onChange={v => { setTab(v as "layout" | "data"); if (v === "layout") setWire(null); }} />
+          </div>
+          {tab === "data" ? (
             <DataPane spec={spec} selected={wire} onSelect={key => { setWire(key); setSelected(null); }} onChange={apply}
-              connectionId={connectionId} schema={schema} variablesOn={variablesOn} cardReads={variablesOn ? cardReads : undefined} />
+              connectionId={connectionId} schema={schema} cardReads={cardReads} />
           ) : (
             <>
               <PaneLabel>Layout · {lines} {lines === 1 ? "line" : "lines"}</PaneLabel>
@@ -286,7 +275,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
             {wire ? (
               <>
                 <span className="aug-fs-xs" style={{ color: "var(--accent-11)", textTransform: "uppercase", letterSpacing: ".06em", marginRight: 6 }}>
-                  {wireKind === "set" ? "Set" : wireKind === "value" ? (variablesOn ? "Variable" : "Value") : "Chosen"}
+                  {wireKind === "set" ? "Set" : wireKind === "value" ? "Variable" : "Chosen"}
                 </span>
                 <span style={{ color: "var(--t1)" }}>{wireKind === "set" ? spec.sets?.[wireName]?.label : wireKind === "value" ? spec.values?.[wireName]?.label : wireName.replace(/[-_]/g, " ")}</span>
                 <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 10, flex: 1 }}>
@@ -323,7 +312,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
                         <Rule />
                       </>
                     )}
-                    {structureOn && el?.type !== "ObjectFilters" && el?.type !== "Drawer" && (
+                    {el?.type !== "ObjectFilters" && el?.type !== "Drawer" && (
                       <Button size="xs" variant="ghost" data-testid="builder-duplicate"
                         onClick={() => { const d = duplicate(spec, selected!); if (d.key) { apply(d.spec, "duplicated by hand"); setSelected(d.key); } }}>
                         <Icon name="copy" size={13} /> Duplicate
@@ -383,14 +372,13 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
 
         <aside aria-label="Setup" data-testid="builder-setup"
           style={{ minHeight: 0, overflow: "auto", borderLeft: "1px solid var(--b1)", background: "var(--bg-1)" }}>
-          {aside ?? (wireKind === "set" ? <SetSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} connectionId={connectionId} schema={schema}
-            variablesOn={variablesOn} />
-            : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} variablesOn={variablesOn}
-              connectionId={connectionId} schema={schema} cardReads={variablesOn ? cardReads : undefined} cardTitle={cardTitle}
-              onRenamed={n => setWire(`value:${n}`)} queryCards={variablesOn ? queryCards : undefined} />
+          {aside ?? (wireKind === "set" ? <SetSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} connectionId={connectionId} schema={schema} />
+            : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)}
+              connectionId={connectionId} schema={schema} cardReads={cardReads} cardTitle={cardTitle}
+              onRenamed={n => setWire(`value:${n}`)} queryCards={queryCards} />
               : wireKind === "choice" ? <ChoiceSetup spec={spec} name={wireName} />
                 : <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
-                  entityTitle={entityTitle} wiringOn={wiringOn} marksOn={marksOn} cardSetup={cardSetup} />)}
+                  entityTitle={entityTitle} cardSetup={cardSetup} />)}
         </aside>
       </div>
     </div>

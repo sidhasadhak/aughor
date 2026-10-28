@@ -3,20 +3,19 @@
 A process board names a declared process, an objects table an entity (and perhaps a segment of it), an object detail
 the table it follows, and an action button a declared action — each by id, never by copying what the id means
 (`web/lib/dashboards/catalog.ts`). The web's rules check the shape; what they cannot know is checked here before a spec
-is kept: that building dashboards from the ontology is on, and that every id resolves in the ontology this connection
-serves now. A piece whose id stops resolving later says so where it is drawn.
+is kept: that every id resolves in the ontology this connection serves now. A piece whose id stops resolving later says so where it is drawn.
 
 And one law about who places them: a person, by hand. A model arranges a piece — moves it, resizes it, takes it off —
 and never adds one or changes what it names, the canvas's law for a note and an image.
 
 Since 2026-10-10 three more read an entity's objects for a dashboard started from an object
 (`aughor/dashboards/from_object.py`): a filter column over its categories, a figure and a chart of objects per day. They
-are checked the same way, and need their own flag beside this one.
+are checked the same way.
 
 Arc AP-4 adds the pieces the builder's picker offers — a list of objects as cards, a map, a timeline, a choose-one and a
 search. Each is checked as a table is, through the object door's listing over the served ontology; a map's places must
-be numbers and a timeline's moments moments. They need the structure's flag beside this one (`app_pieces`). So does a
-drawer, which holds pieces beside the page and opens on a chosen object: a person places it, as they place a piece.
+be numbers and a timeline's moments moments. A drawer holds pieces beside the page and opens on a chosen object: a person
+places it, as they place a piece.
 """
 from __future__ import annotations
 
@@ -26,8 +25,7 @@ from typing import Any, Optional
 PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure",
           "ObjectChart", "ObjectBreakdown", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne",
           "ObjectSearch", "Drawer")
-FLAG = "ontology.dashboard_pieces"
-#: The pieces of a dashboard started from an object — refused unless its flag is on too.
+#: The pieces of a dashboard started from an object — each read checked as its own (`_from_object_read`).
 FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart", "ObjectBreakdown")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",
           "ActionButton": "action button", "ObjectFilters": "filter column", "ObjectFigure": "figure",
@@ -82,19 +80,10 @@ def _scope(props: dict, sets: dict) -> tuple[str, str, list]:
 def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                  wiring: Optional[dict] = None) -> list[str]:
     """A sentence for each ontology piece a spec holds that this connection cannot draw — what a keep is refused
-    with. Empty when the spec holds none, whatever the flag says, so a dashboard without them keeps as it always did."""
+    with. Empty when the spec holds none, so a dashboard without them keeps as it always did."""
     pieces = pieces_of(spec)
     if not pieces:
         return []
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(FLAG):
-        return [f"The dashboard holds {len(pieces)} piece(s) bound to the ontology, and building dashboards from the "
-                "ontology is off on this install."]
-    from aughor.dashboards.from_object import FLAG as FROM_OBJECT_FLAG
-    late = [key for key, (kind, _) in pieces.items() if kind in FROM_OBJECT]
-    if late and not flag_enabled(FROM_OBJECT_FLAG):
-        return [f"The dashboard holds {len(late)} filter column, figure, chart or breakdown piece(s), and starting a "
-                "dashboard from an object is off on this install."]
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
         return ["The dashboard holds pieces bound to the ontology, and no ontology is built for this connection."]
@@ -414,8 +403,6 @@ def pin_for(connection_id: str, before: dict, spec: Any, *, repin: bool = False)
     if not pieces_of(spec):
         return ""
     from aughor.ontology import release
-    if not release.enabled():
-        return ""
     prior = str((before or {}).get("ontology_release") or "")
     if repin or not prior or _named_set((before or {}).get("spec")) != _named_set(spec):
         return release.current_id_for_connection(connection_id)
@@ -430,10 +417,9 @@ def _number(release_id: str) -> Optional[int]:
 def since(connection_id: str, spec: Any, pinned: str, *, graph: Optional[Any] = None) -> Optional[dict]:
     """What a reader is owed before a dashboard's pieces are read: the release it was composed against, the one in force,
     and every change published between them that touches an element its pieces read — with the class it was published
-    as. None when the spec holds no piece, or pieces or releases are off (the read says nothing new)."""
-    from aughor.kernel.flags import flag_enabled
+    as. None when the spec holds no piece (the read says nothing new)."""
     from aughor.ontology import release
-    if not pieces_of(spec) or not flag_enabled(FLAG) or not release.enabled():
+    if not pieces_of(spec):
         return None
     schema = release.connection_scope(connection_id)
     rows = release.releases(connection_id, schema)

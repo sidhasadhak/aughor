@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * Rows marked by a declared rule (the Grist study §10, flag `dashboard.marks`). Drawn through the dashboard's own
+ * Rows marked by a declared rule (the Grist study §10). Drawn through the dashboard's own
  * renderer with the object door mocked: a table's `marked` names a segment the ontology declares, the rows on screen
  * that segment admits carry the mark, and the legend beside the title says what it marks and how many of the listing's
  * objects — both read through the door as `in_set`, never worked out from the page. A mark the door refuses says so in

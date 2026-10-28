@@ -30,7 +30,8 @@ export function BriefingSections({ pref, onChange, cockpits, dashboardsOn, busy 
   onChange: (next: BriefingSectionsPref, said: string) => void;
   /** The person's own dashboards, which may ride with the Briefing. */
   cockpits: DashboardChoice[];
-  /** Whether dashboards are on at all; off, the standing dashboard layer rides as it always did. */
+  /** Whether this Briefing has the Dashboards tab beside it (a canvas's has none); without it, the standing dashboard layer
+   *  rides as it always did. */
   dashboardsOn: boolean;
   busy?: boolean;
 }) {

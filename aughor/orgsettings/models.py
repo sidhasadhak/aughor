@@ -20,7 +20,7 @@ unconverted number is a relabel, and a EUR workspace put euro signs on theLook's
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -100,9 +100,34 @@ class OrgSettings(BaseModel):
         default=0, ge=0, le=60,
         description=(
             "How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the "
-            "platform's default — 24 while `briefing.metric_cap` is on, 12 while it is off. Each metric costs three "
-            "warehouse queries per Briefing."
+            "platform's default, 24. Each metric costs three warehouse queries per Briefing."
         ),
+    )
+
+    # ── What Aughor may do (ROADMAP §3.65, 2026-10-28) ──
+    # The choices an organisation rightly makes differently — data leaving the install, model work nobody asked for, a
+    # governance posture. They were flags; an admin sets them here. Unset (None) reads the environment variable of the
+    # flag each replaced (`aughor.orgsettings.allows`), so an install that ran one that way keeps it until an admin
+    # decides; set, the setting is the answer.
+    share_aggregates: Optional[bool] = Field(
+        default=None,
+        description="Share summary statistics with other installs — how often packs' claims held, never names, ids "
+                    "or values. Off by default.",
+    )
+    outside_row_model: Optional[bool] = Field(
+        default=None,
+        description="Send row text to an outside, cheaper model (TypeSafe's Jev) to judge rows before your own strong "
+                    "model. Row text leaves the install. Off by default.",
+    )
+    reason_to_read_runs: Optional[bool] = Field(
+        default=None,
+        description="Ask for a reason, recorded with who read it, before anyone reads a run's details or exports the "
+                    "ledger. Off by default.",
+    )
+    scheduled_model_work: Optional[bool] = Field(
+        default=None,
+        description="Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test "
+                    "questions, and re-tests after reviews. Off by default.",
     )
 
     # ── Working memory (CB-6) ──

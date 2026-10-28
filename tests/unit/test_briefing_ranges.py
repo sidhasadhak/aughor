@@ -171,19 +171,41 @@ def test_two_custom_ranges_never_share_a_cache_entry(con, narrator, approved):
     assert {"c1#range:custom:2026-08-17..2026-08-26", "c1#range:custom:2026-07-01..2026-07-10"} <= keys
 
 
-def test_the_route_refuses_a_range_while_the_flag_is_off_and_a_bad_one_with_why(monkeypatch):
+def test_a_scheduled_briefing_is_its_periods_range_remeasured_at_the_send(con, narrator, approved, monkeypatch):
+    """A weekly subscription sends the range Briefing of last week, judged line by line against its queries RE-RUN at
+    the send (law 1): built, its headline figure leaves; late rows land, and the same figure is held."""
+    from aughor.briefing import delivery
+    from aughor.briefing.models import BriefSubscription
+    from aughor.knowledge import period_brief
+
+    monkeypatch.setattr(period_brief, "scope_inputs", lambda conn_id, schema=None: ({}, _profile()))
+    monkeypatch.setattr(ranges, "resolve_for", lambda cid, preset=None, **kw: ranges.resolve_range(
+        preset, today=SEP26, lag_days=13))
+    sub = BriefSubscription(id="s1", conn_id="c1", name="weekly", trigger_id="t", period="week", content="briefing")
+
+    sent = delivery.build_period_departure(sub, runner=_runner(con))
+    assert sent["summary"].startswith("Weekly Briefing — ")
+    assert "## Headline metrics" in sent["markdown"] and "Revenue" in sent["markdown"]
+    assert not any("Revenue" in h for h in sent["held_lines"]), sent["held_lines"]
+
+    con.execute("INSERT INTO orders VALUES (TIMESTAMP '2026-09-08 12:00', 500000.0, 'done')")
+    late = delivery.build_period_departure(sub, runner=_runner(con))      # the brief is cached; the send re-runs
+    assert any(h.startswith("“Revenue moved from 52,000 to 70,000") and "re-measured at departure: 70,000 is not in"
+               in h for h in late["held_lines"]), late["held_lines"]
+    assert "## Headline metrics" not in late["markdown"]
+
+
+def test_the_route_reads_a_period_as_its_preset_and_refuses_a_bad_range_with_why():
     from fastapi import HTTPException
 
     from aughor.routers import exploration
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "0")
-    assert exploration._range_spec_or_refuse("c1", "week", None, None, None, None) is None  # §3.27 answers
-    with pytest.raises(HTTPException) as off:
-        exploration._range_spec_or_refuse("c1", None, "last_week", None, None, None)
-    assert off.value.status_code == 404 and "briefing.ranges" in off.value.detail
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
+    assert exploration._range_spec_or_refuse("c1", "history", None, None, None, None) is None  # the standing one
     with pytest.raises(HTTPException) as bad:
         exploration._range_spec_or_refuse("c1", None, None, "2026-08-26", "2026-08-17", None)
     assert bad.value.status_code == 422 and "ends before it starts" in bad.value.detail
+    with pytest.raises(HTTPException) as unknown:
+        exploration._range_spec_or_refuse("c1", "fortnight", None, None, None, None)
+    assert unknown.value.status_code == 422 and "period must be one of" in unknown.value.detail
     spec = exploration._range_spec_or_refuse("c1", "week", None, None, None, None)
     assert spec.preset == "last_week"
 
@@ -313,7 +335,6 @@ def test_the_measures_route_hands_back_a_young_briefings_figures_and_measures_ot
     from datetime import datetime, timedelta, timezone
 
     from aughor.routers import exploration
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     monkeypatch.setattr(exploration, "_load_business_profile", lambda cid, schema: None)
     monkeypatch.setattr(ranges, "resolve_for", lambda cid, preset, **kw: ranges.resolve_range(
         preset, today=SEP26, lag_days=13, start=kw.get("start"), end=kw.get("end")))

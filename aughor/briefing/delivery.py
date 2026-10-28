@@ -136,49 +136,12 @@ def render_period_markdown(block: dict, sections: list, cut: int) -> str:
 
 
 def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
-    """The period briefing for *sub*, judged line by line before it leaves: the headline
-    metrics and the narrative against the period queries RE-RUN now (law 1), alerts as a
-    monitor's declared readings, every line for trust, definition and claim type. Returns
-    ``{"brief", "summary", "markdown", "held_lines"}``."""
-    from aughor.govern.departure import line_holds
-    from aughor.kernel.flags import flag_enabled
-    from aughor.knowledge import period_brief
-
-    if flag_enabled("briefing.ranges"):
-        return _build_range_departure(sub, runner=runner)
-    domain_data, profile = period_brief.connection_inputs(sub.conn_id)
-    brief = period_brief.build_period_briefing(
-        sub.conn_id, sub.period, scope_key=sub.conn_id, domain_data=domain_data,
-        profile=profile, workspace_id=sub.workspace_id or None, runner=runner)
-    block = brief.get("period") or {}
-    measurement = period_brief.fresh_measurement(sub.conn_id, brief, runner=runner)
-    kept: list = []
-    held: list[str] = []
-    for kind, lines in period_brief.sheet_lines(brief):
-        passing = []
-        for line in lines:
-            why = line_holds(line, conn_id=sub.conn_id, declared=kind == "alerts",
-                             measurement=measurement if kind in ("measured", "narrative") else None)
-            if why:
-                held.append(f"“{line[:80]}”: {why[0]}")
-            else:
-                passing.append(line)
-        if passing:
-            kept.append((kind, passing))
-    measured = next((len(items) for kind, items in kept if kind == "measured"), 0)
-    tail = " · ".join(bit for bit in (
-        f"{measured} headline metric{'s' if measured != 1 else ''} measured" if measured else "",
-        f"{len(held)} held at departure" if held else "") if bit) or "nothing measured"
-    return {"brief": brief, "held_lines": held,
-            "summary": f"{block.get('label', '')} Briefing — {block.get('covers', '')} — {tail}",
-            "markdown": render_period_markdown(block, kept, len(held))}
-
-
-def _build_range_departure(sub: BriefSubscription, *, runner=None) -> dict:
-    """Arc BR-5 — with briefing.ranges on, a subscription's period is read as its preset and
-    sent as the RANGE Briefing its recipe writes (the Day: what is new since yesterday), for the
-    subscription's scope — the same snapshot the Briefing tab shows. Judged line by line: every
-    figure, segment move and narrative paragraph against the queries RE-RUN at the send."""
+    """The Briefing for *sub*, judged line by line before it leaves (Arc BR-5): the subscription's
+    period is read as its preset and sent as the RANGE Briefing its recipe writes (the Day: what is
+    new since yesterday), for the subscription's scope — the same snapshot the Briefing tab shows.
+    Every figure, segment move and narrative paragraph is judged against the queries RE-RUN at the
+    send (law 1); alerts as a monitor's declared readings. Returns ``{"brief", "summary",
+    "markdown", "held_lines"}``."""
     from aughor.briefing import ranges
     from aughor.govern.departure import line_holds
     from aughor.knowledge import period_brief
@@ -393,9 +356,6 @@ def _paused_on_ended_data(sub: BriefSubscription) -> str:
     one this subscription already sent — "" when it should go. Data that stopped does not move, so the
     same edition every morning is noise; the send resumes by itself when new rows move the edge (the
     anchored range then covers new days). Read before building: a paused send spends no model call."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("briefing.ranges"):
-        return ""
     from aughor.briefing import ranges
     from aughor.briefing.deliveries import sent_at_for
     try:
@@ -418,8 +378,9 @@ def _paused_on_ended_data(sub: BriefSubscription) -> str:
 
 def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
     """Send the Briefing written for *sub*'s period through the same departure gate and
-    trigger as the alert summary. Refused — and said — while the flag is off: a subscription saved
-    as "briefing" never silently degrades into the alert summary. Fills *result* in place."""
+    trigger as the alert summary. A period that does not exist is refused — and said: a
+    subscription saved as "briefing" never silently degrades into the alert summary. Fills
+    *result* in place."""
     import datetime as _dt
     from aughor.govern.departure import gate_departure
     from aughor.knowledge import period_brief

@@ -6,8 +6,8 @@ instead: the server asks the API who that is (`GET /ledger/v1/principals/service
 call the caller makes runs as that principal — the API holds it to the agent policy and its grant and audits it under
 its own name — and `tools/list` shows only the tools its grant admits.
 
-The API holds the switch (`mcp.caller_principals`): while it is off the API says so, and a caller with the shared token
-is served as before. A name and key the API does not recognise is refused at the door, never served as this process.
+A caller that presents no principal is served with the shared token as before. A name and key the API does not
+recognise is refused at the door, never served as this process.
 An answer is kept thirty seconds per name and key, so revoking a principal reaches a connected caller within that.
 """
 from __future__ import annotations
@@ -53,7 +53,6 @@ def forget() -> None:
 
 def refused_because(status: int) -> str:
     return {401: "the service principal's name and key do not match an active principal",
-            404: "this install does not let callers connect as their own principals; present the server's token",
             }.get(status, "the platform could not be asked who this service principal is")
 
 

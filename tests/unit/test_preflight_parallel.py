@@ -1,11 +1,12 @@
 """P-B — the plan-time pre-flight retrievals run concurrently.
 
-plan_queries runs four INDEPENDENT, deterministic, non-LLM retrievals before the planning call:
-relevant-schema ∥ KB planning patterns ∥ causal context ∥ closed-loop corrections. They run
+plan_queries runs three INDEPENDENT, deterministic, non-LLM retrievals before the planning call:
+relevant-schema ∥ KB planning patterns ∥ closed-loop corrections (the causal context that was a fourth
+left 2026-10-28 with `lifecycle/causal.py`: what bears on what is a declared impact, Arc ED-5). They run
 concurrently (ContextThreadPoolExecutor). Wave 2d deleted the flag and the serial branch, so the
 old on-vs-off byte-identity oracle has no second side — but the property it protected is still
 testable, and is pinned here by varying COMPLETION order instead: the assembled prompt must be
-byte-identical whether the four finish in order or in reverse. Also pinned: the closed-loop
+byte-identical whether the three finish in order or in reverse. Also pinned: the closed-loop
 liveness signal survives, and the wave actually runs concurrently.
 """
 from __future__ import annotations
@@ -46,17 +47,12 @@ def _install(monkeypatch, *, sleep=0.0, delays=None):
         time.sleep(d.get("kb", sleep))
         return "KB-BLOCK"
 
-    def _causal(desc, conn_id=None):
-        time.sleep(d.get("causal", sleep))
-        return "CAUSAL"
-
     def _priors(question, connection_id):
         time.sleep(d.get("priors", sleep))
         return "PRIORS"
 
     monkeypatch.setattr("aughor.semantic.retriever.retrieve_relevant_schema", _schema)
     monkeypatch.setattr("aughor.semantic.kb_retriever.retrieve_for_planning", _kb)
-    monkeypatch.setattr("aughor.lifecycle.causal.build_causal_context_section", _causal)
     monkeypatch.setattr("aughor.feedback.priors.build_corrections_section", _priors)
     llm = _CaptureLLM()
     monkeypatch.setattr(N, "get_provider", lambda *_a, **_k: llm)
@@ -78,25 +74,25 @@ def _state():
 def test_preflight_prompt_is_byte_identical_regardless_of_completion_order(monkeypatch):
     """The durable half of the batch-A receipt (`889789dda475`) — byte-identity, kept.
 
-    The receipt claimed pooling the four retrievals changes nothing about the prompt.
+    The receipt claimed pooling the retrievals changes nothing about the prompt.
     With the serial branch gone the oracle is no longer "the same run with the flag off";
     it is the same run whose retrievals finish in the OPPOSITE order. If assembly ever
     followed completion order, these two prompts would differ — which is the only way
     pooling could actually corrupt the prompt.
     """
-    llm = _install(monkeypatch, delays={"schema": 0.0, "kb": 0.0, "causal": 0.0, "priors": 0.0})
+    llm = _install(monkeypatch, delays={"schema": 0.0, "kb": 0.0, "priors": 0.0})
     out_fast = N.plan_queries(_state())
     in_order = llm.user
 
     # Reverse the finishing order: priors first, schema last.
     llm2 = _install(monkeypatch,
-                    delays={"schema": 0.20, "kb": 0.15, "causal": 0.10, "priors": 0.0})
+                    delays={"schema": 0.20, "kb": 0.15, "priors": 0.0})
     out_rev = N.plan_queries(_state())
     reversed_completion = llm2.user
 
     assert reversed_completion == in_order, "prompt followed completion order, not assembly order"
     assert "SCHEMA-BLOCK" in in_order and "KB-BLOCK" in in_order
-    assert in_order.index("CAUSAL") < in_order.index("PRIORS")
+    assert in_order.index("PRIORS") < in_order.index("SCHEMA-BLOCK")      # assembly order, not completion order
     # closed-loop liveness (Bet 0) survives the parallel path, either way round
     assert out_fast.get("verification_checks") == ["priors_injected"] == out_rev.get("verification_checks")
 

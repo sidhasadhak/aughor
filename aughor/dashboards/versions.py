@@ -25,12 +25,11 @@ writes nothing, by the same reasoning that keeps a Briefing from versioning on e
 A dashboard that lived in a Data Canvas before the home moved is read here by its old key, and
 retired when it moves (``canvas_*``); nothing new is kept under a canvas.
 
-**An App publishes one version** (Arc ED, ED-4, behind ``dashboard.app_versions``; the user, 2026-10-24: readers see
-the last published version). Each version then says where it stands on the platform's one publication axis
-(``kernel/lifecycle.py``): a keep is a *draft*, a publish *published*, an unpublish or a retire *archived*. Who a
-dashboard reaches is still its newest version's audience — an edit carries it, an unpublish clears it at once — but
-what its readers read is the version last published, until the owner publishes again. Off: every version reaches the
-audience the moment it is kept, as before, and nothing new is written.
+**An App publishes one version** (Arc ED, ED-4; the user, 2026-10-24: readers see the last published version). Each
+version says where it stands on the platform's one publication axis (``kernel/lifecycle.py``): a keep is a *draft*, a
+publish *published*, an unpublish or a retire *archived*. Who a dashboard reaches is still its newest version's
+audience — an edit carries it, an unpublish clears it at once — but what its readers read is the version last
+published, until the owner publishes again.
 """
 from __future__ import annotations
 
@@ -43,9 +42,6 @@ from aughor.dashboards import validate as _validate
 from aughor.dashboards.home import Home, prefix
 from aughor.kernel import lifecycle
 from aughor.kernel.errors import tolerate
-
-#: Arc ED, ED-4 — a keep is a draft; an App's readers read the version last published.
-APP_VERSIONS = "dashboard.app_versions"
 
 #: The artifact kind, for a person's dashboard and a canvas's alike.
 KIND = "cockpit"
@@ -75,15 +71,10 @@ class Kept:
                 "artifact_id": self.artifact_id, "sentences": list(self.sentences)}
 
 
-def app_versions() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(APP_VERSIONS)
-
-
 def publication_of(payload: dict) -> lifecycle.PublicationState:
     """Where a version stands on the publication axis. A version kept before an App had versions of its own records
     no state; its audience read it the moment it was kept, so it projects as published when it reached anyone — what
-    they read then is what they keep reading when App versions are switched on."""
+    they read then is what they keep reading."""
     recorded = lifecycle.state_of(payload)
     if recorded:
         return recorded
@@ -93,21 +84,19 @@ def publication_of(payload: dict) -> lifecycle.PublicationState:
 
 
 def _stamped(payload: dict, state: lifecycle.PublicationState, by: str) -> dict:
-    """The payload with its publication state, when App versions are on; without one when they are off — a stamp
-    copied forward from a version kept while they were on would say a state the version does not have."""
+    """The payload with its publication state — never a stamp copied forward from the version before."""
+    from aughor.util.time import now_iso_z
     out = {k: v for k, v in payload.items() if k != "_lifecycle"}
-    if app_versions():
-        from aughor.util.time import now_iso_z
-        out["_lifecycle"] = lifecycle.stamp(state, by=by.strip(),
-                                            published_at=now_iso_z() if state == "published" else "")
+    out["_lifecycle"] = lifecycle.stamp(state, by=by.strip(),
+                                        published_at=now_iso_z() if state == "published" else "")
     return out
 
 
 def nothing_to_publish(published_to: Any, state: str, targets: list) -> bool:
-    """Whether publishing to ``targets`` would change nothing a reader reads: the same audience as now and — with App
-    versions on — nothing kept since the version they read."""
+    """Whether publishing to ``targets`` would change nothing a reader reads: the same audience as now and nothing kept
+    since the version they read."""
     same = list(targets) == list(published_to or [])
-    if not same or not targets or not app_versions():
+    if not same or not targets:
         return same
     return state == "published"
 
@@ -177,7 +166,7 @@ def _entry(row: dict, *, with_spec: bool) -> dict[str, Any]:
         # Arc OC-4 — the ontology release a version holding pieces was composed against.
         **({"ontology_release": p["ontology_release"]} if p.get("ontology_release") else {}),
         # Arc ED-4 — draft, published or archived: whether this version is one an App's readers read.
-        **({"state": publication_of(p)} if app_versions() else {}),
+        "state": publication_of(p),
     }
     if with_spec:
         out["spec"] = p.get("spec")
@@ -192,16 +181,15 @@ def _latest_row(key: str) -> Optional[dict]:
 def latest(home: Home) -> Optional[dict]:
     """The newest version, with its spec — or None when this person has no such dashboard.
     A retired dashboard is returned, with ``retired`` True and no spec: that it was retired,
-    when and by whom is something a reader is owed. With App versions on it also says which
-    version the App's readers read (``published_version``), None while it reaches nobody."""
+    when and by whom is something a reader is owed. It also says which version the App's
+    readers read (``published_version``), None while it reaches nobody."""
     row = _latest_row(home.key)
     if not row:
         return None
     out = _entry(row, with_spec=True)
-    if app_versions():
-        reached = not out["retired"] and bool(out["published_to"])
-        read = published(home.key) if reached else None
-        out["published_version"] = read["version"] if read else None
+    reached = not out["retired"] and bool(out["published_to"])
+    read = published(home.key) if reached else None
+    out["published_version"] = read["version"] if read else None
     return out
 
 
@@ -402,11 +390,7 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     not_held = images.not_held(home.connection_id, spec)
     if not_held:
         return Kept(REFUSED, sentences=tuple(not_held))
-    from aughor.dashboards import app_pieces, breakdowns, builder, marks, pieces, questions, variables, wiring
-    off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec) + variables.refused_off(spec) \
-        + questions.refused_off(spec) + breakdowns.refused_off(spec) + marks.refused_off(spec)
-    if off:
-        return Kept(REFUSED, sentences=tuple(off))
+    from aughor.dashboards import pieces, questions, variables, wiring
     # Arc AP-2 — what each set reads, as the web reads it, once: the pieces that read a set are probed over it
     wired = wiring.read(spec)
     unresolved = pieces.not_resolved(home.connection_id, spec, wiring=wired) \

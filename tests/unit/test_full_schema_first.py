@@ -1,20 +1,18 @@
-"""grounding.full_schema_first — the size-gated bypass of the schema linker.
+"""Full schema first — the size-gated bypass of the schema linker (the flag
+`grounding.full_schema_first` until it was made unconditional, 2026-10-28, ROADMAP §3.65).
 
-The linker prunes to top-k tables/columns even when the ENTIRE compressed schema
-fits the char budget the packer would have spent anyway — on a small schema that
-buys no tokens and costs structure (a column dropped by top_k_cols is invisible
-to the model even though it fits). WrenAI measured full-schema beating pruning
-below ~30k chars (2026-08-14 study: complete join paths beat isolated
-fragments); the flag exists so OUR E4 grid can settle it on the reference suite.
-
-Off by default. These tests pin BOTH states, so the grid measures a real axis
-and graduation (either direction) knows exactly what behaviour it is adopting.
+The linker prunes to top-k tables/columns only when the ENTIRE compressed schema does not
+fit the char budget the packer would have spent anyway — on a small schema pruning buys no
+tokens and costs structure (a column dropped by top_k_cols is invisible to the model even
+though it fits). WrenAI measured full-schema beating pruning below ~30k chars (2026-08-14
+study: complete join paths beat isolated fragments); kept on its own record — in two test
+runs the SQL writer seeing every table of a small schema never wrote a worse query, and
+twice answered where the pruned schema could not.
 """
-from aughor.kernel.flags import flag_overrides
 from aughor.tools.schema_linker import link_schema
 
-# A question that matches `orders` only — under the default path, zero-signal
-# tables are dropped (keep set requires score > 0), so pruning is deterministic.
+# A question that matches `orders` only — past the budget, zero-signal tables are dropped
+# (keep set requires score > 0), so pruning is deterministic.
 QUESTION = "total orders revenue by month"
 
 SCHEMA = """TABLE: orders
@@ -35,32 +33,23 @@ SHARDED = "".join(
 ) + SCHEMA
 
 
-def test_default_off_prunes_zero_signal_tables():
-    out = link_schema(QUESTION, SCHEMA)
-    assert "TABLE: orders" in out
-    assert "audit_log" not in out, "default pruning must be unchanged while the flag is off"
+def test_a_small_schema_is_sent_whole():
+    assert link_schema(QUESTION, SCHEMA) == SCHEMA
 
 
-def test_flag_on_small_schema_is_sent_whole():
-    with flag_overrides({"grounding.full_schema_first": True}):
-        out = link_schema(QUESTION, SCHEMA)
-    assert out == SCHEMA
-
-
-def test_flag_on_over_budget_still_prunes():
+def test_over_budget_still_prunes_zero_signal_tables():
     # The bypass is size-gated, not unconditional: past the budget, ranking is
     # still what decides what falls off the end.
-    with flag_overrides({"grounding.full_schema_first": True}):
-        out = link_schema(QUESTION, SCHEMA, char_budget=90)
+    out = link_schema(QUESTION, SCHEMA, char_budget=90)
     assert out != SCHEMA
     assert "TABLE: orders" in out
+    assert "audit_log" not in out
 
 
-def test_flag_on_still_collapses_sharded_families():
+def test_sharded_families_are_still_collapsed():
     # The bypass sits AFTER shard compression on purpose — a thousand date
     # partitions must never ride the "it fits" exemption in raw form.
-    with flag_overrides({"grounding.full_schema_first": True}):
-        out = link_schema(QUESTION, SHARDED)
+    out = link_schema(QUESTION, SHARDED)
     assert out != SHARDED
     assert "more sharded tables" in out
     assert "TABLE: audit_log" in out, "non-sharded tables survive whole under the bypass"

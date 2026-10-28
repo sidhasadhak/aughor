@@ -180,6 +180,3 @@ def test_a_set_never_tells_a_reader_of_objects_a_row_policy_keeps_from_them(secu
     n, _ = count()
     every = int(db.execute("t", "SELECT COUNT(DISTINCT customer_id) FROM orders WHERE status = 'cancelled'").rows[0][0])
     assert n == every > 0
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY")
-    _as(monkeypatch, "ana")
-    assert count()[0] == every                                              # off: as before, every reader the same

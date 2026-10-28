@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from aughor.dashboards import cards, images, propose, validate as V, versions
 from aughor.dashboards.home import Home
 from aughor.cards.models import StoredCard
-from aughor.kernel.flags import flag_overrides
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -247,14 +246,8 @@ def client():
     return TestClient(app)
 
 
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True}):
-        yield
-
-
 @needs_rules
-def test_an_image_is_uploaded_placed_read_back_and_stamped(client, on, volumes):
+def test_an_image_is_uploaded_placed_read_back_and_stamped(client, volumes):
     desk = Desk()
     q = {"connection_id": desk.connection}
     up = client.post("/dashboards/images", params=q, files={"file": ("promo.png", PNG, "image/png")})
@@ -276,10 +269,3 @@ def test_an_image_is_uploaded_placed_read_back_and_stamped(client, on, volumes):
     assert refused.status_code == 422 and "not a PNG" in refused.json()["detail"]
     gone = client.get("/dashboards/images/nope", params=q)
     assert gone.status_code == 404
-
-
-def test_off_the_image_routes_answer_404(client, volumes):
-    desk = Desk()
-    q = {"connection_id": desk.connection}
-    assert client.post("/dashboards/images", params=q, files={"file": ("p.png", PNG, "image/png")}).status_code == 404
-    assert client.get("/dashboards/images/abc", params=q).status_code == 404

@@ -129,7 +129,7 @@ def tick_once() -> dict[str, int]:
         logger.warning("automation heartbeat could not take the settling reading: %s", exc)
         counts["settling"] = 0
     # Idea 5 — re-check the answers people were given, once a UTC day, AFTER the settling
-    # reading so a change is judged against today's lag. Off by default (`answers.recheck`).
+    # reading so a change is judged against today's lag.
     try:
         from aughor.answer.recheck import run_rechecks_daily
         counts["rechecks"] = run_rechecks_daily()
@@ -177,7 +177,7 @@ def run_due_reviews_hourly(*, now: Optional[float] = None, force: bool = False) 
     for o in reviewed:
         logger.info("review due on %s asked %s: %s", o.id, o.review_asked_to or "(nobody linked)",
                     o.review_question[:120])
-    # PENDING 57, D-2: every other decision that came due is reviewed in the same tick (nothing when the loop is off)
+    # PENDING 57, D-2: every other decision that came due is reviewed in the same tick
     from aughor.record.reviews import review_due_decisions
     booked = review_due_decisions()
     for oid in booked:

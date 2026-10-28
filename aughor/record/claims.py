@@ -215,11 +215,8 @@ def book(claim: Claim, *, key: str, conn_id: Optional[str] = None,
 def _pin_release(claim: Claim, conn_id: Optional[str]) -> Claim:
     """Arc OC-2 — a claim names the ontology release in force when it was booked (`definition_version`), unless its
     writer named one: the definitions it was computed under can then be read back, and a release that changes their
-    meaning restates it. Off (`ontology.release`), the claim is booked exactly as given."""
+    meaning restates it."""
     if claim.definition_version:
-        return claim
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.release"):
         return claim
     conn = conn_id or (claim.about.key if claim.about.kind == "connection" else "")
     if not conn:

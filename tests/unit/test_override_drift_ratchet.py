@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from aughor.evals.promotion import evaluate_graduation
 
-FLAGS = {"explore.route_wide", "federation.planner", "graph.readback"}
+FLAGS = {"explore.route_wide", "_synthetic.other_off", "graph.readback"}
 
 
 def _clean_summary(total: int = 9) -> dict:
@@ -50,13 +50,13 @@ def test_a_contradicting_override_blocks_an_otherwise_perfect_run():
     the environment it was measured in is not one anybody else runs."""
     d = evaluate_graduation("explore.route_wide", _clean_summary(),
                             registered_flags=FLAGS,
-                            override_drift=_drift(**{"federation.planner": True}))
+                            override_drift=_drift(**{"_synthetic.other_off": True}))
 
     assert d.can_graduate is False
     assert any("contradict a fresh clone" in r for r in d.reasons)
     # The refusal NAMES the drifted flag and which way it differs, so the fix is obvious
     # without a second investigation.
-    assert any("federation.planner is on here but off on a fresh clone" in r for r in d.reasons)
+    assert any("_synthetic.other_off is on here but off on a fresh clone" in r for r in d.reasons)
 
 
 def test_drift_in_an_unrelated_flag_still_blocks():
@@ -73,7 +73,7 @@ def test_drift_in_an_unrelated_flag_still_blocks():
 def test_the_drift_is_recorded_on_the_receipt_not_only_in_the_refusal():
     """A receipt has to state the configuration it was measured in, so a later reader can
     re-judge it. Carried on passing decisions too."""
-    drift = _drift(**{"federation.planner": True})
+    drift = _drift(**{"_synthetic.other_off": True})
     d = evaluate_graduation("explore.route_wide", _clean_summary(),
                             registered_flags=FLAGS, override_drift=drift)
     assert d.override_drift == drift
@@ -88,9 +88,9 @@ def test_drift_is_reported_even_when_there_is_no_run():
     """The no-run early return must not drop the configuration — otherwise the one
     decision most likely to be retried says nothing about why it should not be."""
     d = evaluate_graduation("explore.route_wide", None, registered_flags=FLAGS,
-                            override_drift=_drift(**{"federation.planner": True}))
+                            override_drift=_drift(**{"_synthetic.other_off": True}))
     assert d.can_graduate is False
-    assert d.override_drift == _drift(**{"federation.planner": True})
+    assert d.override_drift == _drift(**{"_synthetic.other_off": True})
 
 
 def test_many_drifted_flags_are_summarised_not_dumped():
@@ -127,7 +127,7 @@ def test_override_drift_catches_a_flag_forced_against_its_default(
     assert drift == {synthetic_default_on: {"override": False, "without_override": True}}
 
 
-def test_override_drift_compares_against_resolution_not_flag_default(monkeypatch):
+def test_override_drift_compares_against_resolution_not_flag_default(monkeypatch, synthetic_default_off):
     """The distinction that got three flags wrong when predicted by hand.
 
     Comparing an override against ``FLAG_DEFAULT.get(name, False)`` calls a pinned-OFF
@@ -141,7 +141,7 @@ def test_override_drift_compares_against_resolution_not_flag_default(monkeypatch
     """
     import aughor.kernel.flags as flags
 
-    victim = "federation.planner"          # a plain default-OFF flag
+    victim = synthetic_default_off        # a plain default-OFF flag, registered for the test (no product flag is left)
     assert flags.FLAG_DEFAULT.get(victim, False) is False, "picked a flag with a real default"
 
     # The env turns it ON; the override pins it OFF. FLAG_DEFAULT says False and the

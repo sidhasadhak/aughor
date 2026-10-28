@@ -40,16 +40,10 @@ describe("typedShare", () => {
 });
 
 describe("SharePop", () => {
-  it("off, says what it always said: the workspace's, people chosen later", () => {
-    render(<SharePop name="Olist orders" sheetId="s1" onDone={vi.fn()} />);
-    expect(screen.getByText(/can read and edit this sheet/)).toBeInTheDocument();
-    expect(screen.getByText("Choosing people, as readers or editors, comes in a later step.")).toBeInTheDocument();
-  });
-
   it("lets the maker share it with a person to edit and a group to read, and saves exactly that", async () => {
     held = asMaker();
     const onChanged = vi.fn();
-    render(<SharePop name="Olist orders" sheetId="s1" me="user:ana" sharing onDone={vi.fn()} onChanged={onChanged} />);
+    render(<SharePop name="Olist orders" sheetId="s1" me="user:ana" onDone={vi.fn()} onChanged={onChanged} />);
     fireEvent.click(await screen.findByRole("radio", { name: "Only people chosen" }));
     expect(screen.getByText(/You made it, and can always read and edit it/)).toBeInTheDocument();
     const add = screen.getByRole("combobox", { name: "Add a person or a group" });
@@ -71,7 +65,7 @@ describe("SharePop", () => {
 
   it("refuses the maker as a share, saying they always hold it", async () => {
     held = asMaker({ sharing: "chosen", shared_with: [{ kind: "person", id: "bo", level: "view", name: "bo" }] });
-    render(<SharePop name="Olist orders" sheetId="s1" me="user:ana" sharing onDone={vi.fn()} />);
+    render(<SharePop name="Olist orders" sheetId="s1" me="user:ana" onDone={vi.fn()} />);
     const add = await screen.findByRole("combobox", { name: "Add a person or a group" });
     fireEvent.change(add, { target: { value: "ana" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -84,7 +78,7 @@ describe("SharePop", () => {
       sharing: "chosen", access: "view", may_change: false,
       shared_with: [{ kind: "person", id: "bo", level: "view", name: "bo" }, { kind: "group", id: "finance", level: "edit", name: "Finance" }],
     });
-    render(<SharePop name="Olist orders" sheetId="s1" me="user:bo" sharing onDone={vi.fn()} />);
+    render(<SharePop name="Olist orders" sheetId="s1" me="user:bo" onDone={vi.fn()} />);
     expect(await screen.findByText(/You can read it\. Only ana, who made it, can change who it is shared with\./)).toBeInTheDocument();
     expect(screen.getByText("can edit")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Add a person or a group" })).not.toBeInTheDocument();

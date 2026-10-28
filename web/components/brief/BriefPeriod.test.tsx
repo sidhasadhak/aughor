@@ -5,10 +5,10 @@
  * with no change stated, and every metric it could not measure with the reason. The shape is
  * the backend's `aughor/knowledge/period_brief.py` block.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
-import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
+import { PeriodMeasures, periodUnavailable } from "@/components/brief/BriefPeriod";
 import type { BriefingPeriodBlock } from "@/lib/api";
 
 const block = (over: Partial<BriefingPeriodBlock> = {}): BriefingPeriodBlock => ({
@@ -51,15 +51,5 @@ describe("periodUnavailable", () => {
   it("names the period and every reason, never 'run an exploration'", () => {
     const text = periodUnavailable(block({ measured: [] }));
     expect(text).toBe("Nothing to brief on for the week 2026-09-14 to 2026-09-20 — Top statuses: its first column is not a date.");
-  });
-});
-
-describe("PeriodSwitch", () => {
-  it("offers the standing brief and the four periods, and reports the choice", () => {
-    const onChange = vi.fn();
-    render(<PeriodSwitch value="history" onChange={onChange} />);
-    expect(screen.getByRole("button", { name: "Standing" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Month" }));
-    expect(onChange).toHaveBeenCalledWith("month");
   });
 });

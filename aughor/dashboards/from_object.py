@@ -18,7 +18,6 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 from typing import Any, Callable, Iterator, Optional
 
-FLAG = "ontology.object_dashboards"
 #: The most filters offered: the object's own categories first, then one read through a link.
 MAX_FILTERS = 4
 #: A category is a filter when it holds at least two values and at most this many.
@@ -186,20 +185,32 @@ def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = N
 
     # ── the figures: how many, a money figure, and the average of a count each object holds ──
     figures = [{"label": plural(name), "agg": "count", "path": "", "format": "number"}]
-    numbers = [(n, p) for n, p in (entity.properties or {}).items() if _readable(entity, n)]
+    every = list((entity.properties or {}).items())
     for binding in entity.bindings or []:
-        numbers += [(n, p) for n, p in binding.properties.items() if _readable(entity, n)]
-    money = next(((n, p) for n, p in numbers if (p.semantic_type or "") == "measure" and _is_money(p)), None)
-    if money:
+        every += list(binding.properties.items())
+
+    def money_figure(n: str, p: Any) -> dict:
         # money adds up over things that happen (an object with a date) and is not profiled per unit; a price per
         # unit, or the price of a thing that simply exists, is averaged — its sum means nothing
-        adds = dated and (money[1].measure_grain or "") != "per_unit"
-        figures.append({"label": _label(money[1]) if adds else f"Average {_label(money[1]).lower()}",
-                        "agg": "sum" if adds else "avg", "path": money[0], "format": "money"})
-    ordinal = next(((n, p) for n, p in numbers if (p.semantic_type or "") == "ordinal" and not p.is_primary_key), None)
-    if ordinal:
-        figures.append({"label": f"Average {_label(ordinal[1]).lower()}", "agg": "avg", "path": ordinal[0],
-                        "format": "number"})
+        adds = dated and (p.measure_grain or "") != "per_unit"
+        return {"label": _label(p) if adds else f"Average {_label(p).lower()}",
+                "agg": "sum" if adds else "avg", "path": n, "format": "money"}
+
+    def ordinal_figure(n: str, p: Any) -> dict:
+        return {"label": f"Average {_label(p).lower()}", "agg": "avg", "path": n, "format": "number"}
+
+    from aughor.ontology.security import masked
+    for fits_figure, figure in ((lambda p: (p.semantic_type or "") == "measure" and _is_money(p), money_figure),
+                                (lambda p: (p.semantic_type or "") == "ordinal" and not p.is_primary_key,
+                                 ordinal_figure)):
+        first = next(((n, p) for n, p in every if fits_figure(p)), None)
+        if first is not None and not _readable(entity, first[0]):
+            # Withheld is said: the figure this object would offer is masked for the reader, so it is left out — and
+            # the next one of its kind they may read is offered in its place, when there is one
+            say([f"{figure(*first)['label']} is left out of the figures — {masked(entity, first[0])}"])
+        chosen = next(((n, p) for n, p in every if fits_figure(p) and _readable(entity, n)), None)
+        if chosen:
+            figures.append(figure(*chosen))
     values, said = _measured(run, entity.api_name, [
         {"name": f"f{i}", "agg": f["agg"], "path": f["path"]} for i, f in enumerate(figures)])
     say(said)
@@ -243,14 +254,12 @@ def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = N
            "table": {"columns": columns, "labels": [labels.get(c, c.replace("_", " ")) for c in columns]},
            # a type that declares no key is counted and charted, never listed: its table is not offered as if it were
            "listable": shapes.listable(entity), "actions": actions, "caveats": caveats}
-    if shapes.on():
-        # Arc AP-5 — what the object is for, as the ontology says it: one to three shapes, each with a sentence of why
-        from aughor.dashboards import app_pieces, wiring
-        sig = shapes.signals(graph, entity, wiring=wiring.on(), pieces=app_pieces.on())
-        offered = shapes.offered(sig)
-        measured = shapes.measure(sig, [o["shape"] for o in offered], run)
-        out["shapes"] = [{**o, "why": shapes.why(o["shape"], sig, measured)} for o in offered]
-        out["signals"] = {**sig, "window": shapes.WINDOW_DAYS, "measured": measured}
+    # Arc AP-5 — what the object is for, as the ontology says it: one to three shapes, each with a sentence of why
+    sig = shapes.signals(graph, entity)
+    offered = shapes.offered(sig)
+    measured = shapes.measure(sig, [o["shape"] for o in offered], run)
+    out["shapes"] = [{**o, "why": shapes.why(o["shape"], sig, measured)} for o in offered]
+    out["signals"] = {**sig, "window": shapes.WINDOW_DAYS, "measured": measured}
     return out
 
 

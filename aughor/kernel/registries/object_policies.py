@@ -4,15 +4,13 @@ The row policies and sensitive properties are the ontology's declarations, appli
 agent side of the boundary; the connection's door (`db.connection.enforce_row_policy`) is the platform's. The agent
 registers its applier here at bootstrap and the door reads through the seam, never importing it.
 
-Unlike the exclusions reader, an applier that is missing is not "nothing to apply". With ``ontology.security_sql`` and
-``ontology.security`` on and no applier in the process, a statement a request runs is refused: a host that forgot to
-register would otherwise run every statement unfiltered while the flags say the policies hold.
+Unlike the exclusions reader, an applier that is missing is not "nothing to apply". With no applier in the process, a
+statement a request runs is refused: a host that forgot to register would otherwise run every statement unfiltered
+while the declarations say the policies hold.
 """
 from __future__ import annotations
 
 from typing import Callable, Optional
-
-FLAG = "ontology.security_sql"
 
 # fn() -> whether the statement in flight is one the policies apply to
 Applies = Callable[[], bool]
@@ -38,16 +36,9 @@ def clear() -> None:
     _applies = _apply = _tenancy = None
 
 
-def _on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG) and flag_enabled("ontology.security")
-
-
 def applies() -> bool:
-    """Whether the policies apply to the statement in flight. Off with the flags off, whatever is registered; with
-    them on and nothing registered, a request's statement is one they apply to, so `apply` refuses it."""
-    if not _on():
-        return False
+    """Whether the policies apply to the statement in flight. With nothing registered, a request's statement is one
+    they apply to, so `apply` refuses it."""
     if _applies is not None:
         return bool(_applies())
     from aughor.db.doors import statement_is_internal
@@ -58,11 +49,11 @@ def applies() -> bool:
 def apply(connection_id: str, sql: str, dialect: str) -> str:
     if _apply is None:
         from aughor.sql.rls import PolicyRefused
-        raise PolicyRefused("the object policies are on but not loaded in this process, so nothing is run unfiltered")
+        raise PolicyRefused("the object policies are not loaded in this process, so nothing is run unfiltered")
     return _apply(connection_id, sql, dialect)
 
 
 def tenancy() -> Optional[str]:
-    if _tenancy is None or not _on():
+    if _tenancy is None:
         return None
     return _tenancy()

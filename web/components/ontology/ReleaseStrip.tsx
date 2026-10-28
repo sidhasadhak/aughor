@@ -3,12 +3,12 @@
 /**
  * Arc OC-2 — the release, on the ontology's own screen (ROADMAP §3.56).
  *
- * While releases are on, a change to the ontology — a person's, the explorer's or a pack's — waits in a draft. These
+ * A change to the ontology — a person's, the explorer's or a pack's — waits in a draft. These
  * screens read the draft; the agent, the Briefing, metrics and automations keep reading what was published. This strip
  * says which release they read, and lists each waiting change the way `GET /ontology/release` classes it: whether it
  * breaks something (ERR), changes what a definition means (MEANING), is worth a look (WARN) or is safe — with the
  * claims, automations and dashboard cards it touches. Publishing is the person's act, refused while anything breaks; a
- * change of meaning restates the claims computed under the old one. Off, the strip renders nothing.
+ * change of meaning restates the claims computed under the old one.
  */
 import React, { useCallback, useEffect, useState } from "react";
 
@@ -106,7 +106,7 @@ export function ReleaseStrip({ connectionId, schema, onChanged, version = 0 }: {
 
   useEffect(() => { read(); }, [read]);
 
-  if (!state?.enabled) return null;
+  if (!state) return null;
 
   const changes = state.draft;
   const breaking = changes.filter(c => c.class === "ERR").length;

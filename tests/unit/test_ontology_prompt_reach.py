@@ -48,6 +48,10 @@ REACH_BASELINE: dict[str, set[str]] = {
     "entities.*.computed_properties[].formula_sql": {'semantic_layer'},
     "entities.*.computed_properties[].unit": {'semantic_layer'},
     "entities.*.computed_properties[].verified": {'semantic_layer'},
+    # 2026-10-28 — object security is part of the platform (ROADMAP §3.65): a row policy narrows the frame's compiled
+    # queries to the reader's objects and the frame says so. Measured once the walk gave a list of declarations a VALID
+    # one (it appended a bare string, which no renderer had read while the policies were off).
+    "entities.*.row_policies": {'question_frame'},
     "relationships.*.from_entity": {'explorer_catalogue', 'question_frame', 'relationships'},
     "relationships.*.to_entity": {'explorer_catalogue', 'question_frame', 'relationships'},
     "relationships.*.verb": {'relationships'},

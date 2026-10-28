@@ -1,14 +1,14 @@
 """Arc ED, ED-1 (ROADMAP §3.58) — one row policy at every door: OC-7's declarations applied where SQL is run.
 
-OC-7 (`ontology.security`) declares on an entity which objects each group may see and which properties only some may
+OC-7 (`ontology/security.py`) declares on an entity which objects each group may see and which properties only some may
 read, and enforces both at the object doors (`object_query.backing_from`, the compiler's property resolution and the
 object page). A quick answer, a deep analysis and the SQL editor reach the same rows another way: through a
 connection's own door, where only the RBAC row policy (`rbac/row_policy.py`, which ships empty) applied. So a reader
 denied an order on its page could count it in an answer.
 
-Behind ``ontology.security_sql`` (off; it needs ``ontology.security``) the connection's door applies the same
-declarations to every statement a request runs (`db.connection.enforce_row_policy`), on the tables that back the
-entities of the connection's released ontology:
+The connection's door applies the same declarations to every statement a request runs
+(`db.connection.enforce_row_policy`), on the tables that back the entities of the connection's released ontology — and
+a connection whose released ontology declares none reads exactly as it did before:
 
 * a table that backs an entity with row policies is read through the reader's objects, the condition the object door
   applies (`security.row_condition`), and the answer says so (`db.doors.say`);
@@ -25,19 +25,22 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import Iterator, Optional
+import re
+from dataclasses import dataclass
+from typing import Any, Callable, Iterator, Optional
 
-FLAG = "ontology.security_sql"
+#: How the connection's door begins the error of a statement it refused: the object policies' refusal
+#: (`db.connection._enforce_object_policies`) and the RBAC row policy's that could not be applied. A refusal, never a
+#: mistake: the model is told to say it, not to rewrite around it (`agent/converse_tools.route_error`).
+REFUSED_PREFIXES = ("[OBJECT POLICY] refused — ", "[ROW POLICY] query blocked — ")
+#: The tail `apply` puts on what it tells the reader of a narrowed statement — how `policy_said` finds its own words
+#: among a result's caveats.
+_NARROWED_TAIL = " — this answer read {table} through {entity}'s row policy"
+_NARROWED = re.compile(r" — this answer read \S+ through \S+'s row policy$")
 
 #: Set around the object doors' own statements: they read the reader's rows through `backing_from` and mask what they
 #: show, so the connection's door leaves them to it. Set by code only — never by anything a statement carries.
 _door: contextvars.ContextVar[bool] = contextvars.ContextVar("aughor_object_door", default=False)
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    from aughor.ontology import security
-    return flag_enabled(FLAG) and security.enabled()
 
 
 @contextlib.contextmanager
@@ -56,9 +59,11 @@ async def object_door_from_request() -> None:
 
 
 def applies() -> bool:
-    """Whether the connection's door applies the declarations to the statement in flight: the flags on, a request
-    acting for someone, and neither an object door's statement nor the platform's own."""
-    if not enabled() or _door.get():
+    """Whether the connection's door applies the declarations to the statement in flight: a request acting for
+    someone, outside the platform's own `unfiltered` check, and neither an object door's statement nor the platform's
+    own."""
+    from aughor.ontology import security
+    if not security.enabled() or _door.get():
         return False
     from aughor.db.doors import statement_is_internal
     from aughor.org.context import current_actor
@@ -142,8 +147,154 @@ def apply(connection_id: str, sql: str, dialect: str = "duckdb") -> str:
             entity = entities.get(r.entity)
             said = security.rows_said(entity, who) if entity is not None else None
             if said:
-                say(f"{said} — this answer read {r.table} through {r.entity}'s row policy")
+                say(said + _NARROWED_TAIL.format(table=r.table, entity=r.entity))
     return out
+
+
+def refusal_of(error: Any) -> Optional[str]:
+    """Why the connection's door refused a statement under a reader's access policy — the policy's own sentence — or
+    None when ``error`` is no such refusal."""
+    text = str(error or "").strip()
+    prefix = next((p for p in REFUSED_PREFIXES if text.startswith(p)), None)
+    return (text[len(prefix):].strip() or text) if prefix is not None else None
+
+
+def policy_said(result: Any) -> tuple[str, list[str]]:
+    """What the reader's access policy did to one statement, in its own words: ``("refused", [why])``, ``("narrowed",
+    [each row policy's sentence])``, or ``("", [])`` when it did neither. The model reads these on the result; this is
+    how the reader's answer carries them too (`agent/converse_tools.run_sql`)."""
+    why = refusal_of(getattr(result, "error", None))
+    if why:
+        return "refused", [why]
+    said = [c for c in (getattr(result, "caveats", None) or []) if isinstance(c, str) and _NARROWED.search(c)]
+    return ("narrowed", list(dict.fromkeys(said))) if said else ("", [])
+
+
+# ── the schema text a model is handed ───────────────────────────────────────────────────────────────────────────────
+
+_HEADER = re.compile(r"^TABLE:\s+([\w.]+)")
+_ROW_COUNT = re.compile(r"\(\s*[\d,?]+\s+rows?\s*\)")
+_COLUMN = re.compile(r"^\s{2}(\S+)\s{2,}\S+")
+_VALUE_LIST = re.compile(r"^\s{2}--\s+(\S+)\s{2}\[")
+
+
+@dataclass(frozen=True)
+class TableHeld:
+    """What the reader's policies hold back of one table a model is described: ``rows`` — its row count, sample values
+    and value lists count and quote rows the reader may not see (a row policy narrows it, or its statements are
+    refused); ``masked`` — each column masked for the reader (bare name → the mask's words); ``said`` — each, in
+    words, prefixed by the table's name as given."""
+    rows: bool
+    masked: dict[str, str]
+    said: list[str]
+    #: The reader, in words (`security.Reader.words`).
+    who: str
+
+
+def tables_held(connection_id: str) -> Optional[Callable[[str], Optional[TableHeld]]]:
+    """While the declarations apply to the request (`applies`): what they hold back of a table, by the name a schema
+    text or a data catalog gives it (``ecommerce.orders``, ``orders``) — None for a table they leave alone. None
+    itself when nothing applies, so a caller describes every table as it did. One reading of the same rules the
+    connection's door applies (`rules_for`), for every text that describes tables to a model: the schema text
+    (`schema_as_read`) and the data catalog (`tools/data_catalog.build_data_catalog`)."""
+    if not applies():
+        return None
+    from aughor.ontology import security
+    from aughor.sql.rls import bare_name
+    who = security.reader()
+    graphs = _graphs(connection_id)
+    rules = rules_for(connection_id, who, graphs)
+    if not rules:
+        return None
+    entities = {e.id: e for g in graphs for e in (g.entities or {}).values()}
+    words = who.words()
+
+    def held_for(fqn: str) -> Optional[TableHeld]:
+        parts = [bare_name(p) for p in str(fqn or "").split(".") if p]
+        if not parts:
+            return None
+        name, owner = parts[-1], (parts[-2] if len(parts) > 1 else "")
+        mine = [r for r in rules if r.table == name and (not r.schema or not owner or r.schema == owner)]
+        if not mine:
+            return None
+        rows, masked, said = False, {}, []
+        for r in mine:
+            if r.refused:
+                rows = True
+                said.append(f"{fqn}: row count, sample values and value lists withheld — {r.refused}")
+                continue
+            entity = entities.get(r.entity)
+            if r.predicate is not None and entity is not None and not security.sees_every(entity, who):
+                rows = True
+                said.append(f"{fqn}: row count, sample values and value lists withheld for {words} — a row policy "
+                            f"narrows this table ({security.rows_said(entity, who)}); a query reads only the rows "
+                            f"{words} may see")
+            for col, why in r.masked:
+                masked.setdefault(col, why)
+        said += [f"{fqn}.{col}: masked for you — {why}" for col, why in masked.items()]
+        return TableHeld(rows=rows, masked=masked, said=list(dict.fromkeys(said)), who=words) if (rows or masked) \
+            else None
+    return held_for
+
+
+def schema_as_read(connection_id: str, schema: str) -> tuple[str, dict[str, list[str]]]:
+    """``(text, withheld)``: the schema text a model is handed while the declarations apply to the request (`applies`),
+    as the reader may read it, and what it withholds, said — per table, as the text names it.
+
+    The renderer writes each table's row count, a few values of each column and the values of each category
+    (`db.schema_render.render_raw_schema`), read over every row. A table the reader's row policy narrows keeps none of
+    them — they count and quote rows the reader may not see — and says so where its row count was; a property masked
+    for the reader keeps its line, with no values and "masked for you"; a table its statements are refused over (a
+    query-backed entity's) keeps none of them either, and says why (`tables_held`). Unchanged, as written, when nothing
+    applies."""
+    if not schema:
+        return schema, {}
+    held_for = tables_held(connection_id)
+    if held_for is None:
+        return schema, {}
+    from aughor.db.schema_render import SAMPLE_MARK, ends_column_block
+    from aughor.sql.rls import bare_name
+    from aughor.util.prompt_safety import DATA_CLOSE, DATA_OPEN
+    samples = re.compile(re.escape(SAMPLE_MARK) + "(?:" + re.escape(DATA_OPEN) + ".*?" + re.escape(DATA_CLOSE) + "|.*$)")
+
+    out: list[str] = []
+    withheld: dict[str, list[str]] = {}
+    held: Optional[TableHeld] = None
+    for line in schema.splitlines(keepends=True):
+        text, end = line.rstrip("\n"), line[len(line.rstrip("\n")):]
+        head = _HEADER.match(text)
+        if head:
+            held = held_for(head.group(1))
+            if held is not None:
+                withheld[head.group(1)] = held.said
+                if held.rows:
+                    text = _ROW_COUNT.sub(f"(row count withheld for {held.who} — a row policy narrows its rows)", text,
+                                          count=1)
+                notes = [f"  -- {s.split(': ', 1)[1]}" for s in held.said if s.startswith(f"{head.group(1)}: ")]
+                out.append("\n".join([text, *notes]) + end)
+                continue
+        elif held is not None and ends_column_block(text):
+            held = None
+        if held is None:
+            out.append(line)
+            continue
+        rows, masked = held.rows, held.masked
+        values = _VALUE_LIST.match(text)
+        if values:
+            if not (rows or bare_name(values.group(1)) in masked):
+                out.append(line)
+            continue
+        column = _COLUMN.match(text)
+        if column and not text.strip().startswith("--"):
+            col = bare_name(column.group(1))
+            if rows or col in masked:
+                text = samples.sub("", text, count=1)
+            if col in masked:
+                text += f"  -- masked for you: {masked[col]}"
+            out.append(text + end)
+            continue
+        out.append(line)
+    return "".join(out), withheld
 
 
 def tenancy_words() -> Optional[str]:
@@ -192,7 +343,7 @@ def _admitted_keys(connection_id: str, entity, keys: set) -> Optional[set]:
 
 
 def history_as_read(connection_id: str, rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """``(shown, withheld)``: the edit history as the reader may read it (`ontology.security_sql`). A masked property's
+    """``(shown, withheld)``: the edit history as the reader may read it. A masked property's
     values are emptied and say why; an edit to an object outside the reader's rows is withheld, and each entity's
     withheld edits are counted and said. An edit to no object (a table's or a column's) is kept."""
     from aughor.ontology import security

@@ -1,19 +1,17 @@
 """JD-3 — bands, not batches, in `semantic_filter`'s cascade. Faux providers, no model call.
 
-The sampled cascade re-runs EVERY row on the champion when a sample disagrees. The banded path
-(flag `semops.banded_cascade` — GRADUATED default-ON 2026-09-21 on the receipts, with the env
-var as the kill switch) judges each row through JD-1's seam and spends the champion only on
-rows inside the uncertainty band. What is pinned:
+The sampled cascade re-ran EVERY row on the champion when a sample disagreed. The banded path
+(the flag `semops.banded_cascade` — GRADUATED default-ON 2026-09-21 on the receipts, made
+unconditional 2026-10-28 with the sampled path deleted, ROADMAP §3.65) judges each row through
+JD-1's seam and spends the champion only on rows inside the uncertainty band. What is pinned:
 
-* the kill switch (env "0"), or no cascade asked for: the code that ran before, untouched;
-* ON: confident rows are decided by the cheap tier, and only the uncertain ones reach the
+* no cascade asked for: no banding, the cheap tier's verdicts alone;
+* confident rows are decided by the cheap tier, and only the uncertain ones reach the
   champion — fewer champion questions than rows, which is the claim the receipt will price;
 * a row still uncertain after the champion is KEPT and named for a person, never guessed;
 * a cheap call that fails leaves its rows unanswered and escalated — not silently kept.
 """
 from __future__ import annotations
-
-import pytest
 
 from aughor.agent.state import QueryResult
 from aughor.semops import operators as ops
@@ -45,39 +43,14 @@ def _route(monkeypatch, cheap, champ):
                         lambda role="fast", **kw: champ if role == "coder" else cheap)
 
 
-@pytest.fixture
-def banded(monkeypatch):
-    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "1")
-
-
 # 10 rows: 0-3 confidently keep, 4-6 confidently drop, 7-9 uncertain.
 def _cheap_p(gi):
     return 0.95 if gi < 4 else 0.05 if gi < 7 else 0.5
 
 
-def test_on_by_default_since_graduation_and_the_kill_switch_restores_the_sampled_path(monkeypatch):
-    """The flag graduated to default-ON (2026-09-21, the user's flip on the receipts); the
-    env var stays as the operator's kill switch, and "0" must restore yesterday exactly."""
-    cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.9)
-    _route(monkeypatch, cheap, champ)
-    monkeypatch.delenv("AUGHOR_SEMOPS_BANDED_CASCADE", raising=False)
-    on = semantic_filter(_qr(10), "note", "keepers", validate_sample=4)
-    assert any("banded cascade" in n for n in on.notes), "unset env must mean ON now"
-
-    cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.9)
-    _route(monkeypatch, cheap, champ)
-    monkeypatch.setenv("AUGHOR_SEMOPS_BANDED_CASCADE", "0")
-    out = semantic_filter(_qr(10), "note", "keepers", validate_sample=4)
-    # Asserted by each path's OWN note, not by an exception: the old path swallows provider
-    # errors (it never raises into the query path), so "it raised" could not tell the paths
-    # apart, and any bug inside the banded code would have passed too.
-    assert any(n.startswith("champion cascade:") for n in out.notes)
-    assert not any("banded cascade" in n for n in out.notes)
-
-
-def test_no_cascade_asked_for_means_no_banding_even_with_the_flag_on(monkeypatch, banded):
-    """Banding replaces the SAMPLED cascade; where none was requested there is nothing to
-    replace, and the operator must behave exactly as before."""
+def test_no_cascade_asked_for_means_no_banding(monkeypatch):
+    """Banding is the cascade; where none was requested there is nothing to band, and the
+    operator judges with the cheap tier alone."""
     cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.9)
     _route(monkeypatch, cheap, champ)
     out = semantic_filter(_qr(10), "note", "keepers", validate_sample=0)
@@ -85,7 +58,7 @@ def test_no_cascade_asked_for_means_no_banding_even_with_the_flag_on(monkeypatch
     assert champ.calls == 0
 
 
-def test_only_the_uncertain_rows_reach_the_champion(monkeypatch, banded):
+def test_only_the_uncertain_rows_reach_the_champion(monkeypatch):
     cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.9)
     _route(monkeypatch, cheap, champ)
     out = semantic_filter(_qr(10), "note", "keepers", validate_sample=4)
@@ -95,7 +68,7 @@ def test_only_the_uncertain_rows_reach_the_champion(monkeypatch, banded):
     assert any("3 uncertain row(s)" in n and "instead of all 10" in n for n in out.notes)
 
 
-def test_a_row_still_uncertain_after_the_champion_is_kept_for_a_person(monkeypatch, banded):
+def test_a_row_still_uncertain_after_the_champion_is_kept_for_a_person(monkeypatch):
     cheap, champ = FakeJudge(_cheap_p), FakeJudge(lambda gi: 0.5)
     _route(monkeypatch, cheap, champ)
     out = semantic_filter(_qr(10), "note", "keepers", validate_sample=4)
@@ -104,8 +77,7 @@ def test_a_row_still_uncertain_after_the_champion_is_kept_for_a_person(monkeypat
     assert any("left for a person" in n and "[7, 8, 9]" in n for n in out.notes)
 
 
-def test_a_failed_cheap_call_escalates_its_rows_instead_of_keeping_them_blind(monkeypatch,
-                                                                            banded):
+def test_a_failed_cheap_call_escalates_its_rows_instead_of_keeping_them_blind(monkeypatch):
     cheap, champ = FakeJudge(fail=True), FakeJudge(lambda gi: 0.9 if gi % 2 == 0 else 0.1)
     _route(monkeypatch, cheap, champ)
     out = semantic_filter(_qr(6), "note", "keepers", validate_sample=4)

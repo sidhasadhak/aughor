@@ -1432,17 +1432,16 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
     read = reading_words(monitor, run)
     if alert is None:
         from aughor.monitors import recovery
-        if recovery.enabled():
-            # Arc TC, TC-4 — a quiet check says which it was: within its limit, or held back by the grace period; and
-            # the first check within its limit after an alert closes it, with one recovery, recorded and never sent.
-            said = outcome_words(monitor, run)
-            closing = recovery.recovery_alert(monitor, run)
-            if closing is not None:
-                append_alert(closing[0])
-                said += f" · recovered: {recovery.closes_words(closing[1])} (recorded here; a recovery is not sent)"
-            if said:
-                return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
-                                     message=said + (f" · {read}" if read else ""))
+        # Arc TC, TC-4 — a quiet check says which it was: within its limit, or held back by the grace period; and the
+        # first check within its limit after an alert closes it, with one recovery, recorded and never sent.
+        said = outcome_words(monitor, run)
+        closing = recovery.recovery_alert(monitor, run)
+        if closing is not None:
+            append_alert(closing[0])
+            said += f" · recovered: {recovery.closes_words(closing[1])} (recorded here; a recovery is not sent)"
+        if said:
+            return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
+                                 message=said + (f" · {read}" if read else ""))
         # What it read, said with the verdict (the Olist study, Gap 36): "no alert · read 848,860.1 (warning below 900,000)".
         return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
                              message="no alert" + (f" · {read}" if read else ""))
@@ -1896,19 +1895,16 @@ def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOut
 def _dispatch_expectations(effect: Effect, automation: Automation) -> EffectOutcome:
     """Arc ED, ED-3 — measure a table's expectations, read-only, and record each verdict in the quality plane.
 
-    The step carries names and values, never SQL (`quality.expectations.parse`), and each query counts what breaks an
+    The step carries names and values, never SQL (`quality/expectations.parse`), and each query counts what breaks an
     expectation — never the rows — through the connection's own door, audited as a stored definition's read. A verdict
     lands in the one results store, which an answer's caveats, the MCP table-health tool and the Briefing already read;
     an expectation that could not be measured is said here and recorded as nothing, because an unreadable query is not
-    a table that failed. Behind ``quality.expectations`` (off: skipped, and said).
+    a table that failed.
     """
     from aughor.quality import expectations as X
     from aughor.quality.rules import RuleError
 
     target = automation.conn_id
-    if not X.enabled():
-        return EffectOutcome(kind=effect.kind, target=target, status="skipped",
-                             message="the expectations step is off on this install (quality.expectations)")
     try:
         rules = X.parse(effect.expectations)
     except RuleError as exc:
@@ -2166,16 +2162,17 @@ def _walk_automation(
     started = now.isoformat().replace("+00:00", "Z")
     t0 = _time.monotonic()
     dispatch_fn = dispatch or default_dispatch
-    # TC-3 — with `automations.versions` on, a RECORDED run keeps beside its row the version it
-    # ran under and the trigger that started it: the tick, who asked, each condition's verdict
-    # and the payload a trigger handed the chain. Never on a preview or a replay (`persist` is
-    # off for both), and never on a resume — the run's first walk kept its stamp.
+    # TC-3 — a RECORDED run keeps beside its row the version it ran under and the trigger that
+    # started it: the tick, who asked, each condition's verdict and the payload a trigger handed
+    # the chain. Never on a preview or a replay (`persist` is off for both), and never on a
+    # resume — the run's first walk kept its stamp.
     kept: Optional[dict] = None
     if persist and not resume:
-        from aughor.automations.versions import keeping, version_for_run
-        if keeping():
-            kept = {"version": version_for_run(automation),
-                    "trigger": {"at": started, "via": via if manual else "tick"}}
+        from aughor.automations.versions import asked_by, version_for_run
+        kept = {"version": version_for_run(automation),
+                "trigger": {"at": started, "via": via if manual else "tick",
+                            # who asked: the person a "Run now" was pressed by — the request's actor
+                            **({"by": by} if manual and via == "hand" and (by := asked_by()) else {})}}
 
     def _finish(run: AutomationRun, *, finished: bool = True) -> AutomationRun:
         elapsed_ms = int((_time.monotonic() - t0) * 1000) + int(

@@ -2,8 +2,8 @@
 
 Under the ``/doors/`` prefix the API's own key does not reach (`api.py:_AUTH_EXEMPT`): a mail provider cannot present
 it. The door checks its own credential instead — the install's inbound secret, as an ``X-Aughor-Inbound-Secret`` header
-or the password of HTTP basic auth (what a provider's webhook URL can carry) — and answers 404 while
-``arrivals.email`` is off, as a door that does not exist would.
+or the password of HTTP basic auth (what a provider's webhook URL can carry). While the install sets no inbound domain
+or no secret it takes no mail, and answers 503 saying which is missing.
 """
 from __future__ import annotations
 
@@ -31,8 +31,9 @@ def _credential(request: Request) -> str:
 async def receive_email(request: Request) -> dict:
     """One mail sent to a decision's address: an approval, a dissent or evidence, decided by code — said which."""
     from aughor.record import email_door as E
-    if not E.door_on():
-        raise HTTPException(status_code=404, detail="Not Found")
+    closed = E.door_closed()
+    if closed:
+        raise HTTPException(status_code=503, detail=closed)
     if not E.secret_ok(_credential(request)):
         raise HTTPException(status_code=401, detail="the inbound secret is missing or wrong")
     try:

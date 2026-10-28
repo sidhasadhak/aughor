@@ -22,14 +22,14 @@ describe("the metrics dashboard while a new period is read", () => {
   it("says which period is being read, dims the old figures, and clears when the new ones arrive", async () => {
     api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
     api.measureRange.mockResolvedValueOnce({ period: block("k1", "September 2026", "$300"), from_briefing: false, measured_at: "2026-10-08T10:00:00Z", scope_key: "c" });
-    const view = render(<MetricsDashboard connectionId="c" rangesOn value={{ preset: "previous_month" }} onChange={() => {}} />);
+    const view = render(<MetricsDashboard connectionId="c" value={{ preset: "previous_month" }} onChange={() => {}} />);
     // the figure on its card (the full table, behind Details, holds it too)
     expect(await within(await screen.findByTestId("dashboard-figures")).findByText("$300")).toBeTruthy();
     expect(screen.getByTestId("dashboard-range").textContent).toBe("September 2026 · final");
 
     let arrive: (v: unknown) => void = () => {};
     api.measureRange.mockReturnValueOnce(new Promise(r => { arrive = r; }));
-    view.rerender(<MetricsDashboard connectionId="c" rangesOn value={{ preset: "current_week" }} onChange={() => {}} />);
+    view.rerender(<MetricsDashboard connectionId="c" value={{ preset: "current_week" }} onChange={() => {}} />);
     expect(await screen.findByText("Loading the metrics for Current week…")).toBeTruthy();
     expect(screen.getByTestId("dashboard-range").textContent).toBe("Current week · reading…");
     expect(screen.getByTestId("metrics-body").getAttribute("aria-busy")).toBe("true");
@@ -53,7 +53,7 @@ describe("the metrics dashboard when the data cannot be reached (LuxExperience, 
   it("says the data could not be reached — never a metric to approve or date — and reads again on Try again", async () => {
     api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
     api.measureRange.mockResolvedValueOnce({ period: down, from_briefing: false, measured_at: "2026-10-23T04:16:10Z", scope_key: "c" });
-    render(<MetricsDashboard connectionId="c" rangesOn value={{ preset: "previous_month" }} onChange={() => {}} />);
+    render(<MetricsDashboard connectionId="c" value={{ preset: "previous_month" }} onChange={() => {}} />);
     const said = await screen.findByTestId("metrics-unreachable");
     expect(said).toHaveTextContent("The data could not be reached, so nothing was measured — the connection could not be opened (OperationalError).");
     expect(said).toHaveTextContent("No metric needs anything from you");

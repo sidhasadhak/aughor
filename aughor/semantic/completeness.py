@@ -1,4 +1,4 @@
-"""How complete an object read is (Arc ED, ED-6; ROADMAP §3.58), behind ``objects.completeness``.
+"""How complete an object read is (Arc ED, ED-6; ROADMAP §3.58).
 
 An answer owes its reader whether it holds everything it was asked for, and what it left out. Aughor's object
 doors carried one boolean, and on the query door it could not be true: every connection hands back at most
@@ -13,20 +13,14 @@ read reached its reader as complete. Here every object door says one typed thing
 
 ``shown`` is how many came back, ``of`` how many there are when the door counted them (a listing's ``total``), and
 ``took_ms`` how long the read took. Withheld is said, never implied: an empty or a cut answer that does not say so
-teaches its reader the data ends there. Off: no door carries it, and each answers as before.
+teaches its reader the data ends there.
 """
 from __future__ import annotations
 
 import time
 from typing import Iterable, Optional
 
-FLAG = "objects.completeness"
 STATES = ("complete", "truncated", "withheld", "refused")
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 class Clock:
@@ -74,7 +68,7 @@ def refused(reason: str, clock: Clock) -> dict:
 
 
 def policy_words(graph, entity_ids: Iterable[str]) -> list[str]:
-    """What each row policy that narrowed a read tells its reader (`ontology.security.rows_said`)."""
+    """What each row policy that narrowed a read tells its reader (`ontology/security.rows_said`)."""
     from aughor.ontology.security import rows_said
     out = []
     for eid in entity_ids:
