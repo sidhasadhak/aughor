@@ -27,9 +27,9 @@ reasoning lives in the wave arc docs under `docs/`.
   of the platform; work that is not ready stays on its branch, and is shown working on live
   data before its PR. The only switches are an organisation's settings
   (`aughor/orgsettings/allows.py`) — data leaving the install, model work nobody asked for,
-  a governance posture — each off by default, an admin's choice, tested both ways. The flags
-  still registered are on their way out: `ALWAYS_ON` until each off path is deleted, and the
-  last few switches until their own live check.
+  a governance posture — each off by default, an admin's choice, tested both ways. Since
+  2026-10-28 no feature flag is registered: the machinery (`aughor/kernel/flags.py`) stays,
+  exercised only by test-only flags, so a new one is a decision, not a habit.
 - **One store per concept.** This repo has three times found the same bug: five
   mutually-unaware eval surfaces, thirteen spellings of "out of date", five audit sinks.
   Before adding a store, search for the four that already do most of what you want.

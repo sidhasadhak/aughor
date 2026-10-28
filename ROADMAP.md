@@ -12776,9 +12776,38 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
   Settings ▸ Organization ▸ *What Aughor may do*); one never set reads the former flag's variable and the screen says
   so. `federation.planner` kept, through its own doors only — `/ask` no longer sends a fresh turn to it.
   `grounding.data_profiles` deleted by its own falsifier (§3.38). `AGENTS.md`'s flag invariant replaced.
-- **Stage 2, not built:** delete each always-on flag's off path and off tests, area by area; `explore.route_wide` and
-  `judgment.shadow_treatment` deleted (the eval plane's tests take a synthetic flag); the ten off today checked live,
-  one by one; the four set-up features say what is missing where they would appear.
+- **Stage 2, built 2026-10-28** (the user: *"go on to stage 2 first and put it all live together"*) — every flag is
+  gone; the registry holds none, `/system/flags` answers `{}`, and the machinery stays exercised by test-only flags.
+  - **Deleted outright:** `explore.route_wide` and the treatment shadow (`5bd89e70`); `grounding.data_profiles` by its
+    own clean run (§3.38).
+  - **The 63 always-on, area by area, each with the full suite green:** dashboards (`4dfe0354`), sheets (`1d954523`),
+    ontology (`5d413fdd`), metrics and the Briefing (`071333ec`), answering (`1f03f176`), operations (`45f712b0`), and
+    the four that wait on their setup (`1ee73d2a`), each now saying what is missing where it would appear — a decision's
+    email address is shown only once the inbound domain and secret are set, the Google file field names the missing
+    OAuth client, the Slack supervisor reads "Waiting on setup", a document search names the store that is down.
+  - **The ten off in the live install, each checked on live data first** (`308088f6`). On live theLook:
+    `objects.completeness` (a read past the cap says "truncated — the first 1,000 rows…", a small one "complete", the
+    contract describes it) and `quality.expectations` (a step read "orders: 2 of 2 expectations met; 1 could not be
+    measured: ghost column", and the table-health door "All 2 checks passing"); `ontology.impacts_only`'s old causal
+    door answers 410, and its alert summary is read after the deploy — that door had never served (it sat behind
+    `/monitors/{monitor_id}`; fixed `6bfb6daa`). In-process over the samples data with stand-in people: object security
+    (three readers see 3,300 · 1,100 · 0 orders, each told why; all 19 assertions fail with enforcement off), security in
+    answers (one count, 3,300, through the object door, the SQL editor and a real quick answer — 6 calls on
+    claude-haiku-5-5, 70,416 tokens in), outside programs as their own principals, readers keeping a dashboard's
+    published version ([2, 2, 2, 5] read of [2, 5] published), alerts closing on recovery, automation versions and
+    replays (a replay sent, ran and wrote nothing). The two soak receipts (two and four weeks of use) were taken as
+    working checks.
+  - **What the checks found, fixed before the ten went** (`09aae58f`, a failing test each): the model was handed row
+    counts, masked values and rows outside a reader's policy (the converse schema tools, and the quick body's Data
+    Catalog, which read samples with the policy door bypassed and cached them with no reader in the key); a policy
+    refusal was retried as a type mismatch and never said to the reader; a principal's grant was escaped through
+    links; a refusal at the organisation's level check was audited with no principal; `/dashboards/from-object`
+    ignored an acting agent and left a masked figure out unsaid; a listing's completeness named no masked property; a
+    person's Run now kept no asker.
+  - **Named, not fixed:** publishing a release clears neither `forget_declared` nor the schema cache (a declaration
+    can take ~30 s to reach the trust checks); `ensure_first_release` writes outside `tolerate`; `/objects/catalog`,
+    `/object-types` and `/object-paths` describe entities outside a principal's grant, and an action on one is still
+    described; the quick prompt's "connection graph" of stored findings was not measured against a row policy.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

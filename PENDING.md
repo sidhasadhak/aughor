@@ -953,5 +953,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     ✅ *Calls taken 2026-10-28* (the user: *"All okay, except that lets keep federation.planner"*) — ROADMAP §6 item 57.
     **Stage 1 BUILT** the same day (ROADMAP §3.65): 63 flags always on and gone from Settings; four organisation settings
     in Settings ▸ Organization; the planner kept through its doors; the data profile block deleted by its own run.
-    **Open (stage 2):** each always-on flag's off path deleted, area by area; `explore.route_wide` and
-    `judgment.shadow_treatment` deleted; the ten off today checked live; the set-up four say what is missing.
+    ✅ **Stage 2 BUILT 2026-10-28** (ROADMAP §3.65): every flag deleted — the 63 area by area, the ten off live each
+    checked on live data first with what the checks found fixed, the set-up four saying what is missing; the registry
+    holds none. Open: live (with the alert summary's impacts read on theLook after the deploy), and the named gaps in
+    §3.65.
