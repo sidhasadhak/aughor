@@ -130,23 +130,17 @@ _FILTER_SYS = (
 )
 
 
-# ── Champion-model cost/quality cascade (Palimpzest/LOTUS-style) ──────────────────
-# The semops run on the cheap ``fast`` tier. When validation is on, a small spread sample of a
-# filter's verdicts is re-judged by the strong "champion" tier; if they disagree beyond a bar,
-# the cheap tier is untrusted on this batch and the WHOLE batch is re-run on the champion —
-# buying accuracy where the cheap model is wrong, at the cost of one extra sample call per op.
-# (This is the deterministic, label-free "champion" quality estimator; a full LOTUS calibrated-
-# threshold cascade with statistical guarantees is the future extension.)
+# ── Champion-model cost/quality cascade — JD-3, bands, not batches ───────────────
+# The semops run on the cheap ``fast`` tier. When validation is asked for, the cheap tier judges
+# each row through JD-1's seam (`aughor/judgment/seam.py`), so each row carries its own stated
+# probability, and the strong "champion" tier is spent ONLY on rows inside the uncertainty band.
+# The band lives HERE, in code, never in the model. A row still inside it after the champion is
+# KEPT (this operator never silently drops a row) and NAMED for a person, rather than guessed.
+# Part of the platform since 2026-10-28 (it was the flag `semops.banded_cascade`, ROADMAP §3.65):
+# the sampled cascade it replaced — a spread sample re-judged by the champion, and EVERY row re-run
+# there when the sample disagreed — is deleted; `evals/semops_band_eval.py` keeps it as its
+# measured baseline.
 CHAMPION_ROLE: Role = "coder"        # the strong tier, vs DEFAULT_ROLE = "fast"
-_CHAMPION_ESCALATE = 0.20            # sample disagreement above this → re-run the batch on the champion
-
-# ── JD-3 — bands, not batches (flag `semops.banded_cascade`, default OFF) ───────────
-# The sampled cascade above re-runs EVERY row on the champion when a sample disagrees — paying the
-# strong tier for the rows the cheap tier already had right. The banded path judges each row
-# through JD-1's seam (`aughor/judgment/seam.py`), so each row carries its own stated probability,
-# and spends the champion ONLY on rows inside the uncertainty band. The band lives HERE, in code,
-# never in the model. A row still inside it after the champion is KEPT (this operator never
-# silently drops a row) and NAMED for a person, rather than guessed.
 _BAND_LO, _BAND_HI = 0.30, 0.70
 
 
@@ -196,7 +190,7 @@ def _banded_verdicts(rows: list, ci: int, predicate: str, provider, batch: int,
     own probability — so a row is not read out of a shared list its neighbours can shift, and a
     failed call makes those rows explicitly unanswered rather than silently kept.
 
-    The rows ride in the STATE, once, in the same ``[index] text`` listing the sampled path
+    The rows ride in the STATE, once, in the same ``[index] text`` listing the uncascaded path
     sends; each question is a short reference to its row. The first cut put every row's text
     inside its question, which the request then carried twice (prompt AND schema) — measured at
     ~4x today's batch call, the exact spend JD-3 exists to cut (cf695915)."""
@@ -274,8 +268,8 @@ def semantic_filter(
 ) -> SemanticOpResult:
     """Keep only the rows whose ``column`` text satisfies the natural-language ``predicate``.
 
-    With ``validate_sample > 0`` a spread sample of the cheap tier's verdicts is checked against
-    the ``champion_role`` tier and the whole batch is escalated on disagreement (see the note above)."""
+    With ``validate_sample > 0`` the banded cascade runs: the cheap tier states a probability per row
+    and only the rows it is unsure of go to the ``champion_role`` tier (see the note above)."""
     if result.error:
         return SemanticOpResult(result, "filter", column, 0, 0, False, [f"upstream SQL error: {result.error}"])
 
@@ -292,46 +286,19 @@ def semantic_filter(
 
     rows = result.rows
     notes = _materialized_note(result)
-    all_idx = list(range(len(rows)))
-    # JD-3: only where the sampled cascade would have run. With the flag off, or no cascade asked
-    # for, the code below is the code that ran before — byte-identical.
     if validate_sample > 0 and rows and role != champion_role:
-        from aughor.kernel.flags import flag_enabled
-        if flag_enabled("semops.banded_cascade"):
-            # JD-5: with `semops.jev_cheap_tier` on AND configured, the cheap tier is Jev
-            # with the house tier as its fallback; otherwise exactly the provider below.
-            from aughor.judgment.jev import cheap_judge_for
-            cheap, jev_note = cheap_judge_for(get_provider(role))
-            if jev_note:
-                notes.append(jev_note)
-            return _banded_filter(result, rows, ci, column, predicate, notes,
-                                  cheap=cheap, champ=get_provider(champion_role),
-                                  role=role, champion_role=champion_role, batch=batch)
-    kept, llm_calls, fnotes = _filter_verdicts(rows, ci, predicate, get_provider(role), batch, all_idx)
+        # JD-5: with `outside_row_model` allowed AND configured, the cheap tier is Jev with the
+        # house tier as its fallback; otherwise exactly the provider below.
+        from aughor.judgment.jev import cheap_judge_for
+        cheap, jev_note = cheap_judge_for(get_provider(role))
+        if jev_note:
+            notes.append(jev_note)
+        return _banded_filter(result, rows, ci, column, predicate, notes,
+                              cheap=cheap, champ=get_provider(champion_role),
+                              role=role, champion_role=champion_role, batch=batch)
+    kept, llm_calls, fnotes = _filter_verdicts(rows, ci, predicate, get_provider(role), batch,
+                                               list(range(len(rows))))
     notes.extend(fnotes)
-
-    if validate_sample > 0 and rows and role != champion_role:
-        k = min(validate_sample, len(rows))
-        step = max(1, len(rows) // k)
-        sample_idx = all_idx[::step][:k]            # evenly spread, deterministic
-        champ = get_provider(champion_role)
-        champ_kept, champ_calls, _ = _filter_verdicts(rows, ci, predicate, champ, batch, sample_idx)
-        llm_calls += champ_calls
-        disagree = sum(1 for gi in sample_idx if (gi in kept) != (gi in champ_kept))
-        rate = disagree / len(sample_idx)
-        if rate > _CHAMPION_ESCALATE:
-            kept, esc_calls, esc_notes = _filter_verdicts(rows, ci, predicate, champ, batch, all_idx)
-            llm_calls += esc_calls
-            notes.extend(esc_notes)
-            notes.append(
-                f"champion cascade: {rate:.0%} sample disagreement > {_CHAMPION_ESCALATE:.0%} — "
-                f"escalated all {len(rows)} rows to {champion_role}"
-            )
-        else:
-            notes.append(
-                f"champion cascade: validated {len(sample_idx)} rows, {rate:.0%} disagreement — "
-                f"cheap tier ({role}) trusted"
-            )
 
     keep_idx = sorted(kept)
     kept_rows = [rows[i] for i in keep_idx]

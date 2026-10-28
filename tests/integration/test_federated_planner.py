@@ -60,22 +60,12 @@ def _fake_planner(monkeypatch, plan: FederatedPlan):
 
 # ── the endpoint ─────────────────────────────────────────────────────────────
 
-def test_federated_answer_is_open_without_any_setting(client: TestClient, monkeypatch):
-    """Kept always on (the user, 2026-10-28: "We may need cross querying across connections in the future"):
-    the door answers with nothing set — here refusing one connection, as it would with the variable on."""
-    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-    resp = client.post("/query/federated-answer", json={"question": "x", "conn_ids": ["only-one"]})
-    assert resp.status_code == 400
-
-
-def test_federated_answer_requires_at_least_two_connections(client: TestClient, monkeypatch):
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+def test_federated_answer_requires_at_least_two_connections(client: TestClient):
     resp = client.post("/query/federated-answer", json={"question": "x", "conn_ids": ["only-one"]})
     assert resp.status_code == 400
 
 
 def test_federated_answer_two_sources(client: TestClient, monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     cids = _two_sources(tmp_path)
     _fake_planner(monkeypatch, FederatedPlan(steps=[
         FederatedStep(source=0, sql="SELECT order_id, cust, amount FROM orders ORDER BY order_id", join_key="cust"),
@@ -98,7 +88,6 @@ def test_federated_answer_passes_the_post_execution_gate_on_every_source(client:
     """Every read of the fold runs under a plumbing label, so the answer itself passes PII redaction and the audit,
     on each connection it read (Arc ON leftovers, F7)."""
     from aughor.security.audit import AuditLogger
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     lp = _duck_file(tmp_path / "orders_pii.duckdb",
                     "CREATE TABLE orders (order_id INT, cust VARCHAR)",
                     "INSERT INTO orders VALUES (1,'C1'),(2,'C2')")
@@ -125,7 +114,6 @@ def test_federated_answer_joins_on_a_key_that_looks_like_pii_before_redacting(cl
                                                                               tmp_path):
     """The driver's read is plumbing, so an email key meets the other source's rows; only the answer is redacted
     (Arc ON leftovers, F7). Redacted per read, the driver's keys became `[REDACTED]` and met nothing."""
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     lp = _duck_file(tmp_path / "orders_email.duckdb",
                     "CREATE TABLE orders (order_id INT, email VARCHAR)",
                     "INSERT INTO orders VALUES (1,'alice@example.com'),(2,'bob@example.com')")
@@ -147,7 +135,6 @@ def test_federated_answer_joins_on_a_key_that_looks_like_pii_before_redacting(cl
 
 
 def test_federated_answer_three_sources_chain(client: TestClient, monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     cids = _three_sources(tmp_path)
     _fake_planner(monkeypatch, FederatedPlan(steps=[
         FederatedStep(source=0, sql="SELECT order_id, cust FROM orders ORDER BY order_id", join_key="cust"),
@@ -168,7 +155,6 @@ def test_federated_answer_three_sources_chain(client: TestClient, monkeypatch, t
 
 
 def test_federated_answer_surfaces_plan_validation_issues(client: TestClient, monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     cids = _two_sources(tmp_path)
     # step 1's left_key 'nope' is not a column of the assembled driver result → caught, no execution
     _fake_planner(monkeypatch, FederatedPlan(steps=[
@@ -202,9 +188,7 @@ def test_validate_plan_flags_source_index_out_of_range(tmp_path):
     assert any("out of range" in i for i in validate_plan(plan, cids))
 
 
-def test_auto_federated_answer_is_open_without_any_setting(client: TestClient, monkeypatch):
-    """Kept always on (ROADMAP §3.65): with nothing set the door answers — here refusing one candidate, by name."""
-    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
+def test_auto_federated_answer_requires_at_least_two_candidates(client: TestClient):
     resp = client.post("/query/auto-federated-answer", json={"question": "x", "conn_ids": ["only-one"]})
     assert resp.status_code == 400 and "at least two" in resp.text
 
@@ -212,7 +196,6 @@ def test_auto_federated_answer_is_open_without_any_setting(client: TestClient, m
 def test_auto_federated_answer_selects_connections_then_joins(client: TestClient, monkeypatch, tmp_path):
     """The user names NO connections a question spans — the deterministic selector picks the relevant
     subset (dropping the irrelevant products source), and the planner answers over exactly those."""
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     a = _duck_file(tmp_path / "ao.duckdb", "CREATE TABLE orders (order_id INT, cust VARCHAR, amount INT)",
                    "INSERT INTO orders VALUES (1,'C1',100),(2,'C2',50)")
     b = _duck_file(tmp_path / "ac.duckdb", "CREATE TABLE customers (cust VARCHAR, region VARCHAR)",
@@ -241,10 +224,9 @@ def test_auto_federated_answer_selects_connections_then_joins(client: TestClient
     assert "region" in data["columns"]
 
 
-def test_auto_federated_answer_single_source_is_not_federated(client: TestClient, monkeypatch, tmp_path):
+def test_auto_federated_answer_single_source_is_not_federated(client: TestClient, tmp_path):
     """A question that sits in ONE source must NOT be handed to the cross-database planner — the endpoint
     reports single_source routing instead (no federated LLM call)."""
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     cids = _two_sources(tmp_path)   # orders(order_id,cust,amount) + customers(cust,region)
     # provider NOT faked — if the planner were (wrongly) invoked, the test would hit the real LLM/fail
     resp = client.post("/query/auto-federated-answer",
@@ -257,8 +239,7 @@ def test_auto_federated_answer_single_source_is_not_federated(client: TestClient
     assert data["plan"] is None and data["row_count"] == 0
 
 
-def test_auto_federated_answer_422_when_no_connection_relevant(client: TestClient, monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+def test_auto_federated_answer_422_when_no_connection_relevant(client: TestClient, tmp_path):
     cids = _two_sources(tmp_path)
     resp = client.post("/query/auto-federated-answer",
                        json={"question": "the meaning of life", "conn_ids": cids})
@@ -277,7 +258,6 @@ def test_validate_plan_passes_a_good_plan(tmp_path):
 def test_collision_chain_validates_faithfully_and_joins_correctly(client: TestClient, monkeypatch, tmp_path):
     """A shared NON-driver column name ('region') across a 3-source chain: validate mirrors the engine's
     _uniquify so it passes truthfully, and — because 'region' is the join key — the fold is correct."""
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     a = _duck_file(tmp_path / "o.duckdb", "CREATE TABLE orders (order_id INT, region VARCHAR)",
                    "INSERT INTO orders VALUES (1,'EU'),(2,'US')")
     b = _duck_file(tmp_path / "s.duckdb", "CREATE TABLE stores (store VARCHAR, region VARCHAR)",

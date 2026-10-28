@@ -128,12 +128,11 @@ def doors_for(agent, *, public_api: str = "", public_web: str = "") -> dict[str,
                 "card": f"{api}/.well-known/agent.json" if api else "/.well-known/agent.json",
                 "url": f"{api}/doors/a2a/{agent.id}" if api else f"/doors/a2a/{agent.id}"},
     }
-    # Arc FA, FA-7 — the grounding read, listed only while `agents.grounding_read` is on (off: the list is as it was).
+    # Arc FA, FA-7 — the grounding read.
     from aughor.custom_agents.grounding_read import door_state
-    grounding = door_state(agent, issued=bool(issued))
-    if grounding is not None:
-        doors["grounding"] = {**grounding, "url": f"{api}/doors/agents/{agent.id}/grounding" if api
-                              else f"/doors/agents/{agent.id}/grounding"}
+    doors["grounding"] = {**door_state(agent, issued=bool(issued)),
+                          "url": f"{api}/doors/agents/{agent.id}/grounding" if api
+                          else f"/doors/agents/{agent.id}/grounding"}
     return doors
 
 

@@ -1166,11 +1166,7 @@ async def query_federated_answer(body: _FederatedAnswerRequest, request: Request
     One LLM call grounds every schema and emits a structured plan (an ordered list of grounded
     per-source sub-queries + link keys — the planner also picks the driver and chain order); the plan
     is validated deterministically and folded through the batched-foreach engine. Returns the merged
-    result plus the plan and any validation issues (inspectable). Flag-gated on `federation.planner`
-    (default off → 404)."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("federation.planner"):
-        raise HTTPException(status_code=404, detail="federated planner is not enabled")
+    result plus the plan and any validation issues (inspectable)."""
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
     if len(body.conn_ids) < 2:
@@ -1209,10 +1205,7 @@ async def query_auto_federated_answer(body: _AutoFederatedRequest, request: Requ
     A deterministic selector (lexical schema-relevance + greedy set-cover — no LLM) picks the subset of
     the candidate connections the question touches, then the federated planner answers over exactly those.
     Returns the answer plus the `selection` (which connections and the terms each grounded) so the routing
-    is inspectable. Flag-gated on `federation.planner` (default off → 404)."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("federation.planner"):
-        raise HTTPException(status_code=404, detail="federated planner is not enabled")
+    is inspectable."""
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
     if len(body.conn_ids) < 2:

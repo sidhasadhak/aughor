@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { getConnections, getSystemFlags, listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
+import { getConnections, listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
 import { doorFor, isPlainSend } from "@/lib/chatDoors";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
@@ -829,19 +829,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     requestMode?: "investigate" | "explore"; purpose?: string;
   }
 
-  // PENDING item 15 — read once; off (the default) leaves every turn's body as it always was.
-  const [buttonsReachAgent, setButtonsReachAgent] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    // a thrown read (an older server, a test double) means off — never a broken panel
-    Promise.resolve().then(() => getSystemFlags())
-      .then(f => {
-        if (!alive) return;
-        setButtonsReachAgent(!!f?.["chat.buttons_reach_agent"]?.value);
-      })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
   // Arc FA-2 — what a dashboard handed over as the question's subject
   const handed = useAskSubject();
   // a subject chosen on another connection is not this conversation's to send
@@ -858,14 +845,14 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // The turn's initial mode drives the loading UI until the router's `route`
     // receipt corrects it; a starter's requestMode always routes deep.
     const initialMode: "ask" | "investigate" = m === "investigate" || opts.requestMode ? "investigate" : "ask";
-    // PENDING item 15 — with `chat.buttons_reach_agent` on, Quick and Agent go through `/ask`
-    // (the conversation agent and its ontology tools); off, the body is exactly as before.
+    // PENDING item 15 — Quick and Agent go through `/ask` (the conversation agent and its
+    // ontology tools).
     // Arc FA-2 — a plain question with a subject goes through `/ask`, the one door that reads one: Quick at quick
     // depth, Agent at deep, as the buttons reach it; a send carrying more than a question keeps its own door.
     const about = subject && isPlainSend(opts) ? subject : null;
     const door = about
       ? { mode: "auto" as const, depth: opts.depth ?? (m === "ask" ? "quick" as const : m === "auto" ? "auto" as const : "deep" as const) }
-      : doorFor(m, opts.depth ?? "auto", buttonsReachAgent, isPlainSend(opts));
+      : doorFor(m, opts.depth ?? "auto", isPlainSend(opts));
     void sendMessage(
       { text: question, metadata: { mode: initialMode } },
       { body: {
@@ -887,7 +874,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
         ...(about ? { focus: focusOf(about) } : {}),
       } },
     );
-  }, [busy, status, sdkStop, cancelActiveRun, clearError, sendMessage, agentId, buttonsReachAgent, subject]);
+  }, [busy, status, sdkStop, cancelActiveRun, clearError, sendMessage, agentId, subject]);
 
   const stop = useCallback(() => { cancelActiveRun(); sdkStop(); }, [cancelActiveRun, sdkStop]);
 

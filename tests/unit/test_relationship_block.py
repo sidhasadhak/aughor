@@ -129,8 +129,9 @@ def test_relationship_lines_survive_schema_linking():
         "TABLE: customers (10 rows)\n  customer_id  INTEGER\n  name  VARCHAR\n\n"
         + block + "\n"
     )
+    # past the budget, or the schema is sent whole (full schema first) and nothing is filtered
     out = link_schema("total order amount by customer name", schema,
-                      top_k_tables=1, top_k_cols=2)
+                      top_k_tables=1, top_k_cols=2, char_budget=100)
     assert out != schema                      # the linker actually filtered
     assert "- orders.customer_id → customers.customer_id [N:1, verified, 97% key overlap]" in out
 

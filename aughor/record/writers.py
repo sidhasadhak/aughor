@@ -95,11 +95,11 @@ def book_answer_observation(*, kind: str, natural_key: str, receipt_id: str, con
     if kind == CHAT_ANSWER_KIND:
         try:
             from aughor.answer import recheck
-            if recheck.enabled() and recheck.can_recheck(sql):
+            if recheck.can_recheck(sql):
                 next_check = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=1)).date().isoformat()
-                falsifier = ("the answer's own query, re-run daily for 14 days (answers.recheck): a number "
+                falsifier = ("the answer's own query, re-run daily for 14 days (the daily re-check): a number "
                              "that moves past the noise band restates this claim")
-            elif recheck.enabled():
+            else:
                 falsifier = ("not re-checked: the query reads the clock, so re-running it measures "
                              "another window")
         except Exception as exc:  # noqa: BLE001 — the falsifier is a note; the claim books without it

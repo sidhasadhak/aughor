@@ -11151,7 +11151,7 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     from aughor.agent.prompts_investigate import ADASynthesisModel
     concluded = state.get("_analyst_conclude") or {}
     if (concluded.get("headline") or "").strip():
-        # P1 (`analyst.conclude`) — the analyst named its own headline and answer; nothing to cut.
+        # P1 (`conclude`) — the analyst named its own headline and answer; nothing to cut.
         headline, body = concluded["headline"].strip(), (concluded.get("answer") or conclusion).strip()
         if (concluded.get("gaps") or "").strip():
             body = f"{body}\n\n{concluded['gaps'].strip()}".strip()

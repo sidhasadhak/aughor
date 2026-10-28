@@ -20,11 +20,10 @@ vi.mock("@/lib/useAughorChat", () => ({
   }),
 }));
 
-const flags = vi.hoisted(() => ({ value: {} as Record<string, { value: boolean }> }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getConnections: vi.fn(async () => []),
-  getSystemFlags: vi.fn(async () => flags.value),
+  getSystemFlags: vi.fn(async () => ({})),
   listUserAgents: vi.fn(async () => []),
   recordOverviewDrill: vi.fn(),
   cancelActiveDeepRun: vi.fn(),
@@ -37,7 +36,6 @@ const TICKED: AskSubject = { kind: "objects", connectionId: "thelook", noun: nou
 
 beforeEach(() => {
   sent.length = 0;
-  flags.value = { "chat.buttons_reach_agent": { value: true } };
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ suggestions: [], starters: [] }), { status: 200 })));
 });
 afterEach(() => {

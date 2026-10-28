@@ -737,21 +737,6 @@ def ground_answer_numbers(answer: str, rows: list, *, question: str = "",
     }
 
 
-def converse_available() -> bool:
-    """Whether the converse body may serve a turn (`ask.converse`, on by default since SP-14).
-
-    Read at CALL time, never at import: a module-level read makes the flag unflippable
-    in a running process and silently turns `monkeypatch.setenv` into a no-op — the trap
-    that once had tests spending the real LLM budget.
-
-    PENDING item 17: the conversation and the analyst are tool loops, so a coder binding
-    that cannot make a tool call cannot serve them — the quick body and the phase script
-    answer instead, exactly as with the flag off.
-    """
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ask.converse") and binding_calls_tools()
-
-
 #: Coder bindings — ``(backend, model)`` — that refused a tool call in this process. Held in
 #: memory like a quota cooldown: the refusal is the binding's own answer, and asking again
 #: on every turn would open each one with the same error.
@@ -773,7 +758,13 @@ def tools_unsupported(exc: BaseException) -> bool:
 def binding_calls_tools() -> bool:
     """False when the coder binding is known not to call tools: its model declares no tool
     calling (``model_supports_tools`` is False — never merely unknown), or it refused a tool
-    call in this process (`remember_tools_refused`)."""
+    call in this process (`remember_tools_refused`).
+
+    PENDING item 17: the conversation and the analyst are tool loops, so a coder binding
+    that cannot make a tool call cannot serve them — the quick body and the phase script
+    answer instead. This is the whole of whether the converse body may serve a turn since
+    the flag `ask.converse` was made unconditional (2026-10-28, ROADMAP §3.65). Read at CALL
+    time, never at import, so a test that patches it reaches the bodies that need no tools."""
     from aughor.llm.provider import model_supports_tools, resolve_binding
     try:
         backend, model, _ = resolve_binding("coder")

@@ -161,7 +161,7 @@ export interface AnswerReport {
   closing_summary?: string | null;
   /** IP-1 — the Verifier's rule-outs for the move this report states; absent when it states none. */
   rule_outs?: RuleOuts | null;
-  /** P1 (`analyst.conclude`) — the answer's own structure: the results it cites, in order, each with its
+  /** P1 (the analyst's `conclude`) — the answer's own structure: the results it cites, in order, each with its
    *  claim; the figures it rests on; what the data could not answer. A report that carries `exhibits` is
    *  drawn by `ConcludedBody`; every other report renders exactly as before. */
   exhibits?: { finding_id: string; claim: string }[] | null;
@@ -505,7 +505,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
   );
 }
 
-// ── The concluded body (P1, `analyst.conclude`) ────────────────────────────────
+// ── The concluded body (P1, the analyst's `conclude`) ────────────────────────────────
 //
 // The analyst named its own headline, answer and the results it cites. So the body is: the
 // headline · the figures it rests on · the period and the guards' caveats as chips · the answer ·

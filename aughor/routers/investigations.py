@@ -375,8 +375,8 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # receipted (chat / deep-analysis / monitor), so stamping here attributes all three by
         # construction. Absent when nobody asked as an agent — an unbound answer says so by
         # omission rather than carrying an empty agent that reads like a real one.
-        # Arc TC-1 — with `agents.revision_on_answers` on, the stamp also names the revision of the
-        # agent's configuration this answer ran under (`rev`); off, it is `{id, name}` as before.
+        # Arc TC-1 — the stamp also names the revision of the agent's configuration this answer ran
+        # under (`rev`).
         _agent = None
         try:
             from aughor.custom_agents.context import answer_stamp, current_agent
@@ -3632,7 +3632,7 @@ async def _stream_converse(
     shape: Optional[str] = None,
     sheet: str = "",
 ) -> AsyncGenerator[str, None]:
-    """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
+    """Serve one `/ask` turn as a CONVERSATION (SP-14; unconditional since 2026-10-28).
 
     Same shape as :func:`_stream_chat` — the shared bridge, a different body — and
     deliberately so: one copy of the concurrency design, two bodies riding it.
@@ -5183,7 +5183,7 @@ async def _job_streamed_body(
     kernel job and drain its frames to the request over an in-process queue.
 
     Extracted from `_investigation_job_streamed` when the CA-3 analyst body
-    joined it — with `ask.converse` on, the analyst serves the deep turn, and a
+    joined it — the analyst serves the deep turn, and a
     request-driven analyst died with its tab (row orphaned 'running') while the
     graph path had K1 supervision. One bridge now carries both: job lifecycle +
     heartbeat, kernel-driven cancellation, `created_by_job` stamping (which is
@@ -5276,10 +5276,10 @@ async def investigate(req: InvestigateRequest, request: Request):
 def _converse_eligible(req, route) -> bool:
     """Whether this ``/ask`` turn may be served by the converse body instead of the quick one.
 
-    Flag first, for the short-circuit: ``converse_available()`` reads ``ask.converse`` at
-    CALL time (never at import), which is what keeps the experiment flippable in a running
-    process — a module-level read turns ``monkeypatch.setenv`` into a no-op and is how tests
-    once spent the real LLM budget.
+    The binding first, for the short-circuit: ``binding_calls_tools()`` is read at CALL time
+    (never at import). A coder binding that cannot make a tool call takes the quick body — the
+    ineligible-turn fallback, the one path the conversation does not serve (it was also the
+    whole of ``ask.converse``'s off path until that flag was made unconditional, 2026-10-28).
 
     CI-4 shrank the carve-outs, one at a time as the plan requires. The seeded-SQL and
     dossier-drill flags stopped being bypasses: such a turn now carries its
@@ -5296,25 +5296,25 @@ def _converse_eligible(req, route) -> bool:
     QUICK turn be served by plain converse" — so deep/escalate still return False
     here and take the analyst door instead.
     """
-    from aughor.agent.converse_tools import converse_available
-    if not converse_available() or req.escalate:
+    from aughor.agent.converse_tools import binding_calls_tools
+    if not binding_calls_tools() or req.escalate:
         return False
     return route.depth != "deep" or route.forced == "dossier"
 
 
 def _analyst_eligible(req, route) -> bool:
     """CA-3 — the door opens: a deep or escalated ``/ask`` turn is served by the
-    analyst loop when the converse experiment is on.
+    analyst loop.
 
     Two deliberate exclusions. A dossier drill stays a CONVERSATION (Tier-0 read
     posture — the trace already exists; CI-4 decided the conversation takes it,
     holding ``deep_analysis`` in reserve). A router-chosen ``explore`` wave keeps the
     explore graph — the analyst investigates one question; it does not run the
-    multi-cut landscape scan. With the flag off, the phase script serves every deep
-    turn exactly as before (§5's free-tier ladder: the library remains the fallback).
+    multi-cut landscape scan. With a coder binding that cannot call tools, the phase
+    script serves every deep turn (§5's free-tier ladder: the library remains the fallback).
     """
-    from aughor.agent.converse_tools import converse_available
-    if not converse_available():
+    from aughor.agent.converse_tools import binding_calls_tools
+    if not binding_calls_tools():
         return False
     if route.forced == "dossier" or route.mode == "explore":
         return False
@@ -5569,9 +5569,9 @@ async def record_overview_drill(req: OverviewDrillRequest) -> None:
 async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> AsyncGenerator[str, None]:
     """The unified door: decide depth, emit the `route` receipt, then delegate to a body.
 
-    THREE bodies now, not two: quick, deep (deep-analysis/explore), and — behind `ask.converse`,
-    an EXPERIMENT that is off by default — the conversational one. The two originals are
-    unchanged; converse swaps which body answers a quick turn, never which door it
+    THREE bodies now, not two: quick, deep (deep-analysis/explore), and the conversational
+    one, which serves every turn a tool-calling binding can take (the other two answer the
+    turns it cannot). Converse swaps which body answers a quick turn, never which door it
     entered by, so the overview branch, the clarify gate and federation all still run
     first exactly as they did.
 
@@ -6396,15 +6396,11 @@ def get_investigation_graph(inv_id: str, principal=Depends(get_principal)):
 def recheck_investigation(inv_id: str, principal=Depends(get_principal)) -> dict:
     """Idea 5 — re-run a chat answer's own query NOW and compare it with what was said: the
     numbers that moved by 5% or more, and whether they are late rows or a restatement. The
-    re-check is recorded on the answer. Nothing is sent: the person asking is looking at it.
-    404 while `answers.recheck` is off, with the reason."""
+    re-check is recorded on the answer. Nothing is sent: the person asking is looking at it."""
     from aughor.answer import recheck
     from aughor.db.history import get_chat_answer
     from aughor.security.authz import check_owner
 
-    if not recheck.enabled():
-        raise HTTPException(status_code=404, detail=(
-            f"re-checking answers is off on this install — it needs the '{recheck.FLAG}' flag"))
     check_owner("investigation", inv_id, principal)
     answer = get_chat_answer(inv_id)
     if answer is None:

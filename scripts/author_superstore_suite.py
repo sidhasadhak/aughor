@@ -6,7 +6,8 @@ numbers", not "the numbers reached before".
 
 Why this exists (2026-08-14): the only answer-quality suites target `workspace`, whose
 schema context is 116,744 chars — past the 60k linker budget — so any small-schema flag
-(`grounding.full_schema_first`) is INERT there and cannot be measured. Superstore is 3
+(then `grounding.full_schema_first`, unconditional since 2026-10-28) is INERT there and cannot be
+measured. Superstore is 3
 tables / ~5k chars: the exact regime where "send the whole schema" vs "prune to top-k"
 is a real question. Cases are chosen so pruning has something to lose: cross-table joins
 (orders↔returns), the manager lookup with no shared key, and columns a keyword linker
@@ -33,7 +34,7 @@ SUITE_DESC = (
     "Ground-truth suite on the Superstore demo (3 tables, ~5k-char schema). Every case "
     "declares expected.reference_sql executed against the live data; a pass is an "
     "execution-grounded results_match. Authored 2026-08-14 to unblock small-schema grids "
-    "(grounding.full_schema_first). This suite MEASURES ACCURACY."
+    "(sending the whole schema vs pruning it). This suite MEASURES ACCURACY."
 )
 
 # (question, reference_sql, tags, accept_sql alternates)
@@ -173,10 +174,6 @@ def main() -> int:
         for q, ref, tags, alts in CASES
     ])
     print(f"wrote {n} cases to suite {suite_id} on connection {CONN}")
-    print(f"\nnext:\n  FLAG=grounding.full_schema_first SUITE={suite_id} CONNECTION_ID={CONN} "
-          f"DEPTH=quick TEMPERATURE=0 REPLICATE=1 AUGHOR_FALLBACK_DISABLED=1 \\\n"
-          f"    AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 "
-          f".venv/bin/python -u scripts/flag_ab_grid.py")
     return 0
 
 

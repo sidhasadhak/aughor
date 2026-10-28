@@ -80,7 +80,7 @@ def main() -> None:
         if added_ag:
             print(f"[aughor.mcp] exposed {len(added_ag)} custom agent(s) as tools: "
                   f"{', '.join(added_ag)}", file=sys.stderr)
-        # Arc FA, FA-7 — the agents' grounding read, while the API has `agents.grounding_read` on.
+        # Arc FA, FA-7 — the agents' grounding read, while the install has a custom agent.
         if asyncio.run(register_grounding_tool()):
             print("[aughor.mcp] exposed the grounding read as ground_agent", file=sys.stderr)
 

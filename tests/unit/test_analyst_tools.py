@@ -349,26 +349,25 @@ class _Route:
         self.depth, self.mode, self.forced = depth, mode, forced
 
 
-@pytest.mark.parametrize("flag,route,req,expect", [
-    ("1", _Route(depth="deep"), _Req(), True),                       # the door opens
-    ("1", _Route(depth="deep"), _Req(escalate=True), True),          # escalate too
-    ("1", _Route(depth="quick"), _Req(escalate=True), True),         # escalate alone
-    ("1", _Route(depth="deep", forced="dossier"), _Req(), False),    # dossier stays a conversation
-    ("1", _Route(depth="deep", mode="explore"), _Req(), False),      # explore keeps its graph
-    ("1", _Route(depth="quick"), _Req(), False),                     # quick is not deep
-    ("0", _Route(depth="deep"), _Req(), False),                      # flag off → phase script
+@pytest.mark.parametrize("tools,route,req,expect", [
+    (True, _Route(depth="deep"), _Req(), True),                       # the door opens
+    (True, _Route(depth="deep"), _Req(escalate=True), True),          # escalate too
+    (True, _Route(depth="quick"), _Req(escalate=True), True),         # escalate alone
+    (True, _Route(depth="deep", forced="dossier"), _Req(), False),    # dossier stays a conversation
+    (True, _Route(depth="deep", mode="explore"), _Req(), False),      # explore keeps its graph
+    (True, _Route(depth="quick"), _Req(), False),                     # quick is not deep
+    (False, _Route(depth="deep"), _Req(), False),                     # no tool calls → phase script
 ])
-def test_analyst_door(monkeypatch, flag, route, req, expect):
+def test_analyst_door(monkeypatch, tools, route, req, expect):
     from aughor.routers.investigations import _analyst_eligible
-    # SP-14: default-ON, so the off arm is an explicit "0", never an unset variable.
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", flag)
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: tools)
     assert _analyst_eligible(req, route) is expect
 
 
 def test_converse_eligible_still_refuses_deep(monkeypatch):
     """Plain converse keeps answering the narrow question; deep goes to the analyst."""
     from aughor.routers.investigations import _converse_eligible
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
     assert _converse_eligible(_Req(), _Route(depth="deep")) is False
     assert _converse_eligible(_Req(), _Route(depth="quick")) is True
 

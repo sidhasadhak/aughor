@@ -247,7 +247,8 @@ class AughorClient:
     # ── AO-5a: custom agents as tools ───────────────────────────────────────────
     async def list_user_agents(self) -> list[dict]:
         """The deployment's custom agents (the roster the registrar reads at start). Kept a moment, so the grounding
-        roster reads its flag off this same answer rather than asking the API again (FA-7)."""
+        roster reads whether there is an agent to ground off this same answer rather than asking the API again
+        (FA-7)."""
         payload = await self._get("/agents/custom")
         rows = list(payload or []) if isinstance(payload, list) else []
         self._agents_seen = (time.monotonic(), rows)

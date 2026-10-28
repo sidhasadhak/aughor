@@ -322,7 +322,7 @@ export interface AnswerReport {
   rule_outs?: RuleOuts | null;
   /** The question's shape — "describe" measured what was asked; older reports omit it. */
   question_shape?: string | null;
-  /** P1 (`analyst.conclude`) — the answer's own structure. `exhibits`: the results the answer cites, in
+  /** P1 (the analyst's `conclude`) — the answer's own structure. `exhibits`: the results the answer cites, in
    *  the order it cites them, each with its claim; drawn once each, the rest named under Sources.
    *  `figures`: the 3–4 figures the answer rests on. `gaps`: what the data could not answer. Absent on
    *  every report whose turn did not conclude this way, which renders exactly as before. */

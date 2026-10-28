@@ -791,13 +791,10 @@ function AddConnectionForm({
               {type === "local_upload"
                 ? <>Local Files: create the connection, then upload CSV/Parquet/Excel files to it via the Files tab.</>
                 // PX-6 (the PX-1 language law, applied late): this used to print a curl
-                // command at the person. A federated connection has no form yet because
-                // its planner is still an experiment flag — say that, name the flag,
-                // and stop pretending an API string is a UI.
+                // command at the person. A federated connection has no form yet — say
+                // that, and stop pretending an API string is a UI.
                 : <>A federated connection joins two sources in one question. There is no
-                    form for it yet — its planner is still an experiment
-                    (<code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t2)" }}>federation.planner</code>,
-                    Settings ▸ System ▸ Feature flags); when it graduates, the form lands here.</>
+                    form for it yet; when there is, it lands here.</>
               }
             </div>
           ) : (

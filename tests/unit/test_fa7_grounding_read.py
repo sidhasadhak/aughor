@@ -1,12 +1,12 @@
-"""Arc FA, FA-7 — any SDK can call an agent: the grounding read (`agents.grounding_read`, off).
+"""Arc FA, FA-7 — any SDK can call an agent: the grounding read (`agents.grounding_read` until it was made
+unconditional, 2026-10-28, ROADMAP §3.65).
 
 What a custom agent would read for a question, read without asking a model, at two doors — the agent's HTTP door with
 its key and the read-level MCP tool `ground_agent` over the session route, where the agent gate holds and audits it.
 
 Measured before it was built: the only caller of the grounding receipt (`GET /ask/context`) was the chat's receipt; no
-door and no MCP tool reached it, and nothing rendered an agent's grants or guardrails. Off, both doors are 404 and the
-tool is not listed; on, a read carries every block's content with the agent's scope applied, every absent block with
-why, whether the embedder was called (counted at the backend, here a fake client), and one journal entry that never
+door and no MCP tool reached it, and nothing rendered an agent's grants or guardrails. A read carries every block's
+content with the agent's scope applied, every absent block with why, whether the embedder was called (counted at the backend, here a fake client), and one journal entry that never
 holds the question or the content. No test here reaches a network or a model: the embedding backend is a fake client,
 the warehouse a DuckDB file in the test's own directory, and a chat model's construction is recorded and refused.
 """
@@ -31,11 +31,6 @@ def _clean():
     for a in list_agents():
         revoke_agent_key(a.id)
         delete_agent(a.id)
-
-
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_AGENTS_GROUNDING_READ", "1")
 
 
 @pytest.fixture
@@ -123,26 +118,11 @@ def _reads_of(*agents) -> list[dict]:
     return [r for r in _journal("agent.grounding_read") if _payload(r).get("agent") in ids]
 
 
-# ── off: both doors closed, everything else as it was ──────────────────────────────────
+# ── outside a read, everything as it was ─────────────────────────────────────────────
 
-def test_off_both_doors_are_the_404_of_a_door_that_does_not_exist(client, warehouse):
-    agent = create_agent("Off", instructions="x", connection_id=warehouse)
-    headers = _key(agent)
-    nowhere = client.post(f"/doors/agents/{agent.id}/nowhere", json={})
-    assert nowhere.status_code == 404
-    for r in (client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION}, headers=headers),
-              client.post(f"/doors/agents/{agent.id}/grounding", json={"not": "a body"}, headers=headers),
-              client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION}),
-              client.get(f"/agents/custom/{agent.id}/grounding", params={"question": QUESTION}),
-              client.get(f"/agents/custom/{agent.id}/grounding")):
-        assert (r.status_code, r.json()) == (404, nowhere.json()), r.text
-    doors = client.get(f"/agents/custom/{agent.id}/doors").json()
-    assert set(doors) == {"mcp", "http", "embed", "webhook", "a2a", "teams"}, "off, the Doors list is as it was"
-    assert not _reads_of(agent)
-
-
-def test_off_the_grounding_receipt_reads_exactly_as_before(client, warehouse, embedder, monkeypatch):
-    """The watch on a failing producer is inert off: the chat's receipt says nothing it did not say before."""
+def test_outside_a_read_the_grounding_receipt_reads_exactly_as_before(client, warehouse, embedder, monkeypatch):
+    """The watch on a failing producer is inert outside a read: the chat's receipt says nothing it did not say
+    before."""
     def _boom(*a, **k):
         raise RuntimeError("causal store unreadable")
     monkeypatch.setattr("aughor.lifecycle.causal.build_causal_context_section", _boom)
@@ -151,10 +131,10 @@ def test_off_the_grounding_receipt_reads_exactly_as_before(client, warehouse, em
     assert causal["present"] is False and "note" not in causal
 
 
-# ── on: the HTTP door ───────────────────────────────────────────────────────────────
+# ── the HTTP door ───────────────────────────────────────────────────────────────────
 
-def test_on_the_key_door_returns_every_block_with_content_and_each_absent_one_with_why(
-        client, on, warehouse, embedder, no_chat_model, monkeypatch):
+def test_the_key_door_returns_every_block_with_content_and_each_absent_one_with_why(
+        client, warehouse, embedder, no_chat_model, monkeypatch):
     monkeypatch.setattr("aughor.agent.grounding.connection_glossary",
                         lambda q, c: "GLOSSARY — revenue: SUM(amount) of placed orders")
     agent = create_agent("Revenue desk", instructions="Answer in euros.", connection_id=warehouse,
@@ -182,7 +162,7 @@ def test_on_the_key_door_returns_every_block_with_content_and_each_absent_one_wi
     assert not no_chat_model, "a chat model was constructed during the read"
 
 
-def test_on_the_doors_tab_lists_the_grounding_door_with_its_state(client, on, warehouse):
+def test_the_doors_tab_lists_the_grounding_door_with_its_state(client, warehouse):
     agent = create_agent("Listed", instructions="x", connection_id=warehouse)
     before = client.get(f"/agents/custom/{agent.id}/doors").json()["grounding"]
     assert before["state"] == "needs the HTTP key" and before["tool"] == "ground_agent"
@@ -191,7 +171,7 @@ def test_on_the_doors_tab_lists_the_grounding_door_with_its_state(client, on, wa
     assert client.get(f"/agents/custom/{agent.id}/doors").json()["grounding"]["state"] == "open"
 
 
-def test_the_key_is_the_door_a_wrong_one_and_an_unknown_agent_look_the_same(client, on, warehouse):
+def test_the_key_is_the_door_a_wrong_one_and_an_unknown_agent_look_the_same(client, warehouse):
     agent = create_agent("Keyed", instructions="x", connection_id=warehouse)
     _key(agent)
     for agent_id, headers in ((agent.id, {}), (agent.id, {"Authorization": "Bearer wrong"}),
@@ -202,7 +182,7 @@ def test_the_key_is_the_door_a_wrong_one_and_an_unknown_agent_look_the_same(clie
 
 # ── the agent's scope ────────────────────────────────────────────────────────────────
 
-def test_documents_are_the_agents_own_and_an_agent_with_none_reads_none(client, on, warehouse, embedder, monkeypatch):
+def test_documents_are_the_agents_own_and_an_agent_with_none_reads_none(client, warehouse, embedder, monkeypatch):
     hits = [{"doc_id": "doc_mine", "chunk_index": 0, "title": "Pricing policy", "filename": "pricing.md",
              "text": "MINE: list prices are set quarterly.", "score": 0.9},
             {"doc_id": "doc_theirs", "chunk_index": 0, "title": "Payroll", "filename": "payroll.md",
@@ -218,7 +198,7 @@ def test_documents_are_the_agents_own_and_an_agent_with_none_reads_none(client, 
     assert docs["present"] is False and "no documents of its own" in docs["why"]
 
 
-def test_the_agents_binding_holds_as_the_ask_door_holds_it(client, on, warehouse):
+def test_the_agents_binding_holds_as_the_ask_door_holds_it(client, warehouse):
     bound = create_agent("Bound", instructions="x", connection_id=warehouse, schema_scope="main")
     r = client.post(f"/doors/agents/{bound.id}/grounding", json={"question": QUESTION, "connection_id": "elsewhere"},
                     headers=_key(bound))
@@ -233,7 +213,7 @@ def test_the_agents_binding_holds_as_the_ask_door_holds_it(client, on, warehouse
     assert r.status_code == 422 and "bound to no connection" in r.json()["detail"]
 
 
-def test_a_paused_agent_reads_nothing_and_says_so(client, on, warehouse):
+def test_a_paused_agent_reads_nothing_and_says_so(client, warehouse):
     from aughor.custom_agents import update_agent
     agent = create_agent("Paused", instructions="x", connection_id=warehouse)
     headers = _key(agent)
@@ -246,7 +226,7 @@ def test_a_paused_agent_reads_nothing_and_says_so(client, on, warehouse):
 
 # ── withheld is said ─────────────────────────────────────────────────────────────────
 
-def test_a_block_whose_producer_failed_says_so_instead_of_reading_as_empty(client, on, warehouse, embedder,
+def test_a_block_whose_producer_failed_says_so_instead_of_reading_as_empty(client, warehouse, embedder,
                                                                             monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("causal store unreadable")
@@ -257,7 +237,7 @@ def test_a_block_whose_producer_failed_says_so_instead_of_reading_as_empty(clien
     assert causal["present"] is False and "could not be produced (RuntimeError)" in causal["why"]
 
 
-def test_a_search_the_embedder_failed_is_not_read_as_nothing_matched(client, on, warehouse, monkeypatch):
+def test_a_search_the_embedder_failed_is_not_read_as_nothing_matched(client, warehouse, monkeypatch):
     """Measured on a scratch drive: with the embedder down, the planning-pattern retriever swallowed the failure and
     returned "", which read as "no pattern matched". The embedder's own failure count says which block it was."""
     import openai
@@ -286,7 +266,7 @@ def test_a_search_the_embedder_failed_is_not_read_as_nothing_matched(client, on,
     assert body["embedder"]["failed"] >= 1 and body["embedder"]["called"] is True
 
 
-def test_an_unopenable_connection_is_said_on_the_schema_blocks_never_a_500(client, on, monkeypatch, tmp_path):
+def test_an_unopenable_connection_is_said_on_the_schema_blocks_never_a_500(client, monkeypatch, tmp_path):
     from aughor.db import registry
     conn_id = registry.add_connection("fa7-missing", "duckdb", str(tmp_path / "absent.duckdb"))
     try:
@@ -302,7 +282,7 @@ def test_an_unopenable_connection_is_said_on_the_schema_blocks_never_a_500(clien
 
 # ── the embedder, said ────────────────────────────────────────────────────────────────
 
-def test_the_embedder_is_said_as_the_backend_saw_it(client, on, warehouse, embedder, monkeypatch):
+def test_the_embedder_is_said_as_the_backend_saw_it(client, warehouse, embedder, monkeypatch):
     def _patterns(q, c=""):
         from aughor.semantic.embedder import embed_one
         embed_one(q)                                 # the planning-pattern retriever embeds the question
@@ -315,7 +295,7 @@ def test_the_embedder_is_said_as_the_backend_saw_it(client, on, warehouse, embed
     assert said["backend"] == "ollama" and said["hosted"] is False and "note" not in said
 
 
-def test_an_embedder_never_called_is_said_as_not_called(client, on, warehouse, embedder, monkeypatch):
+def test_an_embedder_never_called_is_said_as_not_called(client, warehouse, embedder, monkeypatch):
     for name in ("connection_glossary", "kb_patterns", "external_docs", "trusted_templates", "correction_priors"):
         monkeypatch.setattr(f"aughor.agent.grounding.{name}", lambda *a, **k: "")
     monkeypatch.setattr("aughor.agent.grounding.sql_examples", lambda q, c: ("", ""))
@@ -325,7 +305,7 @@ def test_an_embedder_never_called_is_said_as_not_called(client, on, warehouse, e
     assert said["called"] is (len(embedder) > 0) and said["requests"] == len(embedder)
 
 
-def test_a_hosted_embedder_says_it_may_charge(client, on, warehouse, embedder, monkeypatch):
+def test_a_hosted_embedder_says_it_may_charge(client, warehouse, embedder, monkeypatch):
     def _patterns(q, c=""):
         from aughor.semantic.embedder import embed_one
         embed_one(q)
@@ -354,7 +334,7 @@ def test_the_embedder_tally_is_inert_outside_a_read_and_counts_failures_inside(e
 
 # ── the journal ───────────────────────────────────────────────────────────────────────
 
-def test_each_read_is_journaled_once_with_who_and_what_and_never_the_content(client, on, warehouse, embedder,
+def test_each_read_is_journaled_once_with_who_and_what_and_never_the_content(client, warehouse, embedder,
                                                                              monkeypatch):
     monkeypatch.setattr("aughor.agent.grounding.connection_glossary",
                         lambda q, c: "GLOSSARY — zebra revenue is SECRET-DEFINITION")
@@ -378,7 +358,7 @@ def test_each_read_is_journaled_once_with_who_and_what_and_never_the_content(cli
 
 # ── the session route: the MCP tool's door ─────────────────────────────────────────────
 
-def test_the_mcp_clients_call_is_a_read_the_agent_gate_audits(client, on, warehouse, embedder):
+def test_the_mcp_clients_call_is_a_read_the_agent_gate_audits(client, warehouse, embedder):
     from aughor.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER
     from aughor.orgsettings import agent_policy as AP
     agent = create_agent("Over MCP", instructions="x", connection_id=warehouse)
@@ -398,7 +378,7 @@ def test_the_mcp_clients_call_is_a_read_the_agent_gate_audits(client, on, wareho
 
 # ── with identity on: whose agent, whose connection ─────────────────────────────────────
 
-def test_with_identity_on_another_organisations_connection_is_refused_at_both_doors(client, on, monkeypatch,
+def test_with_identity_on_another_organisations_connection_is_refused_at_both_doors(client, monkeypatch,
                                                                                     tmp_path):
     import duckdb
 
@@ -429,15 +409,15 @@ def test_with_identity_on_another_organisations_connection_is_refused_at_both_do
         registry.delete_connection(theirs)
 
 
-# ── the MCP tool: a read, listed only while the flag is on ──────────────────────────────
+# ── the MCP tool: a read, listed while the install has a custom agent ───────────────────
 
 class _Api:
-    def __init__(self, open_: bool):
-        self.open = open_
+    def __init__(self, has_agent: bool):
+        self.has_agent = has_agent
         self.calls: list = []
 
     async def list_user_agents(self):
-        return [{"id": "ua_1", "name": "Revenue desk", "enabled": True, **({"grounding_read": True} if self.open else {})}]
+        return [{"id": "ua_1", "name": "Revenue desk", "enabled": True}] if self.has_agent else []
 
     async def list_spotlight_tools(self):
         return []
@@ -453,10 +433,10 @@ class _Api:
         return {"effective": {"level": "read"}}
 
 
-def test_the_tool_is_a_read_absent_while_off_and_listed_and_removed_live(monkeypatch):
+def test_the_tool_is_a_read_absent_with_no_agent_and_listed_and_removed_live(monkeypatch):
     from aughor.mcp import policy as P
     from aughor.mcp import server as srv
-    api = _Api(open_=False)
+    api = _Api(has_agent=False)
     monkeypatch.setattr(srv, "mcp", srv.PolicedFastMCP("t"))
     monkeypatch.setattr(srv, "_client", api)
     monkeypatch.setattr(srv, "_DYNAMIC", {})
@@ -468,8 +448,8 @@ def test_the_tool_is_a_read_absent_while_off_and_listed_and_removed_live(monkeyp
 
     async def run():
         assert await srv.register_grounding_tool(api) == []
-        assert "ground_agent" not in {t.name for t in await srv.mcp.list_tools()}, "off: the tool is not listed"
-        api.open = True
+        assert "ground_agent" not in {t.name for t in await srv.mcp.list_tools()}, "no agent: the tool is not listed"
+        api.has_agent = True
         assert await srv.register_grounding_tool(api) == ["ground_agent"]
         assert P.tool_level("ground_agent") == "read" and P.tool_area("ground_agent") == "catalog:read"
         listed = {t.name: t for t in await srv.mcp.list_tools()}
@@ -478,10 +458,10 @@ def test_the_tool_is_a_read_absent_while_off_and_listed_and_removed_live(monkeyp
         assert api.calls == [("ua_1", QUESTION, None)], "named by its ask_ tool, read by its id"
         assert out
         srv.enable_live_tools("grounding")
-        api.open = False
+        api.has_agent = False
         srv._live_checked.clear()
         assert await srv.refresh_live_tools(api) is True
-        assert "ground_agent" not in {t.name for t in await srv.mcp.list_tools()}, "turned off, it leaves the list"
+        assert "ground_agent" not in {t.name for t in await srv.mcp.list_tools()}, "the last agent gone, it leaves"
 
     asyncio.run(run())
 
@@ -493,23 +473,8 @@ def test_the_static_tool_list_is_unchanged():
     assert "ground_agent" not in P.TOOL_LEVELS and "ground_agent" not in set(srv.mcp._tool_manager._tools)
 
 
-def test_the_agents_roster_says_the_read_is_open_only_while_it_is(client, warehouse):
-    """The MCP server learns the flag from the roster it already reads, so with the flag off it asks the API nothing
-    more than before, and the roster is as it was."""
-    from aughor.custom_agents import grounding_read
-    from aughor.kernel.flags import flag_overrides
-    create_agent("Rostered", instructions="x", connection_id=warehouse)
-    with flag_overrides({grounding_read.FLAG: False}):
-        off = client.get("/agents/custom").json()
-    with flag_overrides({grounding_read.FLAG: True}):
-        on = client.get("/agents/custom").json()
-    assert off and all("grounding_read" not in r for r in off), "off: the roster carries nothing new"
-    assert all(r.get("grounding_read") is True for r in on)
-
-
-def test_a_refresh_with_the_flag_off_asks_the_api_for_nothing_new(monkeypatch):
-    """The grounding roster reads the agents roster's answer from the same refresh — one `/agents/custom` call, and no
-    flag read."""
+def test_a_refresh_asks_the_api_for_nothing_new(monkeypatch):
+    """The grounding roster reads the agents roster's answer from the same refresh — one `/agents/custom` call."""
     from aughor.mcp import server as srv
     from aughor.mcp.client import AughorClient
     api = AughorClient()
@@ -522,6 +487,6 @@ def test_a_refresh_with_the_flag_off_asks_the_api_for_nothing_new(monkeypatch):
 
     async def run():
         await api.list_user_agents()
-        assert await srv._grounding_roster(api) == []
+        assert await srv._grounding_roster(api) == [{"name": "ground_agent"}]
     asyncio.run(run())
     assert paths == ["/agents/custom"], paths

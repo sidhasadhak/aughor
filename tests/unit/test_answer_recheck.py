@@ -5,7 +5,7 @@ hold: the answer's own query is re-run and compared row by row on its own labels
 inside the noise band is not news; a stored table that is not that query's result is not
 compared, and says so; late rows are told apart from a restatement only when the platform has
 LEARNED the source's lag; the re-check is recorded on the answer, appended; a Slack answer is
-told in its own thread through the departure gate; nothing is told twice; off means nothing.
+told in its own thread through the departure gate; nothing is told twice.
 """
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ import pytest
 from aughor.answer import recheck
 from aughor.db.history import get_chat_answer, save_chat_turn
 
-FLAG_ENV = "AUGHOR_ANSWERS_RECHECK"
 ANSWERED = datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)
 LATER = datetime(2026, 9, 23, 6, 0, tzinfo=timezone.utc)
 DAILY = ("SELECT CAST(created_at AS DATE) AS day, COUNT(*) AS orders FROM orders "
@@ -183,16 +182,7 @@ def test_a_query_that_fails_now_is_recorded_as_unchecked(con, lag):
 
 # ── the daily pass and the doors ────────────────────────────────────────────────────────────
 
-def test_on_by_default_and_switched_off_nothing_runs(monkeypatch):
-    monkeypatch.delenv(FLAG_ENV, raising=False)
-    assert recheck.enabled() is True
-    monkeypatch.setenv(FLAG_ENV, "0")
-    assert recheck.enabled() is False
-    assert recheck.run_rechecks_daily(force=True) == {"skipped": "off"}
-
-
 def test_the_daily_pass_runs_once_a_day_and_skips_fresh_rechecks(con, lag, monkeypatch):
-    monkeypatch.setenv(FLAG_ENV, "1")
     monkeypatch.setattr(recheck, "_last_run_day", None)
     from aughor.db import history
     answer = answer_from(con)
@@ -207,16 +197,6 @@ def test_the_daily_pass_runs_once_a_day_and_skips_fresh_rechecks(con, lag, monke
         "skipped": "already ran today"}
     forced = recheck.run_rechecks_daily(now=LATER, force=True, runner=lambda conn: run_on(con))
     assert forced == {"checked": 0, "changed": 0, "told": 0}      # re-checked < 20h ago
-
-
-def test_the_recheck_door_is_refused_while_off(monkeypatch):
-    from fastapi import HTTPException
-
-    from aughor.routers.investigations import recheck_investigation
-    monkeypatch.setenv(FLAG_ENV, "0")
-    with pytest.raises(HTTPException) as off:
-        recheck_investigation("x", principal=None)
-    assert off.value.status_code == 404 and "answers.recheck" in off.value.detail
 
 
 def test_a_slack_session_id_names_its_thread():
@@ -285,7 +265,6 @@ def test_a_move_from_zero_states_no_percentage():
 
 
 def test_the_daily_pass_reaches_the_answer_checked_longest_ago_first(con, lag, monkeypatch):
-    monkeypatch.setenv(FLAG_ENV, "1")
     monkeypatch.setattr(recheck, "_last_run_day", None)
     monkeypatch.setattr(recheck, "PER_RUN", 1)
     from aughor.db import history

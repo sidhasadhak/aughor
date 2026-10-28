@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * P1 (`analyst.conclude`): an answer that named its own headline, figures and exhibits is drawn
+ * P1 (the analyst's `conclude`): an answer that named its own headline, figures and exhibits is drawn
  * as it said — each cited result once, captioned by its claim, the rest named under Sources —
  * and a report without `exhibits` renders exactly as before (the other tests in this folder).
  */

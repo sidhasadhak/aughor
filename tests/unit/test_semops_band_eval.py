@@ -2,7 +2,9 @@
 
 `evals/` is not collected by pytest, so — as for the JD-4 battery — the harness becomes a standing
 guard through a companion here that imports its pure helpers and drives its arms with stubs. The
-arms run the PRODUCTION `semantic_filter`; the stubs only decide what each tier answers.
+banded and reference arms run the PRODUCTION `semantic_filter` (the sampled arm, the harness's own
+baseline since banding became unconditional, runs on its per-batch verdicts); the stubs only decide
+what each tier answers.
 """
 from __future__ import annotations
 

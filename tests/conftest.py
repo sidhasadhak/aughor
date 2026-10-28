@@ -44,12 +44,10 @@ def _always_on_vars() -> list[str]:
     return [found["FLAG_ENV"][n] for n in found["ALWAYS_ON"]]
 
 
-#: These were already default-on (FLAG_DEFAULT) and the suite ran them on; they stay on here.
-_RAN_ON = {"AUGHOR_ASK_CONVERSE", "AUGHOR_SEMOPS_BANDED_CASCADE", "AUGHOR_ANSWERS_RECHECK",
-           "AUGHOR_CHAT_BUTTONS_REACH_AGENT"}
+# (The four that were already default-on before 2026-10-28 and ran on here — `_RAN_ON` — were made unconditional
+# with the answering area, 2026-10-28; the set went with them.)
 for _always_var in _always_on_vars():
-    if _always_var not in _RAN_ON:
-        os.environ.setdefault(_always_var, "0")
+    os.environ.setdefault(_always_var, "0")
 # Hermetic kernel ledger — tests must never write to data/system.db.
 #
 # ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An

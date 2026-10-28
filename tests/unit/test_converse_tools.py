@@ -413,25 +413,6 @@ def test_clarifying_in_prose_is_granted(fake_conn):
     assert "clarifying question" in ct.converse_system_prompt("c1")
 
 
-def test_converse_is_on_by_default(monkeypatch):
-    """SP-14 (decision 22(d)): a fresh install authors by sentence out of the box —
-    and an operator's explicit off still means exactly off."""
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
-    assert ct.converse_available() is True
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
-    assert ct.converse_available() is False
-
-
-def test_the_flag_is_read_at_call_time_not_import_time(monkeypatch):
-    """A module-level read makes the flag unflippable in a running process and turns
-    `monkeypatch.setenv` into a no-op — the trap that once had tests spending the real
-    LLM budget."""
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
-    assert ct.converse_available() is True
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
-    assert ct.converse_available() is False
-
-
 def test_converse_answers_end_to_end_through_the_loop(monkeypatch, fake_conn):
     """The body in one call: prompt + tools + loop, with the steps preserved so a route
     receipt can be built from them."""

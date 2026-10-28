@@ -6370,8 +6370,8 @@ export interface AgentDoorsInfo {
   webhook: { state: string; url: string };
   a2a: { state: string; card: string; url: string };
   teams: { state: string; bots: TeamsBotSummary[] };
-  /** Arc FA, FA-7 — present only while the grounding read is on: what the agent would read, no model asked. */
-  grounding?: { state: string; url: string; tool: string; how: string };
+  /** Arc FA, FA-7 — the grounding read: what the agent would read, no model asked. */
+  grounding: { state: string; url: string; tool: string; how: string };
 }
 
 export interface TeamsBotSummary {

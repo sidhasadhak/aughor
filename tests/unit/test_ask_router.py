@@ -224,16 +224,14 @@ def _events(text: str) -> list[dict]:
 
 @pytest.fixture
 def ask_client(monkeypatch):
-    # These tests are about the DOOR's quick/deep dispatch, so the third body is pinned
-    # off explicitly rather than left to whatever the environment happens to say. It was
-    # implicit before, and `AUGHOR_ASK_CONVERSE=1 pytest` made five of them fail — not
-    # because anything broke, but because converse legitimately serves the eligible quick
-    # turn, so neither marker is emitted. A test that only passes in one flag state
-    # without saying so is the flip-simulation trap: the off state was reachable several
-    # ways and this suite happened to take one of them.
-    # The on state has its own coverage below (test_ask_converse_on_serves_the_quick_turn)
-    # and in test_converse_route_off_state.py.
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, so off is explicit
+    # These tests are about the DOOR's quick/deep dispatch, so the tool-loop bodies are
+    # stepped out of explicitly: a coder binding that cannot make a tool call is the turn
+    # the conversation and the analyst never serve (PENDING item 17), and the quick body
+    # and the phase script answer it. Left to the environment, converse legitimately serves
+    # the eligible quick turn and neither marker is emitted.
+    # The converse side has its own coverage below (test_ask_converse_serves_the_quick_turn)
+    # and in test_converse_route_ineligible.py.
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
 
     async def fake_chat(*a, **k):
         yield inv._sse("quick_marker", {})
@@ -270,20 +268,19 @@ def test_ask_simple_question_routes_to_quick_body(ask_client, monkeypatch):
     assert not any(e["type"] == "deep_marker" for e in evs)
 
 
-def test_ask_converse_on_serves_the_quick_turn(ask_client, monkeypatch):
-    """The other side of the flag, at the DOOR rather than at the eligibility function.
+def test_ask_converse_serves_the_quick_turn(ask_client, monkeypatch):
+    """The other side, at the DOOR rather than at the eligibility function.
 
-    `test_converse_route_off_state.py` pins `_converse_eligible` in both states, but that
-    is the predicate; nothing asserted that the endpoint actually dispatches to the third
-    body when it says yes. That gap is why turning the flag on read as five broken tests
-    instead of one documented routing change: the suite could say the quick body served
-    the turn, and could say converse was eligible, but never that converse SERVED it.
+    `test_converse_route_ineligible.py` pins `_converse_eligible` both ways, but that is the
+    predicate; nothing asserted that the endpoint actually dispatches to the third body when
+    it says yes: the suite could say the quick body served the turn, and could say converse
+    was eligible, but never that converse SERVED it.
 
-    Note what stays true with converse on — the `route` receipt still says quick. Converse
-    swaps the BODY, it does not take over the door, so a graduation that changed the depth
-    verdict would still be caught by the tests above.
+    Note what stays true with converse serving — the `route` receipt still says quick.
+    Converse swaps the BODY, it does not take over the door, so a change to the depth verdict
+    would still be caught by the tests above.
     """
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
 
     async def fake_converse(*a, **k):
         yield inv._sse("converse_marker", {})
@@ -297,7 +294,7 @@ def test_ask_converse_on_serves_the_quick_turn(ask_client, monkeypatch):
     evs = _events(r.text)
     assert evs[0]["type"] == "route" and evs[0]["depth"] == "quick"
     assert any(e["type"] == "converse_marker" for e in evs), (
-        "the flag is on and the turn is eligible, so the converse body should have served it")
+        "the turn is eligible, so the converse body should have served it")
     assert not any(e["type"] == "quick_marker" for e in evs)
 
 

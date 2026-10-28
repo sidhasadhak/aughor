@@ -84,7 +84,9 @@ FLAG_ENV = {
     # AUGHOR_ASK_RESUME_STREAM retired 2026-08-28: ask.resume_stream (FL-1b)
     # graduated — mirror + endpoint hardwired, flag and off-path deleted.
     # Receipt on the GRADUATION_QUEUE tombstone below.
-    "ask.converse": "AUGHOR_ASK_CONVERSE",
+    # "ask.converse" (AUGHOR_ASK_CONVERSE) — SP-14, quick answers and deep analyses as an agent with tools; a
+    # binding that cannot call tools still takes the quick body and the phase script — was made unconditional
+    # 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "ask.query_objects" (AUGHOR_ASK_QUERY_OBJECTS) was DELETED 2026-10-04 with its tool —
     # kill 8 of the 2027 study (ROADMAP §4.9; §6 item 39(b)). Parked 2026-09-11 on a measured
     # regression (1/14 and 3/12 against raw 14/14 and 12/12) and never reopened; the compiler
@@ -97,12 +99,9 @@ FLAG_ENV = {
     # AO-7 (2026-10-03): one closed learning loop per custom agent.
     # "agents.learning_loop" (AUGHOR_AGENTS_LEARNING_LOOP) left 2026-10-28 for the organisation setting `scheduled_model_work` (ROADMAP §3.65,
     # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_AGENTS_LEARNING_LOOP only while the setting is unset.
-    # Arc TC-1 (ROADMAP §3.59, the incorporation study of 2026-10-24). ON: every receipt a custom agent produced
-    # and every chat turn it answered carry the agent's `config_rev` as `rev` beside its id and name — the revision of the
-    # configuration the answer ran under — and the doors that change an agent's configuration (PATCH and restore) refuse
-    # with 409, naming both revisions, when the caller sends the `expected_rev` it read and the agent has moved since.
-    # OFF: a receipt names the agent by id and name, a turn carries no stamp, and `expected_rev` is ignored, as before.
-    "agents.revision_on_answers": "AUGHOR_AGENTS_REVISION_ON_ANSWERS",
+    # "agents.revision_on_answers" (AUGHOR_AGENTS_REVISION_ON_ANSWERS) — Arc TC-1, an agent's revision on its
+    # answers and `expected_rev` honoured at its doors — was made unconditional 2026-10-28: part of the platform
+    # (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "explore.route_wide" (AUGHOR_EXPLORE_ROUTE_WIDE) was DELETED 2026-10-28: the automatic route of a broad question
     # to the explore wave, off and never measured (no broad question in the reference suite) — the flags-into-settings
     # decision (ROADMAP §3.65). A survey is read for depth like any question; the wave stays reachable by its declared
@@ -112,23 +111,25 @@ FLAG_ENV = {
     # existed, and CP-2's receipt (a model right 61% of the time at a stated confidence of
     # about 1.0) is the evidence its run would have produced. The second response model went
     # with it (`agent/framing.py`). An operator's env var is ignored.
-    "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
+    # "semops.banded_cascade" (AUGHOR_SEMOPS_BANDED_CASCADE) — JD-3, only the rows the cheap model is unsure of go
+    # to the strong one; the sampled cascade it replaced is deleted — was made unconditional 2026-10-28: part of the
+    # platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "semops.jev_cheap_tier" (AUGHOR_SEMOPS_JEV_CHEAP_TIER) left 2026-10-28 for the organisation setting `outside_row_model` (ROADMAP §3.65,
     # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_SEMOPS_JEV_CHEAP_TIER only while the setting is unset.
     # "judgment.shadow_treatment" (AUGHOR_JUDGMENT_SHADOW_TREATMENT) was DELETED 2026-10-28: the treatment shadow, a
     # model call after every settled turn for a record nobody yet read — stopped with the flags-into-settings decision
     # (ROADMAP §3.65). Its rows stay readable (`treatment.shadow_corpus`). An operator's env var is ignored.
-    "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
+    # "grounding.full_schema_first" (AUGHOR_GROUNDING_FULL_SCHEMA_FIRST) — a schema that fits the linker's budget
+    # shown to the SQL writer whole, kept on its measured record — was made unconditional 2026-10-28: part of the
+    # platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "briefing.by_period" (AUGHOR_BRIEFING_BY_PERIOD) — idea 3, the Briefing for a day, week, month or year — was made
     # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
     # is ignored.
     # "briefing.ranges" (AUGHOR_BRIEFING_RANGES) — Arc BR, the Briefing for any date range — was made unconditional
     # 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
-    # P1 of the canvas-output study (docs/CANVAS_OUTPUT_STUDY_2026-10-14.md), 2026-10-14. ON gives the
-    # analyst a `conclude` tool: its answer ends with a headline, prose and the results it cites, and
-    # the canvas draws each cited result once. OFF → the answer's first sentence is cut as the headline
-    # and every result is drawn, byte-identical.
-    "analyst.conclude": "AUGHOR_ANALYST_CONCLUDE",
+    # "analyst.conclude" (AUGHOR_ANALYST_CONCLUDE) — P1 of the canvas-output study, the analyst's `conclude` tool:
+    # headline, answer and the results it cites — was made unconditional 2026-10-28: part of the platform (ROADMAP
+    # §3.65); its off path is deleted. An operator's env var is ignored.
     # "dashboard.composed" (AUGHOR_DASHBOARD_COMPOSED) — Arc CT-4's dashboards — was made unconditional 2026-10-28:
     # part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "ontology.census" (AUGHOR_ONTOLOGY_CENSUS) — Arc OC-0, the daily ontology census journaled — was made
@@ -177,13 +178,9 @@ FLAG_ENV = {
     # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
     # contract describes it. OFF: each door answers as before.
     "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
-    # Arc FA, FA-7 (ROADMAP §3.60; §6 item 52(b): the chat-compatible endpoint waits until one is asked for). ON: an agent
-    # has a grounding read at two doors — POST /doors/agents/{id}/grounding with its key, and the read-level MCP tool
-    # `ground_agent` over GET /agents/custom/{id}/grounding — returning the blocks the agent would read for a question,
-    # their content trimmed as the ask path trims, the absent ones with why, whether the embedder was called and which,
-    # and never calling a chat model; each read is journaled as `agent.grounding_read` without the content. OFF: both
-    # doors answer 404, the tool is not listed, and the Doors tab and every other door read as before.
-    "agents.grounding_read": "AUGHOR_AGENTS_GROUNDING_READ",
+    # "agents.grounding_read" (AUGHOR_AGENTS_GROUNDING_READ) — Arc FA-7, what an agent would read for a question, at
+    # its key door and as the MCP tool `ground_agent` — was made unconditional 2026-10-28: part of the platform
+    # (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "graph.declarations" (AUGHOR_GRAPH_DECLARATIONS) — Arc FA-1, the published declarations as nodes of the
     # connection graph — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is
     # deleted. An operator's env var is ignored.
@@ -312,7 +309,9 @@ FLAG_ENV = {
     # built the block, the golden harness's table link having failed silently since 2026-06-30 — read 0.661 → 0.651
     # over 65 questions × 3 runs on claude-haiku-5-5 (paired t −1.01; 11 better, 17 worse), the block in every "on"
     # prompt (`evals/data_profiles_ab_2026-10-28.json`). An operator's env var is ignored.
-    "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
+    # "answers.recheck" (AUGHOR_ANSWERS_RECHECK) — idea 5, the daily re-check of recent answers and the Briefing
+    # recall — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
     # rates, normal ranges for share metrics, method backtests, never a connection id or a claim's text —
     # may LEAVE the install through POST /ledger/v1/aggregates/export. OFF (the default; the user's
@@ -322,13 +321,17 @@ FLAG_ENV = {
     # "ontology.explore_on_connect" (AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT) — business terms proposed for a new
     # connection — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
     # operator's env var is ignored.
-    "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
+    # "chat.buttons_reach_agent" (AUGHOR_CHAT_BUTTONS_REACH_AGENT) — PENDING item 15, the Quick and Agent buttons
+    # through `/ask` to the conversation agent — was made unconditional 2026-10-28: part of the platform (ROADMAP
+    # §3.65); its off path is deleted. An operator's env var is ignored.
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
     # auto tier below, had no constituency, and a deleted flag is the only disposition
     # that actually shrinks the registry. One-off audits can reproduce it by asking the
     # question directly; the refuter itself (run_refutation) is unchanged.
-    "federation.planner": "AUGHOR_FEDERATION_PLANNER",
+    # "federation.planner" (AUGHOR_FEDERATION_PLANNER) — Rec 2, questions across connections, served through
+    # `/query/federated-answer` and `/query/auto-federated-answer` — was made unconditional 2026-10-28: part of the
+    # platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # Arc FA, FA-6 (ROADMAP §3.60). ON: a binding records the manifest's version (never the caller's), who bound it and
     # a snapshot of what the pack offered — its terms, alert priors, metrics and structure claims — and the upgrade doors
     # diff that snapshot against the pack as it stands, proposing only new and changed items. OFF: a binding stores the
@@ -513,7 +516,8 @@ def _retired_names(name: str) -> list[str]:
 FLAG_DEFAULT: dict = {
     # EMPTY again 2026-10-28: its eleven entries — ask.converse, semops.banded_cascade, the four of 2026-09-24 and
     # Arc OC's five — moved to ALWAYS_ON with the flags-into-settings decision (ROADMAP §3.65,
-    # docs/FLAGS_TO_SETTINGS_2026-10-28.md). Their receipts are in git history and on their ROADMAP sections.
+    # docs/FLAGS_TO_SETTINGS_2026-10-28.md), and from there, area by area, were made unconditional with their off
+    # paths deleted (stage 2; tombstones in FLAG_ENV). Their receipts are in git history and on their ROADMAP sections.
 }
 
 # Human-facing copy for Settings → System. Three layers, each for one reader:
@@ -526,17 +530,6 @@ FLAG_DEFAULT: dict = {
 # that history lives in the comments and dispositions above and below, where engineers read
 # it. tests/unit/test_flag_copy.py holds the line (house style, PLATFORM text-density pilot).
 FLAG_META = {
-    "agents.revision_on_answers": {
-        "label": "Name the agent's revision on its answers",
-        "summary": "Each answer a custom agent gives names the revision of its setup that gave it. "
-                   "A save made against an older revision is refused.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only custom agents"}],
-        "description": "A revision changes when the agent's instructions, data, documents, packs or allowed actions "
-                       "change; a rename does not. It is kept on the answer's receipt and on its chat turn. A save "
-                       "that says which revision it read is refused if the agent changed since. Off: answers name "
-                       "the agent only, and every save is taken.",
-    },
     "slack.managed_supervisor": {
         "label": "Start the Slack bot automatically",
         "summary": "Aughor starts the Slack bot when it boots and restarts it if it stops. "
@@ -546,25 +539,6 @@ FLAG_META = {
         "description": "Integrations → Slack shows whether the bot is running, with a Restart button. "
                        "The installer adds what the bot needs when this is on. Off: start the bot by "
                        "hand from a terminal.",
-    },
-    "chat.buttons_reach_agent": {
-        "label": "Send chat buttons to the conversation agent",
-        "summary": "The Quick and Agent buttons go to the conversation agent, which can look up "
-                   "objects in the ontology.",
-        "facts": [{"kind": "model", "text": "About 20k tokens a turn"}],
-        "description": "Quick runs the agent at quick depth and Agent runs it at deep depth. Off: the "
-                       "two buttons use the older direct paths.",
-    },
-    "answers.recheck": {
-        "label": "Tell people when their answer changes",
-        "summary": "Aughor re-runs the answers from the last 14 days. If a number changes "
-                   "by 5% or more, it tells the person who asked.",
-        "facts": [{"kind": "schedule", "text": "Daily"},
-                  {"kind": "warehouse", "text": "Queries your warehouse"},
-                  {"kind": "sends", "text": "Replies in Slack and the web"}],
-        "description": "The notice gives the old number, the new one, and the reason: rows that "
-                       "arrived late, or a restatement. A Slack reply passes the same checks as any "
-                       "other message. Off: nothing is run again or sent.",
     },
     "arrivals.google_comments": {
         "label": "Comments on a Google file, read onto a decision",
@@ -733,17 +707,6 @@ FLAG_META = {
                        "policy or a masked property is named. Outside programs read the same field, described in "
                        "their contract. Off: a cut read can look complete.",
     },
-    "agents.grounding_read": {
-        "label": "Let programs read what an agent would read",
-        "summary": "A program holding an agent's key can see what the agent would be given for a question. "
-                   "No model answers it.",
-        "facts": [{"kind": "free", "text": "No chat model calls"},
-                  {"kind": "model", "text": "May call the embedding model"},
-                  {"kind": "private", "text": "Each read is recorded"}],
-        "description": "The read returns each piece of context the agent would read, cut to what the caller may see. "
-                       "A piece that is missing says why. It says whether the embedding model was called, which can "
-                       "cost at a hosted provider. Off: the read is closed and the agent's other doors are unchanged.",
-    },
     "knowledge.hybrid_documents": {
         "label": "Search documents by words when meaning is down",
         "summary": "When the embedding model is unavailable, the documents are still searched by their words. "
@@ -810,51 +773,6 @@ FLAG_META = {
                        "refused, with why. Scheduled checks still count every object. Off: only object "
                        "pages, dashboards and outside programs apply them.",
     },
-    "analyst.conclude": {
-        "label": "Agent answers end with their own structure",
-        "summary": "The agent closes an answer with a headline, the answer and the results it cites. "
-                   "The canvas draws each cited result once, with its claim.",
-        "facts": [{"kind": "free", "text": "No extra model calls"}],
-        "description": "A result the answer does not cite stays behind Sources. A headline over one line, "
-                       "or an answer carrying a table, is sent back once to be rewritten. Off: the answer's "
-                       "first sentence is its headline and every result is drawn.",
-    },
-    "ask.converse": {
-        "label": "Answer through a conversation with tools",
-        "summary": "Quick answers and deep analyses run as an agent that uses tools step by step. "
-                   "The same checks run inside every tool.",
-        "facts": [{"kind": "model", "text": "Model calls per step"}],
-        "description": "In a deep analysis, the model picks the next cut after it reads the last one. "
-                       "Off: a fixed script answers, as it did before.",
-    },
-    "federation.planner": {
-        "label": "Answer questions across two connections",
-        "summary": "Answers a question that needs data from two connections. A model plans one "
-                   "query for each, and how to join them.",
-        "facts": [{"kind": "model", "text": "1 planning call per question"},
-                  {"kind": "route", "text": "Can route new questions here"}],
-        "description": "Each planned query runs as a check before the results are joined. The plan is "
-                       "shown with the answer. When on, some new questions are sent here automatically. "
-                       "Off: this planner is not used.",
-    },
-    "semops.banded_cascade": {
-        "label": "Send only unsure rows to the strong model",
-        "summary": "When a model judges text rows, a cheap model judges each row first. Only the rows "
-                   "it is unsure about go to the strong model.",
-        "facts": [{"kind": "model", "text": "Fewer strong-model calls"}],
-        "description": "This applies to filters over text columns, like reviews or tickets. A row still "
-                       "unsure after the strong model is kept and marked for a person. Off: a sample "
-                       "decides, and one disagreement re-runs every row on the strong model.",
-    },
-    "grounding.full_schema_first": {
-        "label": "Show the SQL writer every table",
-        "summary": "For a small schema, the SQL writer sees every table, not only the ones picked "
-                   "for the question.",
-        "facts": [{"kind": "model", "text": "Longer prompts"}],
-        "description": "It applies only when the whole schema fits the size limit. In two test runs it "
-                       "never wrote a worse query, and twice it answered where the shorter schema "
-                       "could not. Off: the SQL writer sees only the tables picked for the question.",
-    },
 }
 
 
@@ -911,23 +829,14 @@ CAPABILITY_TRIGGER: dict = {
 ALWAYS_ON: dict[str, str] = {
     "actions.outbox": "Off sends once with no retry — less safe.",
     "actions.run_attribution": "Free, and it is the audit trail.",
-    "agents.grounding_read": "Read-only, cut to what the caller may see, and recorded.",
-    "agents.revision_on_answers": "Free, and it stops a save made against an out-of-date agent.",
-    "analyst.conclude": "No extra model calls; it is the answer shape you see today.",
-    "answers.recheck": "Honesty about changed numbers; warehouse queries only, and its Slack replies pass the same send checks.",
     "arrivals.email": "Works once its setup exists (a mail domain and its secret); setting it up is the choice.",
     "arrivals.google_comments": "Works once its setup exists (your Google OAuth client); setting it up is the choice.",
-    "ask.converse": "It is how chat answers today; off falls back to an older fixed script.",
     "automations.objects_admitted": "It is offered; the automation's owner chooses it.",
-    "chat.buttons_reach_agent": "The same path as above.",
-    "federation.planner": "Kept for questions across connections: the planner is reached through its own door; it no longer takes fresh chat questions on its own.",
-    "grounding.full_schema_first": "Kept on its record: in two test runs the SQL writer seeing every table of a small schema never wrote a worse query, and twice answered where the shorter schema could not.",
     "hub.failure_rate": "Free; it says 'no runs', never 0%.",
     "knowledge.hybrid_documents": "Works once its setup exists (the vector store running); setting it up is the choice.",
     "obs.log_search": "Free; who may use it is a permission, not a switch.",
     "packs.installed_versions": "Free, and it never re-offers what you declined.",
     "record.decision_loop": "No model calls; live since 10-24.",
-    "semops.banded_cascade": "It spends less than switching it off would.",
     "slack.managed_supervisor": "Works once its setup exists (Slack configured, and Node.js); setting it up is the choice.",
     "state.backups": "The safety net for everything else; it says so when the disk is too full.",
 }

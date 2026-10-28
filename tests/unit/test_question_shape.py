@@ -67,7 +67,7 @@ def test_the_describe_rule_asks_for_the_answer_not_a_cause():
     described = analyst_system_prompt("c", {}, 12, shape="describe")
     diagnosed = analyst_system_prompt("c", {}, 12)
     assert "asks to SEE the data" in described and "`totals`" in described
-    assert "one that announces what follows" in described, "Q2's opener announced its table (2026-10-02)"
+    assert "never a sentence that announces what follows" in described, "Q2's opener announced its table (2026-10-02)"
     assert "cause is named WITH ITS SIZE" not in described
     assert "cause is named WITH ITS SIZE" in diagnosed
 
@@ -231,8 +231,8 @@ def test_run_sql_hands_the_model_code_computed_totals(monkeypatch):
 
 def test_the_describe_rule_leads_with_the_answer_and_shows_every_group():
     described = analyst_system_prompt("c", {}, 12, shape="describe")
-    assert "Open with the answer itself in one sentence" in described
-    assert "never a definition or a restatement of the question" in described
+    assert "Its headline is one line" in described
+    assert "stating what leads, what trails and by how much — a figure read from a row" in described
     assert "Show every group of a cut, or say how many you left out" in described
     assert "never at the top" in described
 
@@ -265,7 +265,7 @@ def test_the_analyst_measures_on_the_measures_table_and_acts_on_a_caveat():
         assert "re-measure the way it says, then answer from that result" in p
         assert "Leaving out the rows a guard flagged is not a re-measure." in p
     p = analyst_system_prompt("c", {}, 10, shape="describe")
-    assert "Groups within a few percent of each other are alike" in p
+    assert "groups within a few percent of each other are alike" in p
     assert "never one group's value, never an average of the groups' averages" in p
 
 
@@ -309,9 +309,10 @@ def test_the_describe_rules_give_an_answer_no_figure_to_copy():
     """Re-run #6 (2026-10-01): the alike rule's example, "every centre takes 3.95–4.01 days", was the fulfilment
     question's own range of total days — a sum of two averages no row holds — and that answer then had a sentence
     withheld as untraced. A figure in a rule is a figure an answer can copy; the range is read from the rows."""
-    from aughor.agent.analyst import _describe_rules
+    from aughor.agent.analyst import _HEADLINE_WORDS, _describe_rules
     text = " ".join(_describe_rules(7))
-    assert re.findall(r"\d", text) == ["7"]                 # the budget, and no other figure
+    # the budget and the headline's length bound, and no other figure
+    assert re.findall(r"\d", text) == ["7", *str(_HEADLINE_WORDS)]
     assert "each read from a row" in text
 
 

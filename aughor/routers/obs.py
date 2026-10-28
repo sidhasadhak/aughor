@@ -591,9 +591,9 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     precisely because `session_events` once had "four in-process readers and zero HTTP
     exposure" — the same gap, one fold later.
 
-    Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: with the
-    flag on, converse serves every quick turn that is not an escalation, a dossier drill
-    or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
+    Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: converse
+    serves every quick turn a tool-calling binding can take that is not an escalation, a
+    dossier drill or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
     graduation change", which is genuinely unknown until traffic runs — but it does not
     answer "does a conversation answer better". That question belongs to the other two
     parts of the flag's exit criterion, the scripted faux receipt and the parity
@@ -603,8 +603,8 @@ def route_mix(scan: int = 5000, since_seq: Optional[int] = None):
     `converse_share` is null rather than 0.0 when no `/ask` turn has finished: a share of
     zero turns is undefined, and 0% would read as "converse is never chosen".
 
-    The numbers are WINDOWED, and `window` in the response says how. The flag is off by
-    default, so most of the log predates converse being able to run at all; counting those
+    The numbers are WINDOWED, and `window` in the response says how. The flag was off by
+    default until SP-14, so most of the log predates converse being able to run at all; counting those
     turns put a denominator around a population they were never part of, and the first
     live reading said 0.016 when the honest figure was 4 of 4. The window defaults to the
     first converse turn. `since_seq` overrides it — the flag's flip, a deploy, the start

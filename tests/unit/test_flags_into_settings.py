@@ -71,6 +71,9 @@ UNCONDITIONAL = {
     # the metrics and Briefing area, 2026-10-28
     "metrics.figure_gates", "metrics.coverage_map", "metrics.coverage_proposals", "metrics.blind_spot_proposals",
     "metrics.coverage_writer", "briefing.by_period", "briefing.ranges", "briefing.metric_cap",
+    # the answering area, 2026-10-28
+    "ask.converse", "chat.buttons_reach_agent", "analyst.conclude", "answers.recheck", "semops.banded_cascade",
+    "grounding.full_schema_first", "federation.planner", "agents.grounding_read", "agents.revision_on_answers",
 }
 
 

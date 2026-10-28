@@ -711,18 +711,17 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
     return added
 
 
-#: Arc FA, FA-7 — the grounding read's tool, listed only while the API has `agents.grounding_read` on.
+#: Arc FA, FA-7 — the grounding read's tool, listed while the install has a custom agent.
 GROUNDING_TOOL = "ground_agent"
 
 
 async def _grounding_roster(api: "AughorClient") -> list[dict]:
-    """One row while the grounding read is on, none while it is off — so the live refresh adds and removes the tool.
-    Read off the custom agents the API lists, whose rows carry ``grounding_read`` only while the flag is on: the same
-    answer the agents roster has just read, so a server with the flag off asks the API nothing it did not before. An
-    install with no custom agent has nothing to ground, and is offered no tool."""
+    """One row while the install has a custom agent, none while it has none — so the live refresh adds and removes
+    the tool. Read off the custom agents the API lists: the same answer the agents roster has just read, so the
+    refresh asks the API nothing more. An install with no custom agent has nothing to ground."""
     recent = getattr(api, "recent_user_agents", None)
     rows = await recent(_LIVE_TTL) if recent else await api.list_user_agents()
-    return [{"name": GROUNDING_TOOL}] if any(r.get("grounding_read") for r in rows or []) else []
+    return [{"name": GROUNDING_TOOL}] if rows else []
 
 
 def _grounding_runner(api: "AughorClient"):
@@ -769,14 +768,13 @@ _GROUNDING_DESCRIPTION = (
 
 
 async def register_grounding_tool(client: "AughorClient | None" = None) -> list[str]:
-    """Arc FA, FA-7 — `ground_agent`, a READ, while the API has `agents.grounding_read` on; nothing while it is off,
-    so the list is as it was. Same posture as the registrars above: never raises, returns what it added, and skips a
-    name another tool holds."""
+    """Arc FA, FA-7 — `ground_agent`, a READ, while the install has a custom agent; nothing while it has none. Same
+    posture as the registrars above: never raises, returns what it added, and skips a name another tool holds."""
     api = client or _client
     try:
         rows = await _grounding_roster(api)
     except Exception as exc:                       # the API is down, or the route is old
-        _log.warning("could not read whether the grounding read is on: %s", exc)
+        _log.warning("could not read the custom agents for the grounding read: %s", exc)
         return []
     if not rows:
         return []

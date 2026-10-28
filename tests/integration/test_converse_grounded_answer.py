@@ -69,7 +69,6 @@ def test_a_fabricated_table_never_reaches_the_headline(
     does not contain. The turn must not present them."""
     from aughor.llm.faux import FauxToolCall
 
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
     faux_llm.set_responses([
         FauxToolCall(payload={"sql": "SELECT route_id, count(*) FROM flights GROUP BY 1"},
                      name="run_sql"),
@@ -106,7 +105,6 @@ def test_a_faithful_answer_is_untouched(
     """The guard removes false claims; it must not disturb a true one."""
     from aughor.llm.faux import FauxToolCall
 
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
     faithful = "GVA-LHR leads with 42 flights, then ZRH-CDG at 35 and ZRH-LHR at 28."
     faux_llm.set_responses([
         FauxToolCall(payload={"sql": "SELECT route_id, count(*) FROM flights GROUP BY 1"},

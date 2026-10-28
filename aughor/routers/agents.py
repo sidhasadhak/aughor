@@ -13,7 +13,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from aughor.custom_agents.grounding_read import require_open as require_grounding_open
 from aughor.kernel.agents import (
     charter_for_kind,
     effective_governance,
@@ -236,9 +235,8 @@ class UserAgentPatch(BaseModel):
     pack_ids: Optional[list[str]] = None
     tool_grants: Optional[list[str]] = None
     enabled: Optional[bool] = None
-    #: Arc TC-1 — the revision (`config_rev`) the caller read. With `agents.revision_on_answers` on, a save sent
-    #: against an agent that has moved since is refused with 409 naming both revisions; not sent, the save is taken
-    #: as before. Off, it is ignored.
+    #: Arc TC-1 — the revision (`config_rev`) the caller read. A save sent against an agent that has moved since is
+    #: refused with 409 naming both revisions; not sent, the save is taken.
     expected_rev: Optional[str] = None
 
 
@@ -259,11 +257,9 @@ class UserAgentFromTemplate(BaseModel):
 
 
 def _expected_rev(sent: Optional[str]) -> Optional[str]:
-    """Arc TC-1 — the revision a caller read, honoured only with `agents.revision_on_answers` on. Off, or sent
-    blank, it is None: the save is taken unconditionally, as it was before the field existed."""
-    from aughor.custom_agents.context import revision_on_answers
+    """Arc TC-1 — the revision a caller read. Sent blank, it is None: the save is taken unconditionally."""
     sent = (sent or "").strip()
-    return sent if sent and revision_on_answers() else None
+    return sent or None
 
 
 def _revision_conflict(exc) -> HTTPException:
@@ -276,15 +272,9 @@ def _revision_conflict(exc) -> HTTPException:
 @router.get("/agents/custom")
 def list_user_agents():
     """The active workspace's user-defined agents (the persona roster, newest first)."""
-    from aughor.custom_agents import grounding_read, list_agents
+    from aughor.custom_agents import list_agents
     from aughor.metastore import scoped_to_workspace
-    rows = [a.model_dump() for a in scoped_to_workspace(list_agents(), key="connection_id")]
-    if grounding_read.enabled():
-        # FA-7: how the MCP server learns the grounding read is open, from the roster it already reads — so with the
-        # flag off it asks nothing more than before, and this list is as it was.
-        for row in rows:
-            row["grounding_read"] = True
-    return rows
+    return [a.model_dump() for a in scoped_to_workspace(list_agents(), key="connection_id")]
 
 
 @router.get("/agents/templates")
@@ -485,8 +475,8 @@ def restore_user_agent_revision(agent_id: str, version: int, expected_rev: Optio
     configuration, not a counter, so returning to a measured state returns the measurement
     with it.
 
-    Arc TC-1 — ``expected_rev`` (the revision the caller read), with ``agents.revision_on_answers`` on: a restore
-    sent against an agent that has moved since is refused with 409, as a save is.
+    Arc TC-1 — ``expected_rev`` (the revision the caller read): a restore sent against an agent that has moved
+    since is refused with 409, as a save is.
     """
     from aughor.custom_agents import get_agent, update_agent
     from aughor.custom_agents.revisions import revision_config
@@ -687,14 +677,14 @@ def agent_doors(agent_id: str):
 
 @router.get("/agents/custom/{agent_id}/grounding",
             # the owner guard first: another organisation's connection is refused at every door that names one
-            dependencies=[Depends(connection_owner_guard), Depends(require_grounding_open)])
+            dependencies=[Depends(connection_owner_guard)])
 def agent_grounding_read(agent_id: str, request: Request,
                          question: str = Query(..., min_length=1, max_length=2000),
                          connection_id: str = "", schema: str = "", asker: str = ""):
     """Arc FA, FA-7 — the grounding read for a session caller: what the MCP tool ``ground_agent`` reads, so the agent
     gate holds it to the organisation's policy (a read) and audits it. The same read as the agent's HTTP door — every
     block with its content, the absent ones with why, the embedder said, no model asked — journaled as
-    ``agent.grounding_read``. Flag ``agents.grounding_read``; off, a 404."""
+    ``agent.grounding_read``."""
     from aughor.custom_agents import get_agent, grounding_read
     from aughor.security.authz import get_principal
     agent = get_agent(agent_id)

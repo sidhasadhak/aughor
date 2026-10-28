@@ -167,8 +167,8 @@ def test_tool_names_survive_the_round_trip_through_the_store():
 def test_turns_from_before_converse_could_run_are_not_in_the_denominator(monkeypatch):
     """The defect this fold shipped with, and the reason the window exists.
 
-    `ask.converse` is off by default, so most of the log is traffic from before converse
-    could serve anything. Dividing by all of it puts turns in a denominator they were
+    `ask.converse` was off by default until SP-14, so most of the log was traffic from before
+    converse could serve anything. Dividing by all of it puts turns in a denominator they were
     never part of. Live, that read 0.016 when converse had served 4 of the 4 turns that
     happened after the flag went on — understating by ~60x, in the receipt built to decide
     whether conversation should become the default door.

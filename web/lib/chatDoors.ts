@@ -1,13 +1,12 @@
 /**
  * PENDING item 15 — which backend door a chat button's turn goes through.
  *
- * Measured 2026-09-23: Quick posts `/chat` and the default Agent button posts the deep-analysis
- * door; only Edit, starters, clarify answers and re-runs reach the unified `/ask`, where the
- * conversation agent holds the ontology's tools (look up an object, describe a type). With
- * `chat.buttons_reach_agent` on, both buttons go through `/ask` — Quick at quick depth, Agent at
- * deep depth. Off, a turn is sent exactly as before. On by default since 2026-09-24 — the user's
- * call, taken knowing a conversation turn costs ~20k tokens (ROADMAP §3.22); the operator turns it
- * off with AUGHOR_CHAT_BUTTONS_REACH_AGENT=0.
+ * Measured 2026-09-23: Quick posted `/chat` and the default Agent button the deep-analysis door;
+ * only Edit, starters, clarify answers and re-runs reached the unified `/ask`, where the
+ * conversation agent holds the ontology's tools (look up an object, describe a type). Now both
+ * buttons go through `/ask` — Quick at quick depth, Agent at deep depth — the user's call of
+ * 2026-09-24, taken knowing a conversation turn costs ~20k tokens (ROADMAP §3.22); part of the
+ * platform since 2026-10-28 (it was the flag `chat.buttons_reach_agent`, ROADMAP §3.65).
  */
 import type { ChatMode } from "@/components/ChatPanel";
 
@@ -20,8 +19,8 @@ type Depth = "auto" | "quick" | "deep";
  * door (found by the branch review, 2026-09-24: "Run fresh" was quietly served from cache and
  * "Explore this fact" lost its seed).
  */
-export function doorFor(mode: ButtonMode, depth: Depth, reachAgent: boolean, plain = true): { mode: ButtonMode; depth: Depth } {
-  if (!reachAgent || !plain || mode === "auto") return { mode, depth };
+export function doorFor(mode: ButtonMode, depth: Depth, plain = true): { mode: ButtonMode; depth: Depth } {
+  if (!plain || mode === "auto") return { mode, depth };
   const own: Depth = mode === "ask" ? "quick" : "deep";     // Quick → quick; the Agent button → deep
   return { mode: "auto", depth: depth === "auto" ? own : depth };
 }

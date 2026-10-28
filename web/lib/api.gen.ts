@@ -658,7 +658,7 @@ export interface paths {
          * @description Arc FA, FA-7 — the grounding read for a session caller: what the MCP tool ``ground_agent`` reads, so the agent
          *     gate holds it to the organisation's policy (a read) and audits it. The same read as the agent's HTTP door — every
          *     block with its content, the absent ones with why, the embedder said, no model asked — journaled as
-         *     ``agent.grounding_read``. Flag ``agents.grounding_read``; off, a 404.
+         *     ``agent.grounding_read``.
          */
         get: operations["agent_grounding_read_agents_custom__agent_id__grounding_get"];
         put?: never;
@@ -829,8 +829,8 @@ export interface paths {
          *     configuration, not a counter, so returning to a measured state returns the measurement
          *     with it.
          *
-         *     Arc TC-1 — ``expected_rev`` (the revision the caller read), with ``agents.revision_on_answers`` on: a restore
-         *     sent against an agent that has moved since is refused with 409, as a save is.
+         *     Arc TC-1 — ``expected_rev`` (the revision the caller read): a restore sent against an agent that has moved
+         *     since is refused with 409, as a save is.
          */
         post: operations["restore_user_agent_revision_agents_custom__agent_id__revisions__version__restore_post"];
         delete?: never;
@@ -5484,9 +5484,8 @@ export interface paths {
         /**
          * Door Grounding
          * @description What this agent would read for the question — every grounding block with its content, the absent ones with
-         *     why, whether the embedder was called and which — and no model is asked (flag ``agents.grounding_read``; off, the
-         *     door is a 404 whatever the key or the body). Journaled as ``agent.grounding_read`` without the question or the
-         *     content.
+         *     why, whether the embedder was called and which — and no model is asked. Journaled as ``agent.grounding_read``
+         *     without the question or the content.
          */
         post: operations["door_grounding_doors_agents__agent_id__grounding_post"];
         delete?: never;
@@ -8258,7 +8257,6 @@ export interface paths {
          * @description Idea 5 — re-run a chat answer's own query NOW and compare it with what was said: the
          *     numbers that moved by 5% or more, and whether they are late rows or a restatement. The
          *     re-check is recorded on the answer. Nothing is sent: the person asking is looking at it.
-         *     404 while `answers.recheck` is off, with the reason.
          */
         post: operations["recheck_investigation_investigations__inv_id__recheck_post"];
         delete?: never;
@@ -11554,9 +11552,9 @@ export interface paths {
          *     precisely because `session_events` once had "four in-process readers and zero HTTP
          *     exposure" — the same gap, one fold later.
          *
-         *     Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: with the
-         *     flag on, converse serves every quick turn that is not an escalation, a dossier drill
-         *     or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
+         *     Read it as COVERAGE, not as a verdict. `_converse_eligible` has no sampling: converse
+         *     serves every quick turn a tool-calling binding can take that is not an escalation, a
+         *     dossier drill or a seeded-SQL run. So `converse_share` answers "how much of real traffic would
          *     graduation change", which is genuinely unknown until traffic runs — but it does not
          *     answer "does a conversation answer better". That question belongs to the other two
          *     parts of the flag's exit criterion, the scripted faux receipt and the parity
@@ -11566,8 +11564,8 @@ export interface paths {
          *     `converse_share` is null rather than 0.0 when no `/ask` turn has finished: a share of
          *     zero turns is undefined, and 0% would read as "converse is never chosen".
          *
-         *     The numbers are WINDOWED, and `window` in the response says how. The flag is off by
-         *     default, so most of the log predates converse being able to run at all; counting those
+         *     The numbers are WINDOWED, and `window` in the response says how. The flag was off by
+         *     default until SP-14, so most of the log predates converse being able to run at all; counting those
          *     turns put a denominator around a population they were never part of, and the first
          *     live reading said 0.016 when the honest figure was 4 of 4. The window defaults to the
          *     first converse turn. `since_seq` overrides it — the flag's flip, a deploy, the start
@@ -14598,7 +14596,7 @@ export interface paths {
          *     A deterministic selector (lexical schema-relevance + greedy set-cover — no LLM) picks the subset of
          *     the candidate connections the question touches, then the federated planner answers over exactly those.
          *     Returns the answer plus the `selection` (which connections and the terms each grounded) so the routing
-         *     is inspectable. Flag-gated on `federation.planner` (default off → 404).
+         *     is inspectable.
          */
         post: operations["query_auto_federated_answer_query_auto_federated_answer_post"];
         delete?: never;
@@ -14802,8 +14800,7 @@ export interface paths {
          *     One LLM call grounds every schema and emits a structured plan (an ordered list of grounded
          *     per-source sub-queries + link keys — the planner also picks the driver and chain order); the plan
          *     is validated deterministically and folded through the batched-foreach engine. Returns the merged
-         *     result plus the plan and any validation issues (inspectable). Flag-gated on `federation.planner`
-         *     (default off → 404).
+         *     result plus the plan and any validation issues (inspectable).
          */
         post: operations["query_federated_answer_query_federated_answer_post"];
         delete?: never;

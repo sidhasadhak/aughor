@@ -121,8 +121,8 @@ describe("an A/B pair against the noise floor", () => {
 describe("words", () => {
   it("names a flag by its label when the registry has one, else spells its name out", () => {
     expect(axisWords({ kind: "flag", name: "closed_loop" })).toBe("closed loop");
-    expect(axisWords({ kind: "flag", name: "grounding.full_schema_first" }, { "grounding.full_schema_first": "Show the SQL writer every table" }))
-      .toBe("Show the SQL writer every table");
+    expect(axisWords({ kind: "flag", name: "monitors.recovery" }, { "monitors.recovery": "Alerts that close when a metric recovers" }))
+      .toBe("Alerts that close when a metric recovers");
   });
 
   it("names what a suite runs as, and says when the app cannot run it", () => {

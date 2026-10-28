@@ -1,12 +1,12 @@
 """PENDING item 17 — the default answer works on every model backend.
 
-The conversation and the analyst are tool loops, and `ask.converse` routes every quick and
-deep `/ask` turn to them. Measured 2026-09-24: the `anthropic` binding raised before any
+The conversation and the analyst are tool loops, and `/ask` routes every quick and deep turn
+to them. Measured 2026-09-24: the `anthropic` binding raised before any
 fallback and every such turn ended in an error (the translation itself is pinned in
 `test_provider_tool_calls.py`). Two routes out for a binding that cannot make a tool call:
 
 * known in advance — the model declares no tool calling, or refused one earlier in this
-  process — the turn is routed to the bodies that need none, exactly as with the flag off;
+  process — the turn is routed to the bodies that need none (the quick body, the phase script);
 * found on the turn's first request — the quick body answers instead, and the step trail
   says why. A failure after a step has run is still the turn's error: something was already
   answered, and restarting would repeat it.
@@ -85,14 +85,14 @@ def test_the_refusals_that_mean_no_tools_at_all():
 
 
 def test_a_binding_known_to_refuse_tools_takes_the_bodies_that_need_none(binding):
-    assert ct.converse_available() is True       # never asked: routed exactly as before
+    assert ct.binding_calls_tools() is True       # never asked: routed exactly as before
     binding["tools"] = True
-    assert ct.converse_available() is True
+    assert ct.binding_calls_tools() is True
     binding["tools"] = False                      # the model's own catalogue says no
-    assert ct.converse_available() is False
+    assert ct.binding_calls_tools() is False
     binding["tools"] = None
     ct.remember_tools_refused()                   # or it refused on an earlier turn
-    assert ct.converse_available() is False
+    assert ct.binding_calls_tools() is False
 
 
 def test_the_analyst_door_follows_the_same_rule(binding):

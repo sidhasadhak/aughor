@@ -219,18 +219,18 @@ def test_a_failed_ask_ends_in_one_typed_error_frame(monkeypatch):
     re-asking against a connection that does not exist is "usually safe". It is not; it
     fails identically every time.
 
-    `ask.converse` is pinned off: this asserts the FAST PATH's error envelope, and with
-    the third body serving the turn the same missing connection surfaces through the tool
-    loop instead (`tool_loop: list_tables raised`), which is a different envelope and a
-    separate claim. Pinned explicitly so the test says which door it is describing."""
+    The turn is pinned to the fast path — a coder binding that cannot call tools, the turn the
+    conversation never serves: this asserts the FAST PATH's error envelope, and with the third
+    body serving the turn the same missing connection surfaces through the tool loop instead
+    (`tool_loop: list_tables raised`), which is a different envelope and a separate claim.
+    Pinned explicitly so the test says which door it is describing."""
     import json
 
     from fastapi.testclient import TestClient
 
     from aughor.api import app
 
-    # SP-14 flipped the default ON — the pin is now an explicit off, same claim.
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
 
     r = TestClient(app).post("/ask", json={"question": "what were sales last month?",
                                            "connection_id": "no-such-connection-xyz"})

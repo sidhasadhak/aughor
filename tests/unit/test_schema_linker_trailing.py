@@ -20,6 +20,9 @@ from aughor.tools.schema_linker import link_schema
 # A question matching `orders` only, so pruning is deterministic (zero-signal
 # tables are dropped: the keep set requires score > 0).
 QUESTION = "total orders revenue"
+# Below the fixture's size: a schema that fits the budget is sent whole (full schema first),
+# so the linker prunes — and this pass runs — only past it.
+BUDGET = 200
 
 SCHEMA = """TABLE: orders  (1,000 rows)
   order_id  BIGINT
@@ -48,7 +51,7 @@ ENTITY RELATIONSHIPS (verified against live data — prefer these joins):
 
 
 def _slice() -> str:
-    out = link_schema(QUESTION, SCHEMA, top_k_tables=1, top_k_cols=8, char_budget=20_000)
+    out = link_schema(QUESTION, SCHEMA, top_k_tables=1, top_k_cols=8, char_budget=BUDGET)
     assert out != SCHEMA, "the fixture must actually be filtered to exercise the trailing pass"
     assert "TABLE: customers" not in out
     return out
@@ -103,7 +106,7 @@ def test_a_shard_note_between_blocks_does_not_open_the_trailing_region():
         f"TABLE: events_2021_{m:02d}\n  event_id  INTEGER\n  payload  VARCHAR\n\n"
         for m in (1, 2, 3)
     ) + SCHEMA
-    out = link_schema(QUESTION, sharded, top_k_tables=1, top_k_cols=8, char_budget=20_000)
+    out = link_schema(QUESTION, sharded, top_k_tables=1, top_k_cols=8, char_budget=BUDGET)
     assert out.count("TABLE: orders") == 1
     assert "  orders.customer_id → customers.customer_id  [exact]" in out
 
@@ -111,6 +114,6 @@ def test_a_shard_note_between_blocks_does_not_open_the_trailing_region():
 def test_a_schema_with_no_trailing_sections_gains_none():
     bare = "TABLE: orders  (10 rows)\n  order_id  BIGINT\n  revenue  DOUBLE\n\n" \
            "TABLE: audit_log  (5 rows)\n  log_id  BIGINT\n"
-    out = link_schema(QUESTION, bare, top_k_tables=1, top_k_cols=8, char_budget=20_000)
+    out = link_schema(QUESTION, bare, top_k_tables=1, top_k_cols=8, char_budget=50)
     assert "audit_log" not in out
     assert out.strip().splitlines()[-1].startswith("  "), "nothing but the kept block"

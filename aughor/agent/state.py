@@ -478,7 +478,7 @@ class AnswerReport(TypedDict):
     # `{from, text, figures}`. Kept for audit and never rendered — the answer says a sentence was withheld.
     # Absent when nothing was.
     withheld: NotRequired[Optional[list]]
-    # P1 (`analyst.conclude`) — the answer's own structure, from the analyst's `conclude` tool. `exhibits`:
+    # P1 (`conclude`) — the answer's own structure, from the analyst's `conclude` tool. `exhibits`:
     # the results the answer cites, in the order it cites them, each `{finding_id, claim}` — the canvas
     # draws each once, captioned by its claim, and names the rest under Sources. `figures`: the 3–4
     # figures the answer rests on, each `{label, value, note}`. `gaps`: what the data could not answer.
@@ -651,9 +651,9 @@ class AgentState(TypedDict):
     # the narrator writes the report from; absent/empty on every phase-script run,
     # so synthesis is byte-identical there.
     _analyst_conclusion: NotRequired[Optional[str]]
-    #: P1 (`analyst.conclude`) — the analyst's structured conclusion, as its `conclude` tool
-    #: returned it: `headline`, `answer`, `exhibits` (the result ids the answer cites, each with
-    #: its claim), `figures`, `gaps`. Absent when the flag is off or the loop ended in prose.
+    #: P1 — the analyst's structured conclusion, as its `conclude` tool returned it: `headline`,
+    #: `answer`, `exhibits` (the result ids the answer cites, each with its claim), `figures`,
+    #: `gaps`. Absent when the loop ended in prose.
     _analyst_conclude: NotRequired[Optional[dict]]
     #: P4 — True on an analyst turn (`analyst._base_state`): the intake then declares no five-phase
     #: plan for it, since the analyst chooses its own slices and a plan nobody follows was being

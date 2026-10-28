@@ -29,6 +29,8 @@ EXPECTED = {
     "run_sql", "list_tables", "describe_table",
     # the one platform tool that is analysis business
     "propose_context_note",
+    # the answer, with its own structure (P1 of the canvas-output study)
+    "conclude",
 }
 
 

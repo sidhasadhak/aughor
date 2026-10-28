@@ -31,19 +31,19 @@ def _route(depth="quick", forced=None):
 
 
 @pytest.fixture
-def _flag_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
+def _calls_tools(monkeypatch):
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
 
 
 # ── eligibility: the carve-outs that dissolved, and the two that remain ──────────────
 
-def test_a_seeded_sql_turn_is_no_longer_a_bypass(_flag_on):
+def test_a_seeded_sql_turn_is_no_longer_a_bypass(_calls_tools):
     """seed_sql used to disqualify converse — and the quick body then IGNORED the seed
     entirely. The conversation takes the turn (and the seed rides in as context)."""
     assert inv._converse_eligible(_req(seed_sql="SELECT 1"), _route("quick")) is True
 
 
-def test_a_dossier_drill_is_taken_by_the_conversation(_flag_on):
+def test_a_dossier_drill_is_taken_by_the_conversation(_calls_tools):
     """insight_id forces route.depth='deep' with forced='dossier' — deep by ROUTING
     convention, not because the user asked for a report. The conversation takes it,
     holding the finding as context and the deep_analysis tool in reserve."""
@@ -51,21 +51,21 @@ def test_a_dossier_drill_is_taken_by_the_conversation(_flag_on):
         _req(insight_id="i1"), _route("deep", forced="dossier")) is True
 
 
-def test_an_explicit_escalation_keeps_the_investigation_body(_flag_on):
+def test_an_explicit_escalation_keeps_the_investigation_body(_calls_tools):
     """A command, not a question — re-deciding it with a model turn would be latency
     with no information."""
     assert inv._converse_eligible(
         _req(escalate=True), _route("deep", forced="deep_flag")) is False
 
 
-def test_a_router_chosen_deep_route_keeps_its_body(_flag_on):
+def test_a_router_chosen_deep_route_keeps_its_body(_calls_tools):
     """Until the investigation's frames can stream through a converse turn (CI-6a's
     renderer), the dedicated body is the better surface for a genuinely deep question."""
     assert inv._converse_eligible(_req(), _route("deep")) is False
 
 
-def test_the_flag_still_gates_everything(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, off is explicit
+def test_a_binding_without_tools_still_gates_everything(monkeypatch):
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
     assert inv._converse_eligible(_req(seed_sql="SELECT 1"), _route("quick")) is False
 
 

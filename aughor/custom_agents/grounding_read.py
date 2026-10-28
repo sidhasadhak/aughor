@@ -2,8 +2,8 @@
 
 A program built with any agent SDK reaches an Aughor agent through MCP or the headless doors, and every one of those
 ASKS: a model writes SQL, it runs, an answer comes back. A program that wants to ground its own model on what an Aughor
-agent knows — or to see what that agent would be handed before it trusts the answer — had no read. This is that read,
-behind ``agents.grounding_read`` (off), at two doors: the agent's HTTP door with its key
+agent knows — or to see what that agent would be handed before it trusts the answer — had no read. This is that read
+(``agents.grounding_read`` until it was made unconditional, 2026-10-28), at two doors: the agent's HTTP door with its key
 (``POST /doors/agents/{id}/grounding``) and the read-level MCP tool ``ground_agent`` over the session route
 ``GET /agents/custom/{id}/grounding``, where the agent gate holds and audits it like every other tool call.
 
@@ -28,12 +28,11 @@ The chat-compatible endpoint (``doors.chat_completions``) is written down and no
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException
 
-FLAG = "agents.grounding_read"
-#: The MCP tool a client sees while the flag is on.
+#: The MCP tool a client sees.
 MCP_TOOL = "ground_agent"
 _AUDIT_KIND = "agent.grounding_read"
 
@@ -66,22 +65,6 @@ ABSENT_WHY: dict[str, str] = {
     "causal": "no declared cause bears on the question",
     "docs": "",            # said from the agent's own document scope, below
 }
-
-
-def enabled() -> bool:
-    """Whether ``agents.grounding_read`` is on. A flag that cannot be read is off."""
-    try:
-        from aughor.kernel.flags import flag_enabled
-        return bool(flag_enabled(FLAG))
-    except Exception:                       # noqa: BLE001 — off is the as-before path
-        return False
-
-
-def require_open() -> None:
-    """A route dependency: while the flag is off, the door answers the 404 a route that does not exist answers —
-    before its body or query is read, so a malformed request is a 404 too, never a 422 that says the door is there."""
-    if not enabled():
-        raise HTTPException(status_code=404, detail="Not Found")
 
 
 def resolve_scope(agent, connection_id: str = "", schema: str = "") -> tuple[str, str]:
@@ -267,10 +250,8 @@ def session_principal(request, asker: str = "") -> tuple[str, str]:
     return acting_person(get_principal(request)), "session"
 
 
-def door_state(agent, *, issued: bool) -> Optional[dict[str, Any]]:
-    """The grounding door as the Doors tab lists it, or None while the flag is off (the list is as it was)."""
-    if not enabled():
-        return None
+def door_state(agent, *, issued: bool) -> dict[str, Any]:
+    """The grounding door as the Doors tab lists it."""
     return {"state": "open" if issued and agent.enabled else ("needs the HTTP key" if not issued else "paused"),
             "tool": MCP_TOOL,
             "how": "what this agent would read for a question — each block, with why for one that is absent — and "

@@ -29,7 +29,7 @@ from aughor.kernel.flags import (
 # `deep_analysis.premise_check` left this list 2026-08-04 (Wave 3), and
 # `deep_analysis.causal_drill` left 2026-08-06 (Wave 5 hardwired it). `explore.route_wide` and
 # `federation.planner` left 2026-10-28 with the flags-into-settings decision (ROADMAP §3.65): the first deleted,
-# the second always on. No product flag is a switch since, so a synthetic pair (tests/conftest.py) plays the part.
+# the second made unconditional. No product flag is a switch since, so a synthetic pair (tests/conftest.py) plays the part.
 WS4B_FLAGS = ["_synthetic.default_off", "_synthetic.other_off"]
 
 
