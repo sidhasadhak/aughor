@@ -126,11 +126,8 @@ FLAG_ENV = {
     # the canvas draws each cited result once. OFF → the answer's first sentence is cut as the headline
     # and every result is drawn, byte-identical.
     "analyst.conclude": "AUGHOR_ANALYST_CONCLUDE",
-    # Arc CT-4 (ROADMAP §3.50). ON adds a Dashboards tab to the Data Canvas: the canvas's own cards,
-    # arranged by a kept spec — tabs, sections, cards shown by a condition. No model call: the
-    # tab draws what was approved. OFF → the Data Canvas has its three tabs and the dashboard's
-    # routes answer 404, exactly as before.
-    "dashboard.composed": "AUGHOR_DASHBOARD_COMPOSED",
+    # "dashboard.composed" (AUGHOR_DASHBOARD_COMPOSED) — Arc CT-4's dashboards — was made unconditional 2026-10-28:
+    # part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # Arc OC-0 (ROADMAP §3.56). ON: once a day the ontology census — what every built scope declares, what the
     # data verified of it, and what leans on it — is journaled as `ontology.census`, so a later wave reads its
     # before and after from the journal. OFF: nothing is read or written; GET /ontology/census still reads live.
@@ -195,11 +192,9 @@ FLAG_ENV = {
     # by their words (BM25) instead, each hit marked matched by words, and every caller says so. OFF: a failed embed
     # makes the document search unavailable, as before.
     "knowledge.hybrid_documents": "AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS",
-    # Arc FA, FA-2 (ROADMAP §3.60). ON: a dashboard's ticked objects and a set a piece reads can be asked about in the
-    # Data Canvas — the question carries them as its subject, read again through the object door under the asker's row
-    # policy, at most 50 by key and title with the total, what is withheld from them said. OFF: no piece offers it, a
-    # subject of objects or a set contributes nothing, and every turn is asked as before.
-    "canvas.ask_about_chosen": "AUGHOR_CANVAS_ASK_ABOUT_CHOSEN",
+    # "canvas.ask_about_chosen" (AUGHOR_CANVAS_ASK_ABOUT_CHOSEN) — Arc FA-2, asking the Data Canvas about what a
+    # dashboard's reader chose — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
+    # path is deleted. An operator's env var is ignored.
     # Arc FA, FA-4 (ROADMAP §3.60). ON: the builder shows each set as its chain with a count at each step, and a set of
     # fixed conditions can be kept as a segment — declared by the person as a condition rule, in the draft; a rule's
     # condition may count the last days. OFF: the builder shows each set's one count, and a rule refuses `in_last`.
@@ -217,16 +212,12 @@ FLAG_ENV = {
     # whole statement over any set of that entity's objects, and the question frame may resolve to it. OFF: the
     # object door and the frame read exactly as before; the key is still kept and counted.
     "ontology.keyed_metrics": "AUGHOR_ONTOLOGY_KEYED_METRICS",
-    # Arc OC-4 (ROADMAP §3.56). ON: a dashboard may hold pieces bound to the ontology — a process board, an objects table
-    # over an entity or a segment, an object detail that follows the table, and a button that runs a declared action —
-    # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the dashboard vocabulary
-    # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
-    "ontology.dashboard_pieces": "AUGHOR_ONTOLOGY_DASHBOARD_PIECES",
-    # The dashboard started from an object (2026-10-10, design-mockups/cockpit-from-object.html). ON: a dashboard may hold
-    # a filter column over an entity's categories, figures and a chart of its objects, every piece narrowed by the
-    # reader's own filters; and a person may start a dashboard from an object, its pieces proposed from what the object
-    # holds. OFF: the dashboard vocabulary refuses those three pieces and nothing is proposed.
-    "ontology.object_dashboards": "AUGHOR_ONTOLOGY_OBJECT_DASHBOARDS",
+    # "ontology.dashboard_pieces" (AUGHOR_ONTOLOGY_DASHBOARD_PIECES) — Arc OC-4, dashboard pieces bound to the
+    # ontology — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted.
+    # An operator's env var is ignored.
+    # "ontology.object_dashboards" (AUGHOR_ONTOLOGY_OBJECT_DASHBOARDS) — a dashboard started from an object — was
+    # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
+    # env var is ignored.
     # ROADMAP §6 item 53 (2026-10-25, the look study): what an entity is used by, on its own page. ON: the entity
     # panel's Overview reads one door that composes the dependents index (Arc OC-1), every dashboard whose pieces read
     # the entity, and how many audited statements named its tables in each of the last twelve months. OFF: the door
@@ -243,35 +234,31 @@ FLAG_ENV = {
     # "past its retiring date"; it still serves), and a withdrawal refused for what depends on it suggests retiring.
     # OFF: the door refuses, and nothing reads or says the mark.
     "ontology.retiring": "AUGHOR_ONTOLOGY_RETIRING",
-    # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a dashboard opens to be read, and Edit
-    # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
-    # every piece set up there, never typed as a spec. OFF: a dashboard is arranged by its six sizes and Arrange, the
-    # server refuses a section on the grid, and the writer of a dashboard is told nothing about the grid.
-    "dashboard.builder": "AUGHOR_DASHBOARD_BUILDER",
-    # Arc AP-2 and AP-3 (ROADMAP §3.57). ON: a dashboard may name sets and values its pieces read, a table may name what a
-    # click chooses and ticks collect, a figure may switch a list, and action buttons run declared actions on what a
-    # reader chose or ticked, on a set, or with what they fill in. OFF: the server refuses a spec that says any of it,
-    # and the builder offers none of it.
-    "dashboard.wiring": "AUGHOR_DASHBOARD_WIRING",
-    "dashboard.app_pieces": "AUGHOR_DASHBOARD_APP_PIECES",
-    "dashboard.shapes": "AUGHOR_DASHBOARD_SHAPES",
-    # Arc AP-7 (ROADMAP §3.57). ON: a card on a dashboard may read a person's own SQL — one table, several, another schema —
-    # shown as a table, a figure or a chart set up as they choose, each run stopped after the connection's time limit.
-    # OFF: the builder offers no query of your own, the doors answer 404, and every card runs as it always did.
-    "dashboard.queries": "AUGHOR_DASHBOARD_QUERIES",
-    # Arc AP-8 (ROADMAP §3.57). ON: a dashboard's value may come from the reader on the page, a set's count or the object a
-    # reader chose; a set compares any value; a query of your own reads one as a bound parameter. OFF: a value is the
-    # author's and only days reach a set, as before; the server refuses a spec that says more.
-    "dashboard.variables": "AUGHOR_DASHBOARD_VARIABLES",
-    # PENDING 54 (2026-10-23, design-mockups/dashboard-questions.html). ON: a dashboard may hold a Question — asked by
-    # the agent the Data Canvas uses, on a rhythm (daily, weekly, monthly) or only when a person asks, its answers kept
-    # and shown as the Data Canvas shows one; opening the dashboard never asks. OFF: the vocabulary refuses a Question
-    # and the question routes answer 404.
-    "dashboard.questions": "AUGHOR_DASHBOARD_QUESTIONS",
-    # A breakdown piece — an entity's objects grouped by a property, adding up to the whole (the Grist study §10).
-    "dashboard.breakdowns": "AUGHOR_DASHBOARD_BREAKDOWNS",
-    # A table's or a list's rows marked by a declared rule (the Grist study §10).
-    "dashboard.marks": "AUGHOR_DASHBOARD_MARKS",
+    # "dashboard.builder" (AUGHOR_DASHBOARD_BUILDER) — Arc AP-1, a dashboard built in place — was made unconditional
+    # 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
+    # "dashboard.wiring" (AUGHOR_DASHBOARD_WIRING) — Arc AP-2 and AP-3, a dashboard's sets, choices and action
+    # buttons — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "dashboard.app_pieces" (AUGHOR_DASHBOARD_APP_PIECES) — Arc AP-4, sections split into sections and the picker's
+    # pieces — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "dashboard.shapes" (AUGHOR_DASHBOARD_SHAPES) — Arc AP-5, shapes in the starter — was made unconditional
+    # 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
+    # "dashboard.queries" (AUGHOR_DASHBOARD_QUERIES) — Arc AP-7, a query of your own on a dashboard — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
+    # "dashboard.variables" (AUGHOR_DASHBOARD_VARIABLES) — Arc AP-8, a dashboard's variables — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
+    # "dashboard.questions" (AUGHOR_DASHBOARD_QUESTIONS) — PENDING 54, a Question on a dashboard — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
+    # "dashboard.breakdowns" (AUGHOR_DASHBOARD_BREAKDOWNS) — a breakdown piece, the Grist study §10 — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
+    # "dashboard.marks" (AUGHOR_DASHBOARD_MARKS) — rows marked by a declared rule, the Grist study §10 — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
     # PENDING 57 (2026-10-24, docs/DECISION_LOOP_STUDY_2026-10-24.md, D-1 to D-3). ON: a decision is booked in full where
     # it is made (Home's Decide cites its finding and may state an expectation; "Not worth it" books not acting; a
     # recommendation keeps its report's other actions as alternatives and marks what was recommended), every decision
@@ -355,10 +342,9 @@ FLAG_ENV = {
     # diff that snapshot against the pack as it stands, proposing only new and changed items. OFF: a binding stores the
     # version the caller sends and nothing else, and the upgrade doors answer 404.
     "packs.installed_versions": "AUGHOR_PACKS_INSTALLED_VERSIONS",
-    # Arc FA, FA-6. ON: a pack may carry `dashboards/*.yaml` templates; the templates of the packs bound on a connection
-    # are listed, and one becomes a dashboard draft through the proposal path with no model call, a metric the
-    # connection lacks skipped and said. OFF: nothing is listed and the template doors answer 404.
-    "packs.dashboard_templates": "AUGHOR_PACKS_DASHBOARD_TEMPLATES",
+    # "packs.dashboard_templates" (AUGHOR_PACKS_DASHBOARD_TEMPLATES) — Arc FA-6, a pack's dashboard templates — was
+    # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
+    # env var is ignored.
     # Arc MC, MC-0 (ROADMAP §3.62, §6 item 55(d)). ON: approving a metric — one at a time or a set adopted together —
     # reads its last six months at the day its data ends and refuses one that reads one value in every month, one whose
     # median is outside its recipe's sane range, and one whose recipe roles are bound to columns of the wrong type or to
@@ -497,17 +483,9 @@ RENAMED: dict[str, str] = {
     # left 2026-08-06 with their targets — flag endgame Wave 5 hardwired all three.
     # The map stays declared (empty) because `_canonical` is still the resolution
     # seam any future rename must pass through.
-    # 2026-10-23 — dashboards were renamed Dashboards (PENDING 54; the user: "rename dashboards entirely as Dashboards -
-    # externally and internally"). Every old name keeps resolving: an operator's override row, a script, a call site.
-    "cockpit.composed": "dashboard.composed",
-    "cockpit.builder": "dashboard.builder",
-    "cockpit.wiring": "dashboard.wiring",
-    "cockpit.app_pieces": "dashboard.app_pieces",
-    "cockpit.shapes": "dashboard.shapes",
-    "cockpit.queries": "dashboard.queries",
-    "cockpit.variables": "dashboard.variables",
-    "ontology.cockpit_pieces": "ontology.dashboard_pieces",
-    "ontology.object_cockpits": "ontology.object_dashboards",
+    # 2026-10-23 — cockpits were renamed Dashboards (PENDING 54); the nine `cockpit.*` / `ontology.cockpit_*` aliases left
+    # 2026-10-28 with their targets, which were made unconditional (ROADMAP §3.65) — an alias only means something while
+    # its target lives.
 }
 
 #: Retired env var → the flag it now feeds. Consulted only when the current flag's own
@@ -519,16 +497,8 @@ RETIRED_ENV: dict[str, str] = {
     # The three AUGHOR_ADA_PARALLEL_* entries left 2026-08-06 with their targets
     # (flag endgame Wave 6), and the last two (WHY_DEEPEN, WHY_WHERE_INTERACTION)
     # left the same day with Wave 5 — their flags are permanent behaviour now.
-    # 2026-10-23 — `AUGHOR_COCKPIT_*` → `AUGHOR_DASHBOARD_*`: an operator's .env (and the restart script's) keeps working.
-    "AUGHOR_COCKPIT_COMPOSED": "dashboard.composed",
-    "AUGHOR_COCKPIT_BUILDER": "dashboard.builder",
-    "AUGHOR_COCKPIT_WIRING": "dashboard.wiring",
-    "AUGHOR_COCKPIT_APP_PIECES": "dashboard.app_pieces",
-    "AUGHOR_COCKPIT_SHAPES": "dashboard.shapes",
-    "AUGHOR_COCKPIT_QUERIES": "dashboard.queries",
-    "AUGHOR_COCKPIT_VARIABLES": "dashboard.variables",
-    "AUGHOR_ONTOLOGY_COCKPIT_PIECES": "ontology.dashboard_pieces",
-    "AUGHOR_ONTOLOGY_OBJECT_COCKPITS": "ontology.object_dashboards",
+    # 2026-10-23 — `AUGHOR_COCKPIT_*` → `AUGHOR_DASHBOARD_*`; the nine left 2026-10-28 with their targets, which were made
+    # unconditional (ROADMAP §3.65).
 }
 
 
@@ -620,26 +590,6 @@ FLAG_META = {
                        "arrived late, or a restatement. A Slack reply passes the same checks as any "
                        "other message. Off: nothing is run again or sent.",
     },
-    "ontology.dashboard_pieces": {
-        "label": "Build dashboards from the ontology",
-        "summary": "Adds dashboard pieces that read the ontology: a process board, an objects table, "
-                   "an object detail and an action button.",
-        "facts": [{"kind": "free", "text": "No model calls"}],
-        "description": "The process board shows each stage and how often each promise is broken. The "
-                       "table can list the objects past a promise. An action that needs approval is "
-                       "proposed, not run. A piece whose source is gone says so. Off: these pieces "
-                       "cannot be added.",
-    },
-    "ontology.object_dashboards": {
-        "label": "Start a dashboard from an object",
-        "summary": "Pick an object and get a dashboard of its filters, figures, a daily chart and its "
-                   "objects. A click on a filter narrows every piece.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Queries your warehouse"}],
-        "description": "The pieces are proposed from what the object holds, and you tick the ones you "
-                       "want. Filters are each reader's own and never change the dashboard. Saved cards "
-                       "beside them say they are not filtered. Off: these pieces cannot be added.",
-    },
     "ontology.entity_usage": {
         "label": "What uses an entity",
         "summary": "An entity's page lists the dashboards, automations, processes and rules that use it. "
@@ -649,56 +599,6 @@ FLAG_META = {
         "description": "Each use says how it depends, so you know what a change would touch. The monthly count "
                        "comes from the platform's own log of statements run, never from your warehouse. "
                        "Off: the page lists its metrics and actions, as before.",
-    },
-    "dashboard.wiring": {
-        "label": "Wire a dashboard's pieces and actions",
-        "summary": "Pieces read named sets, and a row chosen in one is read by the others. Buttons run actions on "
-                   "the chosen or ticked rows.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Queries your warehouse"}],
-        "description": "A set is a named group of objects, such as the ones waiting past a promise. A button runs a "
-                       "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
-                       "dashboard's pieces read only their own entity.",
-    },
-    "dashboard.app_pieces": {
-        "label": "Split dashboards into sections and add more pieces",
-        "summary": "A section splits into columns, rows or tabs, and an empty one offers a piece. The picker "
-                   "places every piece by hand.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own dashboards"}],
-        "description": "A section holds pieces on its twelve columns, or is split into sections of its own. Sections "
-                       "side by side take widths one column at a time. An empty section offers a piece or a split, and a "
-                       "reader is drawn nothing there. Off: a dashboard's sections hold pieces only.",
-    },
-    "dashboard.shapes": {
-        "label": "Start a dashboard from a shape",
-        "summary": "Starting from an object offers the shapes its ontology fits, and says why. A queue, a map, one "
-                   "object, a timeline or an overview.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own dashboards"}],
-        "description": "A queue fits what waits past a promise with actions on it. A map fits a latitude and a "
-                       "longitude, and a timeline two moments on each object. One object fits a name and several kinds "
-                       "of objects linking to it. One to three are offered, the best first, each with a sentence of why "
-                       "from the data. Off: every object starts one way.",
-    },
-    "dashboard.queries": {
-        "label": "Your own query on a dashboard",
-        "summary": "Write SQL over one table, several or another schema. Show it as a table, a figure or a chart "
-                   "set up as you choose.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own dashboards"}],
-        "description": "Choose what runs along the bottom and in what buckets, what is summed, and what splits it — "
-                       "stacked, side by side or as shares. Your query runs read-only and stops after the connection's "
-                       "time limit. Off: a card is drawn by the shape of its result.",
-    },
-    "dashboard.variables": {
-        "label": "Variables on a dashboard",
-        "summary": "A value may come from the reader, a set's count or the object chosen. Sets and your own queries read it.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own dashboards"}],
-        "description": "A reader changes a value on the page, kept in their browser and never in the dashboard. A set "
-                       "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
-                       "Off: a value is set once by its author.",
     },
     "arrivals.google_comments": {
         "label": "Comments on a Google file, read onto a decision",
@@ -809,46 +709,6 @@ FLAG_META = {
         "description": "Words match a line as it was kept. You may narrow by level, error, warning or info, and by the "
                        "kind of run. The newest lines come first, a page at a time. It says how old the oldest line "
                        "searched is, since the log may keep fewer days. Off: a run's lines are read one run at a time.",
-    },
-    "dashboard.marks": {
-        "label": "Rows marked by a rule on dashboards",
-        "summary": "Mark a table's or a list's rows that a declared rule admits, in a colour you choose. Its "
-                   "legend says how many.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Only rules the ontology declares"}],
-        "description": "A mark is never a condition written on the dashboard: it names a rule or segment declared on "
-                       "the entity. One the entity does not declare is refused when the dashboard is kept. Off: no "
-                       "row is marked.",
-    },
-    "dashboard.breakdowns": {
-        "label": "Breakdowns on dashboards",
-        "summary": "Group an entity's objects by a property on a dashboard, with a count or a total per group. A click "
-                   "on a group narrows the dashboard.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Groups always add up"}],
-        "description": "The largest groups are shown, the rest are one Other row, and objects with no value are their "
-                       "own row. The line beneath says whether the groups add up to the whole. Off: a dashboard holds "
-                       "no breakdown, and one that does is refused when kept.",
-    },
-    "dashboard.questions": {
-        "label": "Questions on a dashboard",
-        "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
-                   "summary and why.",
-        "facts": [{"kind": "model", "text": "A full run per answer"},
-                  {"kind": "schedule", "text": "Weekly by default; never on open"},
-                  {"kind": "private", "text": "Changes only your own dashboards"}],
-        "description": "Each answer re-asks the agent for the last complete period against the one before; opening "
-                       "the dashboard shows the answers already kept and never asks. Off: a dashboard holds no question.",
-    },
-    "dashboard.builder": {
-        "label": "Build dashboards in place",
-        "summary": "A dashboard opens to be read, and Edit shows it between its outline and the setup of what you "
-                   "pick. Every size moves one step at a time.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own dashboards"}],
-        "description": "A table's columns and sort, a figure's calculation and a chart's measure and split are "
-                       "chosen in the setup, never typed. Each change is kept as a version you can go back to. "
-                       "Off: a dashboard is arranged by its six sizes and Arrange.",
     },
     "ontology.keyed_metrics": {
         "label": "Compute approved metrics for any segment",
@@ -1002,16 +862,6 @@ FLAG_META = {
                        "with the question. Answers and the chat say the match was by words. Off: the search says "
                        "it could not run.",
     },
-    "canvas.ask_about_chosen": {
-        "label": "Ask about the objects you chose",
-        "summary": "A dashboard's ticked objects, or a set a piece shows, can be asked about in the Data Canvas. The "
-                   "question carries them as its subject.",
-        "facts": [{"kind": "free", "text": "No extra model calls"},
-                  {"kind": "private", "text": "Your row policy holds"}],
-        "description": "They are read again through the object door as you may see them: at most 50, by key and "
-                       "name, with how many there are. Objects withheld from you are counted and said, never listed. "
-                       "Nothing goes in the page's address. Off: no piece offers it, and questions are asked as before.",
-    },
     "ontology.set_segments": {
         "label": "Keep a dashboard set as a segment",
         "summary": "A set of fixed conditions can be declared as a segment of the ontology, in the draft. The builder "
@@ -1105,8 +955,8 @@ FLAG_META = {
                    "follows every edit.",
         "facts": [{"kind": "free", "text": "No model calls"},
                   {"kind": "private", "text": "Cards read the sheet live"}],
-        "description": "The cards offered are counted on the sheet first, and you keep the ones you tick. It needs "
-                       "dashboards and their own queries on. Off: a sheet has no Make a dashboard.",
+        "description": "The cards offered are counted on the sheet first, and you keep the ones you tick. "
+                       "Off: a sheet has no Make a dashboard.",
     },
     "sheets.sharing": {
         "label": "Share sheets with chosen people",
@@ -1195,15 +1045,6 @@ FLAG_META = {
         "facts": [{"kind": "warehouse", "text": "Three queries per metric per Briefing"}],
         "description": "A metric past the cap is still named, with the cap that cut it. Off: the Briefing measures 12.",
     },
-    "packs.dashboard_templates": {
-        "label": "Start a dashboard from a pack's template",
-        "summary": "A pack bound to a connection can offer dashboard templates. You keep one as your own.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Queries the warehouse when drafted"}],
-        "description": "A template names the pack's metrics and how they are laid out. A metric this connection has "
-                       "not registered or approved is left out, and said. Nothing is kept until you keep it, and the "
-                       "dashboard says which pack and version it came from. Off: no template is listed.",
-    },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
         "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
@@ -1236,15 +1077,6 @@ FLAG_META = {
                        "where a question runs its own query. A query that would read a masked property is "
                        "refused, with why. Scheduled checks still count every object. Off: only object "
                        "pages, dashboards and outside programs apply them.",
-    },
-    "dashboard.composed": {
-        "label": "A dashboard in each Data Canvas",
-        "summary": "Adds a Dashboards tab to the Data Canvas. Arrange its cards in tabs and sections, "
-                   "and show a card only when a condition holds.",
-        "facts": [{"kind": "free", "text": "No model calls"}],
-        "description": "For example, a card can appear only while a watch is over its limit. Every "
-                       "change to the layout is kept, so it can be undone. Off: the Data Canvas is "
-                       "unchanged.",
     },
     "briefing.ranges": {
         "label": "Briefings for any date range",
@@ -1377,18 +1209,7 @@ ALWAYS_ON: dict[str, str] = {
     "briefing.by_period": "It is the Briefing as you use it; it sends only to subscribers.",
     "briefing.metric_cap": "How LuxExperience's Briefing reads today; the number is already a workspace setting.",
     "briefing.ranges": "How the Briefing reads today.",
-    "canvas.ask_about_chosen": "No extra calls, and your row policy holds.",
     "chat.buttons_reach_agent": "The same path as above.",
-    "dashboard.app_pieces": "It is how every dashboard is laid out today; switching it off would break the dashboards already made with it.",
-    "dashboard.breakdowns": "Checked today on theLook; it appears only when someone adds one.",
-    "dashboard.builder": "It is the way dashboards are edited, and it only ever changes your own.",
-    "dashboard.composed": "It is the base every other dashboard piece sits on, and it does nothing until someone builds a dashboard.",
-    "dashboard.marks": "Checked today on theLook; it marks only by what the ontology declares.",
-    "dashboard.queries": "Nothing happens until someone writes a query, and it runs read-only and time-limited.",
-    "dashboard.questions": "It spends model calls, but only for a question a person put there, on the rhythm they chose; opening the dashboard never asks.",
-    "dashboard.shapes": "It is only an offer when starting; you still choose.",
-    "dashboard.variables": "Nothing happens until an author adds one; a reader's value stays in their browser.",
-    "dashboard.wiring": "Every action keeps its own checks and approvals, and nothing runs without a click.",
     "federation.planner": "Kept for questions across connections: the planner is reached through its own door; it no longer takes fresh chat questions on its own.",
     "graph.declarations": "Free, and it withholds what you may not see.",
     "grounding.full_schema_first": "Kept on its record: in two test runs the SQL writer seeing every table of a small schema never wrote a worse query, and twice answered where the shorter schema could not.",
@@ -1403,17 +1224,14 @@ ALWAYS_ON: dict[str, str] = {
     "obs.log_search": "Free; who may use it is a permission, not a switch.",
     "ontology.builder_doors": "Nothing runs from outside, and a program needs its own key.",
     "ontology.census": "Free — no model calls, no warehouse queries.",
-    "ontology.dashboard_pieces": "Dashboards built from the ontology are made of them; an action that needs approval is proposed, never run.",
     "ontology.entity_usage": "Free and read-only.",
     "ontology.explore_on_connect": "One model call per new connection, skipped if already explored — part of what connecting means.",
     "ontology.history": "Off loses history and allows a removal that breaks things — against the rule that nothing is deleted, only superseded.",
     "ontology.keyed_metrics": "Figures stay true to the approved definition; on live already.",
-    "ontology.object_dashboards": "It is an offer; a filter is each reader's own and never changes the dashboard.",
     "ontology.put_back": "An undo for the ontology, still published like any change.",
     "ontology.release": "It is the safety net for every reader; off applies a change the moment it is saved.",
     "ontology.retiring": "It applies only when someone marks one.",
     "ontology.set_segments": "Only when someone keeps one, and it is published like any change.",
-    "packs.dashboard_templates": "Nothing is kept until you keep it.",
     "packs.installed_versions": "Free, and it never re-offers what you declined.",
     "record.decision_loop": "No model calls; live since 10-24.",
     "semops.banded_cascade": "It spends less than switching it off would.",

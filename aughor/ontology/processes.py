@@ -935,11 +935,6 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
 # ── what a person and an agent read ─────────────────────────────────────────────────────────
 
 
-def _pieces_on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ontology.dashboard_pieces")
-
-
 def describe_process(graph: OntologyGraph, process: Process) -> dict:
     """One process as the map's panel and the API show it: each stage with its anchor and how many objects reach it,
     each transition timed, each promise with its counts, flags and the names it derives."""
@@ -974,9 +969,8 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
                               "breach_rate": promise.breach_rate, "as_of": promise.as_of, "verified": promise.verified,
                               "flags": list(promise.flags), "note": promise.note,
                               "segment": late_name(stage), "metric": rate_name(stage)}
-            if _pieces_on():
-                # Arc OC-4 — the segment a process board's open-and-overdue count lists (`overdue_<noun>`).
-                row["promise"]["overdue_segment"] = overdue_name(stage)
+            # Arc OC-4 — the segment a process board's open-and-overdue count lists (`overdue_<noun>`).
+            row["promise"]["overdue_segment"] = overdue_name(stage)
         # Arc OC-5 — the objects the stage touches, each with its role (the promise's lead object among them)
         from aughor.ontology.purpose import stage_roles
         row["roles"] = stage_roles(graph, process, i)

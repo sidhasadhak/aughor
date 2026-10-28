@@ -2722,7 +2722,7 @@ export interface CardRunResult {
   duration_ms?: number;
 }
 
-// ── Arc AP-7 — your own query on the dashboard (flag `dashboard.queries`) ───────────────────────────────────────────────
+// ── Arc AP-7 — your own query on the dashboard ──────────────────────────────────────────────────────────────────────────
 
 export type QueryShownAs = "table" | "figure" | "bar" | "line" | "area" | "scatter";
 export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
@@ -3039,7 +3039,7 @@ export async function runCard(cardId: string, range?: BriefingRange | null,
   return res.json();
 }
 
-// ── A person's dashboards in the Briefing (Arc CT-7 to CT-10, flag `dashboard.composed`) ───────────
+// ── A person's dashboards in the Briefing (Arc CT-7 to CT-10) ────────────────────────────────────────
 
 /** One kept version of a dashboard. The newest carries its `spec`; a history entry does not. */
 export interface DashboardVersion {
@@ -3240,11 +3240,9 @@ function rangeParams(range?: BriefingRange | null): URLSearchParams {
   return q;
 }
 
-/** The asker's dashboards on this connection. Null when the flag is off (the route answers 404),
- *  so a caller need not know the flag's name — and the Briefing draws its dashboard as before. */
-export async function listDashboards(connectionId: string): Promise<DashboardList | null> {
+/** The asker's dashboards on this connection. */
+export async function listDashboards(connectionId: string): Promise<DashboardList> {
   const res = await fetch(dashboardUrl("/dashboards", connectionId));
-  if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read your dashboards"));
@@ -3302,7 +3300,7 @@ export interface DashboardFromObject {
   listable?: boolean;
   actions: { id: string; label: string }[];
   caveats: string[];
-  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why; present while shapes are on. */
+  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why. */
   shapes?: ShapeOffer[];
   /** What the shapes are laid out from, read from the ontology (`aughor/dashboards/shapes.py`). */
   signals?: ShapeSignals;
@@ -9630,7 +9628,7 @@ export async function upgradePack(packId: string, connectionId: string, schema?:
   return res.json();
 }
 
-// ── Arc FA, FA-6 — a pack's dashboard templates (flag `packs.dashboard_templates`) ──────────────
+// ── Arc FA, FA-6 — a pack's dashboard templates ─────────────────────────────────────────────────
 
 export interface PackTemplateCard { key: string; metric: string; title: string; ready: boolean; why: string }
 
@@ -9649,13 +9647,12 @@ export interface PackTemplate {
   source: string;
 }
 
-/** The templates of the packs bound on this connection — null while templates are off (the route 404s). */
+/** The templates of the packs bound on this connection. */
 export async function listPackTemplates(
   connectionId: string, schema?: string,
-): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> } | null> {
+): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> }> {
   const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
   const res = await fetch(`${getApiBase()}/packs/templates?${q}`);
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The pack templates could not be read"));
   return res.json();
 }

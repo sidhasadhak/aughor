@@ -265,26 +265,20 @@ describe("the Data tab (Arc AP-2)", () => {
       note: { type: "Note", props: { text: "The oldest first" }, children: [] },
     },
   });
-  /** The builder with wiring on or off, recording what the dashboard is told is dashed. */
-  function wire(spec: DashboardSpec, wiringOn: boolean) {
+  /** The builder, recording what the dashboard is told is dashed. */
+  function wire(spec: DashboardSpec) {
     const reads: string[][] = [];
     render(
-      <DashboardBuilder spec={spec} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn={wiringOn}>
+      <DashboardBuilder spec={spec} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null}>
         {({ reads: r }) => { reads.push(r); return <div data-testid="dashboard-stub" />; }}
       </DashboardBuilder>,
     );
     return reads;
   }
 
-  it("is offered only where dashboards are wired; off, the left pane is the layout and nothing else", () => {
-    wire(wired(), false);
-    expect(screen.queryByRole("radio", { name: "Data" })).toBeNull();
-    expect(screen.getByTestId("builder-layout")).toBeInTheDocument();
-  });
-
   it("lists the sets; choosing one opens its setup and dashes the pieces that read it — and the layout lets it go", async () => {
-    const reads = wire(wired(), true);
-    fireEvent.click(screen.getByRole("radio", { name: "Data" }));
+    const reads = wire(wired());
+    fireEvent.click(screen.getByRole("radio", { name: "Variables" }));
     expect(screen.queryByTestId("builder-layout")).toBeNull();
     const sets = within(screen.getByTestId("builder-data")).getAllByTestId("data-set");
     expect(sets.map(s => s.dataset.name)).toEqual(["placed", "waiting"]);
@@ -339,11 +333,11 @@ describe("building safely (Arc AP-6)", () => {
         cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["sec"] },
         sec: { type: "Section", props: { title: "Desk" }, children: ["fig"] },
         fig: { type: "ObjectFigure", props: { set: "placed", label: "Placed", agg: "count" }, children: [] } } }}
-        onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn>
+        onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null}>
         {() => <div data-testid="dashboard-stub" />}
       </DashboardBuilder>,
     );
-    fireEvent.click(screen.getByRole("radio", { name: "Data" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Variables" }));
     await waitFor(() => expect(screen.getByTestId("data-set-read-time")).toHaveTextContent(/^· \d+\.\d{2} s$/));
     fireEvent.click(screen.getByTestId("data-set"));
     await waitFor(() => expect(screen.getByTestId("set-read-time")).toHaveTextContent(/^· counted in \d+\.\d{2} s$/));
@@ -355,11 +349,11 @@ describe("building safely (Arc AP-6)", () => {
         cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["sec"] },
         sec: { type: "Section", props: { title: "Desk" }, children: ["fig"] },
         fig: { type: "ObjectFigure", props: { set: "gone", label: "Gone", agg: "count" }, children: [] } } }}
-        onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn>
+        onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null}>
         {() => <div data-testid="dashboard-stub" />}
       </DashboardBuilder>,
     );
-    fireEvent.click(screen.getByRole("radio", { name: "Data" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Variables" }));
     await waitFor(() => expect(screen.getByTestId("data-set")).toHaveTextContent("cannot be read"));
     expect(screen.queryByTestId("data-set-read-time")).toBeNull();
     fireEvent.click(screen.getByTestId("data-set"));

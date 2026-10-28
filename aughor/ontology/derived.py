@@ -276,8 +276,8 @@ def rule_derivations(rule: BusinessRule) -> Derivations:
 def overdue_derivations(process: Process) -> list[DerivedSegment]:
     """Arc OC-4 — for each measured promise, the segment of the objects still waiting for its stage and already past it
     as of the moment it was measured (`overdue_<noun>`): what a process board's *open and overdue* count lists. Not
-    among `process_derivations` — no question, prompt or catalogue reads it — and the compiler resolves it only while
-    `ontology.dashboard_pieces` is on (`find_overdue_segment`). Usable once the promise was measured, with a clock."""
+    among `process_derivations` — no question, prompt or catalogue reads it — and the compiler resolves it by name
+    (`find_overdue_segment`). Usable once the promise was measured, with a clock."""
     out: list[DerivedSegment] = []
     for i, stage in enumerate(process.stages):
         spec = promise_filters(process, i)
@@ -299,10 +299,8 @@ def overdue_derivations(process: Process) -> list[DerivedSegment]:
 
 
 def find_overdue_segment(graph: Optional[OntologyGraph], entity: OntologyEntity, name: str) -> Optional[DerivedSegment]:
-    """Arc OC-4 — the overdue segment ``name`` on ``entity``, or None (always None while `ontology.dashboard_pieces` is
-    off, so the compiler reads exactly as it did)."""
-    from aughor.kernel.flags import flag_enabled
-    if graph is None or not flag_enabled("ontology.dashboard_pieces"):
+    """Arc OC-4 — the overdue segment ``name`` on ``entity``, or None."""
+    if graph is None:
         return None
     segments = [d for p in (graph.processes or {}).values() for d in overdue_derivations(p) if d.entity == entity.id]
     return _named(segments, name)

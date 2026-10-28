@@ -3,16 +3,13 @@
 /**
  * Arc FA-2 — the door out of a piece: "Ask about these" for the objects ticked in a table or a list, "Ask about this set"
  * for the set a piece reads. A click — never a drag — keeps the subject in memory (`lib/askSubject.ts`) and opens the
- * Data Canvas on the dashboard's connection, where the question carries it. Offered only while
- * `canvas.ask_about_chosen` is on; off, a piece draws exactly what it drew.
+ * Data Canvas on the dashboard's connection, where the question carries it.
  */
 import { usePieces, type Picked, type SetQuery } from "@/components/dashboards/OntologyPieces";
 import { Button } from "@/components/ui/button";
 import { askAbout, dashboardOf, MAX_SUBJECT, nounOf } from "@/lib/askSubject";
 import { conditionsFor } from "@/lib/dashboards/objectView";
-import { useFlagOn } from "@/lib/flagOn";
 
-export const ASK_FLAG = "canvas.ask_about_chosen";
 const words = (id: string) => id.replace(/[_-]+/g, " ");
 
 /** The control a piece's foot holds: the ticked objects while any are ticked, else the set it reads, by name — a set
@@ -21,9 +18,8 @@ const words = (id: string) => id.replace(/[_-]+/g, " ");
 export function AskAboutPiece({ query, ticked, total, typeId }: {
   query: SetQuery; ticked: Picked[]; total: number | null | undefined; typeId: string;
 }) {
-  const on = useFlagOn(ASK_FLAG);
   const { connectionId, dashboardId, wire, valueOf, picked, filters } = usePieces();
-  if (!on || !connectionId || !("entity" in query)) return null;
+  if (!connectionId || !("entity" in query)) return null;
   const noun = nounOf(typeId);
   if (ticked.length) {
     const refs = ticked.slice(0, MAX_SUBJECT).map(p => `${p.objectType}:${p.pk}`);

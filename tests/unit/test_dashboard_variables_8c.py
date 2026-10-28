@@ -12,7 +12,7 @@ import pytest
 
 from aughor.dashboards import queries as Q, variables
 from tests.unit.test_dashboard_variables import ROWS, db, rows  # noqa: F401 — the fixtures, by name
-from tests.unit.test_dashboard_wiring import _desk, _flags, _graph
+from tests.unit.test_dashboard_wiring import _desk, _graph
 
 
 def test_yes_or_no_binds_as_a_boolean_and_a_list_one_placeholder_per_item():
@@ -35,19 +35,6 @@ def test_a_bound_list_returns_exactly_the_rows_it_names(db, rows):  # noqa: F811
         assert ran["error"] is None
         want = sorted(r["order_id"] for r in rows if r["country"] in countries)
         assert sorted(r[0] for r in ran["shown"]["rows"]) == want[:Q.TABLE_ROWS] and want
-
-
-def test_yes_or_no_a_list_a_sum_and_a_query_are_variables_and_refused_while_off(monkeypatch):
-    yes = _desk(**{"values.late": {"label": "Late only", "kind": "yesno", "value": True}})
-    listed = _desk(**{"values.countries": {"label": "Countries", "kind": "list", "value": ["DE"]}})
-    summed = _desk(**{"values.spend": {"label": "Spend", "kind": "number", "from": {"by": "sum", "set": "placed", "path": "total_amount"}}})
-    queried = _desk(**{"values.top": {"label": "Top", "kind": "text", "from": {"by": "query", "card": "c1"}}})
-    assert [variables.uses(s) for s in (yes, listed, summed, queried)] == [
-        ["the value 'late'"], ["the value 'countries'"], ["the value 'spend'"], ["the value 'top'"]]
-    _flags(monkeypatch, set())
-    assert variables.refused_off(listed) and variables.refused_off(summed)
-    _flags(monkeypatch, {variables.FLAG})
-    assert variables.refused_off(listed) == []
 
 
 def test_a_sum_adds_up_a_number_its_set_s_objects_have(monkeypatch):

@@ -29,18 +29,6 @@ TABLE_COLUMNS = 6
 PREVIEW_VALUES = 3
 
 
-def unavailable() -> Optional[str]:
-    """Why a dashboard cannot be made from a sheet on this install — None when it can. A dashboard made here is made
-    of query cards, so it needs dashboards and their queries on."""
-    from aughor.dashboards import queries
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("dashboard.composed"):
-        return "Dashboards are off on this install."
-    if not flag_enabled(queries.FLAG):
-        return "A query of your own on a dashboard is off on this install, and a sheet's dashboard is made of them."
-    return None
-
-
 def rows_noun(name: str) -> str:
     """What a sheet's rows are called, from its name — the same reading its first view's name takes ("All orders")."""
     last = (name.split() or ["rows"])[-1].lower()

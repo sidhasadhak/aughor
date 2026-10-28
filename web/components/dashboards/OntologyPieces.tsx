@@ -1466,7 +1466,7 @@ const AGG_WORDS: Record<string, string> = {
   sum: "Sum of", avg: "Average", min: "Least", max: "Most", count_distinct: "Distinct",
 };
 
-/** A table's or a list's rows marked by a declared rule or segment (the Grist study §10, flag `dashboard.marks`). */
+/** A table's or a list's rows marked by a declared rule or segment (the Grist study §10). */
 export interface Marked { segment: string; tone: "good" | "warn" | "bad" | "info" | "neutral"; label?: string | null }
 
 /** A mark's colour, as a card's rule is drawn. */

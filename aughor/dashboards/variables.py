@@ -8,62 +8,15 @@ one as a bound parameter, never pasted into its statement (`queries.py`).
 
 The web's rules hold a value's shape — what each kind holds, that a count counts a set the dashboard has, that a choice a
 value reads is made, that no value counts a set that reads it back (`web/lib/dashboards/rules.ts`). What only the platform
-knows is checked here before a spec is kept: that variables are on here — off, a spec that says any of it is refused and
-the dashboard is what it was — and that the property a value reads off a chosen object is one its entity has.
+knows is checked here before a spec is kept: that the property a value reads off a chosen object is one its entity has.
 """
 from __future__ import annotations
 
 from typing import Any, Optional
 
-FLAG = "dashboard.variables"
-
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
-
-
 def _named(spec: Any, key: str) -> dict:
     found = spec.get(key) if isinstance(spec, dict) else None
     return found if isinstance(found, dict) else {}
-
-
-def uses(spec: Any) -> list[str]:
-    """What in ``spec`` only a dashboard with variables says: a value of a day, a value that comes from anyone but its author,
-    a set that compares a value other than by counting the last days, and (Arc AP-8b) a set that reaches its objects'
-    linked objects or is combined with another — each once."""
-    out: list[str] = []
-    for name, v in _named(spec, "values").items():
-        if not isinstance(v, dict):
-            continue
-        by = str((v.get("from") or {}).get("by") or "author") if isinstance(v.get("from"), dict) else "author"
-        if v.get("kind") in ("date", "yesno", "list") or by != "author":
-            out.append(f"the value {name!r}")
-    for name, s in _named(spec, "sets").items():
-        where = s.get("where") if isinstance(s, dict) else None
-        if any(isinstance(c, dict) and c.get("value_from") and c.get("op") != "in_last" for c in (where or [])) \
-                or (isinstance(s, dict) and (s.get("traverse") or s.get("combine"))):
-            out.append(f"the set {name!r}")
-    return out
-
-
-def refused_off(spec: Any) -> list[str]:
-    """A sentence when ``spec`` reads variables and variables are off here — what a keep is refused with. Empty when it does
-    not, whatever the flag says, so a dashboard that does not keeps as it always did."""
-    said = uses(spec)
-    if not said or on():
-        return []
-    return [f"The dashboard reads variables — {', '.join(said[:4])}{'…' if len(said) > 4 else ''} come from the reader, a count "
-            "or a chosen object, compare a value in a set, or read a set's linked objects or another set whole — and "
-            "variables are off on this install."]
-
-
-def refused_query(sql: str) -> str:
-    """What a query of a person's own that reads the dashboard's values is refused with while variables are off here."""
-    from aughor.dashboards.queries import params_of
-    names = params_of(sql)
-    return (f"The query reads {', '.join('{{' + n + '}}' for n in names[:4])}{'…' if len(names) > 4 else ''} — the dashboard's "
-            "values — and variables are off on this install.")
 
 
 def unheld(spec: Any, card_ids: Any) -> list[str]:

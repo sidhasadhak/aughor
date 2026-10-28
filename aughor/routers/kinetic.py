@@ -32,7 +32,7 @@ class ExecuteRequest(BaseModel):
     params: dict = Field(default_factory=dict)
     actor: str = ""                         # ignored: the person signed in is who acts (`authz.caller`)
     #: Arc OC-4 — when running it needs approval, stage it in the Actions inbox for a person instead of answering 428:
-    #: what a dashboard's action button does. Read only while `ontology.dashboard_pieces` is on.
+    #: what a dashboard's action button does.
     propose_if_gated: bool = False
     #: Where the person was when they asked — shown on the approval card beside the params.
     reasoning: str = ""
@@ -91,7 +91,7 @@ def execute_action(
 ):
     """Run one declared action. A criterion failure returns 422 with the authored message; a
     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
-    or, asked with ``propose_if_gated`` while `ontology.dashboard_pieces` is on, is staged for a person
+    or, asked with ``propose_if_gated``, is staged for a person
     and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
     with the dispatch outcome, what its verification found, and its Action ledger entry — the answer had dropped the
     last two, so a press read "done" whatever its check said."""
@@ -115,9 +115,7 @@ def execute_action(
                 "outcome": result.outcome, "granted_by": result.granted_by,
                 "verification": result.verification, "action_entry": result.action_entry}
     if result.status == "approval_required" and body.propose_if_gated:
-        staged = _propose_gated(action, body, connection_id, schema_name)
-        if staged is not None:
-            return staged
+        return _propose_gated(action, body, connection_id, schema_name)
     # Every non-OK outcome maps to an HTTP status carrying the authored message VERBATIM.
     raise HTTPException(
         status_code=result.http_status(),
@@ -126,13 +124,9 @@ def execute_action(
     )
 
 
-def _propose_gated(action, body: ExecuteRequest, connection_id: str, schema_name: Optional[str]) -> Optional[dict]:
+def _propose_gated(action, body: ExecuteRequest, connection_id: str, schema_name: Optional[str]) -> dict:
     """Arc OC-4 — the action a person asked to run, which needs approval, staged for a person to accept: no model is
-    called and nothing runs; accepting it runs it through the governed pipeline as any accepted proposal does. None
-    while `ontology.dashboard_pieces` is off, so the door answers 428 exactly as before."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.dashboard_pieces"):
-        return None
+    called and nothing runs; accepting it runs it through the governed pipeline as any accepted proposal does."""
     import uuid as _uuid
 
     from aughor.actions.executor import coerce_params

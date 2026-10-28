@@ -202,7 +202,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
     listDashboards(connectionId)
       .then(async list => {
         const found: ActionPlace[] = [];
-        for (const c of (list?.cockpits ?? []).filter(c => !c.retired)) {
+        for (const c of list.cockpits.filter(c => !c.retired)) {
           const read = await getDashboard(connectionId, c.cockpit_id).catch(() => null);
           if (read) found.push(...placesIn(c.cockpit_id, c.title || c.cockpit_id, read.cockpit.spec, names));
         }

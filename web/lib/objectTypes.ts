@@ -1062,8 +1062,7 @@ export interface ProcessPromise {
   note: string;
   segment: string;
   metric: string;
-  /** Arc OC-4 — the segment of the objects still waiting and already past the promise, while dashboards may be built
-   *  from the ontology (`ontology.dashboard_pieces`). */
+  /** Arc OC-4 — the segment of the objects still waiting and already past the promise. */
   overdue_segment?: string;
 }
 

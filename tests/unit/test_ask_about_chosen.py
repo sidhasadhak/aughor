@@ -1,8 +1,7 @@
 """Arc FA, FA-2 — a choice can leave its piece: ticked objects, or a set a piece reads, as a question's subject.
 
 Held on the seeded samples warehouse through the real listing door (`routers.objects.post_object_listing`) and the real
-compiler. Off, a subject is not read and contributes nothing — the prose and the receipt are as before. On, the objects
-a reader chose are read again as they may see them: by key and title, at most fifty, a chosen object a row policy
+compiler. The objects a reader chose are read again as they may see them: by key and title, at most fifty, a chosen object a row policy
 withholds dropped and COUNTED, one no object holds counted apart; a set is read from the dashboard's own definition with
 the values the page sent, an author's value the author's whatever is sent, and a set past fifty says how many it holds.
 The falsifier: a subject that lists an object its reader may not see.
@@ -19,7 +18,7 @@ from aughor.agent import ask_subject
 from aughor.dashboards import validate as V
 from aughor.ontology.models import RowPolicy
 from aughor.ontology.object_refs import same_type, split_ref
-from aughor.routers.investigations import AskFocus, AskRequest, _ask_subject_for, _focus_prose_for
+from aughor.routers.investigations import AskFocus, AskRequest
 from tests.unit.test_object_actions import CONN, db, graph  # noqa: F401 — fixtures by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
@@ -30,7 +29,6 @@ SHIPPED = ("shipped", "delivered")
 @pytest.fixture
 def served(graph, monkeypatch):  # noqa: F811
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
-    monkeypatch.setenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN", "1")
     return graph
 
 
@@ -41,18 +39,6 @@ def _keys(db, status: str, n: int) -> list[str]:  # noqa: F811
 
 def _count(db, where: str) -> int:  # noqa: F811
     return int(db.execute("t", f"SELECT COUNT(*) FROM orders WHERE {where}").rows[0][0])
-
-
-# ── off: nothing is read, nothing is said ────────────────────────────────────────────────────────────────────────────
-
-def test_off_a_subject_is_not_read_and_the_turn_is_as_before(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN", "0")   # always on since 2026-10-28; "0" is the off path
-    focus = AskFocus(kind="objects", objects=["Order:O000123"])
-    req = SimpleNamespace(focus=focus, schema_name=None)
-    assert ask_subject.resolve(focus, CONN) is None
-    assert asyncio.run(_ask_subject_for(req, CONN, None)) is None
-    assert _focus_prose_for(req, CONN) == ""                     # no explain call, no prose: a turn with no focus
-    assert _focus_prose_for(SimpleNamespace(focus=None), CONN) == ""
 
 
 def test_the_ask_body_names_what_a_focus_is_about():
@@ -83,7 +69,7 @@ def test_one_parser_reads_a_reference_for_an_action_and_a_subject():
         object_ref("Order:", param)
 
 
-# ── the door: the receipt says the subject, the conversation is handed it; off, both are as before ─────────────────
+# ── the door: the receipt says the subject, and the conversation is handed it ──────────────────────────────────────
 
 def _turn(monkeypatch, focus: dict) -> tuple[dict, list[str]]:
     """One `/ask` turn through `_stream_ask` with its bodies stood in for: the route receipt, and the prose the
@@ -144,15 +130,7 @@ def test_a_deep_turn_hands_the_subject_to_the_analyst_beside_its_memory(monkeypa
     assert seen[1] is None                                       # no subject: the analyst's context as before
 
 
-def test_off_the_turn_is_byte_identical_to_one_with_no_focus(served, db, monkeypatch):  # noqa: F811
-    monkeypatch.setenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN", "0")   # always on since 2026-10-28; "0" is the off path
-    with_subject, handed = _turn(monkeypatch, {"kind": "objects", "objects": [f"Order:{k}" for k in _keys(db, "shipped", 2)]})
-    plain, plain_handed = _turn(monkeypatch, None)
-    assert "subject" not in with_subject and handed == plain_handed == [""]
-    assert {k: v for k, v in with_subject.items() if k != "trace_id"} == {k: v for k, v in plain.items() if k != "trace_id"}
-
-
-# ── on: the objects chosen, read again as the reader may see them ────────────────────────────────────────────────────
+# ── the objects chosen, read again as the reader may see them ───────────────────────────────────────────────────────
 
 def test_chosen_objects_are_named_by_key_and_one_that_is_not_there_is_counted(served, db):  # noqa: F811
     keys = _keys(db, "shipped", 3)

@@ -2582,11 +2582,9 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
-  // Arc CT-7 — with `dashboard.composed` on, the person's dashboards are a tab beside the Briefing
-  // (IntelligenceWorkspace), so the standing layer below is not drawn. A canvas's Briefing has
-  // no such tab and keeps the layer. Until the flags answer, and when they cannot, it is off.
-  const [dashboardFlag, setDashboardFlag]       = useState(false);
-  const dashboardsOn = dashboardFlag && !canvasId;
+  // Arc CT-7 — the person's dashboards are a tab beside the Briefing (IntelligenceWorkspace), so
+  // the standing layer below is not drawn. A canvas's Briefing has no such tab and keeps the layer.
+  const dashboardsOn = !canvasId;
   // The canvas (B1) — the Briefing's switches: which sections this person shows, in what order,
   // and which dashboard of theirs rides with it. A preference, kept on the server; the content of
   // a section is never theirs to change. Until the store answers, the product's order.
@@ -2607,7 +2605,7 @@ export function BriefingPanel({
     if (!dashboardsOn) { setMyDashboards([]); return; }
     let alive = true;
     listDashboards(connectionId).then(l => {
-      if (alive && l) setMyDashboards(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
+      if (alive) setMyDashboards(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
     }).catch(() => {});
     return () => { alive = false; };
   }, [connectionId, dashboardsOn]);
@@ -2680,7 +2678,6 @@ export function BriefingPanel({
       if (!alive) return;
       setPeriodsOn(!!f["briefing.by_period"]?.value);
       setRangesOn(!!f["briefing.ranges"]?.value);
-      setDashboardFlag(!!f["dashboard.composed"]?.value);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -3697,8 +3694,8 @@ export function BriefingPanel({
             is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
-      {/* Arc CT-7 — with `dashboard.composed` on, a person's cockpits have a tab of their own
-          beside the Briefing, and this layer is not drawn here. Off, it is drawn as it always was.
+      {/* Arc CT-7 — a person's cockpits have a tab of their own beside the Briefing, and this layer
+          is not drawn here; a canvas's Briefing, which has no such tab, draws it as it always was.
           The canvas (B1): on, the cockpit of theirs they chose under Sections rides here, read for
           the Briefing's range and arranged in its own tab. */}
       {dashboardsOn && sections.strip && (

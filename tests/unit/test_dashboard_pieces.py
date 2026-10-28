@@ -1,11 +1,10 @@
 """Arc OC-4 — a dashboard's pieces bound to the ontology, as the server holds them (ROADMAP §3.56).
 
-The web's rules check a piece's shape; what only the platform knows is checked here before a spec is kept: that
-building dashboards from the ontology is on, and that every id a piece names — a process, an entity and its segment and
-columns, a declared action, on the entity its detail shows — resolves in what this connection serves now. A dashboard
-with no piece keeps exactly as before, whatever the flag says. A model arranges a piece and never adds one or changes
-what it names. And the action button's second answer: an action that needs approval is staged for a person, with no
-model called, and only while the flag is on and the caller asked.
+The web's rules check a piece's shape; what only the platform knows is checked here before a spec is kept: that every
+id a piece names — a process, an entity and its segment and columns, a declared action, on the entity its detail shows —
+resolves in what this connection serves now. A dashboard with no piece keeps exactly as before. A model arranges a
+piece and never adds one or changes what it names. And the action button's second answer: an action that needs
+approval is staged for a person, with no model called, when the caller asked.
 """
 from __future__ import annotations
 
@@ -24,11 +23,9 @@ from tests.unit.test_object_bindings import GRAPH
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
-FLAG = "ontology.dashboard_pieces"
-
-
-def _flag(monkeypatch, on: bool) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: on and name == FLAG)
+def _flag(monkeypatch) -> None:
+    """Every flag off: a piece needs none since 2026-10-28 (ROADMAP §3.65)."""
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
 
 
 def _graph() -> OntologyGraph:
@@ -67,19 +64,13 @@ def no_edits(monkeypatch):
 
 # ── what only the platform knows ─────────────────────────────────────────────────────────────
 
-def test_a_cockpit_without_a_piece_is_not_read_for_one_whatever_the_flag(monkeypatch):
-    _flag(monkeypatch, False)
+def test_a_cockpit_without_a_piece_is_not_read_for_one(monkeypatch):
+    _flag(monkeypatch)
     assert pieces.not_resolved("c", json.loads(FIXTURE.read_text())) == []
 
 
-def test_off_a_cockpit_holding_a_piece_is_refused_and_says_why(monkeypatch):
-    _flag(monkeypatch, False)
-    [said] = pieces.not_resolved("c", _with_pieces(json.loads(FIXTURE.read_text())), graph=_graph())
-    assert "4 piece(s) bound to the ontology" in said and "off on this install" in said
-
-
-def test_on_every_id_resolves_and_the_cockpit_may_be_kept(monkeypatch, no_edits):
-    _flag(monkeypatch, True)
+def test_every_id_resolves_and_the_cockpit_may_be_kept(monkeypatch, no_edits):
+    _flag(monkeypatch)
     assert pieces.not_resolved("c", _with_pieces(json.loads(FIXTURE.read_text())), graph=_graph()) == []
 
 
@@ -91,7 +82,7 @@ def test_on_every_id_resolves_and_the_cockpit_may_be_kept(monkeypatch, no_edits)
     ({"action": "hold_customer"}, 'runs "hold_customer" on Customer, and the detail it sits in shows Order objects'),
 ])
 def test_a_piece_naming_what_this_connection_cannot_serve_is_refused_by_name(monkeypatch, no_edits, change, says):
-    _flag(monkeypatch, True)
+    _flag(monkeypatch)
     said = " ".join(pieces.not_resolved("c", _with_pieces(json.loads(FIXTURE.read_text()), **change), graph=_graph()))
     assert says in said, said
 
@@ -106,7 +97,7 @@ def test_the_keep_door_refuses_what_does_not_resolve_and_keeps_what_does(volumes
     spec = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
-    _flag(monkeypatch, True)
+    _flag(monkeypatch)
 
     def keep(s):
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
@@ -157,7 +148,7 @@ def test_an_edit_to_a_cockpit_holding_pieces_is_staged_and_names_each_piece_it_m
     spec = _with_pieces(json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net)))
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
-    _flag(monkeypatch, True)
+    _flag(monkeypatch)
     assert versions.keep(home, spec, approved_by="user:amit", source="a person's own hand", written_by_model=False).kept
     at = spec["elements"]["sec-headline"]["children"].index("board")
     out = propose.draft(home, mode=propose.MODE_EDIT, patches=[
@@ -186,17 +177,15 @@ def test_the_draft_path_reads_the_pieces_law():
     assert "pieces_written(" in inspect.getsource(propose)      # wired beside the note-and-image law, for both modes
 
 
-# ── the board says which segment its overdue count lists, while the flag is on ───────────────
+# ── the board says which segment its overdue count lists ─────────────────────────────────────
 
-def test_a_promise_names_its_overdue_segment_only_while_the_flag_is_on(monkeypatch):
+def test_a_promise_names_its_overdue_segment(monkeypatch):
     from aughor.ontology.processes import describe_process, process_from_fields
     g = _graph()
     p = process_from_fields("order_fulfilment", {"entity": "Order", "stages": [
         {"name": "placed", "timestamp": "order_date"},
         {"name": "shipped", "timestamp": "shipped_at", "promise": {"name": "dispatch", "within_days": 2}}]})
-    _flag(monkeypatch, False)
-    assert "overdue_segment" not in describe_process(g, p)["stages"][1]["promise"]
-    _flag(monkeypatch, True)
+    _flag(monkeypatch)
     assert describe_process(g, p)["stages"][1]["promise"]["overdue_segment"] == "overdue_dispatch"
 
 
@@ -218,15 +207,13 @@ def _press(client, **body):
                        json={"params": {"order": "O000001", "reason": "late"}, **body})
 
 
-def test_without_asking_or_with_the_flag_off_a_gated_action_answers_428_as_before(gated, monkeypatch):
-    _flag(monkeypatch, True)
+def test_without_asking_a_gated_action_answers_428_as_before(gated, monkeypatch):
+    _flag(monkeypatch)
     assert _press(gated).status_code == 428
-    _flag(monkeypatch, False)
-    assert _press(gated, propose_if_gated=True).status_code == 428
 
 
-def test_asked_and_on_a_gated_action_is_staged_for_a_person_and_nothing_runs(gated, monkeypatch):
-    _flag(monkeypatch, True)
+def test_asked_a_gated_action_is_staged_for_a_person_and_nothing_runs(gated, monkeypatch):
+    _flag(monkeypatch)
     r = _press(gated, propose_if_gated=True, reasoning="from a dashboard")
     assert r.status_code == 200 and r.json()["status"] == "proposed", r.text
     from aughor.actions.inbox import get_proposal
@@ -250,7 +237,7 @@ def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, mon
 # ── the release a dashboard was composed against ───────────────────────────────────────────────
 
 def _both_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in (FLAG, "ontology.release"))
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.release")
 
 
 def _release(conn: str, *changes: tuple[str, str, str, str]) -> str:
@@ -323,13 +310,11 @@ def test_a_segment_is_read_from_the_declaration_that_derives_it():
     assert ("object_set", "Order::vip") in pieces.depends(spec, g)
 
 
-def test_the_release_strip_names_the_cockpits_a_change_touches_only_while_pieces_are_on(monkeypatch):
+def test_the_release_strip_names_the_cockpits_a_change_touches(monkeypatch):
     from aughor.ontology import release
     monkeypatch.setattr(pieces, "dashboards_reading", lambda conn, names, graph=None: [{"cockpit": "late", "title": "Late",
                                                                                      "pieces": ["board"]}])
     monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
-    _flag(monkeypatch, True)
+    _flag(monkeypatch)
     assert release._touches("c", {"order_fulfilment"}, [])["cockpits"] == [{"cockpit": "late", "title": "Late",
                                                                           "pieces": ["board"]}]
-    _flag(monkeypatch, False)
-    assert "cockpits" not in release._touches("c", {"order_fulfilment"}, [])

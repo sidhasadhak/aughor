@@ -31,7 +31,6 @@ from aughor.dashboards import cards, propose, validate as V, versions
 from aughor.dashboards.home import Home, approver
 from aughor.cards import doors, store as card_store
 from aughor.cards.models import StoredCard
-from aughor.kernel.flags import flag_overrides
 from aughor.semantic.metrics import MetricDefinition, save_metric
 from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
 
@@ -42,12 +41,6 @@ needs_rules = pytest.mark.skipif(
 pytestmark = needs_rules
 
 CONN = "thelook"
-
-
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True}):
-        yield
 
 
 class Warehouse:
@@ -219,7 +212,7 @@ def _names(tools) -> list[str]:
     return [t.name for t in tools]
 
 
-def test_the_tool_is_offered_in_no_conversation(desk, on):
+def test_the_tool_is_offered_in_no_conversation(desk):
     """The canvas is for investigation (§6 item 36(l)). A chat turn's tools are what they were
     before Arc CT, flag on or off, in a canvas or not: the drafting tool runs only in the
     Briefing's own draft, bound to the dashboard it drafts."""
@@ -642,7 +635,7 @@ def test_a_limit_nobody_named_is_refused_and_is_no_licence_for_a_figure(desk):
     assert 'sets a limit of 12, which the user did not name' in text and "limit of 10" not in text
 
 
-def test_the_tool_holds_a_limit_to_the_words_of_the_turn(desk, on):
+def test_the_tool_holds_a_limit_to_the_words_of_the_turn(desk):
     """What the person asked for binds to the tool by closure, as the dashboard and the person do —
     the model does not get to say what the person said."""
 
@@ -655,7 +648,7 @@ def test_the_tool_holds_a_limit_to_the_words_of_the_turn(desk, on):
     assert tool("Build me a returns dashboard, with an alert above 12%.").run(ask)["staged"] is True
 
 
-def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk, on):
+def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk):
     """The cap was in the code and in no text a writer reads; two of ten first drafts on the
     receipt made 19 and 17 cards against it."""
     out = propose.options(desk.home)

@@ -694,9 +694,6 @@ def dashboard_proposal(sheet_id: str, request: Request, view: str = "") -> dict:
     as it stands. Nothing is kept here: the cards and the dashboard are kept through the dashboards' own doors."""
     _on("sheets.everywhere")
     from aughor.sheets import dashboard, projection
-    why = dashboard.unavailable()
-    if why:
-        raise HTTPException(status_code=404, detail=why)
     sheet = _sheet(sheet_id, request, VIEW)
     chosen = next((v for v in sheet.views_for(_who(request)) if v.id == view), None) if view else None
     try:

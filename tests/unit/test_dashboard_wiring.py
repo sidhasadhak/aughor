@@ -2,9 +2,8 @@
 docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b, §4.3 and §4.5).
 
 A wired dashboard names sets its pieces read and values its sets read; a table names what a click chooses and what its
-ticks collect; a figure switches a list; action buttons run declared actions on what a reader chose or ticked. While
-`dashboard.wiring` is off a spec that says any of it is refused, and a dashboard that says none of it keeps exactly as
-before, whatever the flag says. What only the platform knows is checked before a keep: every set compiles through the
+ticks collect; a figure switches a list; action buttons run declared actions on what a reader chose or ticked. What only
+the platform knows is checked before a keep: every set compiles through the
 object door over what this connection serves, and each button's action is declared and takes each parameter from a
 source that can hold it — an order from a chosen order, never a customer; a value from the form or a fixed value, never
 a choice. A person wires a cockpit: a model's edit arranges one and never changes its sets or values, or what a piece
@@ -25,11 +24,8 @@ from tests.unit.test_dashboard_pieces import _graph as _pieces_graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
-#: Everything a wired desk needs on: wiring, the ontology's pieces, and the pieces of a dashboard started from an object.
-ALL = {wiring.FLAG, pieces.FLAG, "ontology.object_dashboards"}
-
-
-def _flags(monkeypatch, on: set[str]) -> None:
+def _flags(monkeypatch, on: frozenset[str] = frozenset()) -> None:
+    """Every flag off but ``on`` — a wired desk needs none since 2026-10-28 (ROADMAP §3.65)."""
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in on)
 
 
@@ -120,30 +116,8 @@ def test_action_buttons_are_wired_whatever_they_hold_and_nonsense_is_not():
         assert wiring.wired(nonsense) == []
 
 
-def test_off_a_wired_cockpit_is_refused_and_says_what_wires_it(monkeypatch):
-    _flags(monkeypatch, set())
-    said = wiring.refused_off(_desk())
-    assert len(said) == 1, said
-    assert "wiring a dashboard is off on this install" in said[0] and "sets, values, fig-active, table, lines, buttons" in said[0]
-
-
-def test_the_refusal_names_six_things_and_says_there_are_more(monkeypatch):
-    _flags(monkeypatch, set())
-    spec = {"elements": {f"t{i}": {"type": "ObjectTable", "props": {"set": "s"}, "children": []} for i in range(8)}}
-    said = wiring.refused_off(spec)
-    assert len(said) == 1 and "t0, t1, t2, t3, t4, t5…" in said[0] and "t6" not in said[0], said
-
-
-def test_on_a_wired_cockpit_is_not_refused(monkeypatch):
-    _flags(monkeypatch, {wiring.FLAG})
-    assert wiring.refused_off(_desk()) == []
-
-
-def test_a_cockpit_that_is_not_wired_is_never_refused_whatever_the_flag(monkeypatch):
-    for on in (set(), {wiring.FLAG}):
-        _flags(monkeypatch, on)
-        assert wiring.refused_off(json.loads(FIXTURE.read_text())) == []
-        assert wiring.not_resolved("c", json.loads(FIXTURE.read_text()), graph=None) == []
+def test_a_cockpit_that_is_not_wired_has_nothing_to_resolve():
+    assert wiring.not_resolved("c", json.loads(FIXTURE.read_text()), graph=None) == []
 
 
 # ── what only the platform knows: every set compiles ───────────────────────────────────────────────────
@@ -252,7 +226,7 @@ def test_the_desk_resolves_and_each_fault_the_web_reads_is_refused_here(no_edits
 # ── the pieces that read a set are probed over it ──────────────────────────────────────────────────────
 
 def test_a_table_reading_a_set_is_probed_over_its_entity_segment_and_conditions(monkeypatch, no_edits):
-    _flags(monkeypatch, ALL)
+    _flags(monkeypatch)
     seen = []
     import aughor.semantic.object_query as oq
     real = oq.compile_object_listing
@@ -267,7 +241,7 @@ def test_a_table_reading_a_set_is_probed_over_its_entity_segment_and_conditions(
 
 
 def test_a_piece_reading_a_set_that_cannot_be_read_is_said_once_by_the_wiring_check(monkeypatch, no_edits):
-    _flags(monkeypatch, ALL)
+    _flags(monkeypatch)
     spec = {"elements": {"t": {"type": "ObjectTable", "props": {"set": "gone", "columns": ["status"]}, "children": []}}}
     assert pieces.not_resolved("c", spec, graph=_graph(), wiring=_read(gone={"refused": "This dashboard holds no set named \"gone\"."})) == []
 
@@ -331,7 +305,7 @@ def test_a_model_may_not_rewire_a_piece_or_add_buttons():
 # ── the keep door ───────────────────────────────────────────────────────────────────────────────────────
 
 @needs_rules
-def test_the_keep_door_refuses_a_wired_cockpit_while_off_and_keeps_it_while_on(volumes, monkeypatch, no_edits):  # noqa: F811
+def test_the_keep_door_keeps_a_wired_cockpit_and_refuses_an_undeclared_action(volumes, monkeypatch, no_edits):  # noqa: F811
     tag = uuid.uuid4().hex[:6]
     home = Home(f"wire{tag}", ME, f"desk-{tag}")
     graph = _graph()
@@ -339,11 +313,7 @@ def test_the_keep_door_refuses_a_wired_cockpit_while_off_and_keeps_it_while_on(v
 
     def keep(s):
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
-    _flags(monkeypatch, ALL - {wiring.FLAG})
-    off = keep(_desk())
-    assert off.status == "refused" and "wiring a dashboard is off" in " ".join(off.sentences), off.sentences
-    assert versions.latest(home) is None                                     # nothing was kept
-    _flags(monkeypatch, ALL)
+    _flags(monkeypatch)
     wrong = keep(_desk(**{"elements.buttons.props.buttons": [{"action": "refund", "params": {}}]}))
     assert not wrong.kept and 'runs "refund", which this connection does not declare' in " ".join(wrong.sentences)
     kept = keep(_desk())
@@ -360,7 +330,7 @@ def test_a_models_draft_arranges_a_wired_cockpit_and_never_wires_one(volumes, mo
     home = Home(f"wire{tag}", ME, f"desk-{tag}")
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
-    _flags(monkeypatch, ALL)
+    _flags(monkeypatch)
     new = propose.draft(home, mode=propose.MODE_NEW, spec=_desk())
     assert not new.staged and any("A new dashboard is wired by a person, by hand." in r for r in new.refusals), new.refusals
     assert versions.keep(home, _desk(), approved_by="user:amit", source="a person's own hand", written_by_model=False).kept

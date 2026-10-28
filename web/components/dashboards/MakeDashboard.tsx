@@ -2,32 +2,21 @@
 
 /**
  * "Make a dashboard" on an object's panel in the Ontology tab (2026-10-10): the starter in a dialog, and the new dashboard
- * opened in the Dashboards tab once it is kept. Offered while a dashboard may start from an object here
- * (`ontology.dashboard_pieces` and `ontology.object_dashboards`); absent otherwise, never a button that refuses.
+ * opened in the Dashboards tab once it is kept.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ObjectDashboardStarter } from "@/components/dashboards/ObjectDashboardStarter";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { getSystemFlags } from "@/lib/api";
 import { requestTab } from "@/lib/navigate";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";
 
 export function MakeDashboard({ connectionId, schema, entity, name }: {
   connectionId: string; schema?: string; entity: string; name: string;
 }) {
-  const [on, setOn] = useState(false);
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags()
-      .then(f => { if (alive) setOn(!!f["ontology.dashboard_pieces"]?.value && !!f["ontology.object_dashboards"]?.value); })
-      .catch(() => { if (alive) setOn(false); });
-    return () => { alive = false; };
-  }, []);
-  if (!on) return null;
   return (
     <>
       <Button size="xs" variant="secondary" data-testid="make-dashboard" style={{ marginLeft: "auto" }} onClick={() => setOpen(true)}>

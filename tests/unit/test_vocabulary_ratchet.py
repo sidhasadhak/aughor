@@ -578,7 +578,9 @@ BASELINE: dict[str, int] = {
     # them by correcting the old paths comments still named (lib/cockpit/, aughor/cockpit/) to where the code lives.
     # 971 → 966 (ED-4, 2026-10-24): an App's versions read the stored field names they must, and paid for them with
     # nine comments that still said cockpit for a dashboard.
-    "cockpit": 966,
+    # 966 → 927 (2026-10-28, ROADMAP §3.65): the dashboard flags were made unconditional — their nine `cockpit.*` aliases,
+    # their nine `AUGHOR_COCKPIT_*` variables and the off paths that said the word went with them.
+    "cockpit": 927,
     "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is

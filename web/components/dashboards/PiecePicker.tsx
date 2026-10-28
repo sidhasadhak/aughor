@@ -91,19 +91,12 @@ function firstEntity(spec: DashboardSpec): string {
   return "";
 }
 
-export function PiecePicker({ spec, section, connectionId, schema, wiringOn, queriesOn = false, breakdownsOn = false, onPlace,
-  onHandOff, onClose }: {
+export function PiecePicker({ spec, section, connectionId, schema, onPlace, onHandOff, onClose }: {
   spec: DashboardSpec;
   /** The section a piece goes in; the first that holds pieces when none is named. */
   section: string | null;
   connectionId: string;
   schema?: string;
-  /** Whether a piece may read one of the dashboard's sets (Arc AP-2). */
-  wiringOn: boolean;
-  /** Arc AP-7 — whether a person may write a query of their own here. */
-  queriesOn?: boolean;
-  /** Whether a breakdown may be placed here (`dashboard.breakdowns`). */
-  breakdownsOn?: boolean;
   onPlace: (next: DashboardSpec, note: string) => void;
   onHandOff: (kind: HandOff, section: string | null) => void;
   onClose: () => void;
@@ -142,8 +135,8 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
   const ef = fields && fields.entity === of ? fields.f : null;
   const noun = entities.find(e => e.value === of)?.label ?? words(of);
   // the sets of the entity chosen — a set of the customers a set of orders reaches is offered under Customer (Arc AP-8b)
-  const sets = wiringOn ? Object.keys(spec.sets ?? {}).map(n => ({ n, r: readSet(spec, n) }))
-    .filter(x => !isRefused(x.r) && (!entity || (x.r as { entity: string }).entity === entity)) : [];
+  const sets = Object.keys(spec.sets ?? {}).map(n => ({ n, r: readSet(spec, n) }))
+    .filter(x => !isRefused(x.r) && (!entity || (x.r as { entity: string }).entity === entity));
   // the pieces a click chooses in, by their keys — a choose-one always names its choice, so it is followed by that
   const tables = Object.entries(spec.elements).filter(([, el]) => ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline"].includes(el.type));
   const chosen = [...choicesOf(spec).values()].filter(c => c.kind === "chosen");
@@ -191,7 +184,6 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
         return { why: "", props: { ...scope, start: t.start.path, end: t.end.path, label: nameField(ef)?.path } };
       }
       case "ChooseOne": {
-        if (!wiringOn) return { why: "Choosing one for the pieces that follow it needs wiring, which is off here." };
         if (!of) return { why: "Choose what it chooses from above." };
         if (!ef) return { why: "Reading what the ontology offers…" };
         const name = nameField(ef);
@@ -206,7 +198,6 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
         return { why: "", props: { entity: of, path: text.path, label: upTo(`Find ${plural(noun).toLowerCase()}`, MAX_LABEL) } };
       }
       case "Drawer": {
-        if (!wiringOn) return { why: "A drawer opens on a chosen object, which needs wiring — off here." };
         if (target && spec.elements[target]?.type === "Drawer") return { why: "A drawer opens beside the page. It holds pieces, not a drawer." };
         if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in the setup of a table, a list, a map or a timeline." };
         const free = chosen.find(c => !Object.values(spec.elements).some(el => el.type === "Drawer" && el.props.opens_on === c.name));
@@ -214,7 +205,6 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
         return { why: "", props: { opens_on: free.name } };
       }
       case "Linked": {
-        if (!wiringOn) return { why: "Linking to a chosen object needs wiring, which is off here." };
         if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in the setup of a table, a list, a map or a timeline." };
         if (!of) return { why: "Choose what it lists above — an order's lines, say." };
         if (!ef) return { why: "Reading what the ontology offers…" };
@@ -304,10 +294,9 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
 
   const shown = useMemo(() => {
     const q = find.trim().toLowerCase();
-    return GROUPS.map(g => ({ ...g, pieces: g.pieces.filter(p => (queriesOn || p.kind !== "query")
-      && (breakdownsOn || p.kind !== "ObjectBreakdown")
-      && (!q || `${p.label} ${p.says}`.toLowerCase().includes(q))) })).filter(g => g.pieces.length);
-  }, [find, queriesOn, breakdownsOn]);
+    return GROUPS.map(g => ({ ...g, pieces: g.pieces.filter(p => !q || `${p.label} ${p.says}`.toLowerCase().includes(q)) }))
+      .filter(g => g.pieces.length);
+  }, [find]);
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>

@@ -181,16 +181,14 @@ def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[
     out = {"claims": claims, "cards": cards,
            "automations": [{"id": a["id"], "name": a["name"], "how": a["how"]} for a in automations],
            "metrics": [{"id": m["id"], "name": m["name"], "how": m["how"]} for m in metrics]}
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("ontology.dashboard_pieces"):
-        # Arc OC-4 — a dashboard's pieces name the process, the entity, the segment and the action they read.
-        try:
-            from aughor.dashboards.pieces import dashboards_reading
-            out["cockpits"] = dashboards_reading(conn, names)
-        except Exception as exc:  # noqa: BLE001
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "the dashboards a change touches could not be read", counter="ontology.release")
-            out["cockpits"] = []
+    # Arc OC-4 — a dashboard's pieces name the process, the entity, the segment and the action they read.
+    try:
+        from aughor.dashboards.pieces import dashboards_reading
+        out["cockpits"] = dashboards_reading(conn, names)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the dashboards a change touches could not be read", counter="ontology.release")
+        out["cockpits"] = []
     return out
 
 

@@ -486,12 +486,9 @@ def _recorded(card, scalar):
 
 
 def _shown_of(card):
-    """Arc AP-7 — how a card of a person's own query is shown, while queries are on: ``(shown, "")``; ``(None, why)``
-    when what it says cannot be read; ``(None, "")`` for every other card, which runs as it always did."""
+    """Arc AP-7 — how a card of a person's own query is shown: ``(shown, "")``; ``(None, why)`` when what it says cannot
+    be read; ``(None, "")`` for every other card, which runs as it always did."""
     from aughor.dashboards import queries
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(queries.FLAG):
-        return None, ""
     try:
         return queries.shown_of(card.render), ""
     except queries.Refused as e:
@@ -517,9 +514,6 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Option
         return said(unread)
     params = None
     if queries.params_of(sql):
-        from aughor.dashboards import variables
-        if not variables.on():
-            return said(variables.refused_query(sql))
         try:
             sql, params = queries.bind(sql, values or {})
         except queries.Refused as e:

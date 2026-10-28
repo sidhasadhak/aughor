@@ -121,20 +121,13 @@ def get_pack_listing():
     return {"packs": listing(), "rule": "a pack whose claims keep failing on real installs is demoted by the same record that promoted it"}
 
 
-# ── Arc FA, FA-6 — a pack's dashboard templates (`packs.dashboard_templates`) ───────────────────
-
-def _templates_on() -> None:
-    from aughor.packs import templates
-    if not templates.on():
-        raise HTTPException(status_code=404, detail="dashboard templates need the 'packs.dashboard_templates' flag")
-
+# ── Arc FA, FA-6 — a pack's dashboard templates ───────────────────
 
 @router.get("/packs/templates")
 def get_pack_templates(connection_id: str, schema: Optional[str] = None):
     """The dashboard templates of the active packs bound on this connection, each card saying whether this connection
     can make it — and every bound pack whose templates wait, with why. No model call, nothing written. Declared before
     `/packs/{pack_id}`, which would otherwise take the word for a pack id."""
-    _templates_on()
     from aughor.packs.templates import listing
     return listing(connection_id, schema or "")
 
@@ -150,10 +143,6 @@ def post_template_draft(pack_id: str, template_id: str, body: TemplateDraftIn, r
     """Turn a pack's dashboard template into ONE dashboard draft for the asker on this connection, with no model call:
     a card whose metric the connection has not registered and approved is skipped and said, and the rest is staged
     through the dashboards' one proposal path. Kept, the dashboard's source is `pack:<id>@<version> template`."""
-    _templates_on()
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("dashboard.composed"):
-        raise HTTPException(status_code=404, detail="dashboards need the 'dashboard.composed' flag")
     from aughor.dashboards.home import person_of
     from aughor.packs.bindings import packs_bound_on
     from aughor.packs.templates import draft, find

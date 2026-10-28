@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from aughor.dashboards import cards, propose, sharing, validate as V, versions
 from aughor.dashboards.home import Home
 from aughor.cards.models import StoredCard
-from aughor.kernel.flags import flag_overrides
 from aughor.metastore.models import user_principal
 from aughor.org.context import using_org
 from aughor.rbac.groups import add_member, upsert_group
@@ -203,18 +202,12 @@ def client():
     return TestClient(app)
 
 
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True}):
-        yield
-
-
 def _as(org: str, user: str) -> dict:
     return {"X-Aughor-Org": org, "X-Aughor-User": user}
 
 
 @needs_rules
-def test_publish_read_as_a_reader_and_copy_over_http(client, on, monkeypatch):
+def test_publish_read_as_a_reader_and_copy_over_http(client, monkeypatch):
     monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
     monkeypatch.setenv("AUGHOR_TIER", "enterprise")
     o = Office()
@@ -251,11 +244,3 @@ def test_publish_read_as_a_reader_and_copy_over_http(client, on, monkeypatch):
     off = client.post(f"/dashboards/{o.home.cockpit_id}/unpublish", params=q, headers=_as(o.org, AMIT))
     assert off.status_code == 200 and off.json()["version"] == 3
     assert client.get("/dashboards/shared", params=q, headers=_as(o.org, PRIYA)).json()["cockpits"] == []
-
-
-def test_off_the_sharing_routes_answer_404(client):
-    q = {"connection_id": "conn-off"}
-    assert client.get("/dashboards/shared", params=q).status_code == 404
-    assert client.get("/dashboards/audiences", params=q).status_code == 404
-    assert client.post("/dashboards/returns-1/publish", params=q, json={"to": []}).status_code == 404
-    assert client.post("/dashboards/returns-1/ask", params=q, json={"words": "x"}).status_code == 404

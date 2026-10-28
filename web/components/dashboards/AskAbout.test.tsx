@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 
 /**
- * Arc FA-2 — a choice can leave its piece. With `canvas.ask_about_chosen` on, a table with rows ticked offers "Ask about
- * these", and a table reading a named set "Ask about this set"; a click keeps the subject in memory and asks the shell
- * for the Data Canvas with the connection only — no key in the address. Off, the table draws what it drew. Every read is
- * mocked: no test here reaches an API.
+ * Arc FA-2 — a choice can leave its piece. A table with rows ticked offers "Ask about these", and a table reading a
+ * named set "Ask about this set"; a click keeps the subject in memory and asks the shell for the Data Canvas with the
+ * connection only — no key in the address. Every read is mocked: no test here reaches an API.
  */
 import { fireEvent, render, screen, waitFor } from "@/lib/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,7 +48,7 @@ beforeEach(() => {
   went = [];
   window.addEventListener(NAVIGATE_EVENT, onNavigate);
   objects.listObjects.mockImplementation(async () => page());
-  api.getSystemFlags.mockResolvedValue({ "canvas.ask_about_chosen": { value: true } });
+  api.getSystemFlags.mockResolvedValue({});
 });
 afterEach(() => window.removeEventListener(NAVIGATE_EVENT, onNavigate));
 
@@ -112,15 +111,5 @@ describe("asking about what a reader chose", () => {
     expect(screen.queryByTestId("ask-about-set")).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "Tick 38330" }));
     expect(screen.getByTestId("ask-about-ticked")).toBeInTheDocument();
-  });
-
-  it("is not offered while the flag is off, and the table draws what it drew", async () => {
-    api.getSystemFlags.mockResolvedValue({ "canvas.ask_about_chosen": { value: false } });
-    draw();
-    await waitFor(() => expect(screen.getAllByTestId("object-table-row")).toHaveLength(2));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Tick 38330" }));
-    expect(screen.queryByTestId("ask-about-ticked")).toBeNull();
-    expect(screen.queryByTestId("ask-about-set")).toBeNull();
-    expect(api.getSystemFlags).toHaveBeenCalled();
   });
 });

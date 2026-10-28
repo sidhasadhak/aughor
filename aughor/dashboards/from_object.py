@@ -18,7 +18,6 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 from typing import Any, Callable, Iterator, Optional
 
-FLAG = "ontology.object_dashboards"
 #: The most filters offered: the object's own categories first, then one read through a link.
 MAX_FILTERS = 4
 #: A category is a filter when it holds at least two values and at most this many.
@@ -243,14 +242,12 @@ def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = N
            "table": {"columns": columns, "labels": [labels.get(c, c.replace("_", " ")) for c in columns]},
            # a type that declares no key is counted and charted, never listed: its table is not offered as if it were
            "listable": shapes.listable(entity), "actions": actions, "caveats": caveats}
-    if shapes.on():
-        # Arc AP-5 — what the object is for, as the ontology says it: one to three shapes, each with a sentence of why
-        from aughor.dashboards import app_pieces, wiring
-        sig = shapes.signals(graph, entity, wiring=wiring.on(), pieces=app_pieces.on())
-        offered = shapes.offered(sig)
-        measured = shapes.measure(sig, [o["shape"] for o in offered], run)
-        out["shapes"] = [{**o, "why": shapes.why(o["shape"], sig, measured)} for o in offered]
-        out["signals"] = {**sig, "window": shapes.WINDOW_DAYS, "measured": measured}
+    # Arc AP-5 — what the object is for, as the ontology says it: one to three shapes, each with a sentence of why
+    sig = shapes.signals(graph, entity)
+    offered = shapes.offered(sig)
+    measured = shapes.measure(sig, [o["shape"] for o in offered], run)
+    out["shapes"] = [{**o, "why": shapes.why(o["shape"], sig, measured)} for o in offered]
+    out["signals"] = {**sig, "window": shapes.WINDOW_DAYS, "measured": measured}
     return out
 
 

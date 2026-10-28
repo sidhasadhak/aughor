@@ -923,11 +923,11 @@ class ChatRequest(BaseModel):
 class AskFocus(BaseModel):
     """SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
 
-    Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+    Arc FA-2 — or what a reader chose on a dashboard, as the question's subject: ``objects``,
     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
-    (`agent.ask_subject`); off, they contribute nothing.
+    (`agent.ask_subject`).
 
     Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with
     ``sheets.chat`` on)."""
@@ -5328,10 +5328,10 @@ def _joined(*parts: str) -> str:
 
 async def _ask_subject_for(req, conn_id: str, request) -> Any:
     """Arc FA-2 — the subject a turn carries, read for the person asking (`agent.ask_subject`), off the event loop: the
-    reads are the object door's. None with ``canvas.ask_about_chosen`` off, or when the focus is SP-15's one object."""
-    from aughor.agent.ask_subject import is_subject, on, resolve
+    reads are the object door's. None when the focus is SP-15's one object."""
+    from aughor.agent.ask_subject import is_subject, resolve
     focus = getattr(req, "focus", None)
-    if not is_subject(focus) or not on():
+    if not is_subject(focus):
         return None
     from aughor.dashboards.home import person_of
     return await asyncio.to_thread(resolve, focus, conn_id, req.schema_name, person=person_of(request))
@@ -5354,8 +5354,7 @@ def _focus_prose_for(req, conn_id: str, subject=None) -> str:
     read degrades the turn to a plain conversation, never fails it.
 
     Arc FA-2 — a subject of chosen objects or a set is handed the same way, as `subject` reads it
-    (`agent.ask_subject`); with ``canvas.ask_about_chosen`` off there is no subject, and a focus of
-    that kind contributes nothing."""
+    (`agent.ask_subject`)."""
     focus = getattr(req, "focus", None)
     if focus is None:
         return ""
@@ -5619,8 +5618,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     if not req.insight_id:
         from aughor.dashboards.intent import is_dashboard_ask, where_dashboards_are_made
         if is_dashboard_ask(req.question):
-            from aughor.kernel.flags import flag_enabled
-            yield _sse("headline", {"headline": where_dashboards_are_made(flag_enabled("dashboard.composed"))})
+            yield _sse("headline", {"headline": where_dashboards_are_made()})
             yield _sse("done", {})
             return
 
@@ -5680,8 +5678,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
     except Exception:  # noqa: BLE001 — a receipt field, never a dependency
         _route_ev["trace_id"] = ""
     # Arc FA-2 — what the reader chose, read once for them under their row policy: the conversation and the
-    # analyst are handed it, and the receipt says it — and whether the body answering read it. None when
-    # `canvas.ask_about_chosen` is off or the focus is no subject: the receipt and both bodies are as before.
+    # analyst are handed it, and the receipt says it — and whether the body answering read it. None when the focus is
+    # no subject: the receipt and both bodies are as before.
     _subject = await _ask_subject_for(req, conn_id, request)
     if _subject is not None:
         _route_ev["subject"] = _subject.receipt(carried=_use_converse or _use_analyst)

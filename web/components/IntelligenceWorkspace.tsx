@@ -4,7 +4,7 @@ import { SkeletonRows } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { getCatalogTree, getSystemFlags } from "@/lib/api";
+import { getCatalogTree } from "@/lib/api";
 import { listOntologySchemas, withSchemas } from "@/lib/objectTypes";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
@@ -82,8 +82,7 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
 const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", label: "Graph", blurb: "Connection knowledge graph" };
 
 // Arc CT-7 — the person's dashboards, beside the Briefing: the Briefing is the connection's, a
-// dashboard is the person's own. Present only with `dashboard.composed` on, and never for a canvas,
-// which is for questions and deep analysis. Off, the layers are exactly what they were.
+// dashboard is the person's own. Never for a canvas, which is for questions and deep analysis.
 const DASHBOARD_LAYER: WorkspaceLayer<IntelLayer> = { id: "dashboards", icon: "gauge", label: "Dashboards", blurb: "Your own dashboards — the cards you keep watching" };
 
 type Props = {
@@ -178,19 +177,12 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   // A question handed to the Agent as a deep analysis — the Evidence layer's door and the metric drawer's.
   const askAgent = (q: string) => onInvestigate(q, "investigate");
 
-  // Arc CT-7 — read once. Until it answers, and when it cannot, the flag is off.
-  const [dashboardsOn, setDashboardsOn] = useState<boolean | null>(null);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setDashboardsOn(!!f["dashboard.composed"]?.value); })
-      .catch(() => { if (alive) setDashboardsOn(false); });
-    return () => { alive = false; };
-  }, []);
-  const withDashboard = dashboardsOn === true && !canvasId;
+  // Arc CT-7 — the Dashboards tab, beside the Briefing.
+  const withDashboard = !canvasId;
   // A link to the Dashboards tab where there is none opens the Briefing instead of an empty pane.
   useEffect(() => {
-    if (layer === "dashboards" && dashboardsOn !== null && !withDashboard) onLayerChange("briefing");
-  }, [layer, dashboardsOn, withDashboard, onLayerChange]);
+    if (layer === "dashboards" && !withDashboard) onLayerChange("briefing");
+  }, [layer, withDashboard, onLayerChange]);
 
   const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER]
     : l.id === "briefing" && withDashboard ? [l, DASHBOARD_LAYER] : [l]));

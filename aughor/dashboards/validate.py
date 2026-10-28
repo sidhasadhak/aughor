@@ -124,11 +124,9 @@ def read_set(spec: Any, name: str, values: dict, chosen: dict) -> Optional[dict]
 
 def grammar() -> Optional[str]:
     """What the writer of a dashboard is told, as the web writes it from its own catalog — or
-    None when the rules cannot run. The server keeps no copy (CT-5). The grid is told of only
-    while building dashboards in place is on (Arc AP-1), and sections split into sections only while that is on (Arc AP-4);
-    off, the text is as it was before them."""
-    from aughor.dashboards import app_pieces, builder
-    out, _why = _run({"op": "grammar", "grid": builder.on(), "structure": app_pieces.on()})
+    None when the rules cannot run. The server keeps no copy (CT-5). It tells of the grid (Arc AP-1) and of sections split
+    into sections (Arc AP-4)."""
+    out, _why = _run({"op": "grammar", "grid": True, "structure": True})
     text = (out or {}).get("text")
     return text if isinstance(text, str) and text else None
 

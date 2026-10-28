@@ -19,8 +19,7 @@ o5,delivered,2018-09-05 10:00:00,
 o6,shipped,2018-09-06 10:00:00,60.00
 """
 
-ON = {"sheets.core": True, "sheets.grid": True, "sheets.everywhere": True, "dashboard.composed": True,
-      "dashboard.queries": True}
+ON = {"sheets.core": True, "sheets.grid": True, "sheets.everywhere": True}
 
 
 @pytest.fixture
@@ -100,7 +99,7 @@ def test_a_kept_card_follows_an_edit_to_the_sheet_on_its_next_read(env):
     assert read() == 165.0
 
 
-def test_off_or_without_dashboards_no_dashboard_is_offered(env):
+def test_off_no_dashboard_is_offered(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -112,6 +111,3 @@ def test_off_or_without_dashboards_no_dashboard_is_offered(env):
     assert client.get(f"/sheets/{sheet.id}/dashboard").status_code == 200
     with flag_overrides({"sheets.everywhere": False}):
         assert client.get(f"/sheets/{sheet.id}/dashboard").status_code == 404
-    with flag_overrides({"dashboard.queries": False}):
-        got = client.get(f"/sheets/{sheet.id}/dashboard")
-        assert got.status_code == 404 and "made of them" in got.json()["detail"]

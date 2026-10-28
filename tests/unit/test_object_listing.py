@@ -4,8 +4,8 @@ Before: the door answered aggregates only. `POST /objects/query` grouped and cou
 (`list_linked`) read a single object's links with no total and no edit merged. A dashboard's objects table needs one row
 per object, the columns a person chose, a sort that holds still across pages, and the total the set holds. Every
 claim here is held to a hand-written query over the seeded samples warehouse: the page, the sort with the key breaking
-ties, the total under a segment and filters, an accepted edit listed like a column, and — behind
-`ontology.dashboard_pieces` — each promise's overdue segment, whose total is exactly the measurement's `open_overdue`.
+ties, the total under a segment and filters, an accepted edit listed like a column, and each promise's overdue segment,
+whose total is exactly the measurement's `open_overdue`.
 """
 from __future__ import annotations
 
@@ -19,9 +19,6 @@ from aughor.ontology import overrides as OV
 from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing
 from tests.unit.test_object_bindings import seed
 from tests.unit.test_object_processes import _DEADLINES, FULFILMENT, declare, fresh_graph
-
-_FLAG = "ontology.dashboard_pieces"
-
 
 @pytest.fixture(scope="module")
 def db(tmp_path_factory):
@@ -43,10 +40,6 @@ def graph():
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
-
-
-def _flag(monkeypatch, on: bool) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: on and name == _FLAG)
 
 
 def run(db, sql: str) -> list[tuple]:
@@ -166,7 +159,6 @@ def test_the_overdue_segment_lists_exactly_what_the_promise_counted(db, graph, m
     _, process = declare(graph, db, FULFILMENT)
     delivery = process.stages[2].promise
     assert delivery.open_overdue and delivery.open_overdue > 0
-    _flag(monkeypatch, True)
     page = listing(graph, segment="overdue_delivery", columns=["shipped_at", "delivered_at"], limit=10)
     assert total(db, page) == delivery.open_overdue
     assert any("overdue_delivery (derived from the delivery promise of process order_fulfilment" in line
@@ -175,20 +167,10 @@ def test_the_overdue_segment_lists_exactly_what_the_promise_counted(db, graph, m
     assert all(r[2] is None and r[1] is not None for r in run(db, page.sql))      # shipped, not delivered
 
 
-def test_off_the_overdue_segment_is_a_name_the_door_does_not_know(db, graph, monkeypatch):
-    declare(graph, db, FULFILMENT)
-    _flag(monkeypatch, False)
-    with pytest.raises(ObjectQueryRefused) as exc:
-        listing(graph, segment="overdue_delivery")
-    assert "has no segment 'overdue_delivery'" in exc.value.reason
-    assert "late_delivery" in exc.value.available                    # what the door always derived, unchanged
-
-
 def test_an_unmeasured_promise_has_no_overdue_list_and_says_why(graph, monkeypatch):
     from aughor.ontology.processes import process_from_fields
     graph.processes["order_fulfilment"] = process_from_fields("order_fulfilment", {
         "entity": "Order", "stages": FULFILMENT["stages"]})
-    _flag(monkeypatch, True)
     with pytest.raises(ObjectQueryRefused) as exc:
         listing(graph, segment="overdue_delivery")
     assert "has not been measured" in exc.value.reason

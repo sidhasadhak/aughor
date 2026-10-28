@@ -15,7 +15,6 @@ from fastapi.testclient import TestClient
 from aughor.automations.store import get_automation
 from aughor.dashboards import questions as Q
 from aughor.db import history as H
-from aughor.kernel.flags import flag_overrides
 
 CONN = "thelook-q"
 
@@ -34,12 +33,6 @@ REPORT = {
 }
 
 
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True, "dashboard.questions": True}):
-        yield
-
-
 @pytest.fixture(scope="module")
 def client():
     from aughor.api import app
@@ -53,14 +46,7 @@ def _answered(question: str, *, session: str = "", report: dict | None = None) -
     return inv
 
 
-# ── off ────────────────────────────────────────────────────────────────────────────────────
-
-def test_off_the_question_routes_answer_404_and_keep_nothing(client):
-    with flag_overrides({"dashboard.composed": True, "dashboard.questions": False}):
-        r = client.post("/dashboards/questions", params={"connection_id": CONN}, json={"question": "Why?"})
-        assert r.status_code == 404 and "dashboard.questions" in r.json()["detail"]
-        assert client.get("/dashboards/questions/abc").status_code == 404
-
+# ── a run outside a question ───────────────────────────────────────────────────────────────
 
 def test_a_run_with_no_session_is_filed_exactly_as_before():
     from aughor.runners.investigation import InvestigationRequest, _ask_request
@@ -71,7 +57,7 @@ def test_a_run_with_no_session_is_filed_exactly_as_before():
 
 # ── keeping one ────────────────────────────────────────────────────────────────────────────
 
-def test_kept_weekly_by_default_on_mondays_and_its_answers_filed_under_its_own_session(client, on):
+def test_kept_weekly_by_default_on_mondays_and_its_answers_filed_under_its_own_session(client):
     r = client.post("/dashboards/questions", params={"connection_id": CONN},
                     json={"question": "How did sales change week over week, and why?"})
     assert r.status_code == 201, r.text
@@ -85,7 +71,7 @@ def test_kept_weekly_by_default_on_mondays_and_its_answers_filed_under_its_own_s
     assert out["session"].startswith("question:")
 
 
-def test_only_when_asked_never_fires_on_its_own(on):
+def test_only_when_asked_never_fires_on_its_own():
     out = Q.keep(connection_id=CONN, question="What changed?", rhythm="ask")
     a = get_automation(out["automation_id"])
     assert [c.kind for c in a.conditions] == ["webhook"] and Q.next_at(a) is None
@@ -97,12 +83,12 @@ def test_only_when_asked_never_fires_on_its_own(on):
     ({"question": "Why?", "rhythm": "hourly"}, "daily, weekly, monthly or only when asked"),
     ({"question": "Why?", "first_run": "nope0000"}, "no answer 'nope0000' to start from"),
 ])
-def test_what_cannot_be_kept_says_why(on, kw, said):
+def test_what_cannot_be_kept_says_why(kw, said):
     with pytest.raises(Q.QuestionRefused, match=said):
         Q.keep(connection_id=CONN, **kw)
 
 
-def test_an_answer_from_another_connection_is_not_a_start(on):
+def test_an_answer_from_another_connection_is_not_a_start():
     inv = H.create_investigation("q", "another-conn")
     H.complete_investigation(inv, report=REPORT, hypotheses=[], query_history=[], question="q",
                              connection_id="another-conn")
@@ -112,7 +98,7 @@ def test_an_answer_from_another_connection_is_not_a_start(on):
 
 # ── reading it ─────────────────────────────────────────────────────────────────────────────
 
-def test_it_reads_its_own_answers_newest_first_and_the_latest_in_full(client, on):
+def test_it_reads_its_own_answers_newest_first_and_the_latest_in_full(client):
     first = _answered("Why did revenue change last month?")                       # kept from the Data Canvas
     out = Q.keep(connection_id=CONN, question="Why did revenue change last month?", rhythm="monthly", first_run=first)
     later = _answered("Why did revenue change last month?", session=out["session"],
@@ -133,13 +119,13 @@ def test_it_reads_its_own_answers_newest_first_and_the_latest_in_full(client, on
     assert "minutes" in got["cost"] and "from" in got["cost"]
 
 
-def test_a_weekly_question_is_next_asked_on_a_monday_at_nine(on):
+def test_a_weekly_question_is_next_asked_on_a_monday_at_nine():
     a = get_automation(Q.keep(connection_id=CONN, question="Week over week?")["automation_id"])
     nxt = datetime.fromisoformat(Q.next_at(a, now=datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)))
     assert (nxt.date().isoformat(), nxt.hour, nxt.weekday()) == ("2026-10-26", 9, 0)
 
 
-def test_an_automation_that_is_not_a_question_is_no_question(client, on):
+def test_an_automation_that_is_not_a_question_is_no_question(client):
     from aughor.automations.models import Automation
     from aughor.automations.store import upsert_automation
     other = upsert_automation(Automation(conn_id=CONN, name="a chain", conditions=[{"kind": "webhook", "config": {}}],
@@ -149,7 +135,7 @@ def test_an_automation_that_is_not_a_question_is_no_question(client, on):
 
 # ── changing and asking ────────────────────────────────────────────────────────────────────
 
-def test_its_rhythm_changes_its_trigger_and_nothing_else(client, on):
+def test_its_rhythm_changes_its_trigger_and_nothing_else(client):
     out = Q.keep(connection_id=CONN, question="Week over week?")
     before = get_automation(out["automation_id"])
     r = client.put(f"/dashboards/questions/{out['automation_id']}/rhythm", json={"rhythm": "daily"})
@@ -158,7 +144,7 @@ def test_its_rhythm_changes_its_trigger_and_nothing_else(client, on):
     assert after.conditions[0].config == {"cron": "0 9 * * *"} and after.effects == before.effects
 
 
-def test_asking_now_goes_through_the_same_gates_the_schedule_uses(client, on, monkeypatch):
+def test_asking_now_goes_through_the_same_gates_the_schedule_uses(client, monkeypatch):
     out = Q.keep(connection_id=CONN, question="Week over week?")
     seen = {}
 
@@ -173,7 +159,7 @@ def test_asking_now_goes_through_the_same_gates_the_schedule_uses(client, on, mo
     assert seen == {"id": out["automation_id"], "via": "hand"}
 
 
-def test_a_scheduled_step_files_its_run_under_the_question_s_session(monkeypatch, on):
+def test_a_scheduled_step_files_its_run_under_the_question_s_session(monkeypatch):
     from aughor.automations import engine
     from aughor.runners.investigation import InvestigationRun
     out = Q.keep(connection_id=CONN, question="Week over week?")
@@ -188,7 +174,7 @@ def test_a_scheduled_step_files_its_run_under_the_question_s_session(monkeypatch
     assert seen["session"] == out["session"]
 
 
-def test_the_cost_is_said_before_a_question_is_kept(client, on):
+def test_the_cost_is_said_before_a_question_is_kept(client):
     r = client.get("/dashboards/questions/cost", params={"connection_id": CONN})
     assert r.status_code == 200, r.text
     assert {"minutes", "tokens", "usd_floor", "from", "ceiling"} <= set(r.json())
@@ -208,7 +194,7 @@ def _with_question(spec: dict, automation: str, key: str = "question1") -> dict:
 
 
 @needs_rules
-def test_a_dashboard_keeps_a_question_a_person_kept_on_its_connection(client, on):
+def test_a_dashboard_keeps_a_question_a_person_kept_on_its_connection(client):
     desk = Desk()
     out = Q.keep(connection_id=desk.connection, question="How did sales change week over week, and why?")
     r = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, out["automation_id"])})
@@ -219,18 +205,13 @@ def test_a_dashboard_keeps_a_question_a_person_kept_on_its_connection(client, on
 
 
 @needs_rules
-def test_a_question_is_refused_while_questions_are_off_and_when_it_names_none(client):
+def test_a_question_is_refused_when_it_names_none_kept_here(client):
     desk = Desk()
-    with flag_overrides({"dashboard.composed": True, "dashboard.questions": True}):
-        out = Q.keep(connection_id=desk.connection, question="Week over week?")
-        unknown = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, "ffffffff-0000-0000")})
-        assert unknown.status_code != 200 and "names no question that was kept" in unknown.text
-        elsewhere = Q.keep(connection_id="another-conn", question="Week over week?")
-        other = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, elsewhere["automation_id"])})
-        assert other.status_code != 200 and "another connection" in other.text
-    with flag_overrides({"dashboard.composed": True, "dashboard.questions": False}):
-        off = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, out["automation_id"])})
-        assert off.status_code != 200 and "questions on a dashboard are off" in off.text
+    unknown = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, "ffffffff-0000-0000")})
+    assert unknown.status_code != 200 and "names no question that was kept" in unknown.text
+    elsewhere = Q.keep(connection_id="another-conn", question="Week over week?")
+    other = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, elsewhere["automation_id"])})
+    assert other.status_code != 200 and "another connection" in other.text
 
 
 def test_a_model_never_adds_a_question_or_changes_one_and_may_move_one():
@@ -246,7 +227,7 @@ def test_a_model_never_adds_a_question_or_changes_one_and_may_move_one():
 
 
 @needs_rules
-def test_a_question_taken_off_stops_being_asked_and_put_back_is_asked_again(client, on):
+def test_a_question_taken_off_stops_being_asked_and_put_back_is_asked_again(client):
     desk = Desk()
     out = Q.keep(connection_id=desk.connection, question="Week over week?")
     aid = out["automation_id"]
@@ -259,7 +240,7 @@ def test_a_question_taken_off_stops_being_asked_and_put_back_is_asked_again(clie
 
 
 @needs_rules
-def test_a_retired_dashboard_s_questions_stop_and_a_paused_one_stays_paused_across_an_edit(client, on):
+def test_a_retired_dashboard_s_questions_stop_and_a_paused_one_stays_paused_across_an_edit(client):
     from aughor.automations.store import set_automation_enabled
     desk = Desk()
     aid = Q.keep(connection_id=desk.connection, question="Week over week?")["automation_id"]

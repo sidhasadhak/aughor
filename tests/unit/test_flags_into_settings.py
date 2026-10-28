@@ -55,11 +55,22 @@ def test_until_its_off_path_is_deleted_an_explicit_falsy_variable_still_turns_on
     assert F.flag_enabled("sheets.core") is True
 
 
+#: Stage 2 (ROADMAP §3.65): flags made unconditional — their off paths deleted, gone from the registry.
+UNCONDITIONAL = {
+    # the dashboards area, 2026-10-28
+    "dashboard.app_pieces", "dashboard.breakdowns", "dashboard.builder", "dashboard.composed", "dashboard.marks",
+    "dashboard.queries", "dashboard.questions", "dashboard.shapes", "dashboard.variables", "dashboard.wiring",
+    "ontology.dashboard_pieces", "ontology.object_dashboards", "packs.dashboard_templates", "canvas.ask_about_chosen",
+}
+
+
 def test_every_flag_that_was_on_is_always_on_and_the_settings_left_the_registry():
-    assert len(F.ALWAYS_ON) == 63 and all(F.ALWAYS_ON.values())
+    assert len(F.ALWAYS_ON) == 63 - len(UNCONDITIONAL) and all(F.ALWAYS_ON.values())
     for gone in ("aggregates.share", "semops.jev_cheap_tier", "govern.justifications", "agents.testing_centre",
                  "agents.learning_loop"):
         assert gone not in F.FLAG_ENV, gone
+    for gone in UNCONDITIONAL:
+        assert gone not in F.FLAG_ENV and gone not in F.ALWAYS_ON and gone not in F.FLAG_META, gone
 
 
 @pytest.fixture

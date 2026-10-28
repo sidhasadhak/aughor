@@ -3,8 +3,8 @@
 /**
  * An open Data Canvas: its header, what it is for, and the chrome around what the person made.
  *
- * The canvas is for questions and deep analysis (Arc CT, §6 item 36(l)): it has its three views whatever the
- * dashboard flag says. A dashboard is a person's, in the Briefing. The header's give-and-take was fixed while the canvas
+ * The canvas is for questions and deep analysis (Arc CT, §6 item 36(l)): it has its three views. A dashboard is a
+ * person's, in the Briefing. The header's give-and-take was fixed while the canvas
  * briefly had a fourth tab, and stands on its own. Redone to CLARITY (2026-10-12): the header says the name, what it is
  * in a line and its facts as chips; the landing no longer repeats them; a question asked many times is one history row;
  * a read that failed says so instead of showing an empty list.
@@ -17,7 +17,7 @@ import { CanvasWorkspace } from "@/components/CanvasWorkspace";
 import type { Canvas, Connection } from "@/lib/api";
 
 const api = vi.hoisted(() => ({
-  getSystemFlags: vi.fn().mockResolvedValue({ "dashboard.composed": { value: true } }),
+  getSystemFlags: vi.fn().mockResolvedValue({}),
   getCanvasHistory: vi.fn(),
   getCanvasArtifacts: vi.fn(),
   getCanvasDocuments: vi.fn(),
@@ -59,7 +59,7 @@ const tabs = () => screen.getAllByRole("button").map(b => b.textContent?.trim())
 const settle = () => new Promise(r => setTimeout(r, 10));
 
 describe("the Data Canvas", () => {
-  it("has its three views and no dashboard, with the dashboard flag on", async () => {
+  it("has its three views and no dashboard", async () => {
     show();
     await settle();
     expect(tabs()).toEqual(["Chat", "History", "Artifacts"]);

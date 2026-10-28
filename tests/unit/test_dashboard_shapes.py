@@ -4,7 +4,7 @@ A shape is offered when the ontology says it fits, with one sentence of why whos
 things waiting past a measured promise with actions on them (or a platform-owned type whose status moves as declared),
 a map for coordinates, one object for a name and several kinds of objects linking to it, a timeline for two moments, an
 overview for every entity. One to three are offered, the best first and the overview after it; a map placed one link
-away never leads. Nothing is offered that the install cannot build, and off, the starter's proposal is the one before.
+away never leads.
 """
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ def _promised():
     return g
 
 
-def _sig(g, name, *, wiring=True, pieces=True):
+def _sig(g, name):
     from aughor.semantic.object_query import find_object_type
-    return shapes.signals(g, find_object_type(g, name), wiring=wiring, pieces=pieces)
+    return shapes.signals(g, find_object_type(g, name))
 
 
 def test_a_queue_is_read_from_a_measured_promise_and_the_actions_on_its_objects():
@@ -42,10 +42,9 @@ def test_a_queue_is_read_from_a_measured_promise_and_the_actions_on_its_objects(
     assert [o["shape"] for o in shapes.offered(sig)] == ["queue", "overview", "timeline"]
 
 
-def test_no_queue_without_a_measured_promise_without_actions_or_without_wiring(monkeypatch):
+def test_no_queue_without_a_measured_promise_or_without_actions(monkeypatch):
     unmeasured = _graph()                                           # its process holds no promise
     assert _sig(unmeasured, "order")["queue"] is None
-    assert _sig(_promised(), "order", wiring=False)["queue"] is None
     monkeypatch.setattr(shapes, "_actions", lambda graph, entity: [])
     assert _sig(_promised(), "order")["queue"] is None             # nothing to do about what waits
 
@@ -57,7 +56,7 @@ def test_a_platform_owned_queue_waits_on_a_status_a_move_still_leaves():
                                                  moves=[["", "open"], ["open", "working"], ["working", "resolved"]])}
     from aughor.ontology.models import Backing
     case.backing = Backing(kind="platform")
-    q = shapes.signals(g, case, wiring=True, pieces=True)["queue"]
+    q = shapes.signals(g, case)["queue"]
     assert q == {"kind": "states", "status": "tier", "final": ["resolved"], "moves": "open → working → resolved"}
 
 
@@ -73,7 +72,6 @@ def test_a_map_reads_its_own_coordinates_first_and_one_a_link_reaches_follows_th
     assert [o["shape"] for o in order] == ["queue", "overview", "timeline"]      # the map through a link falls off
     review = shapes.offered(_sig(g, "review"))
     assert [o["shape"] for o in review][:2] == ["overview", "map"]               # never what a review is for
-    assert _sig(g, "customer", pieces=False)["places"] is None
 
 
 def test_one_object_needs_a_name_and_three_kinds_linking_to_it(monkeypatch):
@@ -84,19 +82,15 @@ def test_one_object_needs_a_name_and_three_kinds_linking_to_it(monkeypatch):
     sig = _sig(g, "customer")
     assert sig["one"]["label"] == "full_name" and {x["entity"] for x in sig["one"]["links"]} == {"order", "review"}
     assert shapes.offered(sig)[0]["shape"] == "one"
-    assert _sig(g, "customer", wiring=False)["one"] is None
 
 
 def test_a_timeline_draws_between_an_objects_own_two_moments():
     g = _promised()
     assert _sig(g, "order")["moments"] == {"start": "order_date", "end": "shipped_at"}
     assert _sig(g, "customer")["moments"] is None                  # one moment
-    assert _sig(g, "order", pieces=False)["moments"] is None
 
 
-def test_off_or_with_nothing_to_build_an_object_is_offered_its_overview_alone():
-    sig = _sig(_promised(), "order", wiring=False, pieces=False)
-    assert [o["shape"] for o in shapes.offered(sig)] == ["overview"]
+def test_an_object_is_offered_at_most_the_most_shapes():
     assert len(shapes.offered(_sig(_promised(), "order"))) <= shapes.MAX_OFFERED
 
 
@@ -138,15 +132,10 @@ def _counts(q):
     return names, [[5 for _ in names]], []
 
 
-def test_the_starter_offers_shapes_only_while_they_are_on_and_is_the_one_before_off(monkeypatch):
+def test_the_starter_offers_shapes(monkeypatch):
     g = _promised()
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
-    off = from_object.propose(g, "order", _counts)
-    assert "shapes" not in off and "signals" not in off
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda name: name in {shapes.FLAG, "dashboard.wiring", "dashboard.app_pieces"})
     on = from_object.propose(g, "order", _counts)
-    assert {k: v for k, v in on.items() if k not in ("shapes", "signals")} == off
     assert [o["shape"] for o in on["shapes"]] == ["queue", "overview", "timeline"]
     assert on["shapes"][0]["why"].startswith("Order has a dispatch promise of 2 days; 5 orders placed in the last 14 days")
     assert on["signals"]["queue"]["overdue"] == "overdue_dispatch" and on["signals"]["window"] == shapes.WINDOW_DAYS
@@ -166,20 +155,11 @@ def test_a_case_is_startable_its_counts_read_from_the_edit_layer():
                                         "grain": "day"}, [])
 
 
-def test_the_route_says_each_objects_best_fit_and_is_closed_while_shapes_are_off(monkeypatch):
-    from fastapi import HTTPException
-
+def test_the_route_says_each_objects_best_fit(monkeypatch):
     from aughor.routers import dashboards as R
     g = _promised()
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema: g)
-    monkeypatch.setattr(R, "_on", lambda: None)
-    base = {"ontology.dashboard_pieces", "ontology.object_dashboards"}
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in base)
-    with pytest.raises(HTTPException) as off:
-        R.suggested_shapes("c")
-    assert off.value.status_code == 404 and "off on this install" in str(off.value.detail)
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda name: name in base | {shapes.FLAG, "dashboard.wiring", "dashboard.app_pieces"})
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
     out = {o["type_id"]: (o["shape"], o["short"]) for o in R.suggested_shapes("c")["objects"]}
     assert out["Order"] == ("queue", "a dispatch promise · 1 action")
     assert out["Product"][0] == "overview" and out["Customer"][0] == "overview"

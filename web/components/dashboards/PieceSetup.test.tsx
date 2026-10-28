@@ -208,7 +208,9 @@ describe("the pieces the picker adds (Arc AP-4)", () => {
     expect(offered("Called by")).not.toContain("revenue");                        // a number is said beside, never as a name
     expect(offered("Called by")).not.toContain("created_at");
     expect(offered("Beside it")[1]).toBe("revenue");                              // after "Nothing": money first
-    expect(offered("Marked by")).toEqual(["", "status", "gender", "num_of_item", "placed_by.country"]);   // the customer's too
+    // the list's own "Marked by" — a category on each card — not the rule that marks its rows (`setup-marked`)
+    const markedBy = screen.getAllByLabelText("Marked by").find(el => !screen.getByTestId("setup-marked").contains(el))!;
+    expect(optionsOf(markedBy).map(o => o.value)).toEqual(["", "status", "gender", "num_of_item", "placed_by.country"]);   // the customer's too
     await choose(screen.getByLabelText("Called by"), "status");
     expect(onChange.mock.calls[0]).toEqual([expect.objectContaining({}), "an object list set up by hand"]);
     expect(onChange.mock.calls[0][0].elements.list.props.title).toBe("status");
@@ -262,11 +264,11 @@ describe("the pieces the picker adds (Arc AP-4)", () => {
   });
 
   it("wires a list's click and ticks, and a map's click only — a map holds no ticks", async () => {
-    render(<PieceSetup spec={app()} selected="list" onChange={vi.fn()} connectionId={`conn-${++conn}`} wiringOn />);
+    render(<PieceSetup spec={app()} selected="list" onChange={vi.fn()} connectionId={`conn-${++conn}`} />);
     await screen.findByTestId("setup-chooses");
     expect(screen.getByTestId("setup-ticks")).toHaveTextContent("A tick beside each card");
     expect(screen.getByTestId("setup-reads")).toBeInTheDocument();
-    render(<PieceSetup spec={app()} selected="map" onChange={vi.fn()} connectionId={`conn-${++conn}`} wiringOn />);
+    render(<PieceSetup spec={app()} selected="map" onChange={vi.fn()} connectionId={`conn-${++conn}`} />);
     await waitFor(() => expect(screen.getAllByTestId("setup-chooses")).toHaveLength(2));
     expect(screen.getAllByTestId("setup-ticks")).toHaveLength(1);
     expect(screen.getAllByTestId("setup-chooses")[1]).toHaveTextContent("Chooses a place for a detail that follows this piece.");

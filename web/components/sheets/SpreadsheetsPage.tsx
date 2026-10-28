@@ -19,7 +19,7 @@ import { getSystemFlags } from "@/lib/api";
 
 export interface SheetsWaves {
   grid: boolean; chat: boolean; combine: boolean; views: boolean;
-  /** SH-6's first piece: Make a dashboard — offered only where dashboards and their own queries are on. */
+  /** SH-6's first piece: Make a dashboard — offered where sheets reach the rest of the platform (`sheets.everywhere`). */
   dashboard: boolean;
   /** SH-8: a sheet shared with chosen people and groups, each to read or to edit it. */
   sharing?: boolean;
@@ -53,7 +53,7 @@ export function SpreadsheetsPage({ onAsk }: { onAsk?: (question: string) => void
       setCore(on("sheets.core"));
       setWaves({ grid: on("sheets.grid"), chat: on("sheets.chat"), combine: on("sheets.combine"),
         views: on("sheets.views"),
-        dashboard: on("sheets.everywhere") && on("dashboard.composed") && on("dashboard.queries"),
+        dashboard: on("sheets.everywhere"),
         sharing: on("sheets.sharing"), modelColumns: on("sheets.model_columns") });
     }).catch(() => { if (live) { setCore(false); setWaves({ grid: false, chat: false, combine: false, views: false, dashboard: false, sharing: false }); } });
     return () => { live = false; };

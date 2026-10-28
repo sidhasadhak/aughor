@@ -1229,7 +1229,7 @@ from aughor.routers import builder_v1 as builder_v1_router  # noqa: E402 — Arc
 app.include_router(builder_v1_router.router)  # /ontology/v1 + /objects/v1: the contract, listing, proposing
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(cards.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
-app.include_router(dashboards_router.router)  # Arc CT-4 — dashboards (self-gate on dashboard.composed); /cockpits answers too
+app.include_router(dashboards_router.router)  # Arc CT-4 — dashboards; /cockpits answers too
 from aughor.routers import sheets as sheets_router  # noqa: E402 — Arc SH, the sheets people make
 app.include_router(sheets_router.router)  # Arc SH — Spreadsheets (self-gate on sheets.core and each wave's flag)
 app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)

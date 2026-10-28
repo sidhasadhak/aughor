@@ -7,7 +7,7 @@
  * a reader; the builder's split, copy and width, one twelfth at a time; and the piece picker, which places every piece
  * by hand with a first setup the rules accept — or says why it cannot. Every read is mocked.
  */
-import { act, choose, cleanup, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
+import { act, choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardBuilder } from "@/components/dashboards/DashboardBuilder";
@@ -103,10 +103,10 @@ describe("a structure, drawn", () => {
 });
 
 describe("a structure, built", () => {
-  function build(spec: DashboardSpec, structureOn = true) {
+  function build(spec: DashboardSpec) {
     const onChange = vi.fn(), onAddPiece = vi.fn();
     const view = render(
-      <DashboardBuilder spec={spec} onChange={onChange} connectionId="thelook" bar={null} structureOn={structureOn} onAddPiece={structureOn ? onAddPiece : undefined}>
+      <DashboardBuilder spec={spec} onChange={onChange} connectionId="thelook" bar={null} onAddPiece={onAddPiece}>
         {() => <div data-testid="dashboard-stub" />}
       </DashboardBuilder>,
     );
@@ -145,14 +145,6 @@ describe("a structure, built", () => {
     fireEvent.click(screen.getByTestId("builder-add-piece"));
     expect(onAddPiece).toHaveBeenLastCalledWith("right");
   });
-
-  it("offers none of it while the structure is off", () => {
-    const { line } = build(split(), false);
-    fireEvent.click(line("left"));
-    expect(screen.queryByTestId("builder-split-right")).toBeNull();
-    expect(screen.queryByTestId("builder-duplicate")).toBeNull();
-    expect(screen.queryByTestId("builder-add-piece")).toBeNull();
-  });
 });
 
 describe("the piece picker", () => {
@@ -162,7 +154,7 @@ describe("the piece picker", () => {
   });
   function pick(spec: DashboardSpec, section: string | null = "right") {
     const onPlace = vi.fn(), onHandOff = vi.fn(), onClose = vi.fn();
-    render(<PiecePicker spec={spec} section={section} connectionId="thelook" wiringOn onPlace={onPlace} onHandOff={onHandOff} onClose={onClose} />);
+    render(<PiecePicker spec={spec} section={section} connectionId="thelook" onPlace={onPlace} onHandOff={onHandOff} onClose={onClose} />);
     const entry = (kind: string) => screen.getAllByTestId("piece-picker-entry").find(e => e.dataset.kind === kind)!;
     return { onPlace, onHandOff, onClose, entry };
   }
@@ -334,15 +326,6 @@ describe("the piece picker", () => {
     expect(checkDashboardSpec(next).issues).toEqual([]);
   });
 
-  it("offers neither a choose-one nor linked objects while the dashboard cannot be wired, and says so", async () => {
-    byName();
-    render(<PiecePicker spec={desk()} section="right" connectionId="thelook" wiringOn={false} onPlace={vi.fn()} onHandOff={vi.fn()} onClose={vi.fn()} />);
-    const entry = (kind: string) => screen.getAllByTestId("piece-picker-entry").find(e => e.dataset.kind === kind)!;
-    await waitFor(() => expect(entry("ObjectList")).not.toBeDisabled());
-    expect(entry("ChooseOne")).toHaveTextContent("Choosing one for the pieces that follow it needs wiring, which is off here.");
-    expect(entry("Linked")).toHaveTextContent("Linking to a chosen object needs wiring, which is off here.");
-  });
-
   it("places a detail following a list by its key when the dashboard holds no table", async () => {
     byName();
     const listed = desk();
@@ -392,18 +375,12 @@ describe("the piece picker", () => {
     expect(entry("Drawer")).toHaveTextContent("Each chosen object opens its drawer already.");
   });
 
-  it("offers a query of your own only where queries are on, and hands it to the page for the same section (Arc AP-7)", async () => {
-    const { onHandOff, entry } = pick(desk());
-    expect(screen.getAllByTestId("piece-picker-entry").some(e => e.dataset.kind === "query")).toBe(false);
-    cleanup();
-    const handed = vi.fn();
-    render(<PiecePicker spec={desk()} section="right" connectionId="thelook" wiringOn queriesOn onPlace={vi.fn()} onHandOff={handed} onClose={vi.fn()} />);
+  it("offers a query of your own, and hands it to the page for the same section (Arc AP-7)", async () => {
+    const { onHandOff } = pick(desk());
     const query = screen.getAllByTestId("piece-picker-entry").find(e => e.dataset.kind === "query")!;
     expect(query).toHaveTextContent("Your own query");
     fireEvent.click(query);
-    expect(handed).toHaveBeenCalledWith("query", "right");
-    expect(onHandOff).not.toHaveBeenCalled();
-    void entry;
+    expect(onHandOff).toHaveBeenCalledWith("query", "right");
     await act(async () => {});
   });
 

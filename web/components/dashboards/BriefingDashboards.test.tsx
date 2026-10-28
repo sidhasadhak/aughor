@@ -85,9 +85,8 @@ const MEASURED = {
 } as unknown as BriefingRangeBlock;
 
 const show = () => render(<BriefingDashboards connectionId="thelook" schema="thelook" />);
-/** Arc AP-1 — building in place on, and the dashboard opened in the builder. */
+/** Arc AP-1 — the dashboard opened in the builder. */
 const openBuilder = async () => {
-  api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true } });
   show();
   fireEvent.click(await screen.findByTestId("dashboard-edit"));
   await screen.findByTestId("dashboard-builder");
@@ -115,16 +114,6 @@ beforeEach(() => {
   api.measureRange.mockResolvedValue({ period: MEASURED, from_briefing: false, measured_at: "2026-10-05T09:00:00Z", scope_key: "thelook:thelook" });
   api.readExpectedNext.mockResolvedValue({ why: "", target: { start: "2026-09-01", last_day: "2026-09-30", label: "2026-09-01 to 2026-09-30", settles_on: "2026-10-01" },
     items: [{ metric: "revenue", name: "Revenue", why: "", expected: { claim_id: "p1", low: 100, mid: 108, high: 116, text: "$100 to $116", state: "open", scored_against: null, must_say: ["6 earlier ranges"], n: 6 } }] });
-});
-
-describe("with the flag off", () => {
-  it("says so, and reads nothing more", async () => {
-    api.listDashboards.mockResolvedValue(null);
-    show();
-    expect(await screen.findByText("Dashboards are off on this install")).toBeInTheDocument();
-    expect(screen.queryByTestId("briefing-dashboards")).toBeNull();
-    expect(api.getDashboard).not.toHaveBeenCalled();
-  });
 });
 
 describe("a person's dashboards", () => {
@@ -172,19 +161,18 @@ describe("a person's dashboards", () => {
   });
 
   it("'Remove' on a card takes it off THIS dashboard and keeps the card", async () => {
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
+    await waitFor(() => expect((drawn.props.at(-1)?.doors as { onRemove?: unknown } | undefined)?.onRemove).toBeTypeOf("function"));
     const doors = drawn.props.at(-1)!.doors as { onRemove: (id: string) => void };
-    doors.onRemove("c91b2002");
-    await waitFor(() => expect(api.keepDashboard).toHaveBeenCalled());
+    act(() => { doors.onRemove("c91b2002"); });
+    await waitFor(() => expect(api.keepDashboard).toHaveBeenCalled(), { timeout: 3000 });
     const [conn, id, spec, note] = api.keepDashboard.mock.calls[0];
     expect([conn, id, note]).toEqual(["thelook", "returns-1", "a card taken off"]);
     expect(JSON.stringify(spec)).not.toContain("c91b2002");
   });
 
   it("a card pinned from here lands on the dashboard in view", async () => {
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     expect(screen.queryByTestId("composer-stub")).toBeNull();
     fireEvent.click(screen.getByTestId("dashboard-card-new"));
     await waitFor(() => expect(composer.onCreated).not.toBeNull());
@@ -201,8 +189,7 @@ describe("a person's dashboards", () => {
 describe("a retired dashboard", () => {
   it("is retired from the toolbar, after one confirmation — not from inside History, where it read as absent", async () => {
     api.retireDashboard.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.click(screen.getByTestId("dashboard-retire-open"));
     expect(screen.getByTestId("dashboard-retire-confirm").textContent).toContain("its history stays");
     fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
@@ -221,38 +208,10 @@ describe("a retired dashboard", () => {
     await waitFor(() => expect(stripTabs()).toEqual(["Metrics", "Returns"]));
     expect(screen.queryByText(/Retired:|Pricing/)).toBeNull();
     expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
-    fireEvent.click(screen.getByTestId("dashboard-retire-open"));
+    fireEvent.click(await screen.findByTestId("dashboard-edit"));
+    fireEvent.click(await screen.findByTestId("dashboard-retire-open"));
     expect(screen.getByTestId("dashboard-retire-confirm")).toHaveTextContent("It leaves your strip for good and cannot be brought back");
     expect(api.restoreDashboard).not.toHaveBeenCalled();
-  });
-});
-
-describe("arranging by hand", () => {
-  it("saves what was arranged as the next version, and offers the cards not on it", async () => {
-    show();
-    fireEvent.click(await screen.findByTestId("dashboard-arrange-open"));
-    const save = screen.getByRole("button", { name: "Save" });
-    expect(save).toBeDisabled();                                            // nothing changed yet
-
-    const tray = screen.getByTestId("dashboard-tray");
-    expect(within(tray).getAllByRole("button").map(b => b.textContent)).toEqual(["+ Pinned for everyone"]);
-    fireEvent.click(within(tray).getByRole("button", { name: "+ Pinned for everyone" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(api.keepDashboard).toHaveBeenCalled());
-    const [, id, spec, note] = api.keepDashboard.mock.calls[0];
-    expect([id, note]).toEqual(["returns-1", "arranged by hand"]);
-    expect(JSON.stringify(spec)).toContain("cafe0003");
-  });
-
-  it("does not offer back a duplicate, and says which it left out and why", async () => {
-    api.getDashboard.mockResolvedValue({ ...READ, cards: [...READ.cards,
-      { ...card("dup00004", "Item Return Rate"), not_offered: "superseded by “Return rate”" }] });
-    show();
-    fireEvent.click(await screen.findByTestId("dashboard-arrange-open"));
-    const tray = screen.getByTestId("dashboard-tray");
-    expect(within(tray).getAllByRole("button").map(b => b.textContent)).toEqual(["+ Pinned for everyone"]);
-    expect(screen.getByTestId("dashboard-tray-withheld").textContent)
-      .toBe("Not offered: Item Return Rate — superseded by “Return rate”.");
   });
 });
 
@@ -447,8 +406,7 @@ describe("the metrics, the dashboard a person opens on", () => {
 
 describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => {
   it("a note typed here is placed in the first section and kept as the next version, its stamps the server's", async () => {
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.click(screen.getByTestId("dashboard-note-new"));
     fireEvent.change(screen.getByRole("textbox", { name: "The note's words" }), { target: { value: "Check **ops** before the 15th." } });
     fireEvent.click(screen.getByRole("button", { name: "Place the note" }));
@@ -464,8 +422,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
   it("an image is uploaded first, then placed by the object id the upload answered with", async () => {
     api.uploadDashboardImage.mockResolvedValue({ object: "ab12cd34ef56", file_name: "promo.png", uploaded_by: "user:default",
       uploaded_at: "2026-10-08T09:00:00Z", content_type: "image/png", bytes: 72, readable: true, why: "" });
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.click(screen.getByTestId("dashboard-image-new"));
     const file = new File([new Uint8Array([137, 80, 78, 71])], "promo.png", { type: "image/png" });
     fireEvent.change(screen.getByLabelText("The image file"), { target: { files: [file] } });
@@ -481,8 +438,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
 
   it("an upload the server refuses is said where the file was chosen, and nothing is kept", async () => {
     api.uploadDashboardImage.mockRejectedValue(new Error("The file is not a PNG, JPEG, GIF, WebP or SVG image (it was sent as text/html)."));
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.click(screen.getByTestId("dashboard-image-new"));
     fireEvent.change(screen.getByLabelText("The image file"), { target: { files: [new File(["<html>"], "page.html", { type: "text/html" })] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload and place" }));
@@ -490,21 +446,15 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
     expect(api.keepDashboard).not.toHaveBeenCalled();
   });
 
-  it("the doors a tile has land as one kept version each: take off, resize, a note's words", async () => {
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
-    const doors = drawn.props.at(-1)!.doors as { onTakeOff: (k: string) => void; onResize: (k: string, s: string) => void; onEditNote: (k: string, t: string) => void };
-    doors.onResize("card-net", "large");
-    await waitFor(() => expect(api.keepDashboard).toHaveBeenCalledTimes(1));
-    const resized = api.keepDashboard.mock.calls[0][2] as { elements: Record<string, { props: Record<string, unknown> }> };
-    expect(resized.elements["card-net"].props.size).toBe("large");
-    expect(api.keepDashboard.mock.calls[0][3]).toBe("resized to large by hand");
-
-    doors.onTakeOff("card-net");
-    await waitFor(() => expect(api.keepDashboard).toHaveBeenCalledTimes(2));
-    const without = api.keepDashboard.mock.calls[1][2] as { elements: Record<string, unknown> };
+  it("a tile taken off in the builder is kept as the next version", async () => {
+    await openBuilder();
+    await waitFor(() => expect((drawn.props.at(-1)?.doors as { onTakeOff?: unknown } | undefined)?.onTakeOff).toBeTypeOf("function"));
+    const doors = drawn.props.at(-1)!.doors as { onTakeOff: (k: string) => void };
+    act(() => { doors.onTakeOff("card-net"); });
+    await waitFor(() => expect(api.keepDashboard).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    const without = api.keepDashboard.mock.calls[0][2] as { elements: Record<string, unknown> };
     expect(without.elements["card-net"]).toBeUndefined();
-    expect(api.keepDashboard.mock.calls[1][3]).toBe("taken off by hand");
+    expect(api.keepDashboard.mock.calls[0][3]).toBe("taken off by hand");
 
     // The images the read answered with reach the drawing with where to read each from.
     expect(drawn.props.at(-1)!.images).toEqual({});
@@ -574,8 +524,7 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
       ] },
     ]);
     api.pinFinding.mockResolvedValue({ card: { id: "newcard" }, preview: { columns: [], rows: [], row_count: 0 }, caveats: [] });
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.click(screen.getByTestId("dashboard-finding-new"));
     const rows = await screen.findAllByTestId("finding-row");
     expect(rows).toHaveLength(2);
@@ -594,8 +543,7 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     api.getProposalById.mockResolvedValue({ id: "p9", kind: "cockpit_draft", reasoning: "", params: { spec: edited, cards: [], mode: "edit" },
       detail: { mode: "edit", title: "Returns", replaces_version: 3, outline: [], taken_off: [], changes: { added: [], removed: [], changed: ["card-net"] } } });
     api.acceptProposal.mockResolvedValue({});
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.change(screen.getByRole("textbox", { name: "Ask for a change in words" }), { target: { value: "make the net sales card bigger" } });
     fireEvent.click(screen.getByRole("button", { name: "Propose" }));
     await waitFor(() => expect(api.askDashboard).toHaveBeenCalledWith("thelook", "returns-1", "make the net sales card bigger", "thelook"));
@@ -610,8 +558,7 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
   it("words that come to nothing are said in the platform's sentences", async () => {
     api.askDashboard.mockResolvedValue({ staged: false, proposal_id: "", cockpit_id: "", summary: "", rounds: 1, stop_reason: "stop",
       sentences: ["The edit adds the note \"note-2\". A note is the person's words and an image is the person's choice: you may move one they placed, resize it or take it off, never add one."] });
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    await openBuilder();
     fireEvent.change(screen.getByRole("textbox", { name: "Ask for a change in words" }), { target: { value: "write me a note saying returns are too high" } });
     fireEvent.click(screen.getByRole("button", { name: "Propose" }));
     expect(await screen.findByTestId("dashboard-not-proposed")).toHaveTextContent("never add one");
@@ -630,12 +577,15 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     expect(stripTabs()).toEqual(["Metrics", "Returns", "Pricing", "Sales weekly · priya@example.com"]);
 
-    fireEvent.click(screen.getByTestId("dashboard-publish-open"));
+    fireEvent.click(screen.getByTestId("dashboard-edit"));
+    fireEvent.click(await screen.findByTestId("dashboard-publish-open"));
     const panel = await screen.findByTestId("dashboard-publish");
     await within(panel).findByText("Sales team");
     fireEvent.click(within(panel).getByRole("checkbox", { name: "Publish to Sales team" }));
     fireEvent.click(within(panel).getByTestId("dashboard-publish-go"));
     await waitFor(() => expect(api.publishDashboard).toHaveBeenCalledWith("thelook", "returns-1", [{ kind: "group", id: "sales", name: "Sales team" }]));
+    fireEvent.click(screen.getByTestId("builder-done"));
+    await waitFor(() => expect(screen.queryByTestId("dashboard-builder")).toBeNull());
 
     // What Priya published reads as hers, read-only, with the door to start one's own from it.
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Sales weekly · priya@example.com" }));
@@ -654,22 +604,7 @@ describe("building a dashboard in place (Arc AP-1)", () => {
   const doors = () => drawn.props.at(-1)!.doors as Doors;
   const shown = () => (drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> }).elements;
 
-  it("off, a dashboard is arranged as it always was: its bar of doors, Arrange, sizes by name, and no Edit", async () => {
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
-    expect(screen.queryByTestId("dashboard-edit")).toBeNull();
-    for (const id of ["dashboard-card-new", "dashboard-note-new", "dashboard-arrange-open", "dashboard-publish-open", "dashboard-retire-open", "dashboard-ask"]) {
-      expect(screen.getByTestId(id)).toBeInTheDocument();
-    }
-    expect(doors().onResize).toBeTypeOf("function");
-    expect(doors().onTakeOff).toBeTypeOf("function");
-    expect(doors().onRegrid).toBeUndefined();
-    expect(doors().onFilterWidth).toBeUndefined();
-    expect(doors().onSelect).toBeUndefined();
-  });
-
-  it("on, a dashboard opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
-    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true } });
+  it("a dashboard opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
     show();
     expect(await screen.findByTestId("dashboard-edit")).toBeInTheDocument();
     for (const id of ["dashboard-card-new", "dashboard-note-new", "dashboard-arrange-open", "dashboard-publish-open", "dashboard-retire-open", "dashboard-ask"]) {
@@ -766,22 +701,10 @@ describe("building a dashboard in place (Arc AP-1)", () => {
 describe("action buttons, placed by hand (Arc AP-3)", () => {
   const OPEN_CASE = { id: "open_case", display_name: "Open a case", description: "", entity: "order", object_type: "order", kind: "annotate",
     risk: "low", edits: [], params: [] };
-  const builderWith = async (flags: Record<string, { value: boolean }>) => {
-    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, ...flags });
-    show();
-    fireEvent.click(await screen.findByTestId("dashboard-edit"));
-    await screen.findByTestId("dashboard-builder");
-  };
-
-  it("are offered only where dashboards are wired", async () => {
-    await builderWith({});
-    expect(screen.getByTestId("dashboard-note-new")).toBeInTheDocument();
-    expect(screen.queryByTestId("dashboard-buttons-new")).toBeNull();
-  });
 
   it("are placed with the first action declared here, and kept as a version said in words", async () => {
     api.getDeclaredActions.mockResolvedValue({ open_case: OPEN_CASE, flag_for_review: { ...OPEN_CASE, id: "flag_for_review" } });
-    await builderWith({ "dashboard.wiring": { value: true } });
+    await openBuilder();
     fireEvent.click(await screen.findByTestId("dashboard-buttons-new"));
     await waitFor(() => expect(api.keepDashboard).toHaveBeenCalledTimes(1));
     const kept = api.keepDashboard.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
@@ -793,7 +716,7 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
 
   it("say that no action is declared, and place nothing", async () => {
     api.getDeclaredActions.mockResolvedValue({});
-    await builderWith({ "dashboard.wiring": { value: true } });
+    await openBuilder();
     fireEvent.click(await screen.findByTestId("dashboard-buttons-new"));
     await waitFor(() => expect(toasts.error).toHaveBeenCalledWith("No action is declared here", expect.objectContaining({
       description: expect.stringContaining("Ontology ▸ Actions") })));
@@ -813,16 +736,7 @@ describe("a new dashboard from a pack template (Arc FA, FA-6)", () => {
     ],
   };
 
-  it("is not offered while the flag is off, and nothing is read for it", async () => {
-    show();
-    fireEvent.click(await screen.findByTestId("dashboard-new-open"));
-    expect(screen.getByTestId("dashboard-new-empty")).toBeInTheDocument();
-    expect(screen.queryByTestId("dashboard-new-pack")).toBeNull();
-    expect(api.listPackTemplates).not.toHaveBeenCalled();
-  });
-
   it("lists the bound packs' templates, says what is left out, and drafts one with no model", async () => {
-    api.getSystemFlags.mockResolvedValue({ "packs.dashboard_templates": { value: true } });
     api.listPackTemplates.mockResolvedValue({ templates: [TEMPLATE], waiting: { banking: "the pack is draft: its templates are offered once a person activates it" } });
     api.draftFromPackTemplate.mockResolvedValue({
       staged: true, proposal_id: "p2", rounds: 0, stop_reason: "", sentences: [], dashboard_id: "checkout-and-returns-a1b2c3",
@@ -850,7 +764,6 @@ describe("a new dashboard from a pack template (Arc FA, FA-6)", () => {
 
 describe("what each object suggests (Arc AP-5)", () => {
   it("lists each object with the shape it fits, and a click opens the starter on it", async () => {
-    api.getSystemFlags.mockResolvedValue({ "ontology.dashboard_pieces": { value: true }, "ontology.object_dashboards": { value: true } });
     // answered after the object catalog, as the live API answers: the catalog's arrival must not drop them
     api.getSuggestedShapes.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve([
       { entity: "order", type_id: "Order", name: "Customer Order", shape: "queue", short: "a dispatch promise · 2 actions" },
@@ -899,7 +812,7 @@ describe("an App publishes one version (Arc ED, ED-4)", () => {
       history: [{ ...version(3), state: "draft", published_to: [sales] },
                 { ...version(2), current: false, state: "published", published_to: [sales], source: "published to Sales team" },
                 { ...version(1), current: false, state: "draft" }] }));
-    show();
+    await openBuilder();
     const door = await screen.findByTestId("dashboard-publish-open");
     expect(door).toHaveTextContent("An App for Sales team · readers see version 2");
     expect(door).toHaveAttribute("title", "What you kept since version 2 is a draft. Its readers read version 2 until you publish.");
@@ -923,7 +836,7 @@ describe("an App publishes one version (Arc ED, ED-4)", () => {
   it("a server with App versions off says no state: the door reads as before, and the same audience is not offered again", async () => {
     api.dashboardAudiences.mockResolvedValue({ groups: [sales], roles: [] });
     api.getDashboard.mockResolvedValue(withNewest({ ...version(3), spec: SPEC, published_to: [sales] }));
-    show();
+    await openBuilder();
     const door = await screen.findByTestId("dashboard-publish-open");
     expect(door).toHaveTextContent(/^An App for Sales team$/);
     fireEvent.click(door);
@@ -937,7 +850,7 @@ describe("an App publishes one version (Arc ED, ED-4)", () => {
 
 describe("previewing as a group (Arc AP-6)", () => {
   it("reads the dashboard as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
-    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, "ontology.security": { value: true } });
+    api.getSystemFlags.mockResolvedValue({ "ontology.security": { value: true } });
     api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }, { id: "fulfilment", name: "Fulfilment" }] });
     show();
     fireEvent.click(await screen.findByTestId("dashboard-edit"));
@@ -1010,7 +923,6 @@ describe("the checks chip, as the dashboard's cells say what they read (Arc AP-6
 });
 
 describe("your own query on the dashboard (Arc AP-7)", () => {
-  const QUERIES = { "dashboard.builder": { value: true }, "dashboard.app_pieces": { value: true }, "dashboard.queries": { value: true } };
   const SHOWN = { as: "bar", summed: true, x: "day", bucket: "day", series: [{ column: "sales", agg: "sum" }], split: "", top: 5,
     segments: "stacked", running: false, labels: false, columns: [], sort: "", descending: true, label: "" };
   const queryCard = (id: string) => ({ ...card(id, "Sales by day"), sql: "SELECT day, sales FROM thelook.orders",
@@ -1022,7 +934,6 @@ describe("your own query on the dashboard (Arc AP-7)", () => {
   });
 
   it("writes a new one for the section the picker was opened for, and places the kept card there", async () => {
-    api.getSystemFlags.mockResolvedValue(QUERIES);
     api.keepDashboardQuery.mockResolvedValue({ card: queryCard("qnew"), preview: { connection_id: "thelook", refused: [] } });
     show();
     fireEvent.click(await screen.findByTestId("dashboard-edit"));
@@ -1044,7 +955,6 @@ describe("your own query on the dashboard (Arc AP-7)", () => {
   });
 
   it("sets up a card of the person's own query where it is chosen, and keeps a change by swapping the new card in", async () => {
-    api.getSystemFlags.mockResolvedValue(QUERIES);
     api.getDashboard.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
     api.keepDashboardQuery.mockResolvedValue({ card: queryCard("q2"), preview: { connection_id: "thelook", refused: [] } });
     show();
@@ -1072,32 +982,13 @@ describe("your own query on the dashboard (Arc AP-7)", () => {
     expect(held.run).toBeUndefined();
   });
 
-  it("offers the dashboard's values to a query's setup while variables are on, and none while they are off", async () => {
+  it("offers the dashboard's values to a query's setup, and the Variables pane", async () => {
     const valued = { ...SPEC, values: { country: { label: "Country", kind: "text", value: "China", from: { by: "reader" } } } };
     api.getDashboard.mockResolvedValue({ ...READ, cockpit: { ...READ.cockpit, spec: valued }, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
-    for (const variables of [true, false]) {
-      api.getSystemFlags.mockResolvedValue({ ...QUERIES, "dashboard.wiring": { value: true }, ...(variables ? { "dashboard.variables": { value: true } } : {}) });
-      const { unmount } = show();
-      fireEvent.click(await screen.findByTestId("dashboard-edit"));
-      await screen.findByTestId("dashboard-builder");
-      fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
-      const setup = await screen.findByTestId("query-setup");
-      expect(!!within(setup).queryByTestId("query-values-open")).toBe(variables);
-      expect(!!screen.queryByRole("radio", { name: "Variables" })).toBe(variables);
-      unmount();
-    }
-  });
-
-  it("offers no query of your own, and sets up a card as before, while queries are off", async () => {
-    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, "dashboard.app_pieces": { value: true } });
-    api.getDashboard.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
-    show();
-    fireEvent.click(await screen.findByTestId("dashboard-edit"));
-    await screen.findByTestId("dashboard-builder");
+    await openBuilder();
     fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
-    await screen.findByLabelText("Edge");
-    expect(screen.queryByTestId("query-setup")).toBeNull();
-    fireEvent.click(screen.getByTestId("builder-add-piece"));
-    expect((await screen.findAllByTestId("piece-picker-entry")).some(e => e.dataset.kind === "query")).toBe(false);
+    const setup = await screen.findByTestId("query-setup");
+    expect(within(setup).getByTestId("query-values-open")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Variables" })).toBeInTheDocument();
   });
 });

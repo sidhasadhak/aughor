@@ -41,8 +41,8 @@ pytestmark = pytest.mark.skipif(
     reason="the dashboard's rules need node + validate.bundle.mjs")
 
 AMIT, PRIYA, SAM = "amit@example.com", "priya@example.com", "sam@example.com"
-ON = {"dashboard.composed": True, "dashboard.app_versions": True}
-OFF = {"dashboard.composed": True, "dashboard.app_versions": False}
+ON = {"dashboard.app_versions": True}
+OFF = {"dashboard.app_versions": False}
 
 
 class Office:

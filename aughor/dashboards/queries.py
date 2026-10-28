@@ -21,8 +21,6 @@ from typing import Any, Iterator, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-FLAG = "dashboard.queries"
-
 SHOWN = ("table", "figure", "bar", "line", "area", "scatter")
 CHARTS = ("bar", "line", "area", "scatter")
 AGGS = ("count", "count_distinct", "sum", "avg", "min", "max")

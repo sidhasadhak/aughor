@@ -3,8 +3,7 @@
 
 A value comes from its author, the reader on the page, a set's count or a property of the object a reader chose; a set
 compares any value as its kind allows; a query of a person's own reads a value as ``{{name}}``, and the engine binds it —
-it is never pasted into the statement. While ``dashboard.variables`` is off a spec that says any of it is refused, and a
-query that reads a value is refused with why. Every figure a bound query returns is checked against the rows themselves,
+it is never pasted into the statement. Every figure a bound query returns is checked against the rows themselves,
 filtered in Python.
 """
 from __future__ import annotations
@@ -21,9 +20,8 @@ from aughor.dashboards import pieces, queries as Q, validate as V, variables, ve
 from aughor.dashboards.home import Home
 from aughor.db.connection import open_connection
 from aughor.demo.setup import _seed_ecommerce
-from aughor.kernel.flags import flag_overrides
 from tests.unit.test_dashboard_canvas import ME, volumes  # noqa: F401 — the fixture, by name
-from tests.unit.test_dashboard_wiring import ALL, _desk, _flags, _graph
+from tests.unit.test_dashboard_wiring import _desk, _flags, _graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
@@ -147,29 +145,10 @@ def client(db, monkeypatch):
     return TestClient(app)
 
 
-@pytest.fixture
-def on():
-    with flag_overrides({"dashboard.composed": True, "dashboard.queries": True, "dashboard.variables": True}):
-        yield
-
-
 TABLE = {"as": "table"}
 
 
-def test_off_a_query_that_reads_a_value_is_refused_and_one_that_reads_none_runs_as_before(client):
-    conn = f"v{uuid.uuid4().hex[:6]}"
-    with flag_overrides({"dashboard.composed": True, "dashboard.queries": True, "dashboard.variables": False}):
-        r = client.post("/dashboards/queries/preview", params={"connection_id": conn},
-                        json={"sql": ASKED, "shown": TABLE, "values": VALUES})
-        assert r.json()["refused"] == ["The query reads {{country}}, {{since}}, {{least}} — the dashboard's values — and "
-                                       "variables are off on this install."]
-        r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": ASKED, "values": VALUES})
-        assert r.status_code == 422 and "variables are off" in r.json()["detail"]["refused"][0]
-        plain = client.post("/dashboards/queries/preview", params={"connection_id": conn}, json={"sql": ROWS, "shown": TABLE}).json()
-        assert plain["refused"] == [] and plain["reads"] == []
-
-
-def test_a_preview_binds_the_values_it_is_sent_and_says_which_it_reads(client, on, rows):
+def test_a_preview_binds_the_values_it_is_sent_and_says_which_it_reads(client, rows):
     conn = f"v{uuid.uuid4().hex[:6]}"
     body = client.post("/dashboards/queries/preview", params={"connection_id": conn},
                        json={"sql": ASKED, "shown": TABLE, "values": VALUES}).json()
@@ -182,7 +161,7 @@ def test_a_preview_binds_the_values_it_is_sent_and_says_which_it_reads(client, o
     assert missing["refused"] == ["The query reads {{since}}, {{least}}, and this dashboard holds no value of those names."]
 
 
-def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own(client, on, rows):
+def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own(client, rows):
     from aughor.cards.store import get_card
     conn = f"v{uuid.uuid4().hex[:6]}"
     fig = {"as": "figure", "series": [{"column": "total_amount", "agg": "sum"}]}
@@ -200,12 +179,9 @@ def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own
     bare = client.post(f"/cards/{card['id']}/run").json()
     assert bare["shown"] is None and bare["error"] == ("The query reads {{country}}, {{since}}, {{least}}, and this dashboard "
                                                        "holds no value of those names.")
-    with flag_overrides({"dashboard.variables": False}):
-        off = client.post(f"/cards/{card['id']}/run", json={"values": VALUES}).json()
-        assert off["shown"] is None and "variables are off on this install" in off["error"]
 
 
-def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(client, on, monkeypatch):
+def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(client, monkeypatch):
     from aughor.briefing.ranges import RangeSpec
     conn = f"v{uuid.uuid4().hex[:6]}"
     card = client.post("/dashboards/queries", params={"connection_id": conn},
@@ -220,34 +196,6 @@ def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(clie
 
 
 # ── what the server checks before a dashboard is kept ───────────────────────────────────────────────────────────────────
-
-def _valued(**values) -> dict:
-    """The dispatch desk, its values as given."""
-    return _desk(**{"values": values})
-
-
-def test_only_what_variables_say_is_refused_off_and_a_desk_of_the_author_s_days_never_is(monkeypatch):
-    reader = _valued(window={"label": "Window", "kind": "days", "value": 14, "from": {"by": "reader", "options": [7, 14]}})
-    day = _valued(window={"label": "Window", "kind": "days", "value": 14}, since={"label": "Since", "kind": "date", "value": "2024-01-01"})
-    compares = _desk(**{"values.least": {"label": "Least", "kind": "number", "value": 100},
-                        "sets.big": {"label": "Big", "entity": "order", "where": [{"path": "total_amount", "op": ">=", "value_from": "least"}]}})
-    assert variables.uses(reader) == ["the value 'window'"]
-    assert variables.uses(day) == ["the value 'since'"]
-    assert variables.uses(compares) == ["the set 'big'"]
-    assert variables.uses(_desk()) == []                                      # days the author set, counted back: as before
-    _flags(monkeypatch, set())
-    assert variables.refused_off(_desk()) == []
-    said = variables.refused_off(reader)
-    assert said == ["The dashboard reads variables — the value 'window' come from the reader, a count or a chosen object, "
-                    "compare a value in a set, or read a set's linked objects or another set whole — and variables are "
-                    "off on this install."]
-    # Arc AP-8b — a set's linked objects, and a set combined with another, are variables' too
-    traversed = _desk(**{"sets.theirs": {"label": "Their customers", "from": "active", "traverse": {"link": "customer", "entity": "customer"}}})
-    combined = _desk(**{"sets.lone": {"label": "Lone", "from": "placed", "combine": {"op": "but_not", "set": "active"}}})
-    assert variables.uses(traversed) == ["the set 'theirs'"] and variables.uses(combined) == ["the set 'lone'"]
-    _flags(monkeypatch, {variables.FLAG})
-    assert variables.refused_off(reader) == []
-
 
 def test_a_value_read_off_a_chosen_object_names_a_property_its_entity_has(monkeypatch):
     graph = _graph()
@@ -283,7 +231,7 @@ def test_the_server_reads_each_value_as_the_web_does_and_a_set_reading_a_count_c
 
 
 @needs_rules
-def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_and_a_query_whose_value_is_gone(
+def test_the_keep_door_refuses_a_property_the_entity_lacks_and_a_query_whose_value_is_gone(
         volumes, monkeypatch):  # noqa: F811
     from aughor.dashboards import cards
     from aughor.cards.models import StoredCard
@@ -297,11 +245,7 @@ def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_a
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
     status = {"label": "Its status", "kind": "text", "from": {"by": "chosen", "choice": "chosen-order", "path": "status"}}
     spec = _desk(**{"values.status": status})
-    _flags(monkeypatch, ALL)
-    off = keep(spec)
-    assert off.status == "refused" and "variables are off on this install" in " ".join(off.sentences), off.sentences
-    assert versions.latest(home) is None
-    _flags(monkeypatch, ALL | {variables.FLAG})
+    _flags(monkeypatch)
     wrong = keep(_desk(**{"values.status": {**status, "from": {**status["from"], "path": "colour"}}}))
     assert not wrong.kept and "Order has no property colour" in " ".join(wrong.sentences), wrong.sentences
     kept = keep(spec)
@@ -346,8 +290,5 @@ def test_a_set_s_linked_objects_and_a_combined_set_are_read_as_the_web_reads_the
 
     def keep(s):
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
-    _flags(monkeypatch, ALL)
-    off = keep(spec)
-    assert not off.kept and "read a set's linked objects or another set whole" in " ".join(off.sentences)
-    _flags(monkeypatch, ALL | {variables.FLAG})
+    _flags(monkeypatch)
     assert keep(spec).kept

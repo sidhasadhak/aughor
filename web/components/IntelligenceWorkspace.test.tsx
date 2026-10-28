@@ -16,7 +16,7 @@ import { act, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
-import { generateBriefingNarrative, getCatalogTree, getSystemFlags, type SystemFlag } from "@/lib/api";
+import { generateBriefingNarrative, getCatalogTree } from "@/lib/api";
 
 // Every async call in the API module stays pending unless a test answers it, so the real
 // BriefingPanel renders its loading state and nothing reaches the no-network guard. Synchronous
@@ -127,11 +127,7 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc CT-7)", () => {
   // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
   const tabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent?.trim());
-  const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
-    { "dashboard.composed": { value: on } as unknown as SystemFlag });
-
-  it("is there with the flag on, right after the Briefing, and opening it asks for no brief", async () => {
-    flags(true);
+  it("is there right after the Briefing, and opening it asks for no brief", async () => {
     render(shell("dashboards"));
     await waitFor(() => expect(tabs()).toContain("Dashboards"));
     expect(tabs().slice(0, 2)).toEqual(["Briefing", "Dashboards"]);
@@ -139,20 +135,11 @@ describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc
     expect(generateBriefingNarrative).not.toHaveBeenCalled();
   });
 
-  it("is not there with the flag off, and a link to it opens the Briefing", async () => {
-    flags(false);
+  it("is not there for a canvas, which is for questions and deep analysis, and a link to it opens the Briefing", async () => {
     const onLayerChange = vi.fn();
-    render(<IntelligenceWorkspace connectionId={CONN} layer="dashboards" onLayerChange={onLayerChange}
-      onInvestigate={noop} connections={[{ id: CONN, name: "Warehouse" }]} workspaceId="default" />);
-    await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
-    expect(tabs()).not.toContain("Dashboards");
-  });
-
-  it("is not there for a canvas, which is for questions and deep analysis", async () => {
-    flags(true);
-    render(<IntelligenceWorkspace connectionId={CONN} layer="briefing" onLayerChange={noop} onInvestigate={noop}
+    render(<IntelligenceWorkspace connectionId={CONN} layer="dashboards" onLayerChange={onLayerChange} onInvestigate={noop}
       canvasId="cv1" workspaceId="default" />);
-    await settle();
+    await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
     expect(tabs()).not.toContain("Dashboards");
   });
 });

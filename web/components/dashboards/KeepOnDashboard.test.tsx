@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@/lib/testing";
 
 const api = vi.hoisted(() => ({
-  getSystemFlags: vi.fn(), listDashboards: vi.fn(), getDashboard: vi.fn(), keepDashboard: vi.fn(),
+  listDashboards: vi.fn(), getDashboard: vi.fn(), keepDashboard: vi.fn(),
   setAutomationEnabled: vi.fn(), keepQuestion: vi.fn(), readQuestionCost: vi.fn(),
 }));
 vi.mock("@/lib/api", async original => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
@@ -20,7 +20,6 @@ const SPEC = JSON.parse(readFileSync(resolve(process.cwd(), "lib/dashboards/prem
 
 beforeEach(() => {
   Object.values(api).forEach(f => f.mockReset());
-  api.getSystemFlags.mockResolvedValue({ "dashboard.questions": { value: true }, "dashboard.composed": { value: true } });
   api.listDashboards.mockResolvedValue({ person: "default", cockpits: [{ cockpit_id: "revenue-watch-1", title: "Revenue watch", retired: false }],
     shared_cards: 0, own_cards: 0, from_canvases: [] });
   api.getDashboard.mockResolvedValue({ cockpit: { spec: SPEC } });
@@ -52,16 +51,9 @@ describe("keeping a Data Canvas answer's question on a dashboard", () => {
 
   it("switches the question off at once when the dashboard refuses it, and says why", async () => {
     api.keepDashboard.mockResolvedValue({ status: "refused", kept: false, version: null, artifact_id: "",
-      sentences: ["The dashboard holds a question — question — and questions on a dashboard are off on this install."] });
+      sentences: ["The dashboard holds a question whose answers this connection cannot read."] });
     await open();
     await waitFor(() => expect(api.setAutomationEnabled).toHaveBeenCalledWith("aut-1a2b3c4d", false));
     expect(await screen.findByTestId("keep-on-dashboard-said")).toHaveTextContent("Not kept on “Revenue watch”: The dashboard holds a question");
-  });
-
-  it("is not offered while questions are off", async () => {
-    api.getSystemFlags.mockResolvedValue({ "dashboard.questions": { value: false }, "dashboard.composed": { value: true } });
-    render(<KeepOnDashboard connectionId="8233e4fd" question="q" runId="d4039693" />);
-    await waitFor(() => expect(api.getSystemFlags).toHaveBeenCalled());
-    expect(screen.queryByTestId("keep-on-dashboard")).toBeNull();
   });
 });

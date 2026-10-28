@@ -46,7 +46,7 @@ def test_who_left_is_counted_and_is_no_longer_open_or_overdue(db, graph, monkeyp
     assert was.open == gone and was.open_overdue == gone                  # every one of them was counted late
     assert (now.open, now.open_overdue) == (0, None)                      # they left: nothing is waiting
     assert (now.reached, now.breached) == (was.reached, was.breached)    # what was reached and broken stands
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.dashboard_pieces")
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
     assert total(db, listing(graph, segment="overdue_delivery")) == 0     # the board and the table say the same
 
 

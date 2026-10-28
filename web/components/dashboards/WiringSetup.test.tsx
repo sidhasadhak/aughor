@@ -177,7 +177,7 @@ describe("a value's setup", () => {
 describe("a piece's wiring", () => {
   it("reads every object of its entity or a set; a click chooses for the dashboard; ticks collect", async () => {
     const onChange = vi.fn();
-    render(<PieceSetup spec={desk()} selected="table" onChange={onChange} connectionId={`c${++conn}`} wiringOn />);
+    render(<PieceSetup spec={desk()} selected="table" onChange={onChange} connectionId={`c${++conn}`} />);
     await choose(screen.getByLabelText("Reads"), "entity:order");
     expect(onChange.mock.calls[0][0].elements.table.props).toEqual({ chooses: "chosen-order", entity: "order" });
     fireEvent.click(within(screen.getByTestId("setup-ticks")).getByRole("checkbox"));
@@ -192,17 +192,11 @@ describe("a piece's wiring", () => {
     spec.elements.cockpit.children = ["filters", "sec"];
     spec.elements.filters = { type: "ObjectFilters", props: { entity: "order", properties: [{ path: "status", label: "Status" }] }, children: [] };
     spec.sets!.lines = { label: "Its lines", entity: "order_item", linked_to: { choice: "chosen-order", path: "order_id" } };
-    render(<PieceSetup spec={spec} selected="filters" onChange={onChange} connectionId={`c${++conn}`} wiringOn />);
+    render(<PieceSetup spec={spec} selected="filters" onChange={onChange} connectionId={`c${++conn}`} />);
     const within_ = await screen.findByLabelText("Counts within");
     expect(optionsOf(within_).map(o => o.value)).toEqual(["", "placed", "waiting"]);         // not items, not lines
     await choose(within_, "waiting");
     expect(onChange.mock.calls[0][0].elements.filters.props.set).toBe("waiting");
-  });
-
-  it("is not offered while the install does not wire dashboards", () => {
-    render(<PieceSetup spec={desk()} selected="table" onChange={vi.fn()} connectionId={`c${++conn}`} />);
-    expect(screen.queryByTestId("setup-reads")).toBeNull();
-    expect(screen.queryByTestId("setup-chooses")).toBeNull();
   });
 });
 

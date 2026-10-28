@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { QuestionComposer } from "@/components/dashboards/QuestionComposer";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select";
-import { getDashboard, getSystemFlags, keepDashboard, listDashboards, setAutomationEnabled, type DashboardListed, type QuestionRhythm } from "@/lib/api";
+import { getDashboard, keepDashboard, listDashboards, setAutomationEnabled, type DashboardListed, type QuestionRhythm } from "@/lib/api";
 import { placeQuestion } from "@/lib/dashboards/edit";
 import { requestTab } from "@/lib/navigate";
 
@@ -25,30 +25,22 @@ export function KeepOnDashboard({ connectionId, schema, question, runId }: {
   /** The finished answer it is kept from: its first. */
   runId: string;
 }) {
-  const [on, setOn] = useState(false);
   const [open, setOpen] = useState(false);
   const [mine, setMine] = useState<{ id: string; title: string }[] | null>(null);
   const [chosen, setChosen] = useState("");
   const [said, setSaid] = useState("");
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setOn(!!f["dashboard.questions"]?.value && !!f["dashboard.composed"]?.value); })
-      .catch(() => { if (alive) setOn(false); });
-    return () => { alive = false; };
-  }, []);
   useEffect(() => {
     if (!open) return;
     let alive = true;
     listDashboards(connectionId).then(l => {
       if (!alive) return;
       // the server's field names are the stored ones (GLOSSARY, frozen names); read once, here
-      const standing = (l?.cockpits ?? []).filter((d: DashboardListed) => !d.retired).map(d => ({ id: d.cockpit_id, title: d.title }));
+      const standing = l.cockpits.filter((d: DashboardListed) => !d.retired).map(d => ({ id: d.cockpit_id, title: d.title }));
       setMine(standing);
       setChosen(standing[0]?.id ?? "");
     }).catch(() => { if (alive) setMine([]); });
     return () => { alive = false; };
   }, [open, connectionId]);
-  if (!on) return null;
 
   const place = async (automation: string, first: string, rhythm: QuestionRhythm) => {
     const title = mine?.find(d => d.id === chosen)?.title ?? "your dashboard";

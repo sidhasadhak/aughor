@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 /**
- * Variables in the builder (Arc AP-8; design-mockups/cockpit-builder.html screens 11–12). While variables are on, the
- * Data tab is Variables: the values first — each with where it comes from, what it holds now and how much reads it, a
+ * Variables in the builder (Arc AP-8; design-mockups/cockpit-builder.html screens 11–12). The Data tab is Variables:
+ * the values first — each with where it comes from, what it holds now and how much reads it, a
  * query of the person's own among them — then the sets, then what the pieces output. A value's setup says where it comes
  * from and what it holds; a set's condition compares with any value its kind allows; a query reads one as `{{name}}`,
- * tried here with a value of its kind. Off, each is as it was. Every read is mocked — no test reaches an API.
+ * tried here with a value of its kind. Every read is mocked — no test reaches an API.
  */
 import { choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -68,7 +68,7 @@ beforeEach(() => {
 
 describe("the Variables pane", () => {
   it("lists the values first — where each comes from, what it holds now, how much reads it — then the sets, then the pieces' output", async () => {
-    render(<DataPane spec={desk()} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} variablesOn cardReads={cardReads} />);
+    render(<DataPane spec={desk()} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} cardReads={cardReads} />);
     const pane = screen.getByTestId("builder-data");
     const labels = [...pane.querySelectorAll("div")].filter(d => /^(Values|Sets|From the pieces)/.test(d.textContent ?? "") && d.children.length <= 1).map(d => d.textContent?.replace(/\d+ of \d+$/, ""));
     expect(labels).toEqual(["Values", "Sets", "From the pieces"]);
@@ -94,22 +94,16 @@ describe("the Variables pane", () => {
       sec: { type: "Section", props: { title: "Sales" }, children: ["q"] }, q: { type: "Card", props: { card: "q1" }, children: [] } } };
     delete spec.values!["waiting-count"];
     delete spec.values!.status;
-    render(<DataPane spec={spec} selected={null} onSelect={vi.fn()} onChange={onChange} connectionId={`c${++conn}`} variablesOn cardReads={cardReads} />);
+    render(<DataPane spec={spec} selected={null} onSelect={vi.fn()} onChange={onChange} connectionId={`c${++conn}`} cardReads={cardReads} />);
     await waitFor(() => expect(screen.getByTestId("data-new-set")).toBeEnabled());
     fireEvent.click(screen.getByTestId("data-new-set"));
     expect(onChange.mock.calls[0][0].sets["new-set"]).toEqual({ label: "New set", entity: "order" });
   });
 
-  it("is the Data tab as it was while variables are off", () => {
-    render(<DataPane spec={desk()} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} />);
-    expect(screen.getByTestId("builder-data")).not.toHaveAttribute("data-variables");
-    expect(screen.getAllByTestId("data-set")[0].compareDocumentPosition(screen.getAllByTestId("data-value")[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
   it("is named Variables in the builder, and a value chosen there is a variable", () => {
     const spec = desk();
     render(
-      <DashboardBuilder spec={spec} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn variablesOn cardReads={cardReads}>
+      <DashboardBuilder spec={spec} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} cardReads={cardReads}>
         {() => <div data-testid="dashboard-stub" />}
       </DashboardBuilder>,
     );
@@ -123,12 +117,12 @@ describe("the Variables pane", () => {
 describe("a value's setup", () => {
   it("comes from the reader, offering the choices typed — the value it starts from always one of them", async () => {
     const onChange = vi.fn();
-    render(<ValueSetup spec={desk()} name="window" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook" cardReads={cardReads} cardTitle={cardTitle} />);
+    render(<ValueSetup spec={desk()} name="window" onChange={onChange} onGone={vi.fn()} connectionId="thelook" cardReads={cardReads} cardTitle={cardTitle} />);
     await choose(screen.getByLabelText("Comes from"), "reader");
     expect(onChange.mock.calls[0][0].values.window).toEqual({ label: "Window", kind: "days", value: 14, from: { by: "reader" } });
     const reader = onChange.mock.calls[0][0] as DashboardSpec;
     onChange.mockClear();
-    render(<ValueSetup spec={reader} name="window" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook" />, { container: document.body.appendChild(document.createElement("div")) });
+    render(<ValueSetup spec={reader} name="window" onChange={onChange} onGone={vi.fn()} connectionId="thelook" />, { container: document.body.appendChild(document.createElement("div")) });
     const choices = screen.getAllByLabelText("The choices offered").at(-1)!;
     fireEvent.change(choices, { target: { value: "7, 30, 90, 30" } });
     fireEvent.blur(choices);
@@ -141,7 +135,7 @@ describe("a value's setup", () => {
 
   it("is counted from a set, as a number; or read off the chosen object, from a property of its own", async () => {
     const onChange = vi.fn();
-    render(<ValueSetup spec={desk()} name="window" onChange={onChange} onGone={vi.fn()} variablesOn connectionId={`c${++conn}`} />);
+    render(<ValueSetup spec={desk()} name="window" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await choose(screen.getByLabelText("Comes from"), "count");
     expect(onChange.mock.calls[0][0].values.window).toEqual({ label: "Window", kind: "number", from: { by: "count", set: "placed" } });
     await choose(screen.getByLabelText("Comes from"), "chosen");
@@ -151,7 +145,7 @@ describe("a value's setup", () => {
 
   it("reads a property of the chosen object as its kind: a moment as a day", async () => {
     const onChange = vi.fn();
-    render(<ValueSetup spec={desk()} name="status" onChange={onChange} onGone={vi.fn()} variablesOn connectionId={`c${++conn}`} />);
+    render(<ValueSetup spec={desk()} name="status" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(optionsOf(screen.getByLabelText("The property it reads")).map(o => o.value)).toEqual(["status", "created_at", "num_of_item"]));
     await choose(screen.getByLabelText("The property it reads"), "created_at");
     expect(onChange.mock.calls[0][0].values.status).toEqual({ label: "Its status", kind: "date", from: { by: "chosen", choice: "chosen-order", path: "created_at" } });
@@ -163,7 +157,7 @@ describe("a value's setup", () => {
     const onChange = vi.fn(), onRenamed = vi.fn();
     const spec = desk();
     spec.values!["window-2"] = { label: "Window", kind: "text", value: "China", from: { by: "reader" } };
-    const { unmount } = render(<ValueSetup spec={spec} name="window-2" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook"
+    const { unmount } = render(<ValueSetup spec={spec} name="window-2" onChange={onChange} onGone={vi.fn()} connectionId="thelook"
       cardReads={cardReads} onRenamed={onRenamed} />);
     const name = screen.getByLabelText("The value's name");
     fireEvent.change(name, { target: { value: "Country of the customer" } });
@@ -174,7 +168,7 @@ describe("a value's setup", () => {
     expect(onRenamed).toHaveBeenCalledWith("country-of-the-customer");
     unmount();
     onChange.mockClear(); onRenamed.mockClear();
-    render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook"
+    render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} connectionId="thelook"
       cardReads={cardReads} onRenamed={onRenamed} />);
     const read = screen.getByLabelText("The value's name");
     fireEvent.change(read, { target: { value: "Market" } });
@@ -184,17 +178,13 @@ describe("a value's setup", () => {
   });
 
   it("says every query that reads it, and is not taken away while one does", () => {
-    render(<ValueSetup spec={desk()} name="country" onChange={vi.fn()} onGone={vi.fn()} variablesOn connectionId="thelook" cardReads={cardReads} cardTitle={cardTitle} />);
+    render(<ValueSetup spec={desk()} name="country" onChange={vi.fn()} onGone={vi.fn()} connectionId="thelook" cardReads={cardReads} cardTitle={cardTitle} />);
     expect(screen.getByTestId("setup-read-by")).toHaveTextContent("Your query · Sales in the country");
     expect(screen.getByTestId("setup-wire-delete")).toBeDisabled();
   });
 
-  it("offers a day, yes or no, and a list only while variables are on", () => {
-    const { unmount } = render(<ValueSetup spec={desk()} name="window" onChange={vi.fn()} onGone={vi.fn()} />);
-    expect(optionsOf(screen.getByLabelText("Kind")).map(o => o.value)).toEqual(["days", "number", "text"]);
-    expect(screen.queryByLabelText("Comes from")).toBeNull();
-    unmount();
-    render(<ValueSetup spec={desk()} name="window" onChange={vi.fn()} onGone={vi.fn()} variablesOn connectionId="thelook" />);
+  it("offers a day, yes or no, and a list", () => {
+    render(<ValueSetup spec={desk()} name="window" onChange={vi.fn()} onGone={vi.fn()} connectionId="thelook" />);
     expect(optionsOf(screen.getByLabelText("Kind")).map(o => o.value)).toEqual(["days", "number", "text", "date", "yesno", "list"]);
   });
 });
@@ -202,7 +192,7 @@ describe("a value's setup", () => {
 describe("Arc AP-8c — a value summed over a set, read from a query, yes or no, or a list", () => {
   it("is summed over a set by a number its objects have, as a number", async () => {
     const onChange = vi.fn();
-    render(<ValueSetup spec={desk()} name="window" onChange={onChange} onGone={vi.fn()} variablesOn connectionId={`c${++conn}`} />);
+    render(<ValueSetup spec={desk()} name="window" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await choose(screen.getByLabelText("Comes from"), "sum");
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(onChange.mock.calls[0][0].values.window).toEqual({ label: "Window", kind: "number", from: { by: "sum", set: "placed", path: "num_of_item" } });
@@ -212,7 +202,7 @@ describe("Arc AP-8c — a value summed over a set, read from a query, yes or no,
     const onChange = vi.fn();
     const spec = desk();
     spec.values!.spend = { label: "Spend", kind: "number", from: { by: "sum", set: "placed", path: "num_of_item" } };
-    render(<ValueSetup spec={spec} name="spend" onChange={onChange} onGone={vi.fn()} variablesOn connectionId={`c${++conn}`} />);
+    render(<ValueSetup spec={spec} name="spend" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(optionsOf(screen.getByLabelText("The number it adds up")).map(o => o.value)).toEqual(["num_of_item"]));
     await choose(screen.getByLabelText("The set it sums over"), "big");
     expect(onChange.mock.calls[0][0].values.spend).toEqual({ label: "Spend", kind: "number", from: { by: "sum", set: "big", path: "num_of_item" } });
@@ -221,10 +211,10 @@ describe("Arc AP-8c — a value summed over a set, read from a query, yes or no,
 
   it("reads a query of the person's own the dashboard places — offered only when there is one — and its column", async () => {
     const onChange = vi.fn();
-    const { unmount } = render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook" />);
+    const { unmount } = render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} connectionId="thelook" />);
     expect(optionsOf(screen.getByLabelText("Comes from")).map(o => o.value)).not.toContain("query");
     unmount();
-    render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook"
+    render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} connectionId="thelook"
       queryCards={[{ id: "q1", title: "Sales in the country" }]} />);
     await choose(screen.getByLabelText("Comes from"), "query");
     expect(onChange.mock.calls[0][0].values.country).toEqual({ label: "Country", kind: "text", from: { by: "query", card: "q1" } });
@@ -234,7 +224,7 @@ describe("Arc AP-8c — a value summed over a set, read from a query, yes or no,
     const onChange = vi.fn();
     const spec = desk();
     spec.values!.top = { label: "Top", kind: "text", from: { by: "query", card: "q1" } };
-    render(<ValueSetup spec={spec} name="top" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook"
+    render(<ValueSetup spec={spec} name="top" onChange={onChange} onGone={vi.fn()} connectionId="thelook"
       queryCards={[{ id: "q1", title: "Sales in the country" }]} />);
     expect(optionsOf(screen.getByLabelText("Kind")).map(o => o.value)).toEqual(["number", "text", "date", "yesno", "list"]);
     const column = screen.getByLabelText("The column it reads");
@@ -249,13 +239,13 @@ describe("Arc AP-8c — a value summed over a set, read from a query, yes or no,
     const spec = desk();
     spec.values!.late = { label: "Late", kind: "yesno", value: true, from: { by: "reader" } };
     spec.values!.countries = { label: "Countries", kind: "list", value: ["China"], from: { by: "reader", options: ["China", "Brasil"] } };
-    const { unmount } = render(<ValueSetup spec={spec} name="late" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook" />);
+    const { unmount } = render(<ValueSetup spec={spec} name="late" onChange={onChange} onGone={vi.fn()} connectionId="thelook" />);
     fireEvent.click(screen.getByRole("radio", { name: "No" }));
     expect(onChange.mock.calls[0][0].values.late.value).toBe(false);
     expect(screen.queryByLabelText("The choices offered")).toBeNull();                // Yes and No are its choices
     unmount();
     onChange.mockClear();
-    render(<ValueSetup spec={spec} name="countries" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook" />);
+    render(<ValueSetup spec={spec} name="countries" onChange={onChange} onGone={vi.fn()} connectionId="thelook" />);
     const box = screen.getByLabelText("The value");
     fireEvent.change(box, { target: { value: "China, Peru" } });
     fireEvent.blur(box);
@@ -276,19 +266,19 @@ describe("a set's condition, compared with a value", () => {
     const spec = desk();
     spec.values!.statuses = { label: "Statuses", kind: "list", value: ["Processing"], from: { by: "reader" } };
     spec.sets!.big.where = [{ path: "status", op: "in", values: ["Processing"] }];
-    const { unmount } = render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    const { unmount } = render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(screen.getByLabelText("Compared with")).toBeInTheDocument());
     expect(optionsOf(screen.getByLabelText("Compared with")).map(o => o.value)).toEqual(["", "statuses"]);
     unmount();
     spec.sets!.big.where = [{ path: "status", op: "=", value: "Processing" }];
-    render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(screen.getByLabelText("Compared with")).toBeInTheDocument());
     expect(optionsOf(screen.getByLabelText("Compared with")).map(o => o.value)).not.toContain("statuses");
   });
 
   it("offers the values its kind allows — words by is and is not, a day for a moment — and keeps one across comparisons", async () => {
     const onChange = vi.fn();
-    render(<SetSetup spec={desk()} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={desk()} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(screen.getByLabelText("Compared with")).toBeInTheDocument());
     expect(optionsOf(screen.getByLabelText("Compared with")).map(o => o.value)).toEqual(["", "country", "status"]);
     await choose(screen.getByLabelText("Compared with"), "country");
@@ -299,7 +289,7 @@ describe("a set's condition, compared with a value", () => {
     const onChange = vi.fn();
     const spec = desk();
     spec.sets!.big.where = [{ path: "status", op: "=", value_from: "country" }];
-    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(screen.getByLabelText("Is")).toBeInTheDocument());
     await choose(screen.getByLabelText("Is"), "!=");
     expect(onChange.mock.calls[0][0].sets.big.where).toEqual([{ path: "status", op: "!=", value_from: "country" }]);
@@ -312,7 +302,7 @@ describe("a set's condition, compared with a value", () => {
     const onChange = vi.fn();
     const spec = desk();
     spec.sets!.big.where = [{ path: "created_at", op: ">=", value: "2026-09-01" }];
-    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(screen.getByLabelText("Compared with")).toBeInTheDocument());
     expect(optionsOf(screen.getByLabelText("Compared with")).map(o => o.value)).toEqual(["", "since"]);
     await choose(screen.getByLabelText("Is"), "in_last");
@@ -354,9 +344,8 @@ describe("a query of the person's own, reading values", () => {
     await waitFor(() => expect(api.previewDashboardQuery.mock.calls[0][1].values).toEqual({ "waiting-count": { kind: "number", value: 1009 } }));
   });
 
-  it("offers no variable while variables are off, and sends none", async () => {
-    render(<QuerySetup connectionId="thelook" onKept={vi.fn()} />);
-    expect(screen.queryByTestId("query-values-open")).toBeNull();
+  it("sends no values for a query that reads none", async () => {
+    render(<QuerySetup connectionId="thelook" onKept={vi.fn()} values={values} />);
     fireEvent.change(screen.getByLabelText("SQL"), { target: { value: "SELECT 1" } });
     fireEvent.click(screen.getByTestId("query-run"));
     await waitFor(() => expect(api.previewDashboardQuery).toHaveBeenCalled());
@@ -377,7 +366,7 @@ describe("a set read whole (Arc AP-8b)", () => {
 
   it("gets its objects' linked objects through any link the door may cross — the set then holds those", async () => {
     const onChange = vi.fn();
-    render(<SetSetup spec={desk()} name="waiting" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={desk()} name="waiting" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await waitFor(() => expect(optionsOf(screen.getByLabelText("Gets its linked objects")).map(o => o.text))
       .toEqual(["No — its own order objects", "Customer · through placed by", "Order line · through order items"]));
     await choose(screen.getByLabelText("Gets its linked objects"), "placed_by");
@@ -387,13 +376,13 @@ describe("a set read whole (Arc AP-8b)", () => {
 
   it("is combined only with sets of the objects it holds, in either, both or but not", async () => {
     const onChange = vi.fn();
-    render(<SetSetup spec={desk()} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={desk()} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     await choose(screen.getByLabelText("How it is combined"), "but_not");
     expect(onChange.mock.calls[0][0].sets.big.combine).toEqual({ op: "but_not", set: "placed" });
     const spec = desk();
     spec.sets!.big.combine = { op: "but_not", set: "placed" };
     spec.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
-    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />,
+    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />,
       { container: document.body.appendChild(document.createElement("div")) });
     expect(optionsOf(screen.getAllByLabelText("The set it is combined with").at(-1)!).map(o => o.value)).toEqual(["placed", "waiting"]);   // never Their customers
   });
@@ -402,11 +391,11 @@ describe("a set read whole (Arc AP-8b)", () => {
     const spec = desk();
     spec.sets!.back = { label: "Back", entity: "order", combine: { op: "both", set: "big" } };
     spec.sets!.big.combine = { op: "but_not", set: "placed" };
-    render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} />);
     expect(optionsOf(screen.getByLabelText("The set it is combined with")).map(o => o.value)).toEqual(["placed", "waiting"]);   // never Back
     const theirs = desk();
     theirs.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
-    render(<SetSetup spec={theirs} name="theirs" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />,
+    render(<SetSetup spec={theirs} name="theirs" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} />,
       { container: document.body.appendChild(document.createElement("div")) });
     // its conditions narrow the waiting orders before their customers are reached: an order's properties are offered
     await waitFor(() => expect(optionsOf(screen.getAllByLabelText("Add a condition").at(-1)!).map(o => o.value)).toContain("num_of_item"));
@@ -417,15 +406,9 @@ describe("a set read whole (Arc AP-8b)", () => {
     const spec = desk();
     spec.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
     spec.sets!.big.combine = { op: "but_not", set: "placed" };
-    render(<DataPane spec={spec} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    render(<DataPane spec={spec} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} />);
     const line = (n: string) => screen.getAllByTestId("data-set").find(x => x.dataset.name === n)!;
     expect(line("theirs")).toHaveTextContent("Waiting → user");
     expect(line("big")).toHaveTextContent("1 condition · but not Placed");
-  });
-
-  it("offers neither while variables are off", () => {
-    render(<SetSetup spec={desk()} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} />);
-    expect(screen.queryByTestId("set-traverse")).toBeNull();
-    expect(screen.queryByTestId("set-combine")).toBeNull();
   });
 });

@@ -831,8 +831,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   // PENDING item 15 — read once; off (the default) leaves every turn's body as it always was.
   const [buttonsReachAgent, setButtonsReachAgent] = useState(false);
-  // Arc FA-2 — what a dashboard handed over as the question's subject, while `canvas.ask_about_chosen` is on
-  const [askAboutOn, setAskAboutOn] = useState(false);
   useEffect(() => {
     let alive = true;
     // a thrown read (an older server, a test double) means off — never a broken panel
@@ -840,14 +838,14 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
       .then(f => {
         if (!alive) return;
         setButtonsReachAgent(!!f?.["chat.buttons_reach_agent"]?.value);
-        setAskAboutOn(!!f?.["canvas.ask_about_chosen"]?.value);
       })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  // Arc FA-2 — what a dashboard handed over as the question's subject
   const handed = useAskSubject();
   // a subject chosen on another connection is not this conversation's to send
-  const subject = askAboutOn && handed && handed.connectionId === connectionId ? handed : null;
+  const subject = handed && handed.connectionId === connectionId ? handed : null;
 
   const sendQuestion = useCallback((question: string, m: RouteMode = "investigate", opts: AskOpts = {}) => {
     // An interrupt — the user sent this while a turn was still streaming. The SDK
