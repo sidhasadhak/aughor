@@ -151,6 +151,23 @@ def list_monitors_route(
     ]
 
 
+# Declared before `/monitors/{monitor_id}`: FastAPI matches in order, and below it "digest" was read as a monitor's
+# id — the door answered "Monitor not found" to every caller (found taking ED-5's receipt, 2026-10-28).
+@router.get("/monitors/digest")
+def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
+    """Build and return the intelligence digest for a connection."""
+    from aughor.security.authz import check_owner, get_principal
+    check_owner("connection", conn_id, get_principal(request))  # DATA-06: no cross-org digest
+    if period not in ("week", "day"):
+        raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
+    try:
+        from aughor.monitors.alert_summary import build_alert_summary
+        result = build_alert_summary(conn_id=conn_id, period=period)
+        return {**result.model_dump(), "markdown": result.to_markdown()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get("/monitors/{monitor_id}")
 def get_monitor_route(monitor_id: str) -> dict:
     m = get_monitor(monitor_id)
@@ -337,20 +354,6 @@ def ack_alert(alert_id: str) -> dict:
 
 
 # ── Alert summary ──────────────────────────────────────────────────────────────
-
-@router.get("/monitors/digest")
-def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:
-    """Build and return the intelligence digest for a connection."""
-    from aughor.security.authz import check_owner, get_principal
-    check_owner("connection", conn_id, get_principal(request))  # DATA-06: no cross-org digest
-    if period not in ("week", "day"):
-        raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
-    try:
-        from aughor.monitors.alert_summary import build_alert_summary
-        result = build_alert_summary(conn_id=conn_id, period=period)
-        return {**result.model_dump(), "markdown": result.to_markdown()}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Idea 6 · alerts that prove they work ───────────────────────────────────────
