@@ -59,11 +59,11 @@ Everything else is either the product, or a piece of the product that waits for 
 | Ask for a reason before anyone reads a run's details | Off | `govern.justifications` |
 | Let Aughor run model work on its own schedule (nightly agent tests, re-tests after reviews) — within the Spend budget | Off | `agents.testing_centre`, `agents.learning_loop` |
 
-**The five decided once:** `explore.route_wide`, `federation.planner`, `grounding.data_profiles`,
-`grounding.full_schema_first` (all off — each claims better answers for more prompt or a different route) and
-`judgment.shadow_treatment` (on — it makes one extra model call per question to record how much work each question
-needed, for PENDING item 4). Measuring the four off ones costs model calls; deciding them without measuring means
-deleting them.
+**The five decided once:** `grounding.full_schema_first` has its own record in its favour (two test runs, never
+worse, twice answered where the shorter schema could not) — keep it. `judgment.shadow_treatment` makes one extra model
+call on every question to record how much work it needed, for PENDING item 4 — stop it, and measure once when item 4
+is taken up. `grounding.data_profiles`, `explore.route_wide` and `federation.planner` are off and unmeasured — delete
+the switches; their ideas stay in PENDING items 19 and 31.
 
 ## 4. The rule for new work (replaces the flag invariant)
 
@@ -109,93 +109,131 @@ deleting them.
 2. **The four organisation settings** as listed in §3 *(recommended)* — or fewer, or others.
 3. **The 10 that are off today:** check each on live and turn it on *(recommended)*; or delete the ones not worth
    checking now.
-4. **The 5 experiments:** decide now without spending — keep `judgment.shadow_treatment` until PENDING item 4 is
-   settled, delete the four off ones *(recommended)*; or measure them (model calls).
+4. **The 5 experiments:** decide now without spending — keep `grounding.full_schema_first`, stop
+   `judgment.shadow_treatment`, delete the other three *(recommended)*; or measure them (model calls).
 
 ---
 
-## Appendix — every flag
+## Appendix — every flag, in plain English
 
-| Flag | Live now | Becomes | What it does |
-|---|---|---|---|
-| `actions.outbox` | on | Always on | Send action calls through an outbox |
-| `actions.run_attribution` | on | Always on | Which run made each change |
-| `agents.grounding_read` | on | Always on | Let programs read what an agent would read |
-| `agents.revision_on_answers` | on | Always on | Name the agent's revision on its answers |
-| `analyst.conclude` | on | Always on | Agent answers end with their own structure |
-| `answers.recheck` | on | Always on | Tell people when their answer changes |
-| `ask.converse` | on | Always on | Answer through a conversation with tools |
-| `automations.objects_admitted` | on | Always on | Act on each object a rule admits |
-| `briefing.by_period` | on | Always on | Briefings by day, week, month and year |
-| `briefing.metric_cap` | on | Always on | Measure up to 24 Briefing metrics, by area |
-| `briefing.ranges` | on | Always on | Briefings for any date range |
-| `canvas.ask_about_chosen` | on | Always on | Ask about the objects you chose |
-| `chat.buttons_reach_agent` | on | Always on | Send chat buttons to the conversation agent |
-| `dashboard.app_pieces` | on | Always on | Split dashboards into sections and add more pieces |
-| `dashboard.breakdowns` | on | Always on | Breakdowns on dashboards |
-| `dashboard.builder` | on | Always on | Build dashboards in place |
-| `dashboard.composed` | on | Always on | A dashboard in each Data Canvas |
-| `dashboard.marks` | on | Always on | Rows marked by a rule on dashboards |
-| `dashboard.queries` | on | Always on | Your own query on a dashboard |
-| `dashboard.questions` | on | Always on | Questions on a dashboard |
-| `dashboard.shapes` | on | Always on | Start a dashboard from a shape |
-| `dashboard.variables` | on | Always on | Variables on a dashboard |
-| `dashboard.wiring` | on | Always on | Wire a dashboard's pieces and actions |
-| `graph.declarations` | on | Always on | Search what the ontology declares |
-| `hub.failure_rate` | on | Always on | Failure rate on the hub map |
-| `metrics.blind_spot_proposals` | on | Always on | Propose the measures the explorer keeps computing |
-| `metrics.coverage_map` | on | Always on | Show which areas of the business have metrics |
-| `metrics.coverage_proposals` | on | Always on | Propose metrics for areas that have none |
-| `metrics.coverage_writer` | on | Always on | Write metrics from the knowledge base on profiling |
-| `metrics.figure_gates` | on | Always on | Check a metric's figures before it is approved |
-| `objects.find` | on | Always on | Find an object by its name |
-| `obs.log_search` | on | Always on | Search logs across runs |
-| `ontology.builder_doors` | on | Always on | Let outside programs read the ontology |
-| `ontology.census` | on | Always on | Count the ontology once a day |
-| `ontology.dashboard_pieces` | on | Always on | Build dashboards from the ontology |
-| `ontology.entity_usage` | on | Always on | What uses an entity |
-| `ontology.explore_on_connect` | on | Always on | Propose business terms for a new connection |
-| `ontology.history` | on | Always on | Keep ontology history |
-| `ontology.keyed_metrics` | on | Always on | Compute approved metrics for any segment |
-| `ontology.object_dashboards` | on | Always on | Start a dashboard from an object |
-| `ontology.put_back` | on | Always on | Put an earlier ontology version back |
-| `ontology.release` | on | Always on | Publish ontology changes as releases |
-| `ontology.retiring` | on | Always on | Mark an ontology element as retiring |
-| `ontology.set_segments` | on | Always on | Keep a dashboard set as a segment |
-| `packs.dashboard_templates` | on | Always on | Start a dashboard from a pack's template |
-| `packs.installed_versions` | on | Always on | Record each pack's installed version |
-| `record.decision_loop` | on | Always on | Decisions reviewed honestly |
-| `semops.banded_cascade` | on | Always on | Send only unsure rows to the strong model |
-| `sheets.chat` | on | Always on | Ask about a sheet, and have changes proposed |
-| `sheets.combine` | on | Always on | Combine sheets |
-| `sheets.core` | on | Always on | Spreadsheets: tables you make and keep |
-| `sheets.everywhere` | on | Always on | Dashboards made from sheets |
-| `sheets.grid` | on | Always on | Edit sheets in place |
-| `sheets.model_columns` | on | Always on | Columns a model writes, row by row |
-| `sheets.sharing` | on | Always on | Share sheets with chosen people |
-| `sheets.views` | on | Always on | Boards, calendars and rules on sheets |
-| `state.backups` | on | Always on | Back up Aughor's own state every hour |
-| `automations.versions` | off | Always on, after its check | Versions and replays for automations |
-| `dashboard.app_versions` | off | Always on, after its check | Readers see an App's published version |
-| `mcp.caller_principals` | off | Always on, after its check | Outside programs connect as themselves |
-| `monitors.recovery` | off | Always on, after its check | Alerts that close when a metric recovers |
-| `objects.completeness` | off | Always on, after its check | Every object read says how complete it is |
-| `ontology.impacts_only` | off | Always on, after its check | Read what bears on what from impacts only |
-| `ontology.security` | off | Always on, after its check | Limit who sees which objects and properties |
-| `ontology.security_sql` | off | Always on, after its check | Apply object security to every answer |
-| `quality.expectations` | off | Always on, after its check | Measure what tables must meet |
-| `security.principal_scopes` | off | Always on, after its check | Limit what each outside program may do |
-| `arrivals.email` | on | On when set up | Decisions by email, inbound only |
-| `arrivals.google_comments` | on | On when set up | Comments on a Google file, read onto a decision |
-| `knowledge.hybrid_documents` | on | On when set up | Search documents by words when meaning is down |
-| `slack.managed_supervisor` | on | On when set up | Start the Slack bot automatically |
-| `agents.learning_loop` | off | Organisation setting | Let custom agents learn from reviews |
-| `agents.testing_centre` | off | Organisation setting | Test custom agents every night |
-| `aggregates.share` | off | Organisation setting | Share summary statistics with other installs |
-| `govern.justifications` | off | Organisation setting | A reason to read a run's payload |
-| `semops.jev_cheap_tier` | on | Organisation setting | Use Jev as the cheap model |
-| `explore.route_wide` | off | Decide once: keep or delete | Answer broad questions as a survey |
-| `federation.planner` | off | Decide once: keep or delete | Answer questions across two connections |
-| `grounding.data_profiles` | off | Decide once: keep or delete | Show the SQL writer what the data holds |
-| `grounding.full_schema_first` | off | Decide once: keep or delete | Show the SQL writer every table |
-| `judgment.shadow_treatment` | on | Decide once: keep or delete | Record how much work each question needed |
+### Always on — 57, all on live today
+
+The switch goes and the feature stays. Each one is on now, and none sends data out or spends on its own schedule.
+
+**Dashboards**
+
+- `dashboard.composed` — The Dashboards tab itself: cards arranged in tabs and sections, a card shown only while a condition holds. *Why always on:* It is the base every other dashboard piece sits on, and it does nothing until someone builds a dashboard.
+- `dashboard.app_pieces` — Sections split into columns, rows or tabs; an empty section offers a piece. *Why always on:* It is how every dashboard is laid out today; switching it off would break the dashboards already made with it.
+- `dashboard.builder` — Edit a dashboard in place, every change kept as a version you can go back to. *Why always on:* It is the way dashboards are edited, and it only ever changes your own.
+- `dashboard.shapes` — Starting from an object offers the shapes its data fits — a queue, a map, a timeline — with why. *Why always on:* It is only an offer when starting; you still choose.
+- `dashboard.queries` — A card holding your own SQL, drawn as a table, figure or chart. *Why always on:* Nothing happens until someone writes a query, and it runs read-only and time-limited.
+- `dashboard.variables` — A value on a dashboard can come from the reader, a set's count or the chosen object. *Why always on:* Nothing happens until an author adds one; a reader's value stays in their browser.
+- `dashboard.wiring` — Choosing a row in one piece narrows the others; buttons run declared actions on chosen rows. *Why always on:* Every action keeps its own checks and approvals, and nothing runs without a click.
+- `dashboard.breakdowns` — Groups objects by a property, with Other and No value rows, and says whether the groups add up. *Why always on:* Checked today on theLook; it appears only when someone adds one.
+- `dashboard.marks` — Marks the rows a declared segment covers, with a legend that counts them. *Why always on:* Checked today on theLook; it marks only by what the ontology declares.
+- `dashboard.questions` — A question on a dashboard the agent answers on a rhythm, weekly by default. *Why always on:* It spends model calls, but only for a question a person put there, on the rhythm they chose; opening the dashboard never asks.
+- `ontology.dashboard_pieces` — The ontology's pieces: process board, objects table, object detail, action button. *Why always on:* Dashboards built from the ontology are made of them; an action that needs approval is proposed, never run.
+- `ontology.object_dashboards` — Start a dashboard from an object: its filters, figures, a daily chart and its objects. *Why always on:* It is an offer; a filter is each reader's own and never changes the dashboard.
+- `packs.dashboard_templates` — A pack bound to a connection offers dashboard templates you can keep. *Why always on:* Nothing is kept until you keep it.
+
+**Spreadsheets**
+
+- `sheets.core` — Spreadsheets: tables made from a file, a query's rows or nothing, readable by every chat and dashboard. *Why always on:* The base of Sheets, live with four Olist sheets.
+- `sheets.grid` — Edit cells, rows and columns, with undo; each change keeps who and when. *Why always on:* A sheet you cannot edit is not a spreadsheet, and nothing is ever deleted.
+- `sheets.views` — Grouped grids with totals, boards, calendars and row rules; a view can be yours alone. *Why always on:* It only changes how rows are shown.
+- `sheets.combine` — Link sheets by a key, total another sheet's rows, add a newer file — every miss counted first. *Why always on:* Each change is previewed and can be undone.
+- `sheets.everywhere` — Make a dashboard from a sheet; its cards follow every edit. *Why always on:* An offer from the sheet, nothing more.
+- `sheets.chat` — Ask a sheet questions beside it, or have it propose a change for you to apply. *Why always on:* Model calls happen only when a person asks, and nothing changes until they apply it.
+- `sheets.model_columns` — A column a model fills for the rows you pick, at most 200 a fill, calls and cost said first. *Why always on:* It spends only when a person presses Fill after seeing the cost; the organisation's limit on spend is its Spend budget.
+- `sheets.sharing` — Share a sheet with chosen people or groups, as readers or editors. *Why always on:* The sheet's maker decides; without it every sheet is everyone's.
+
+**The ontology**
+
+- `ontology.history` — Keeps every version of each entity, link, process, rule and action, and blocks a removal something depends on. *Why always on:* Off loses history and allows a removal that breaks things — against the rule that nothing is deleted, only superseded.
+- `ontology.release` — Changes wait in a draft until someone publishes them; each is rated, and a breaking one is refused. *Why always on:* It is the safety net for every reader; off applies a change the moment it is saved.
+- `ontology.put_back` — Put an earlier version back into the draft. *Why always on:* An undo for the ontology, still published like any change.
+- `ontology.retiring` — Mark an element as retiring on a date, with what replaces it. *Why always on:* It applies only when someone marks one.
+- `ontology.census` — Counts once a day what each ontology declares and what depends on it. *Why always on:* Free — no model calls, no warehouse queries.
+- `ontology.entity_usage` — An entity's page lists what uses it, and counts its queries by month from the platform's own log. *Why always on:* Free and read-only.
+- `ontology.builder_doors` — Outside programs can read your objects and their types, and propose an action for a person to approve. *Why always on:* Nothing runs from outside, and a program needs its own key.
+- `ontology.set_segments` — Keep a dashboard's set as a segment of the ontology, in the draft. *Why always on:* Only when someone keeps one, and it is published like any change.
+- `ontology.keyed_metrics` — An approved metric linked to its entity is used for any segment of it. *Why always on:* Figures stay true to the approved definition; on live already.
+- `ontology.explore_on_connect` — When a connection is added, Aughor proposes its entities, links, processes and rules for a person to confirm. *Why always on:* One model call per new connection, skipped if already explored — part of what connecting means.
+- `graph.declarations` — Search finds what the ontology publishes: segments, processes, rules, actions, links. *Why always on:* Free, and it withholds what you may not see.
+- `objects.find` — The command bar finds an object by its name. *Why always on:* Row policies apply; it reads only what you may see.
+
+**Metrics and the Briefing**
+
+- `metrics.figure_gates` — Before approval, six months of a metric's figures are checked; a flat or out-of-range one is refused. *Why always on:* It stops a wrong metric reaching the Briefing — the 10-26 'never happens again'.
+- `metrics.coverage_map` — The Metrics tab shows each area of the business and which have metrics. *Why always on:* Free; it reads approved figures at most hourly.
+- `metrics.coverage_proposals` — Proposes metrics for areas with none, from the pack and the ontology, each checked first. *Why always on:* Proposals only; nothing is approved without a person.
+- `metrics.blind_spot_proposals` — Proposes a metric for a measure the explorer keeps computing without one. *Why always on:* Proposals only.
+- `metrics.coverage_writer` — When a dataset is profiled, one model call per business area drafts metrics from the knowledge base. *Why always on:* It runs once per profiling — 11 calls on LuxExperience — says how many on the Metrics tab, and only proposes.
+- `briefing.by_period` — Briefings for the last complete day, week, month or year, and subscriptions on that schedule. *Why always on:* It is the Briefing as you use it; it sends only to subscribers.
+- `briefing.ranges` — One date-range control for the Briefing, its figures from approved metrics. *Why always on:* How the Briefing reads today.
+- `briefing.metric_cap` — The Briefing measures up to 24 metrics, or a workspace's own number, by area. *Why always on:* How LuxExperience's Briefing reads today; the number is already a workspace setting.
+
+**Answers, agents and decisions**
+
+- `ask.converse` — Answers run as an agent using tools step by step, with the same checks inside each tool. *Why always on:* It is how chat answers today; off falls back to an older fixed script.
+- `chat.buttons_reach_agent` — Chat's Quick and Agent buttons go to that same agent. *Why always on:* The same path as above.
+- `analyst.conclude` — An answer ends with a headline, the answer and the results it cites. *Why always on:* No extra model calls; it is the answer shape you see today.
+- `answers.recheck` — Re-runs the last 14 days' answers daily and tells the asker when a number moved 5% or more, with why. *Why always on:* Honesty about changed numbers; warehouse queries only, and its Slack replies pass the same send checks.
+- `agents.grounding_read` — A program holding an agent's key can see what the agent would be given for a question. *Why always on:* Read-only, cut to what the caller may see, and recorded.
+- `agents.revision_on_answers` — A custom agent's answer names the revision of its setup that gave it. *Why always on:* Free, and it stops a save made against an out-of-date agent.
+- `record.decision_loop` — A decision keeps its evidence and expectation and is reviewed on its date against what would have happened anyway. *Why always on:* No model calls; live since 10-24.
+- `semops.banded_cascade` — When a model judges text rows, a cheap model goes first and only the unsure rows go to the strong one. *Why always on:* It spends less than switching it off would.
+
+**Operations and the platform**
+
+- `actions.outbox` — An action's calls to other systems are queued, retried safely and never sent twice. *Why always on:* Off sends once with no retry — less safe.
+- `actions.run_attribution` — Every edit and action records the run that made it, and its cost. *Why always on:* Free, and it is the audit trail.
+- `automations.objects_admitted` — An automation can start when objects enter a rule or segment. *Why always on:* It is offered; the automation's owner chooses it.
+- `hub.failure_rate` — The hub map shows each automation's failure rate over the week. *Why always on:* Free; it says 'no runs', never 0%.
+- `obs.log_search` — Search the log lines of every run over 30 days. *Why always on:* Free; who may use it is a permission, not a switch.
+- `canvas.ask_about_chosen` — Ask the Data Canvas about the objects you ticked on a dashboard. *Why always on:* No extra calls, and your row policy holds.
+- `packs.installed_versions` — Binding a pack records its version; a newer one shows what changed. *Why always on:* Free, and it never re-offers what you declined.
+- `state.backups` — Hourly checked copies of Aughor's own state, thinned over eight weeks. *Why always on:* The safety net for everything else; it says so when the disk is too full.
+
+### Always on, after its check — 10, off today
+
+Each is turned on only after the check named here passes on live theLook.
+
+- `dashboard.app_versions` — A shared dashboard's readers keep reading its last published version while its maker drafts changes. *Today:* readers see each change the moment it is kept. *Why on:* readers should not see half-made changes. *Its check:* publish, change it twice, and a reader still sees the published one until it is published again.
+- `automations.versions` — Each save of an automation or monitor keeps the one before; each run names its version and can be replayed without sending anything. *Today:* a save replaces the old definition for good. *Why on:* nothing should be destroyed by a save. *Its check:* save one twice, read both versions, replay a past run and see nothing sent.
+- `monitors.recovery` — An alert closes itself when its metric comes back within its limit; the recovery is shown, never sent. *Today:* an alert stays open until someone acknowledges it. *Why on:* an alert that has recovered still reads as open (worth your word: some teams prefer to acknowledge by hand). *Its check:* a monitor on theLook that fires, recovers, and closes with the value that came back.
+- `objects.completeness` — Every object read says whether it was complete, cut short, narrowed for you, or refused. *Today:* a read cut at a limit can look complete. *Why on:* withheld is said, never implied — today it can be implied. *Its check:* a read past the row limit on theLook says there are more.
+- `ontology.impacts_only` — Only the impacts a person declared count as what affects what; an analysis stops proposing causes of its own. *Today:* causes a model proposed are kept and read as if declared. *Why on:* no model authors a fact. *Its check:* an alert summary names only declared impacts, and how many do not hold.
+- `ontology.security` — Each reader sees only the objects their groups may see; sensitive properties are masked, with the reason. *Today:* everyone sees everything, even where a policy is declared. *Why on:* a declared policy that is not enforced is a broken promise; with none declared nothing changes. *Its check:* a reader with a declared policy on theLook sees less, and is told so.
+- `ontology.security_sql` — The same policies and masks hold in answers, deep analyses and the SQL editor. *Today:* only object pages, dashboards and outside programs apply them. *Why on:* otherwise a question can read what the object page withholds. *Its check:* the same reader's question on theLook is refused the masked property, with why.
+- `mcp.caller_principals` — An outside program connects to the MCP server as itself, with its own key, and sees only its tools. *Today:* every program shares the server's one token. *Why on:* each program should answer for its own calls. *Its check:* a program connects with its own key, and one already connected keeps working.
+- `security.principal_scopes` — A program's key can be limited to some areas, entities and actions. *Today:* only the agent policy limits a program. *Why on:* it applies only when someone sets limits. *Its check:* a limited key is refused outside its areas, with why.
+- `quality.expectations` — An automation checks what a table must meet — never empty, no repeated key, recent enough — and records it as the table's health. *Today:* health reads 'not checked'. *Why on:* it measures only what someone declares, read-only. *Its check:* one expectation on a theLook table, met and then not.
+
+### On when set up — 4
+
+No switch: each works once its setup exists, and says what is missing where it would appear.
+
+- `arrivals.email` — Each decision gets an email address; mail to it is kept as evidence, an approval or a dissent. *Needs:* a mail domain and its secret. *Why no switch:* setting it up is the choice.
+- `arrivals.google_comments` — Comments on a named Google file are read onto a decision. *Needs:* your Google OAuth client. *Why no switch:* setting it up is the choice.
+- `slack.managed_supervisor` — Aughor starts the Slack bot itself and restarts it if it stops. *Needs:* Slack configured, and Node.js. *Why no switch:* setting it up is the choice.
+- `knowledge.hybrid_documents` — When the embedding model is down, document search matches words instead, and says so. *Needs:* the vector store running. *Why no switch:* setting it up is the choice.
+
+### Organisation settings — 4, from 5 flags
+
+Admin-only, in Settings ▸ Organization ▸ *What Aughor may do*.
+
+- **Share summary statistics with other installs** (`aggregates.share`) — Exports how often packs' claims held here, never names, ids or values. *Default:* Off. *Why a setting:* data leaves your install — the organisation's call.
+- **Send row text to an outside, cheaper model** (`semops.jev_cheap_tier`) — TypeSafe's hosted Jev judges text rows before your own strong model. *Default:* Off (on here today). *Why a setting:* row text leaves your install to another company — the organisation's call.
+- **Ask for a reason before anyone reads a run's details** (`govern.justifications`) — Reading a run's full payload or exporting the ledger asks why, and records it. *Default:* Off. *Why a setting:* a governance posture: a regulated organisation wants it, a small team does not.
+- **Let Aughor run model work on its own schedule** (`agents.testing_centre`, `agents.learning_loop`) — Nightly runs of each custom agent's checked test questions, and re-tests after reviews. *Default:* Off. *Why a setting:* model calls every night that nobody pressed — the organisation decides whether to spend on that, within its Spend budget.
+
+### Decided once — 5
+
+Each changes prompts or routing. None stays a switch.
+
+- `grounding.full_schema_first` — For a small schema, the SQL writer sees every table, not only the ones picked for the question. *Today:* off. *Recommended:* Keep — always on — its own record: in two test runs it never wrote a worse query, and twice it answered where the shorter schema could not.
+- `grounding.data_profiles` — Adds a short data profile — row counts, ranges, common values — to the SQL writer's prompt. *Today:* off. *Recommended:* Delete the switch — nothing measured; it is PENDING 19's idea, better built and measured there than left as a switch.
+- `explore.route_wide` — A broad question gets a survey of many cuts instead of one deep analysis. *Today:* off. *Recommended:* Delete — unmeasured, and it changes how questions are routed.
+- `federation.planner` — Answers a question needing two connections: a model plans each query and the join. *Today:* off. *Recommended:* Delete — unmeasured, and it would route some questions on its own; the idea stays in PENDING 31.
+- `judgment.shadow_treatment` — After every question, a model notes the smallest answer that would have done. *Today:* on. *Recommended:* Stop it — one extra model call on every question, for a record nobody reads yet; it can run as a one-off measurement when PENDING 4 is taken up.
