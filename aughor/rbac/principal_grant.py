@@ -6,6 +6,10 @@ Behind ``security.principal_scopes`` its own grant narrows that further — neve
 * the **areas** it may work in: each route belongs to one (`area_of`); a principal whose grant names areas is refused
   a route in any other, and a route in none, so a door added later is closed to it until it is placed;
 * the **connections**, **entities** and **declared actions** it may name, each refused by its own stable code;
+* the entities it may **reach**: an entity outside the grant is refused wherever a request reaches it, not only where
+  it names it — a link a page follows, a property path through a link in a listing's columns, a query's grouping, its
+  measures and its filters (`hold`, read by the object compiler and the linked page through `outside`), with the same
+  code and the same words;
 * the contract it reads (`/ontology/v1/contract`) is cut to the same grant, and says what it left out.
 
 A grant that names nothing in one of those is not narrowed there. The refusal is the agent gate's, with the code a
@@ -13,7 +17,11 @@ client can match (`mcp/policy.py`), and it is audited with the call.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+import contextvars
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
+
+from fastapi import HTTPException
 
 FLAG = "security.principal_scopes"
 
@@ -113,11 +121,72 @@ def refusal(grant: dict, *, method: str, template: str, tool: Optional[str], con
         return CODE_GRANT_CONNECTION, f"connection {connection!r} is not on this principal's grant"
     entities = list(grant.get("entities") or [])
     if entities and entity and _word(entity) not in {_word(e) for e in entities}:
-        return CODE_ENTITY, f"entity {entity!r} is not on this principal's grant ({', '.join(entities)})"
+        return CODE_ENTITY, entity_refused(entity, entities)
     actions = list(grant.get("actions") or [])
     if actions and action and action not in actions:
         return CODE_ACTION, f"declared action {action!r} is not on this principal's grant ({', '.join(actions)})"
     return None
+
+
+def entity_refused(entity: str, entities: Any) -> str:
+    """The words an entity outside a principal's grant is refused with — named, or reached through a link."""
+    return f"entity {entity!r} is not on this principal's grant ({', '.join(entities)})"
+
+
+class GrantRefused(HTTPException):
+    """The agent gate's refusal, raised past the gate by a door that reached an entity outside the grant; the gate
+    audits the call with its ``code`` (`agent_gate.enforce_agent_policy`)."""
+
+    def __init__(self, code: str, detail: dict) -> None:
+        super().__init__(status_code=403, detail=detail)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class _Held:
+    entities: tuple[str, ...]
+    #: (code, detail sentence) -> the gate's refusal body, as the gate itself would answer it
+    refuse: Callable[[str, str], dict]
+
+
+#: The entities the request in flight may reach, while a service principal's grant names some — set by the agent gate
+#: once the request has passed it, never by anything a request carries.
+_held: contextvars.ContextVar[Optional[_Held]] = contextvars.ContextVar("aughor_principal_grant_held", default=None)
+
+
+def hold(entities: Any, refuse: Callable[[str, str], dict]) -> contextvars.Token:
+    """Hold the rest of the request to the grant's ``entities`` (`outside`); ``refuse`` builds the gate's body."""
+    return _held.set(_Held(entities=tuple(str(e) for e in entities), refuse=refuse))
+
+
+def release(token: contextvars.Token) -> None:
+    try:
+        _held.reset(token)
+    except ValueError:                        # reset from another context: the request's own ends with it
+        _held.set(None)
+
+
+def outside(entity: Any) -> Optional[str]:
+    """Why the request in flight may not reach ``entity`` — the words an entity outside the grant is refused with —
+    or None: no grant holds the request, or the grant names it (by id, api name or display name)."""
+    held = _held.get()
+    if held is None or not held.entities or entity is None:
+        return None
+    names = {_word(getattr(entity, attr, "") or "") for attr in ("id", "api_name", "display_name")} - {""}
+    if names & {_word(e) for e in held.entities}:
+        return None
+    return entity_refused(str(getattr(entity, "id", "") or entity), held.entities)
+
+
+def refused_here(detail: str) -> GrantRefused:
+    """The gate's refusal of an entity reached outside the grant, for a door to raise: the code and body an entity
+    named outside it gets (`refusal`), with ``detail`` saying how it was reached."""
+    from aughor.mcp.policy import CODE_ENTITY
+    held = _held.get()
+    if held is None:
+        from aughor.mcp.policy import refusal as body
+        return GrantRefused(CODE_ENTITY, body(CODE_ENTITY, tool=None, policy_level="", detail=detail))
+    return GrantRefused(CODE_ENTITY, held.refuse(CODE_ENTITY, detail))
 
 
 def grant_for(request: Any) -> Optional[dict]:

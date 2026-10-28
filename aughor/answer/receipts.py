@@ -34,6 +34,7 @@ GUARD_LABEL: dict[str, str] = {
     "time_order": "Timestamps that run backwards flagged",
     "day_window": "A period's last day read whole",
     "declared_filter": "The metric's declared filter applied",
+    "object_policy": "Read as your access policy allows",
 }
 
 #: The action as a verb phrase — the sub-line under the label.
@@ -48,6 +49,8 @@ ACTION_VERB: dict[str, str] = {
     "caveated": "carried a caveat instead of asserting",
     "flagged": "flagged it — no provable rewrite exists",
     "kept_original": "kept the original query",
+    "narrowed": "narrowed it to the rows you may see",
+    "refused": "refused it — it reads what you may not see",
 }
 
 #: How much of a receipt's detail a page line carries.

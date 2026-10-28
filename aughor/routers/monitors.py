@@ -151,7 +151,7 @@ def list_monitors_route(
     ]
 
 
-# Declared before `/monitors/{monitor_id}`: FastAPI matches in order, and below it "digest" was read as a monitor's
+# Declared before `/monitors/{monitor_id}`: FastAPI matches in order, and below it the summary's path was read as a monitor's
 # id — the door answered "Monitor not found" to every caller (found taking ED-5's receipt, 2026-10-28).
 @router.get("/monitors/digest")
 def get_digest(conn_id: str, request: Request, period: str = "week") -> dict:

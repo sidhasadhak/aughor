@@ -113,6 +113,16 @@ def _actor() -> str:
     return f"user:{who}" if who else ""
 
 
+def asked_by() -> str:
+    """Who asked for the run in flight — the person (or agent, or service principal) the request acts for, as a
+    principal; "" outside a request: a tick, a schedule. Kept on a run's start record (``trigger.by``)."""
+    from aughor.org.context import current_actor
+    who = (current_actor() or "").strip()
+    if not who:
+        return ""
+    return who if who.startswith(("user:", "agent:", "service:")) else f"user:{who}"
+
+
 def _keep(kind: str, key: str, definition: dict, *, conn_id: str, saved_by: str,
           source: str, saved_at: str) -> dict:
     """Keep ``definition`` as the next version of ``key`` unless it already is the latest.
@@ -280,7 +290,8 @@ def history(kind: str, entity_id: str, current: Optional[dict], *, limit: int = 
 
 
 def stamp_view(run: Any) -> dict:
-    """What one run kept, for the run's own route: its version and its trigger payload."""
+    """What one run kept, for the run's own route: its version and its trigger — when it started, what asked
+    (``via``: the tick, a person's Run now, a webhook, a parent chain) and, for a person's Run now, who (``by``)."""
     from aughor.automations.store import get_run_stamp
     stamp = get_run_stamp(run.id)
     base = {"run_id": run.id, "automation_id": run.automation_id,

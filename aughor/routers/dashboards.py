@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from aughor.ontology.security import acting_agent_from_request
 from aughor.security.authz import connection_owner_guard
 
 router = APIRouter(tags=["cockpit"], dependencies=[Depends(connection_owner_guard)])
@@ -230,12 +231,14 @@ def copy_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
     return _answer(out["kept"], cockpit_id=out["cockpit_id"], title=out["title"])
 
 
-@router.get("/dashboards/from-object")
+@router.get("/dashboards/from-object", dependencies=[Depends(acting_agent_from_request)])
 def propose_from_object(entity: str, connection_id: str, schema_name: Optional[str] = None) -> dict:
     """What a dashboard started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
-    it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path."""
+    it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+    Arc OC-7 — read as the object doors read: an agent acting for the person (``X-Aughor-Acting-Agent``) reads only
+    what both may."""
     from aughor.dashboards import from_object
     from aughor.routers.ontology import served_ontology_graph
     from aughor.semantic.object_query import ObjectQueryRefused

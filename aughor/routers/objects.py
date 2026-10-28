@@ -87,6 +87,16 @@ def _read_facts(graph: Any, compiled: Any, result: Any, shown: int) -> dict:
             "said": C.policy_words(graph, getattr(compiled, "withheld", []) or []), "refused": error}
 
 
+def _outside_grant(exc: Exception) -> None:
+    """Arc ED, ED-2 — a refusal because the request reached an entity outside its service principal's grant (a link, a
+    path through one) is the agent gate's own refusal: a 403 with the code and words an entity named outside the grant
+    gets, never an answer that says the door refused. Every other refusal is the door's to answer."""
+    from aughor.semantic.object_query import OutsideGrant
+    if isinstance(exc, OutsideGrant):
+        from aughor.rbac.principal_grant import refused_here
+        raise refused_here(exc.reason) from exc
+
+
 def _served_graph(connection_id: str, schema_name: Optional[str]):
     from aughor.routers.ontology import served_ontology_graph
     graph = served_ontology_graph(connection_id, schema_name)
@@ -297,6 +307,7 @@ def get_object_links_page(object_type: str, pk: str, link: str, connection_id: s
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         return _complete({"path": "links", "connection_id": connection_id, "schema_name": graph.schema_name, **page},
@@ -329,6 +340,7 @@ def _domain_links_page(object_type: str, pk: str, link: str, domain: str, limit:
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "domain": scope.key}, clock)
     where = entity_source(graph, graph.entities[page["type_id"]])
@@ -642,6 +654,7 @@ def post_object_query(
                                             overlay=_accepted_edits(connection_id),
                                             metrics=keyed_metrics_for(connection_id, graph.schema_name))
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         out = {"connection_id": connection_id, "schema_name": graph.schema_name, **compiled.to_dict()}
@@ -699,6 +712,7 @@ def post_object_listing(
             compiled = compile_object_listing(listing, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                               overlay=_accepted_edits(connection_id))
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available,
                               "connection_id": connection_id, "schema_name": graph.schema_name}, clock)
         out = {"connection_id": connection_id, "schema_name": graph.schema_name, "offset": listing.offset,
@@ -715,7 +729,8 @@ def post_object_listing(
                     "caveats": list(compiled.caveats) + list(page.caveats or []), "guard_receipts": list(receipts)})
         from aughor.semantic.completeness import policy_words
         return _complete(out, clock, shown=len(out["rows"]), of=out["total"], refused=str(error or ""),
-                         withheld=compiled.withheld, said=policy_words(graph, compiled.withheld))
+                         withheld=compiled.withheld, masked=list(compiled.masked),
+                         said=policy_words(graph, compiled.withheld) + list(compiled.masked.values()))
     finally:
         db.close()
 
@@ -748,6 +763,7 @@ def _domain_object_query(query: ObjectQuery, domain: str, execute: bool, clock: 
             compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                             overlay=_domain_edits(graph))
         except ObjectQueryRefused as exc:
+            _outside_grant(exc)
             return _complete({"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
                               "connection_id": home}, clock)
         out = {"domain": scope.key, "connection_id": home, "schema_name": "", **compiled.to_dict()}

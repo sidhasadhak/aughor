@@ -49,6 +49,7 @@ const GUARD_LABEL: Record<string, string> = {
   time_order: "Timestamps that run backwards flagged",
   day_window: "A period's last day read whole",
   declared_filter: "The metric's declared filter applied",
+  object_policy: "Read as your access policy allows",
 };
 
 /** The mechanism's short name, for its chip. */
@@ -72,13 +73,15 @@ const GUARD_SHORT: Record<string, string> = {
   time_order: "time order",
   day_window: "day window",
   declared_filter: "declared filter",
+  object_policy: "access policy",
 };
 
 /** A repair means the check ran and the figure survived it; a flag or a caveat means the check
- *  found something the reader must know. A receipt is never a refusal — a withheld figure is
- *  not a receipt. */
+ *  found something the reader must know — and so does a read the reader's access policy narrowed
+ *  or refused, whose receipt says the policy's own words. */
 function verdictFor(action: string): GuardVerdict {
-  return action === "flagged" || action === "caveated" || action === "caveated_headline" ? "warned" : "passed";
+  return action === "flagged" || action === "caveated" || action === "caveated_headline"
+    || action === "narrowed" || action === "refused" ? "warned" : "passed";
 }
 
 /** Compact verb for the action — reads as the step's sub-line with the detail. */
@@ -93,6 +96,8 @@ const ACTION_VERB: Record<string, string> = {
   caveated: "carried a caveat instead of asserting",
   flagged: "flagged it — no provable rewrite exists",
   kept_original: "kept the original query",
+  narrowed: "narrowed it to the rows you may see",
+  refused: "refused it — it reads what you may not see",
 };
 
 function truncate(s: string, n = 90): string {

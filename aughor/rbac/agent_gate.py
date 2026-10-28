@@ -16,7 +16,7 @@ audit page the plan asked for.
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 from fastapi import HTTPException, Request
 
@@ -119,12 +119,19 @@ def _audit(request: Request, *, tool: Optional[str], allowed: bool, code: Option
         tolerate(exc, "agent call audit is best-effort", counter="agent_gate.audit")
 
 
-async def enforce_agent_policy(request: Request) -> None:
-    """App-wide dependency: the organisation's agent policy, on marked requests only."""
+async def enforce_agent_policy(request: Request) -> AsyncIterator[None]:
+    """App-wide dependency: the organisation's agent policy, on marked requests only.
+
+    Arc ED, ED-2 — a request a service principal makes is held to its grant past this gate too: when the grant names
+    entities, the rest of the request may reach no other (`principal_grant.hold`), and a door that reaches one through
+    a link raises the gate's own refusal (`principal_grant.GrantRefused`). Such a call is audited once it has been
+    answered, refused or not — one row per call, saying what happened to it."""
     if not is_agent_request(request):
+        yield
         return
     from aughor.org.context import current_org_id
     from aughor.orgsettings.agent_policy import effective_agent_policy
+    from aughor.rbac import principal_grant
 
     org_id = current_org_id()
     policy = effective_agent_policy(org_id)
@@ -146,23 +153,42 @@ async def enforce_agent_policy(request: Request) -> None:
         code = CODE_CONNECTION
 
     # Arc ED, ED-2 — then the presenting service principal's own grant (`security.principal_scopes`, off: none): it
-    # narrows what the policy allowed, never widens it.
+    # narrows what the policy allowed, never widens it. The principal is named on the audit whichever check refused —
+    # the organisation's or its grant's.
     detail, principal = "", ""
-    if code is None:
-        from aughor.rbac import principal_grant
-        grant = principal_grant.grant_for(request)
-        if grant is not None:
-            from aughor.security.service_principals import principal_id, name_of
-            principal = principal_id(name_of(principal_grant.principal_of(request)))
-            held = principal_grant.refusal(
-                grant, method=request.method, template=template, tool=tool, connection=connection,
-                entity=principal_grant.named(request, body, ("entity", "object_type")),
-                action=principal_grant.named(request, body, ("action_id",)))
-            if held is not None:
-                code, detail = held
+    grant = principal_grant.grant_for(request)
+    if grant is not None:
+        from aughor.security.service_principals import principal_id, name_of
+        principal = principal_id(name_of(principal_grant.principal_of(request)))
+    if code is None and grant is not None:
+        held = principal_grant.refusal(
+            grant, method=request.method, template=template, tool=tool, connection=connection,
+            entity=principal_grant.named(request, body, ("entity", "object_type")),
+            action=principal_grant.named(request, body, ("action_id",)))
+        if held is not None:
+            code, detail = held
 
-    _audit(request, tool=tool, allowed=code is None, code=code, required=required, policy=policy,
-           connection=connection, body=body, org_id=org_id, principal=principal)
+    def audit(allowed: bool, refused_code: Optional[str]) -> None:
+        _audit(request, tool=tool, allowed=allowed, code=refused_code, required=required, policy=policy,
+               connection=connection, body=body, org_id=org_id, principal=principal)
+
     if code is not None:
+        audit(False, code)
         raise HTTPException(status_code=403, detail=refusal(
             code, tool=tool, policy_level=policy.level, required=required, connection=connection, detail=detail))
+    entities = list((grant or {}).get("entities") or [])
+    if not entities:
+        audit(True, None)
+        yield
+        return
+    token = principal_grant.hold(entities, lambda held_code, said: refusal(
+        held_code, tool=tool, policy_level=policy.level, required=required, connection=connection, detail=said))
+    refused_code: Optional[str] = None
+    try:
+        yield
+    except principal_grant.GrantRefused as exc:
+        refused_code = exc.code
+        raise
+    finally:
+        principal_grant.release(token)
+        audit(refused_code is None, refused_code)

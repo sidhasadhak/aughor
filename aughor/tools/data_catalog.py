@@ -18,6 +18,10 @@ Design constraints:
   (``tools/schema.apply_schema_enrichment``); only the catalog did not.
 - Sample cells are truncated (``_MAX_CELL_CHARS``). Untruncated cells are how two
   multi-paragraph review tables became 29% of a 28.5k-char airline-outlier prompt.
+- **The reader's access policy holds too** (Arc ED, ED-1; `ontology.security_sql`): while the ontology's declarations
+  apply to the request, a table a row policy narrows for the reader shows no sample rows — they were read over every
+  row, past the door — and a column masked for them is never sampled; each is said (`security_sql.tables_held`). The
+  cache is keyed by the reader then, so one reader's catalog is never served to another.
 """
 from __future__ import annotations
 
@@ -113,7 +117,12 @@ def build_data_catalog(
     """
     conn_id = getattr(conn, "_connection_id", "") or "unknown"
     hidden, withheld, cfg_fp = _column_policy(conn_id, tables, schema)
-    key = _cache_key(conn_id, tables, cfg_fp)
+    # Arc ED, ED-1 — what the reader's policies hold back of each table, and the reader the catalog is then built for:
+    # part of the OUTPUT, so part of the key (None — and the key as it was — when nothing applies)
+    from aughor.ontology.security_sql import tables_held, tenancy_words
+    held_of = tables_held(conn_id)
+    reader = tenancy_words()
+    key = _cache_key(conn_id, tables, cfg_fp + (f"|reader:{reader}" if reader is not None else ""))
 
     _evict_stale()
     if key in _cache:
@@ -148,10 +157,15 @@ def build_data_catalog(
 
             # Sample 5 rows — of the SAMPLEABLE columns only. Withheld columns are never
             # even SELECTed, so their values do not enter this process, its logs, or this
-            # cache: the leak is closed at the query, not at the renderer.
-            sample_cols = [c for c in col_names if (bare, c.lower()) not in withheld]
+            # cache: the leak is closed at the query, not at the renderer. The same for a
+            # column masked for the reader, and for every column of a table their row policy
+            # narrows: the sample is read past the door, over rows they may not see.
+            held = held_of(table) if held_of is not None else None
+            masked = held.masked if held is not None else {}
+            sample_cols = [c for c in col_names if (bare, c.lower()) not in withheld and c.lower() not in masked]
             no_sample = [c for c in col_names if (bare, c.lower()) in withheld]
-            sample_rows = _fetch_sample(conn, table, sample_cols) if sample_cols else []
+            sample_rows = (_fetch_sample(conn, table, sample_cols)
+                           if sample_cols and not (held is not None and held.rows) else [])
             if sample_rows:
                 from aughor.util.prompt_safety import fence_untrusted, sanitize_db_text
                 lines.append("")
@@ -179,6 +193,9 @@ def build_data_catalog(
                 lines.append("")
                 lines.append("Sample values withheld by column config (the columns exist "
                              "and hold data): " + ", ".join(no_sample))
+            if held is not None:
+                lines.append("")
+                lines.extend(f"Withheld — {said}" for said in held.said)
 
             parts.append("\n".join(lines))
         except Exception:

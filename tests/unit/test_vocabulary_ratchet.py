@@ -365,7 +365,9 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
     ),
     "digest": (
         # (?<!hex)(?<!\.) so hashlib's hexdigest()/.digest() are not vocabulary.
-        r"(?i)(?<!hex)(?<!\.)\bdigest", CODE_ROOTS, (),
+        r"(?i)(?<!hex)(?<!\.)\bdigest", CODE_ROOTS,
+        # names the frozen `/monitors/digest` route once, to pin that the alert summary's door answers (2026-10-28)
+        ("tests/unit/test_alert_summary_route.py",),
         "one of three words for the periodic narrative; it is a 'briefing'",
     ),
     "agentic_ops": (

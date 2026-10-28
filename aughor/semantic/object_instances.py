@@ -38,6 +38,7 @@ from aughor.semantic.object_query import (
     backing_from,
     find_object_type,
     find_property,
+    held_to_grant,
     link_problem,
     object_links,
     overlay_properties,
@@ -233,6 +234,12 @@ def _link_view(on: Callable[..., Any], link: ObjectLink, row: dict) -> dict:
             "to": link.target.api_name, "to_type": link.target.id,
             "cardinality": link.label, "on": f"{link.local_col} = {link.remote_col}",
             "kind": "to-one" if link.to_one else "to-many"}
+    # Arc ED, ED-2 — a link into an entity outside a principal's grant is not followed — not even to count — and says
+    # why, in the grant's words
+    from aughor.rbac.principal_grant import outside
+    held = outside(link.target)
+    if held:
+        return {**view, "usable": False, "why_not": held}
     problem = link_problem(link)
     if problem:
         return {**view, "usable": False, "why_not": problem}
@@ -476,6 +483,7 @@ def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: 
     entity = find_object_type(graph, object_type)
     on = _reader(graph, db, source_db)
     chosen = _find_link(graph, entity, link)
+    held_to_grant(chosen.target, f"{chosen.name} reaches it from {entity.id}")      # Arc ED, ED-2
     problem = link_problem(chosen)
     if problem:
         raise ObjectQueryRefused(problem)

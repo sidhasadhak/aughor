@@ -217,6 +217,21 @@ class MaskedProperty(ObjectQueryRefused):
     (a filter, a grouping, a measure) — the answer would leak it."""
 
 
+class OutsideGrant(ObjectQueryRefused):
+    """Arc ED, ED-2 — an entity outside the grant of the service principal a request presents, reached through a link
+    or a set rather than named (`rbac.principal_grant.outside`): refused in the grant's own words. An object door
+    answers it as the agent gate's refusal, with its code (`routers/objects._outside_grant`)."""
+
+
+def held_to_grant(entity: OntologyEntity, how: str = "") -> None:
+    """Refuse reaching ``entity`` when the request in flight is held to a grant that does not name it; ``how`` says
+    how it was reached. Nothing while no grant holds the request."""
+    from aughor.rbac.principal_grant import outside
+    why = outside(entity)
+    if why:
+        raise OutsideGrant(f"{why} — {how}" if how else why)
+
+
 @dataclass
 class CompiledObjectQuery:
     sql: str
@@ -275,6 +290,9 @@ class CompiledObjectListing:
     segment_said: str = ""
     #: Arc ED-6 — as `CompiledObjectQuery.withheld`.
     withheld: list[str] = field(default_factory=list)
+    #: Arc ED-6 — each listed column emptied because its property is masked for this reader, with the mask's words;
+    #: not in ``to_dict`` (its column says ``masked``) — the door says it in its completeness.
+    masked: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {"path": "listed", "segment_said": self.segment_said, "sql": self.sql, "count_sql": self.count_sql, "dialect": self.dialect,
@@ -867,6 +885,7 @@ class _Compiler:
     # ── names ──
     def entity(self, name: str) -> OntologyEntity:
         found = find_object_type(self.g, name)
+        held_to_grant(found)                         # Arc ED, ED-2 — a set of another entity reaches it too
         if found.backing is not None and found.backing.kind == "platform":
             backing_from(found, "t")                 # Arc OC-6 — refused here, with why: no warehouse holds its objects
         return found
@@ -1338,6 +1357,9 @@ class _Compiler:
             links = sorted(x.name for x in object_links(self.g, entity))
             tail = (f" — its links: {', '.join(links)}" if links else f" — {entity.id} has no links in this ontology")
             raise ObjectQueryRefused(f"no link '{seg}' from {entity.id} (in '{path}'){tail}", links)
+        # Arc ED, ED-2 — every path a query or a listing walks crosses its links here: a column, a grouping, a measure,
+        # a filter, a set's `via`. Before the link's own problems, which describe an entity the caller may not reach.
+        held_to_grant(h.target, f"'{path}' reaches it through {h.name} from {entity.id}")
         problem = link_problem(h)
         if problem:
             raise ObjectQueryRefused(problem)
@@ -2311,6 +2333,7 @@ class _Compiler:
         title = "" if shown["is_key"] else shown["property"]
         k = quote_ident(key)
         select, names, columns = [f"t0.{k} AS {k}"], [key], []
+        masked: dict[str, str] = {}
         unset = declared_edit_properties(self.g, anchor)
         for path in self.listed_paths(scope, anchor, listing.columns, key, title):
             if path.strip().lower() == key.lower():
@@ -2337,6 +2360,7 @@ class _Compiler:
                 columns.append({"name": name, "path": path, "label": path, "type": "VARCHAR", "unit": "", "role": "",
                                 "edited": False, "masked": True})
                 self.caveats.append(exc.reason.split(" — '")[0])
+                masked[path] = exc.reason.split(" — '")[0]
                 continue
             end = hops[-1].target if hops else anchor
             edited = find_property(end, p.name) is None and bool(overlay_properties(end, self.overlay_edits)
@@ -2373,7 +2397,8 @@ class _Compiler:
         return CompiledObjectListing(sql=self.render(sql), count_sql=self.render(count_sql), dialect=self.dialect,
                                      object_type=anchor.api_name, type_id=anchor.id, key=key, title=title,
                                      columns=columns, plan=self.plan, links=self.links, caveats=self.caveats,
-                                     overlay=self.overlay, segment_said=self.segment_said, withheld=self.withheld)
+                                     overlay=self.overlay, segment_said=self.segment_said, withheld=self.withheld,
+                                     masked=masked)
 
     def listed_paths(self, scope: _Scope, anchor: OntologyEntity, asked: list[str], key: str, title: str) -> list[str]:
         """The columns a listing reads: those asked for, each of which must resolve; or, when none is asked for, the

@@ -2172,10 +2172,12 @@ def _walk_automation(
     # off for both), and never on a resume — the run's first walk kept its stamp.
     kept: Optional[dict] = None
     if persist and not resume:
-        from aughor.automations.versions import keeping, version_for_run
+        from aughor.automations.versions import asked_by, keeping, version_for_run
         if keeping():
             kept = {"version": version_for_run(automation),
-                    "trigger": {"at": started, "via": via if manual else "tick"}}
+                    "trigger": {"at": started, "via": via if manual else "tick",
+                                # who asked: the person a "Run now" was pressed by — the request's actor
+                                **({"by": by} if manual and via == "hand" and (by := asked_by()) else {})}}
 
     def _finish(run: AutomationRun, *, finished: bool = True) -> AutomationRun:
         elapsed_ms = int((_time.monotonic() - t0) * 1000) + int(

@@ -1998,6 +1998,12 @@ def _answer_core(
                 except Exception:
                     logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
+        # Arc ED, ED-1 — read as the reader may read it while the ontology's declarations apply to the request: a
+        # policied table's row count, sample values and value lists and a masked column's values are withheld, and
+        # said, in the text every block below is cut from (`security_sql.schema_as_read`). Unchanged otherwise.
+        from aughor.ontology.security_sql import schema_as_read as _schema_as_read
+        schema, _ = _schema_as_read(connection_id, schema)
+
         # Governed-metric grounding — built AFTER schema (needs the column set to
         # filter connection-scoped metrics) and BEFORE schema-linking (grounds on the
         # full schema). Rec 5: the SAME producer the GET /ask/context receipt renders
@@ -2947,6 +2953,12 @@ def _answer_core(
         # is never repaired — is said beside the number, as the shared executor says it.
         if _frun is not None and _frun.findings:
             result.caveats = list(dict.fromkeys([*(result.caveats or []), *(w.caveat() for w in _frun.findings)]))
+        # Arc ED, ED-1 — what the reader's access policy did to the read that answers (narrowed it, or refused it) is
+        # said on the reader's answer, not only to the model in `caveats`: the conversation's `run_sql` receipt.
+        from aughor.agent.converse_tools import policy_receipt as _policy_receipt
+        _policy = _policy_receipt(result)
+        if _policy is not None:
+            _receipt(_policy)
 
         if result.error:
             from aughor.agent.escalate import assess_escalation
