@@ -27,10 +27,11 @@ from aughor.kernel.flags import (
 )
 
 # `deep_analysis.premise_check` left this list 2026-08-04 (Wave 3), and
-# `deep_analysis.causal_drill` left 2026-08-06 (Wave 5 hardwired it). The registry's
-# last two flags are the exemplars now — when they graduate, Wave 7 retires this
-# machinery and these tests with it.
-WS4B_FLAGS = ["explore.route_wide", "federation.planner"]
+# `deep_analysis.causal_drill` left 2026-08-06 (Wave 5 hardwired it). `explore.route_wide` and
+# `federation.planner` left 2026-10-28 with the flags-into-settings decision (ROADMAP §3.65): the first deleted,
+# the second always on. Two flags still a switch until their live check are the exemplars now — when the last
+# graduates, this machinery and these tests go with it.
+WS4B_FLAGS = ["monitors.recovery", "automations.versions"]
 
 
 @pytest.fixture(autouse=True)
@@ -57,21 +58,21 @@ def test_the_auto_tier_is_dissolved_and_stays_dissolved(monkeypatch):
     assert "capabilities.auto" not in FLAG_ENV
 
     # …and with the tier empty, an unregistered-default flag is plainly off, never "auto".
-    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-    assert flag_enabled("federation.planner") is False
-    assert flag_state("federation.planner") == "off"
+    monkeypatch.delenv("AUGHOR_MONITORS_RECOVERY", raising=False)
+    assert flag_enabled("monitors.recovery") is False
+    assert flag_state("monitors.recovery") == "off"
 
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
     # `semops.champion_validate` is the exemplar (its predecessors `ai_sql` and
     # `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame).
-    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-    assert flag_enabled("federation.planner") is False
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
-    assert flag_enabled("federation.planner") is True
-    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "garbage")
-    assert flag_enabled("federation.planner") is False
+    monkeypatch.delenv("AUGHOR_MONITORS_RECOVERY", raising=False)
+    assert flag_enabled("monitors.recovery") is False
+    monkeypatch.setenv("AUGHOR_MONITORS_RECOVERY", "1")
+    assert flag_enabled("monitors.recovery") is True
+    monkeypatch.setenv("AUGHOR_MONITORS_RECOVERY", "garbage")
+    assert flag_enabled("monitors.recovery") is False
 
 
 def test_specialist_packs_left_the_registry_for_good():
@@ -90,11 +91,9 @@ def test_specialist_packs_left_the_registry_for_good():
     # ontology.explore_on_connect and chat.buttons_reach_agent. The guard keeps its real
     # claim: nothing ELSE drifts back in. Arc OC graduated five on 2026-10-10 (the user's call, "those with receipts
     # met"), each with its off-path alive as a kill switch and its receipt on its entry.
-    assert set(FLAG_DEFAULT) == {"ask.converse", "semops.banded_cascade",
-                                 "briefing.by_period", "answers.recheck",
-                                 "ontology.explore_on_connect", "chat.buttons_reach_agent",
-                                 "ontology.history", "ontology.release", "ontology.dashboard_pieces",
-                                 "actions.outbox", "ontology.builder_doors"}
+    # EMPTY again 2026-10-28: the eleven moved to ALWAYS_ON with the flags-into-settings decision (ROADMAP §3.65) —
+    # part of the platform, never a switch. Nothing re-enters "default_on" without a reviewed reason.
+    assert set(FLAG_DEFAULT) == set()
 
 
 def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
@@ -115,15 +114,15 @@ def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
 
 
 def test_runtime_override_wins_both_directions(monkeypatch):
-    monkeypatch.delenv("AUGHOR_EXPLORE_ROUTE_WIDE", raising=False)
-    assert flag_enabled("explore.route_wide") is False
-    set_flag("explore.route_wide", True)
-    assert flag_enabled("explore.route_wide") is True  # override beats unset env
-    monkeypatch.setenv("AUGHOR_EXPLORE_ROUTE_WIDE", "1")
-    set_flag("explore.route_wide", False)
-    assert flag_enabled("explore.route_wide") is False  # override beats truthy env
-    clear_flag("explore.route_wide")
-    assert flag_enabled("explore.route_wide") is True  # env decides again
+    monkeypatch.delenv("AUGHOR_AUTOMATIONS_VERSIONS", raising=False)
+    assert flag_enabled("automations.versions") is False
+    set_flag("automations.versions", True)
+    assert flag_enabled("automations.versions") is True  # override beats unset env
+    monkeypatch.setenv("AUGHOR_AUTOMATIONS_VERSIONS", "1")
+    set_flag("automations.versions", False)
+    assert flag_enabled("automations.versions") is False  # override beats truthy env
+    clear_flag("automations.versions")
+    assert flag_enabled("automations.versions") is True  # env decides again
 
 
 def test_list_flags_reflects_default_on(monkeypatch, synthetic_default_on):

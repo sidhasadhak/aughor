@@ -311,8 +311,8 @@ def test_a_withdrawn_structure_proposal_with_the_packs_provenance_is_read_as_dec
 
 
 @pytest.mark.parametrize("flag", [U.FLAG])
-def test_the_flag_is_registered_off_by_default(flag):
+def test_the_flag_is_part_of_the_platform(flag, monkeypatch):
+    """Queued to graduate until 2026-10-28; always on since (ROADMAP §3.65) — on with nothing set."""
     from aughor.kernel.flags import FLAG_ENV, flag_disposition, flag_enabled
-    assert flag in FLAG_ENV and flag_disposition(flag) == "graduation_queue"
-    with flag_overrides({}):
-        assert flag_enabled(flag) is False
+    monkeypatch.delenv(FLAG_ENV[flag], raising=False)
+    assert flag_disposition(flag) == "always_on" and flag_enabled(flag) is True

@@ -26,6 +26,15 @@ def get_org_settings():
     return load_org_settings().model_dump()
 
 
+@router.get("/org-settings/allows")
+def get_org_allows():
+    """What the organisation allows Aughor to do (ROADMAP §3.65): each of the four settings' answer, and whether an
+    admin set it — one never set answers from the variable of the flag it replaced, and the screen says so."""
+    from aughor.orgsettings.allows import FORMER_ENV, allows
+    stored = load_org_settings()
+    return {k: {"allowed": allows(k), "set": getattr(stored, k) is not None} for k in FORMER_ENV}
+
+
 @router.put("/org-settings")
 def put_org_settings(settings: OrgSettings):
     """Replace the app-wide organization settings. The OrgSettings model validates the

@@ -60,10 +60,12 @@ def _fake_planner(monkeypatch, plan: FederatedPlan):
 
 # ── the endpoint ─────────────────────────────────────────────────────────────
 
-def test_federated_answer_disabled_by_default(client: TestClient, monkeypatch):
+def test_federated_answer_is_open_without_any_setting(client: TestClient, monkeypatch):
+    """Kept always on (the user, 2026-10-28: "We may need cross querying across connections in the future"):
+    the door answers with nothing set — here refusing one connection, as it would with the variable on."""
     monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-    resp = client.post("/query/federated-answer", json={"question": "x", "conn_ids": ["a", "b"]})
-    assert resp.status_code == 404
+    resp = client.post("/query/federated-answer", json={"question": "x", "conn_ids": ["only-one"]})
+    assert resp.status_code == 400
 
 
 def test_federated_answer_requires_at_least_two_connections(client: TestClient, monkeypatch):
@@ -200,10 +202,11 @@ def test_validate_plan_flags_source_index_out_of_range(tmp_path):
     assert any("out of range" in i for i in validate_plan(plan, cids))
 
 
-def test_auto_federated_answer_disabled_by_default(client: TestClient, monkeypatch):
+def test_auto_federated_answer_is_open_without_any_setting(client: TestClient, monkeypatch):
+    """Kept always on (ROADMAP §3.65): with nothing set the door answers — here refusing one candidate, by name."""
     monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)
-    resp = client.post("/query/auto-federated-answer", json={"question": "x", "conn_ids": ["a", "b"]})
-    assert resp.status_code == 404
+    resp = client.post("/query/auto-federated-answer", json={"question": "x", "conn_ids": ["only-one"]})
+    assert resp.status_code == 400 and "at least two" in resp.text
 
 
 def test_auto_federated_answer_selects_connections_then_joins(client: TestClient, monkeypatch, tmp_path):

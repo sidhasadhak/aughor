@@ -13808,6 +13808,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org-settings/allows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Org Allows
+         * @description What the organisation allows Aughor to do (ROADMAP §3.65): each of the four settings' answer, and whether an
+         *     admin set it — one never set answers from the variable of the flag it replaced, and the screen says so.
+         */
+        get: operations["get_org_allows_org_settings_allows_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org-settings/effective": {
         parameters: {
             query?: never;
@@ -21425,10 +21446,30 @@ export interface components {
              */
             industry: string;
             /**
+             * Outside Row Model
+             * @description Send row text to an outside, cheaper model (TypeSafe's Jev) to judge rows before your own strong model. Row text leaves the install. Off by default.
+             */
+            outside_row_model?: boolean | null;
+            /**
              * Priorities
              * @description What the organisation is trying to do this quarter — written by people, never inferred.
              */
             priorities?: components["schemas"]["Priority"][];
+            /**
+             * Reason To Read Runs
+             * @description Ask for a reason, recorded with who read it, before anyone reads a run's details or exports the ledger. Off by default.
+             */
+            reason_to_read_runs?: boolean | null;
+            /**
+             * Scheduled Model Work
+             * @description Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test questions, and re-tests after reviews. Off by default.
+             */
+            scheduled_model_work?: boolean | null;
+            /**
+             * Share Aggregates
+             * @description Share summary statistics with other installs — how often packs' claims held, never names, ids or values. Off by default.
+             */
+            share_aggregates?: boolean | null;
             /**
              * Timezone
              * @description IANA timezone, e.g. 'Europe/London'. Empty = UTC.
@@ -48647,6 +48688,26 @@ export interface operations {
         };
     };
     delete_agent_policy_org_settings_agent_policy_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_org_allows_org_settings_allows_get: {
         parameters: {
             query?: never;
             header?: never;

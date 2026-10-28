@@ -92,9 +92,11 @@ FLAG_ENV = {
     # AO-2b (2026-10-03): the API spawns, watches and restarts the Slack supervisor.
     "slack.managed_supervisor": "AUGHOR_SLACK_MANAGED_SUPERVISOR",
     # AO-6 (2026-10-03): the agents' testing centre — drafted questions, the nightly run.
-    "agents.testing_centre": "AUGHOR_AGENTS_TESTING_CENTRE",
+    # "agents.testing_centre" (AUGHOR_AGENTS_TESTING_CENTRE) left 2026-10-28 for the organisation setting `scheduled_model_work` (ROADMAP §3.65,
+    # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_AGENTS_TESTING_CENTRE only while the setting is unset.
     # AO-7 (2026-10-03): one closed learning loop per custom agent.
-    "agents.learning_loop": "AUGHOR_AGENTS_LEARNING_LOOP",
+    # "agents.learning_loop" (AUGHOR_AGENTS_LEARNING_LOOP) left 2026-10-28 for the organisation setting `scheduled_model_work` (ROADMAP §3.65,
+    # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_AGENTS_LEARNING_LOOP only while the setting is unset.
     # Arc TC-1 (ROADMAP §3.59, the incorporation study of 2026-10-24). ON: every receipt a custom agent produced
     # and every chat turn it answered carry the agent's `config_rev` as `rev` beside its id and name — the revision of the
     # configuration the answer ran under — and the doors that change an agent's configuration (PATCH and restore) refuse
@@ -108,7 +110,8 @@ FLAG_ENV = {
     # about 1.0) is the evidence its run would have produced. The second response model went
     # with it (`agent/framing.py`). An operator's env var is ignored.
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
-    "semops.jev_cheap_tier": "AUGHOR_SEMOPS_JEV_CHEAP_TIER",
+    # "semops.jev_cheap_tier" (AUGHOR_SEMOPS_JEV_CHEAP_TIER) left 2026-10-28 for the organisation setting `outside_row_model` (ROADMAP §3.65,
+    # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_SEMOPS_JEV_CHEAP_TIER only while the setting is unset.
     "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
@@ -320,7 +323,8 @@ FLAG_ENV = {
     # exports as CSV or JSON lines; reading a run's payload and exporting the ledger need a reason, refused by name without
     # one, and each such read is journaled once as `access.justified`. OFF: the feed reads its newest thousand, and a
     # payload read records who read it but not why.
-    "govern.justifications": "AUGHOR_GOVERN_JUSTIFICATIONS",
+    # "govern.justifications" (AUGHOR_GOVERN_JUSTIFICATIONS) left 2026-10-28 for the organisation setting `reason_to_read_runs` (ROADMAP §3.65,
+    # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_GOVERN_JUSTIFICATIONS only while the setting is unset.
     # "grounding.data_profiles" (AUGHOR_GROUNDING_DATA_PROFILES) was DELETED 2026-10-28, with the DATA PROFILE block
     # (`tools/catalog_profiles.py`), by its own falsifier: the first clean with/without run — the two before it never
     # built the block, the golden harness's table link having failed silently since 2026-06-30 — read 0.661 → 0.651
@@ -331,7 +335,8 @@ FLAG_ENV = {
     # rates, normal ranges for share metrics, method backtests, never a connection id or a claim's text —
     # may LEAVE the install through POST /ledger/v1/aggregates/export. OFF (the default; the user's
     # call): the export door refuses and says so; GET /ledger/v1/aggregates still reads it locally.
-    "aggregates.share": "AUGHOR_AGGREGATES_SHARE",
+    # "aggregates.share" (AUGHOR_AGGREGATES_SHARE) left 2026-10-28 for the organisation setting `share_aggregates` (ROADMAP §3.65,
+    # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_AGGREGATES_SHARE only while the setting is unset.
     "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
     "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
@@ -545,88 +550,9 @@ def _retired_names(name: str) -> list[str]:
 
 # A flag whose env var is UNSET resolves to its default (False unless listed).
 FLAG_DEFAULT: dict = {
-    # EMPTY as of flag endgame Wave 2 (2026-08-06): every graduated default-ON became
-    # UNCONDITIONAL — the flags, their env vars and their off-paths are deleted; the
-    # receipts that graduated each one are preserved on the tombstones in FLAG_ENV and
-    # at the former guard sites. The set stays declared so `flag_disposition`, the
-    # `_env_resolved` default-on semantics and the disposition ratchet keep their
-    # shape, and an empty set proves nothing quietly re-enters "default_on":
-    # NO LONGER EMPTY — "ask.converse" entered 2026-09-16 (SP-14, §6 item 22(d), the
-    # user's "Graduate as-is" with SP-M's numbers on the table). It takes this
-    # disposition rather than deletion because its off-path is ALIVE: the deterministic
-    # quick body is still what an ineligible turn runs, so the flag remains an operator
-    # kill switch while fresh installs get authoring out of the box.
-    # Arc OC graduated 2026-10-10 (§3.56, the user's call: "those with receipts met"). Each off-path is ALIVE and
-    # byte-identical, so each is a graduation with a kill switch (its env var = 0), not a deletion; each entry is the
-    # receipt that graduated it and the falsifier that turns it back off. `ontology.security` stays queued until
-    # sign-in, `ontology.census` until seven daily readings are read.
-    "ontology.history": "OC-1, live on theLook 2026-10-09: a declaration read back as four versions with what changed "
-                        "and who, as-of answered both ways; the withdrawal refused over a dependent stands on the "
-                        "scratch receipt (nothing on theLook depends on one). Falsifier: what *late* meant on a past "
-                        "day cannot be answered from it",
-    "ontology.release": "OC-2, live on theLook 2026-10-09: draft isolation, a SAFE change published as release 2, the "
-                        "promise moved 2 → 3 days classed MEANING with the published one unchanged, discard; replayed "
-                        "over the live history, no change that moved a consumer classed SAFE. Falsifier: one past "
-                        "change that broke a consumer classed SAFE or MEANING",
-    "ontology.dashboard_pieces": "OC-4, live on theLook 2026-10-09: the Late dispatch board's open-and-overdue count "
-                               "(25,051) opened a table of exactly that many; an object flagged from the dashboard showed "
-                               "in the table, the detail and its page. Falsifier: the census does not move in the "
-                               "weeks after (armed: read on 2026-11-07)",
-    "actions.outbox": "OC-6, live 2026-10-10: a delivered call checked, a no-answer call reconciled by the action's "
-                      "check and never sent twice, a refused call queued and delivered on its retry, a guard-refused "
-                      "one waiting under Sends for a person. Falsifier: a send left `unknown` after reconciliation "
-                      "that a person cannot resolve from the screen",
-    "ontology.builder_doors": "OC-8, live on theLook 2026-10-10: a program outside the platform launched the MCP "
-                              "server, read 24,872 overdue objects through `list_objects` and proposed Open a "
-                              "case through `propose_open_case`; the proposal waited in the Actions inbox and nothing "
-                              "ran. Falsifier: a contract a program cannot act on without reading the platform's code",
-    "ask.converse": "SP-14 (2026-09-16): 26/26 staged drafts honest across SP-M's two "
-                    "recordings; 81% of real asks behaved correctly on the richer "
-                    "fixture; the residual is the step-budget knob, accepted as-is.",
-    # Same shape as ask.converse — the off-path (the sampled cascade) is ALIVE, so this is
-    # a graduation with a kill switch (AUGHOR_SEMOPS_BANDED_CASCADE=0), not a deletion.
-    "semops.banded_cascade": "JD-3 (2026-09-21, the user's flip on the receipts): banded "
-                             "+2.4/+3.6 points over sampled on both recorded setups (95% "
-                             "CIs excluding zero), a third the champion calls, and after "
-                             "the seam slim ~0.92x sampled's total prompt tokens "
-                             "(docs/JEV_LIVE_RECEIPT_2026-09-21.md; "
-                             "evals/semops_band_decision.json).",
-    # The four below entered 2026-09-24 on the user's call ("Four flags - turn them on..
-    # Explorer default-on") with NO eval receipt: each was built and checked on the samples
-    # warehouse without a model, and none has been measured live. Every off-path is ALIVE,
-    # so each is a graduation with a kill switch (its env var = 0), not a deletion; the
-    # falsifier each carried as an EXPERIMENT is still the condition that turns it off.
-    "briefing.by_period": "The user's call (2026-09-24), no eval receipt: period briefs, and "
-                          "subscriptions that send them monthly or yearly, are on for every "
-                          "install. Kill: a reader given the weekly brief and the standing "
-                          "brief for the same week cannot name a move only the weekly one "
-                          "carries (ROADMAP §3.27).",
-    "answers.recheck": "The user's call (2026-09-24), no eval receipt: the daily re-check of "
-                       "chat answers from the last 14 days runs, and a 5%+ move is sent "
-                       "through the departure gate. Kill: a month on a real connection with "
-                       "no correction acted on and the corrections muted (ROADMAP §3.28).",
-    "ontology.explore_on_connect": "The user's call (2026-09-24), taken over the explorer's "
-                                   "unrun paid quality re-check (its one live run fused two "
-                                   "groups): a new scope runs the business explorer once. "
-                                   "Proposals stay PROPOSED until a person confirms. Kill: "
-                                   "people withdraw most of what it proposes (ROADMAP §3.31).",
-    "chat.buttons_reach_agent": "The user's call (2026-09-24), no eval receipt: Quick and "
-                                "Agent reach /ask at quick and deep depth, ~20k tokens a "
-                                "turn. Kill: shadow-labelled turns (CP-1) judge the agent's "
-                                "answers no better than /chat's and /investigate's "
-                                "(ROADMAP §3.33).",
-    #   trust/obs/LLM group — hardwired by Wave 2 group 1 (2c981ea1);
-    #   graph/ontology group — group 2 (f2dfa99f); govern/automations — group 3 (cbbf6927);
-    #   the final 14 (this wave): snapshot_receipts 2dee7a36c03f · specialist_packs
-    #   452a6fcebba4 · starters.library 3155c4d9de61 · semantic.resolve_live
-    #   49e7af321440 · semantic.contract_live e801ff3a4448 (legacy CanonicalMetric
-    #   path DELETED with it) · capability.pipeline_live 0dd2b45930c7 ·
-    #   consistency.divergence 2574532bcbde · federation.remote_join 41ec864723fb ·
-    #   evals.experiments 1bc0e4690955 · agents.user_defined df89c044999a ·
-    #   monitors.guarded 9bf08c312faa · ops.metered_monitors b167bb891764 ·
-    #   agui.endpoint b395745f7771 · deep_analysis.clarify_gate DISSOLVED into the
-    #   request posture `allow_clarify` (a headless caller opts out per request —
-    #   the deployment-env kill switch a flag provided is now the caller's own field).
+    # EMPTY again 2026-10-28: its eleven entries — ask.converse, semops.banded_cascade, the four of 2026-09-24 and
+    # Arc OC's five — moved to ALWAYS_ON with the flags-into-settings decision (ROADMAP §3.65,
+    # docs/FLAGS_TO_SETTINGS_2026-10-28.md). Their receipts are in git history and on their ROADMAP sections.
 }
 
 # Human-facing copy for Settings → System. Three layers, each for one reader:
@@ -639,37 +565,6 @@ FLAG_DEFAULT: dict = {
 # that history lives in the comments and dispositions above and below, where engineers read
 # it. tests/unit/test_flag_copy.py holds the line (house style, PLATFORM text-density pilot).
 FLAG_META = {
-    "aggregates.share": {
-        "label": "Share summary statistics with other installs",
-        "summary": "Allows exporting summary statistics, like how often each pack's claims held here. "
-                   "Names, ids and raw values never leave.",
-        "facts": [{"kind": "sends", "text": "Data leaves this install"}],
-        "description": "The export holds pack success rates, learned play success rates, normal ranges "
-                       "for share metrics and method test results. A check refuses any export with a "
-                       "connection id, claim text, name or absolute metric value. Off: export is refused "
-                       "and says so, and the statistics can still be read here.",
-    },
-    "agents.testing_centre": {
-        "label": "Test custom agents every night",
-        "summary": "Drafts test questions for each custom agent from its approved metrics. "
-                   "A person checks each one with SQL, then it runs every night.",
-        "facts": [{"kind": "schedule", "text": "Nightly"},
-                  {"kind": "model", "text": "1 call per draft batch"},
-                  {"kind": "model", "text": "1 call per test run"}],
-        "description": "Draft questions is on the agent's Quality tab and asks for up to six. The model "
-                       "never writes the answer. Each night the tab shows which checked questions now "
-                       "pass or fail. Off: you write test questions by hand and run them on a click.",
-    },
-    "agents.learning_loop": {
-        "label": "Let custom agents learn from reviews",
-        "summary": "When a reviewer corrects an agent's answer, the agent sees that correction next time. "
-                   "Nothing a model writes is saved as fact.",
-        "facts": [{"kind": "model", "text": "Re-tests after every 5 reviews"}],
-        "description": "The agent keeps its last three corrections. An accepted answer becomes a test "
-                       "question for a person to check with SQL. The Quality tab shows what the agent "
-                       "learned and its pass rate before and after. Off: reviews are recorded and the "
-                       "agent does not change.",
-    },
     "agents.revision_on_answers": {
         "label": "Name the agent's revision on its answers",
         "summary": "Each answer a custom agent gives names the revision of its setup that gave it. "
@@ -909,17 +804,6 @@ FLAG_META = {
         "description": "Words match a line as it was kept. You may narrow by level, error, warning or info, and by the "
                        "kind of run. The newest lines come first, a page at a time. It says how old the oldest line "
                        "searched is, since the log may keep fewer days. Off: a run's lines are read one run at a time.",
-    },
-    "govern.justifications": {
-        "label": "A reason to read a run's payload",
-        "summary": "Reading what a run was sent and said, or exporting the ledger, asks for a reason. The governance "
-                   "feed pages back by date.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Refusals say why"}],
-        "description": "Without a reason the read is refused, and says what is missing. Each read is recorded once with "
-                       "who read it, whose run it was and the reason. The governance feed takes a first and last date, "
-                       "pages past its newest thousand and exports as a file. Off: a payload read records who read it, "
-                       "not why.",
     },
     "dashboard.marks": {
         "label": "Rows marked by a rule on dashboards",
@@ -1422,18 +1306,6 @@ FLAG_META = {
                        "unsure after the strong model is kept and marked for a person. Off: a sample "
                        "decides, and one disagreement re-runs every row on the strong model.",
     },
-    "semops.jev_cheap_tier": {
-        "label": "Use Jev as the cheap model",
-        "summary": "TypeSafe's hosted Jev service judges text rows first. "
-                   "Unsure rows still go to your strong model.",
-        "facts": [{"kind": "sends", "text": "Row text leaves this install"},
-                  {"kind": "needs", "text": "Needs a TypeSafe key"},
-                  {"kind": "private", "text": "Personal data is never sent"}],
-        "description": "Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL. Every call counts against your "
-                       "usage caps and is logged. If Jev "
-                       "cannot answer, your own cheap model answers. Off: your own cheap model judges "
-                       "every row.",
-    },
     "judgment.shadow_treatment": {
         "label": "Record how much work each question needed",
         "summary": "After each question, a model notes the smallest answer that would have "
@@ -1499,6 +1371,77 @@ CAPABILITY_TRIGGER: dict = {
 # is what stops the registry regrowing past human comprehension (it hit 91 before
 # the 2026-07-31 study; ~1/day through July). A flag is a loan, not an asset.
 
+#: Part of the platform (the user, 2026-10-28: "not having any feature flags at all.. most of it comes as a
+#: default feature like always on and cannot be turned off" — ROADMAP §3.65). On whatever a saved override says,
+#: and not offered as a switch: Settings does not list them and the flags door refuses a change. Until its off
+#: path is deleted (stage 2, area by area), an operator's env var set to an explicit falsy value still turns one
+#: off — the suite runs Arc OC's five that way — and a run-scoped override (tests, eval grids) still wins.
+ALWAYS_ON: dict[str, str] = {
+    "actions.outbox": "Off sends once with no retry — less safe.",
+    "actions.run_attribution": "Free, and it is the audit trail.",
+    "agents.grounding_read": "Read-only, cut to what the caller may see, and recorded.",
+    "agents.revision_on_answers": "Free, and it stops a save made against an out-of-date agent.",
+    "analyst.conclude": "No extra model calls; it is the answer shape you see today.",
+    "answers.recheck": "Honesty about changed numbers; warehouse queries only, and its Slack replies pass the same send checks.",
+    "arrivals.email": "Works once its setup exists (a mail domain and its secret); setting it up is the choice.",
+    "arrivals.google_comments": "Works once its setup exists (your Google OAuth client); setting it up is the choice.",
+    "ask.converse": "It is how chat answers today; off falls back to an older fixed script.",
+    "automations.objects_admitted": "It is offered; the automation's owner chooses it.",
+    "briefing.by_period": "It is the Briefing as you use it; it sends only to subscribers.",
+    "briefing.metric_cap": "How LuxExperience's Briefing reads today; the number is already a workspace setting.",
+    "briefing.ranges": "How the Briefing reads today.",
+    "canvas.ask_about_chosen": "No extra calls, and your row policy holds.",
+    "chat.buttons_reach_agent": "The same path as above.",
+    "dashboard.app_pieces": "It is how every dashboard is laid out today; switching it off would break the dashboards already made with it.",
+    "dashboard.breakdowns": "Checked today on theLook; it appears only when someone adds one.",
+    "dashboard.builder": "It is the way dashboards are edited, and it only ever changes your own.",
+    "dashboard.composed": "It is the base every other dashboard piece sits on, and it does nothing until someone builds a dashboard.",
+    "dashboard.marks": "Checked today on theLook; it marks only by what the ontology declares.",
+    "dashboard.queries": "Nothing happens until someone writes a query, and it runs read-only and time-limited.",
+    "dashboard.questions": "It spends model calls, but only for a question a person put there, on the rhythm they chose; opening the dashboard never asks.",
+    "dashboard.shapes": "It is only an offer when starting; you still choose.",
+    "dashboard.variables": "Nothing happens until an author adds one; a reader's value stays in their browser.",
+    "dashboard.wiring": "Every action keeps its own checks and approvals, and nothing runs without a click.",
+    "federation.planner": "Kept for questions across connections: the planner is reached through its own door; it no longer takes fresh chat questions on its own.",
+    "graph.declarations": "Free, and it withholds what you may not see.",
+    "grounding.full_schema_first": "Kept on its record: in two test runs the SQL writer seeing every table of a small schema never wrote a worse query, and twice answered where the shorter schema could not.",
+    "hub.failure_rate": "Free; it says 'no runs', never 0%.",
+    "knowledge.hybrid_documents": "Works once its setup exists (the vector store running); setting it up is the choice.",
+    "metrics.blind_spot_proposals": "Proposals only.",
+    "metrics.coverage_map": "Free; it reads approved figures at most hourly.",
+    "metrics.coverage_proposals": "Proposals only; nothing is approved without a person.",
+    "metrics.coverage_writer": "It runs once per profiling — 11 calls on LuxExperience — says how many on the Metrics tab, and only proposes.",
+    "metrics.figure_gates": "It stops a wrong metric reaching the Briefing — the 10-26 'never happens again'.",
+    "objects.find": "Row policies apply; it reads only what you may see.",
+    "obs.log_search": "Free; who may use it is a permission, not a switch.",
+    "ontology.builder_doors": "Nothing runs from outside, and a program needs its own key.",
+    "ontology.census": "Free — no model calls, no warehouse queries.",
+    "ontology.dashboard_pieces": "Dashboards built from the ontology are made of them; an action that needs approval is proposed, never run.",
+    "ontology.entity_usage": "Free and read-only.",
+    "ontology.explore_on_connect": "One model call per new connection, skipped if already explored — part of what connecting means.",
+    "ontology.history": "Off loses history and allows a removal that breaks things — against the rule that nothing is deleted, only superseded.",
+    "ontology.keyed_metrics": "Figures stay true to the approved definition; on live already.",
+    "ontology.object_dashboards": "It is an offer; a filter is each reader's own and never changes the dashboard.",
+    "ontology.put_back": "An undo for the ontology, still published like any change.",
+    "ontology.release": "It is the safety net for every reader; off applies a change the moment it is saved.",
+    "ontology.retiring": "It applies only when someone marks one.",
+    "ontology.set_segments": "Only when someone keeps one, and it is published like any change.",
+    "packs.dashboard_templates": "Nothing is kept until you keep it.",
+    "packs.installed_versions": "Free, and it never re-offers what you declined.",
+    "record.decision_loop": "No model calls; live since 10-24.",
+    "semops.banded_cascade": "It spends less than switching it off would.",
+    "sheets.chat": "Model calls happen only when a person asks, and nothing changes until they apply it.",
+    "sheets.combine": "Each change is previewed and can be undone.",
+    "sheets.core": "The base of Sheets, live with four Olist sheets.",
+    "sheets.everywhere": "An offer from the sheet, nothing more.",
+    "sheets.grid": "A sheet you cannot edit is not a spreadsheet, and nothing is ever deleted.",
+    "sheets.model_columns": "It spends only when a person presses Fill after seeing the cost; the organisation's limit on spend is its Spend budget.",
+    "sheets.sharing": "The sheet's maker decides; without it every sheet is everyone's.",
+    "sheets.views": "It only changes how rows are shown.",
+    "slack.managed_supervisor": "Works once its setup exists (Slack configured, and Node.js); setting it up is the choice.",
+    "state.backups": "The safety net for everything else; it says so when the disk is too full.",
+}
+
 #: Deliberately OFF, forever or until the named condition — the only category that
 #: should stay a raw manual toggle.
 INTENTIONALLY_OFF: dict = {
@@ -1521,44 +1464,8 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
-    # Arc AP-1, 2026-10-10. It changes where a dashboard is changed, so it is watched before it graduates.
-    # Arc AP-2 and AP-3, 2026-10-11. It changes what a dashboard can do — an action a reader runs from it — so it is watched
-    # before it graduates.
-    "dashboard.wiring": "does a wired dashboard become a place work is done — of the wired dashboards, is an action run from "
-                      "one at least weekly? Falsifiers (§3.57): a dashboard drawn before the wiring renders differently "
-                      "with it on, or a run reaches the executor without its declared criteria — either stops it",
-    "dashboard.app_pieces": "does a dashboard built from sections stay read — of the dashboards split into sections, is each "
-                          "read as often as one that is not? Falsifiers (§3.57): a dashboard drawn before sections renders "
-                          "differently with it on, or one split into sections is read less often in two weeks",
-    "dashboard.shapes": "does a dashboard started from a shape get read again — of the dashboards started from an object, is "
-                      "each shape's opened on three or more days in its first two weeks more often than one started "
-                      "before shapes? Falsifier (§3.57, AP-5): a shape's dashboards are read no more often than today's",
-    "dashboard.queries": "do people show their own queries — of the cards made on dashboards in two weeks, is one in five or "
-                       "more a query of their own? Falsifier (§3.57, AP-7): fewer than one in five, and the setup is not "
-                       "what they needed",
-    "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
-                         "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
-                         "other than as a bound parameter — stop",
-    "arrivals.google_comments": "do people bring a file's discussion to the decision — of the decisions argued in a "
-                                "Google file over six weeks, is one in five or more read here? Falsifier: a file no "
-                                "person named is read, or a comment is booked as an approval — stop",
-    # The decision-framework study §3.2, 2026-10-27. It lets mail from outside book an approval, so it is watched.
-    "arrivals.email": "do approvals arrive where people give them — of the decisions with a named approver over six "
-                      "weeks, is one in five or more approved by email? Falsifier: an approval is booked from a "
-                      "sender the provider did not verify, or from someone the decision does not name — stop",
-    "record.decision_loop": "do decisions reach a verdict — within six weeks, do five or more decisions on live data reach "
-                            "their review with an expectation and a verdict other than cannot tell? Falsifier (PENDING 57, "
-                            "study §5): a do-nothing decision is credited its metric's trend — stop",
-    # Arc TC, TC-2, 2026-10-26. It adds to what every change records, so it is watched before it graduates.
-    # Arc SH, SH-4 (ROADMAP §3.64), 2026-10-27. It adds model calls beside a sheet, so it is watched before it graduates.
-    "sheets.chat": "does the chat beside a sheet answer what the grid shows — of the questions asked about a sheet in two "
-                   "weeks, does each answer count the same rows as the grid's view, and is a proposal applied in part "
-                   "at least once? Falsifier (§3.64, SH-4): a chat answer about a sheet differs from the grid's own "
-                   "count of the same rows — stop",
-    "actions.run_attribution": "does every change say what made it — of the edits and audited actions recorded in two "
-                               "weeks with it on, does each one made inside a run name that run, and is an object's "
-                               "changes opened? Falsifier (§3.59, TC-2): an edit made by an automation shows no run "
-                               "— stop",
+    # 2026-10-28: the entries that were on, and the two kept on their record, moved to ALWAYS_ON with the
+    # flags-into-settings decision (ROADMAP §3.65); what stays here is still a switch until its own exit.
     # Arc TC, TC-4 (ROADMAP §3.59), 2026-10-26. It changes what an open alert means and lets a recovery end the grace
     # period, so it is watched before it graduates.
     "monitors.recovery": "do alerts close on their own — over two weeks on live monitors, is every alert that came back "
@@ -1573,80 +1480,8 @@ EXPERIMENT: dict = {
                             "more of the automations changed in that time opened at a version or a replay? Falsifier "
                             "(§3.59, TC-3): a replay sends a message, runs an action, calls a model or writes a run — "
                             "stop",
-    # Arc TC, TC-5 (ROADMAP §3.59), 2026-10-26. No model call; each changes what an operator reads, so each is watched.
-    "hub.failure_rate": "does a failure rate change what is fixed — of the automations shown failing over a week, is one in "
-                        "three or more edited, paused or turned off within two weeks? Falsifier (§3.59, TC-5): a node with "
-                        "no runs, or one the reader may not see, reads as 0% — stop",
-    "obs.log_search": "do people find a failure across runs — of the searches made in two weeks, does one in three or more "
-                      "open a run from its results? Falsifier (§3.59, TC-5): a search that says it read further back than "
-                      "the oldest line it read — stop",
-    "govern.justifications": "are reasons written and read — within four weeks, is the reason readable as a reason in nine "
-                             "of ten payload reads, and is the feed exported at least once? Falsifier (§3.59, TC-5): a "
-                             "payload read or ledger export with no reason recorded beside it — stop",
-    "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
-                           "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
-                           "answers go unread while their runs are paid for — stop",
-    "dashboard.builder": "is the setup where people change a dashboard — of the dashboards started from an object, is one in "
-                       "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
-                       "and the setup is not where people look",
-    # The dashboard started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
-    # graduates.
-    "ontology.object_dashboards": "does a dashboard started from an object get read again — opened on three or more "
-                                "days in its first two weeks — more often than one started empty or for a "
-                                "process? Falsifier: started dashboards are opened no more than the others, and "
-                                "the starter and its three pieces go",
-    # ROADMAP §6 item 53 (2026-10-25). It is a new section of the entity's page, so it is watched before it graduates.
-    "ontology.entity_usage": "does what-uses-it change what a person does — a dependent opened from the entity's page, "
-                             "or a withdrawal or a change of a used entity preceded by a read of the section — in its "
-                             "first two weeks? Falsifier: the section is never opened before a change and no dependent "
-                             "is reached from it, and the door and the section go",
-    # Arc OC-3 (ROADMAP §3.56), 2026-10-09. It changes what the question frame hands an analysis, so it is measured
-    # before it graduates.
-    "ontology.keyed_metrics": "does reading an approved metric by the entity it measures — over a declared segment, "
-                              "through the frame — raise how often a question reaches a declared definition, and how "
-                              "often the answer computes the approved one? Falsifier (§3.56): if keying raises neither "
-                              "framing reach nor the declared-definition hit rate, OC-3 stops at the minimum and the "
-                              "flag goes",
-    # Arc BR (ROADMAP §3.48). ON: the Briefing reads any date range — Day, Week, Month and Year
-    # become presets of one range control — measures APPROVED metrics compiled from their time
-    # fields (set automatically, corrected by a person), says whether each figure is final,
-    # provisional or to date, and writes each horizon as its own recipe. OFF → the Briefing,
-    # its period versions and their subscriptions are exactly §3.27's.
-    "aggregates.share": "does an aggregate that leaves — base rates, normal ranges for share metrics, pack records, "
-                        "method backtests, never one install's claim — make a second install's priors better than the "
-                        "pack's own? Exit: a receiving install's pack claims held more often, or its first Briefing "
-                        "arrived sooner, with the aggregate than without; the user decides what may leave before "
-                        "any install sends one (the 2027 study §W, phase 7). Falsifier: no receiver measures a gain "
-                        "within two installs → the door is removed and aggregates stay local.",
-    "briefing.ranges": "does a dated Briefing carry what the standing one cannot? Falsifier "
-                       "(§3.48 BR-4): a person given the Day and the Month Briefing for theLook "
-                       "beside the standing one cannot name a move only the dated one carries — "
-                       "then the recipes ship without prose, or the flag is deleted",
-    # P1 of the canvas-output study, 2026-10-14. No extra model call: the conclusion replaces the prose answer.
-    "analyst.conclude": "does an answer that names its own headline and exhibits read better than one cut from "
-                        "its prose? Measured on the stored theLook answers: 58% of drawn results carried no words, "
-                        "46 of 88 bodies tabulated rows a result below drew again, headlines ran to 32 words at p90. "
-                        "Falsifier: on the next twenty Agent answers a cited result is drawn twice, a headline runs "
-                        "past 16 words, or the reader faces more words than before — then the first-sentence cut "
-                        "stays and the flag is deleted",
-    # Arc AO-6 (ROADMAP §3.52), 2026-10-03 — one model call per drafted batch, N per nightly run.
-    "agents.testing_centre": "do drafted questions become goldens a person certifies, and does a nightly "
-                             "diff catch a regression a person would otherwise have met in a channel? "
-                             "Falsifier (§3.52): fewer than a third of drafted questions certified "
-                             "after a month of use, or no nightly diff ever named a real regression "
-                             "→ the drafter is removed; the nightly run stays only if it caught one",
-    # Arc AO-7 (ROADMAP §3.52), 2026-10-03 — no new store; the verdict store is the lesson store.
-    "agents.learning_loop": "does a per-agent loop move a held-out golden set's pass rate for that "
-                            "agent? Falsifier (§3.52): two weeks of real use with the loop on and no "
-                            "movement on any agent's suite → the 'corrected before' block is removed, "
-                            "not kept; candidates from use stay only if a person certified one",
-    # Arc TC-1 (ROADMAP §3.59), 2026-10-26. It changes what a receipt and a stored turn carry, and adds a refusal to two
-    # doors, so it is watched before it graduates. No model calls.
-    "agents.revision_on_answers": "can a person tell which configuration of an agent gave an answer — for an agent "
-                                  "edited while it was answering, does each receipt and stored turn name the revision "
-                                  "it ran under, and is a save sent with a stale revision refused? Falsifier (§3.59): "
-                                  "an answer names a revision other than the one it ran under, or a save is taken over "
-                                  "a revision newer than the one its caller read — stop",
+    # "agents.testing_centre" and "agents.learning_loop" left this set 2026-10-28 for the organisation setting
+    # `scheduled_model_work` (see their FLAG_ENV tombstones).
     # "grounding.data_profiles" left this set 2026-10-28: DELETED (see the FLAG_ENV tombstone) — its own
     # falsifier, "no gain in execution accuracy ⇒ the block is deleted with the flag", fired on the first run
     # that put the block in the prompt.
@@ -1656,13 +1491,8 @@ EXPERIMENT: dict = {
     # "semops.banded_cascade" GRADUATED to FLAG_DEFAULT 2026-09-21 (the user's flip): its
     # question was answered by measurement — fewer champion calls AND, after the seam slim,
     # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.
-    # JD-5 (ROADMAP §3.20; docs/JEV_LIVE_RECEIPT_2026-09-21.md). ON puts TypeSafe's Jev
-    # behind JD-1's seam as the banded cascade's CHEAP tier — a tenant's row text leaves the
-    # box, so every bundle rides govern.outbound (cap + EXTERNAL_CALL event), a PII-bearing
-    # bundle is withheld whole, and any bundle Jev cannot answer falls back to the house
-    # tier (aughor/judgment/jev.py). Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL — no model
-    # id ships in the product, the operator names it. Group D on the cheap tier only; the
-    # champion and every non-banded path are untouched.
+    # "semops.jev_cheap_tier" left this set 2026-10-28 for the organisation setting `outside_row_model` (see its FLAG_ENV
+    # tombstone); "govern.justifications" and "aggregates.share" left for theirs the same day.
     # CP-1 (ROADMAP §3.22). ON classifies every SETTLED ask through the judgment seam and
     # writes the treatment it WOULD have chosen beside what actually ran, as a
     # `treatment_shadow` session event. It routes NOTHING — CP-3 is the first wave in which
@@ -1678,24 +1508,9 @@ EXPERIMENT: dict = {
                                  "Falsifier: if the shadow treatment agrees with what ran on "
                                  "essentially every ask, there is no decision here to take — "
                                  "record that in §3.22 and stop the arc's second movement.",
-    "semops.jev_cheap_tier": "on the LIVE deployment's filters, does Jev as the cheap tier "
-                             "hold the live receipt's numbers (jev-solo +2.6 over sampled, "
-                             "parity with the LLM cascade, ~2.6x cheaper) at its measured "
-                             "band occupancy (~7%)? Falsifier: accuracy below the sampled "
-                             "cascade's, or fallback rate so high the house tier is doing "
-                             "the work anyway — then turn it off and say so in §3.20.",
     # "framing.choice_confidence" left this set 2026-10-04: DELETED (see the FLAG_ENV
     # tombstone) — its own exit clause was "delete if the number is flat", and CP-2 measured
     # the flatness on the one corpus that exists.
-    # Moved here from the graduation queue by batch B's premise check: queued as
-    # "invocation-gated route", but `_federation_eligible` ALSO auto-federates fresh
-    # /ask auto-depth turns — an LLM-bearing routing change nothing has measured.
-    "federation.planner": "does auto-federating fresh /ask turns improve cross-source "
-                          "answers enough to pay its planning call? ⚠️ GRID BLOCKED ON "
-                          "CORPUS (premise-checked 2026-08-07): the reference suite "
-                          "(9c1e13e458ff) is single-source, so an A/B there measures only "
-                          "the selector's overhead + false-positive rate, never the "
-                          "cross-source benefit — author a cross-source suite first",
     # "plan.program" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
     # tombstone) — the adopt-or-kill question was settled as KILL, not measured.
     # "ask.converse" left this set 2026-09-16: DEFAULT-ON (SP-14, decision 22(d)). The
@@ -1715,26 +1530,6 @@ EXPERIMENT: dict = {
                           "zero LLM cost, so a grid there measures a no-op on every case "
                           "(the exact L3 mistake Guard 1 exists to refuse). Author a "
                           "landscape-question suite first, then grid the fired subset",
-    "grounding.full_schema_first": "when the whole (shard-compressed) schema already fits the "
-                          "linker's char budget, does sending it unpruned answer better than "
-                          "top-k table/column pruning? WrenAI measured yes below ~30k chars "
-                          "(complete join paths beat isolated fragments — 2026-08-14 study). "
-                          "GRID 1 (2026-08-15, Superstore accuracy suite 32b30c0880f9 on "
-                          "8d36d4c2, 24 reference-SQL cases, temp 0, nemotron:free, runs "
-                          "a17652d36f72 off / 6427f47e5cb4 on, 24/24 sensitive): "
-                          "off 21/24 → on 23/24, ZERO lost — both gains legible in the traced "
-                          "SQL (off hallucinated a table by hand on return-rate; off produced "
-                          "no SQL at all on sales-per-year). The one shared miss is a data-vs-"
-                          "metadata defect (returns grain note), not the flag. GRID 2 (same day, "
-                          "after the grain-claim + comparator fixes lifted the suite to "
-                          "ceiling; runs a66e0fcda7fc off / 25db5cbee8fd on): off 24/24 → on "
-                          "23/24, the one miss a PROVIDER EMPTY-TURN (744ms, no SQL generated) "
-                          "— not a schema effect. Across both replicates the whole schema never "
-                          "produced a WORSE query and twice produced a correct one where pruning "
-                          "produced none — but this suite can no longer separate the arms. "
-                          "Exit: a grid on a suite NOT at ceiling (e.g. LuxExperience 914df862, "
-                          "27k chars/14 tables) that repeats a net gain ⇒ graduate; a genuine "
-                          "loss (a worse QUERY, not a dead turn) ⇒ delete the bypass",
     # "explorer.synthesis_incremental" left this set 2026-08-01: DELETED outright (see
     # the FLAG_ENV tombstone) — its question was settled by the chat-UI liveliness work.
     # "deep_analysis.evidence_stubs" left this set 2026-08-01: DELETED outright (see
@@ -1780,80 +1575,8 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
-    # Arc SV, SV-2 (ROADMAP §3.63), queued 2026-10-27. No model call, no prompt: it graduates on a week of the live
-    # install's own backups, read, and one restore proven on a copy.
-    "state.backups": "receipt: on the live install, a week of hourly backups with the disk they take measured, not "
-                     "estimated; one restored into a scratch state folder reads every store's rows as its manifest "
-                     "says; and /health and /catalog/tree p95 within 20% while one runs. Falsifier: a p95 that rises "
-                     "more than 20% during a backup moves it to a quiet hour; a restore that brings back a removal it "
-                     "did not list stops it",
-    # Arc MC (ROADMAP §3.62), queued 2026-10-26. MC-0..MC-4 and MC-6 call no model; MC-5 calls one per uncovered area.
-    "metrics.figure_gates": "receipt: on LuxExperience, re-proposing return_rate as it was bound (order_item → returns) "
-                            "is refused at approval because it reads 1 in every month, outside its 0–30% range, and its "
-                            "return date is never empty, each said; a working metric is approved as before. Falsifier: "
-                            "a metric reading one value in every month approved stops it",
-    "metrics.coverage_map": "receipt: on LuxExperience, the matrix places every table that has a metric and every "
-                            "metric in an area, each with its reason, and names the areas with data and no metric. "
-                            "Falsifier: a table with a metric placed in no area, or an area said covered by a metric "
-                            "that reads one value in every month, stops it",
-    "metrics.coverage_proposals": "receipt: on LuxExperience the bound recipes are proposed with their gate verdicts, and "
-                                  "on theLook a declared promise's on-time rate counts what the ontology measured. "
-                                  "Falsifier: a proposal that fails a gate shown as adoptable, or a derived metric "
-                                  "whose count differs from the ontology's own, stops it",
-    "metrics.coverage_writer": "receipt: on LuxExperience, one call per uncovered area writes proposals that cite their "
-                               "patterns, pass or fail the gates with why, and the calls are said on the coverage view. "
-                               "Falsifier: a proposal naming a table outside its area, or citing a pattern it does not "
-                               "compute, shown as adoptable stops it",
-    "metrics.blind_spot_proposals": "receipt: on a connection whose findings keep computing one column with no metric, it "
-                                    "is proposed in its area with its gates. Falsifier: a measure computed by three "
-                                    "findings with no metric and no proposal stops it",
-    "briefing.metric_cap": "receipt: on LuxExperience, a Briefing with more than twelve approved metrics measures up to "
-                           "24 grouped by area, and names any past the cap. Falsifier: an approved metric under the cap "
-                           "left unmeasured as past it stops it",
-    # Arc FA, FA-5 (ROADMAP §3.60), queued 2026-10-26. No model call; a warehouse read of keys on each check.
-    "automations.objects_admitted": "receipt: on theLook, an automation on a published rule records the objects already "
-                                    "in on its first check and says so without firing, then fires once with the keys of "
-                                    "the objects that enter afterwards, listed under its owner's row policy. Falsifier: "
-                                    "an object already in when the watch began fires it, or a withheld list is run "
-                                    "over as empty — either stops it",
-    # Arc FA, FA-7 (ROADMAP §3.60), queued 2026-10-26. No chat model call; the embedder may be called.
-    "agents.grounding_read": "receipt: on the live install, a custom agent's grounding read through its key and through "
-                             "the MCP tool returns the blocks its quick answer reads for the same question, documents "
-                             "only its own, the absent blocks with why, the embedder said, and one journal entry each "
-                             "with no content. Falsifier: a read that shows a block from outside the agent's scope or "
-                             "the caller's trim, or a chat model called during one, stops it",
-    # Arc FA, FA-1 (ROADMAP §3.60), queued 2026-10-26. No model call in any of the three.
-    "graph.declarations": "receipt: on theLook, a published process and segment are found by the graph search and the "
-                          "knowledge door by their own words, read back beside their entity, and a publish rebuilds the "
-                          "graph. Falsifier: a declaration only in the draft, or over a withheld table, reaching a "
-                          "search stops it",
-    "objects.find": "receipt: on theLook, ⌘K finds objects of two entities by name, says how many entities it searched "
-                    "and why it skipped the rest, and a row policy narrows what a group member finds. Falsifier: a hit "
-                    "the reader's row policy withholds, or a skipped entity not said, stops it",
-    "knowledge.hybrid_documents": "receipt: with the embedder stopped and the vector store up, a document search answers "
-                                  "by words, every hit marked so, the door, the chat tool and the prompt saying it. "
-                                  "Falsifier: a words-only hit read as a match by meaning, or a document outside the "
-                                  "caller's scope ranked, stops it",
-    # Arc FA, FA-2 (ROADMAP §3.60), queued 2026-10-26. No model call of its own; the question asked is an ordinary turn.
-    "canvas.ask_about_chosen": "receipt: on theLook, twelve objects ticked on a dashboard and a set a table reads are each "
-                               "asked about in the Data Canvas; the turn names them by key, a reader under a row policy "
-                               "is told how many are withheld, and a set past fifty says how many it holds. Falsifier: "
-                               "a subject that lists an object its reader may not see stops it",
-    # Arc FA, FA-4 (ROADMAP §3.60), queued 2026-10-26. No model call.
-    "ontology.set_segments": "receipt: on theLook, a dashboard set of fixed conditions is kept as a segment, lands in the "
-                             "draft counted, reaches readers when published and reads the count the set read; a set "
-                             "reading a reader's value is refused with its sentence. Falsifier: a kept segment that "
-                             "counts other objects than the set it was kept from stops it",
-    # Arc FA, FA-3 (ROADMAP §3.60), queued 2026-10-26. No model call; a put back is counted on the warehouse.
-    "ontology.put_back": "receipt: on theLook, a promise moved from two days to three and published is put back to two "
-                         "from its history; the draft holds it classed MEANING, readers keep three until a person "
-                         "publishes, then read two. Falsifier: a version put back that a reader sees before it is "
-                         "published stops it",
-    # Arc FA, FA-3 (ROADMAP §3.60), queued 2026-10-26. No model call.
-    "ontology.retiring": "receipt: on theLook, an entity marked retiring with a successor is published as a MEANING "
-                         "change; the agent's semantic block and the entity's page say the successor and the date, and "
-                         "a refused withdrawal names retiring. Falsifier: a retiring element that stops serving before "
-                         "it is withdrawn, or a successor that does not exist, stops it",
+    # 2026-10-28: the entries that were on, and the two kept on their record, moved to ALWAYS_ON with the
+    # flags-into-settings decision (ROADMAP §3.65); what stays here is still a switch until its own exit.
     # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
     "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
                             "truncated, a group with a row policy reads withheld, and the contract describes the field. "
@@ -1862,51 +1585,6 @@ GRADUATION_QUEUE: dict = {
     "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
                              "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "
                              "alert summary names a cause the impacts store does not hold stops it",
-    # Arc SH, SH-1/SH-2/SH-7 (ROADMAP §3.64), queued 2026-10-27. No model call.
-    "sheets.core": "receipt: on the live install, an uploaded file is made a sheet and its table equals a fresh "
-                   "rebuild from the file and its changes; a removed sheet stays removed after a restart. Falsifier: "
-                   "the materialized table differs from a fresh rebuild stops it",
-    "sheets.grid": "receipt: on the live install, cells are edited, rows added and removed and undone in the grid; "
-                   "each change reads back the same through the Sheets connection. Falsifier: an edit made in the "
-                   "grid is not what the chat's next read of the same cell returns stops it",
-    "sheets.combine": "receipt: on the live install, a sheet is linked to another by a key and a third one's rows "
-                      "totalled per key; every miss is counted before it is kept. Falsifier: a linked total differs from "
-                      "the same total computed by SQL over the two sheets stops it",
-    # Arc SH, SH-3 (ROADMAP §3.64), queued 2026-10-27. No model call.
-    "sheets.views": "receipt: on the live install, a sheet is grouped with its group totals, shown as a board and a "
-                    "calendar, and marked by a rule; a card moved on the board reads back as an edit. Falsifier: a "
-                    "group's, a lane's, a day's or a rule's count differs from the grid's count of the same rows "
-                    "stops it",
-    # Arc SH, SH-6 (ROADMAP §3.64), queued 2026-10-27 — its first piece, a dashboard made from a sheet. No model call.
-    "sheets.everywhere": "receipt: on the live install, a dashboard made from a sheet shows the counts and sums the grid "
-                         "shows, and a cell edited in the sheet moves the card that reads it on the next read. "
-                         "Falsifier: a card that differs from the grid's own total of the same rows, or that still "
-                         "shows the value before an edit, stops it",
-    # Arc SH, SH-8 (ROADMAP §3.64), queued 2026-10-27. No model call.
-    "sheets.sharing": "receipt: on the live install, a sheet is shared with one chosen person to read and one to edit; "
-                      "a third person is told it exists and refused its rows in the grid, the SQL Editor and the chat. "
-                      "Falsifier: a row of a sheet not shared with someone reaching them through any door stops it",
-    # Arc SH, SH-5 (ROADMAP §3.64), queued 2026-10-28. Model calls: 1 per 25 rows filled.
-    "sheets.model_columns": "receipt: on the live install, a column a model writes is filled for one view's rows, the "
-                            "calls and cost said before and counted after; the column is marked everywhere it is shown. "
-                            "Falsifier: a figure, group, rule or card counted from a model's values, or a fill past "
-                            "200 rows, stops it",
-    # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
-    "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
-                                "what was added, changed and removed, marks a declined term with the version it was "
-                                "declined in, and its upgrade proposes only the new and changed items. Falsifier: an "
-                                "upgrade that offers again an unchanged item a person declined stops it",
-    "packs.dashboard_templates": "receipt: on a connection with an industry pack bound, its template becomes one draft "
-                                 "with a card per registered approved metric, the rest named as skipped, and the kept "
-                                 "dashboard's source names the pack and its version. Falsifier: a drafted card made "
-                                 "from a metric the connection does not hold stops it",
-    # The Grist study §10, queued 2026-10-28. No model call.
-    "dashboard.marks": "receipt: on theLook, an objects table marks the objects a declared segment admits, and its "
-                       "legend's count equals the segment's own count over the same set. Falsifier: a marked row the "
-                       "segment does not admit, or a legend that differs from the segment's count, stops it",
-    "dashboard.breakdowns": "receipt: on theLook, a breakdown of an entity by a linked property shows groups whose "
-                            "count and sum add up to the dashboard's own figures, and a click on one narrows the other "
-                            "pieces to it. Falsifier: groups that do not add up to the whole stop it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "
@@ -1933,27 +1611,6 @@ GRADUATION_QUEUE: dict = {
                          "Falsifier: a policy test that passes with enforcement off is testing nothing — the suite "
                          "turns it off and every policy assertion must fail. Live needs sign-in (the organisation "
                          "install); until then it stays off there",
-    # Arc OC-0 (ROADMAP §3.56), queued 2026-10-09. No model call, no warehouse query: it graduates on being READ.
-    "ontology.census": "receipt: on the live install, seven daily readings in the journal, each equal to "
-                       "GET /ontology/census taken the same hour, and OC-1's receipt quoting its before and "
-                       "after from them. Falsifier: no Arc OC wave's receipt reads the journal — then the "
-                       "census is a document again, and the flag goes",
-    # Arc AO-2b (ROADMAP §3.52), queued 2026-10-03. No model call, no prompt: it graduates on
-    # the arc's own measure, which is a clock, not a grid.
-    "slack.managed_supervisor": "receipt: on a fresh install with the flag on, the API starts the "
-                                "supervisor at boot, a bot card reads *listening since …* within a "
-                                "minute, a killed child is back within the backoff, and Create agent → "
-                                "a Slack answer takes one person, no terminal, under five minutes "
-                                "(§3.52's AO-2 measure) on two machines. Falsifier: not under ten "
-                                "minutes on a fresh clone → spawn-and-watch is the wrong shape and "
-                                "the in-process Socket Mode spike is reopened.",
-    # Arc CT-4 (ROADMAP §3.50), queued 2026-09-28. It adds no model call and changes no prompt,
-    # so there is no grid to buy: it graduates on being USED.
-    "dashboard.composed": "receipt: on theLook, a person opens a Data Canvas's Dashboards tab and sees "
-                        "its cards cut to the range they chose, and a card that appears when its "
-                        "watch crosses its limit. Falsifier (§3.50, the third): an approved dashboard "
-                        "that nobody reopens within a week was not wanted — then the tab goes, "
-                        "and the flag with it",
     # EMPTY again as of 2026-08-28: ask.resume_stream (FL-1b, queued 2026-08-28)
     # graduated on its declared receipt, delivered live the same day: a browser soak
     # (85s deep run, tab killed at ~4s, a reloading client reattached via
@@ -1975,6 +1632,8 @@ GRADUATION_QUEUE: dict = {
 
 def flag_disposition(name: str) -> str:
     """The declared disposition for a registered flag — the UI's grouping key."""
+    if name in ALWAYS_ON:
+        return "always_on"
     if name in FLAG_DEFAULT:
         return "default_on"
     if name in AUTO_ELIGIBLE:
@@ -2011,10 +1670,10 @@ def _env_resolved(name: str) -> bool:
                 if raw is not None:
                     break
     if raw is None:
-        if FLAG_DEFAULT.get(name, False):
+        if FLAG_DEFAULT.get(name, False) or name in ALWAYS_ON:
             return True
         return False
-    if FLAG_DEFAULT.get(name, False):
+    if FLAG_DEFAULT.get(name, False) or name in ALWAYS_ON:
         return raw.strip().lower() not in ("0", "false", "no", "off")
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
@@ -2144,6 +1803,8 @@ def flag_enabled(name: str) -> bool:
     run = _run_overrides.get()
     if run is not None and name in run:
         return bool(run[name])
+    if name in ALWAYS_ON:       # part of the platform: a saved override is not read (§3.65)
+        return _env_resolved(name)
     ov = _override(name)
     if ov is not None:
         return bool(ov)
@@ -2168,6 +1829,8 @@ def flag_state(name: str) -> str:
     run = _run_overrides.get()
     if run is not None and name in run:
         return "on" if run[name] else "off"
+    if name in ALWAYS_ON:
+        return "on" if _env_resolved(name) else "off"
     ov = _override(name)
     if ov is not None:
         return "on" if ov else "off"
@@ -2178,6 +1841,14 @@ def flag_state(name: str) -> str:
     return "off"
 
 
+class AlwaysOn(ValueError):
+    """A change asked of a flag that is part of the platform now (ROADMAP §3.65) — never a switch."""
+
+    def __init__(self, name: str):
+        super().__init__(f"{name} is part of the platform now: always on, not a switch.")
+        self.name = name
+
+
 def set_flag(name: str, value: bool) -> None:
     """Set a runtime override (wins over the env var until cleared).
 
@@ -2186,6 +1857,8 @@ def set_flag(name: str, value: bool) -> None:
     it and resurface the moment the new one is cleared.
     """
     name = _canonical(name)
+    if name in ALWAYS_ON:
+        raise AlwaysOn(name)
     led = Ledger.default()
     led.kv_put(_STORE, name, bool(value))
     for old in _retired_names(name):
@@ -2197,6 +1870,8 @@ def clear_flag(name: str) -> None:
     """Drop the override so the env var decides again — under every name it may be
     stored as, or a retired row would silently keep overriding."""
     name = _canonical(name)
+    if name in ALWAYS_ON:
+        raise AlwaysOn(name)
     led = Ledger.default()
     led.kv_put(_STORE, name, None)
     for old in _retired_names(name):
@@ -2208,7 +1883,7 @@ def list_flags() -> dict:
     out = {}
     run = _run_overrides.get() or {}
     for name, var in FLAG_ENV.items():
-        ov = _override(name)
+        ov = None if name in ALWAYS_ON else _override(name)   # an always-on flag reads no saved override
         meta = FLAG_META.get(name, {})
         # `value` must agree with `flag_enabled` — a receipt rendered inside an experiment
         # cell that reported the operator's setting instead of the run's would attribute the

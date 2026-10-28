@@ -10,6 +10,7 @@ supplied them (docs/FLAG_STRATEGY_2026-07-31.md §4).
 from __future__ import annotations
 
 from aughor.kernel.flags import (
+    ALWAYS_ON,
     AUTO_ELIGIBLE,
     COST_LATENCY_PROFILE,
     EXPERIMENT,
@@ -23,6 +24,7 @@ from aughor.kernel.flags import (
 )
 
 SETS = {
+    "always_on": set(ALWAYS_ON),
     "default_on": set(FLAG_DEFAULT),
     "auto": set(AUTO_ELIGIBLE),
     "intentionally_off": set(INTENTIONALLY_OFF),

@@ -46,7 +46,7 @@ def _count(db, where: str) -> int:  # noqa: F811
 # ── off: nothing is read, nothing is said ────────────────────────────────────────────────────────────────────────────
 
 def test_off_a_subject_is_not_read_and_the_turn_is_as_before(monkeypatch):
-    monkeypatch.delenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN", raising=False)
+    monkeypatch.setenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN", "0")   # always on since 2026-10-28; "0" is the off path
     focus = AskFocus(kind="objects", objects=["Order:O000123"])
     req = SimpleNamespace(focus=focus, schema_name=None)
     assert ask_subject.resolve(focus, CONN) is None
@@ -97,7 +97,6 @@ def _turn(monkeypatch, focus: dict) -> tuple[dict, list[str]]:
     monkeypatch.setattr("aughor.agent.ask_router.decide_ask_route", lambda *a, **k: route)
     monkeypatch.setattr(inv, "_converse_eligible", lambda req, r: True)
     monkeypatch.setattr(inv, "_analyst_eligible", lambda req, r: False)
-    monkeypatch.setattr(inv, "_federation_eligible", lambda req: False)
     monkeypatch.setattr(inv, "_overview_eligible", lambda req: False)
     monkeypatch.setattr(inv, "_insight_budget", lambda conn: None)
 
@@ -146,7 +145,7 @@ def test_a_deep_turn_hands_the_subject_to_the_analyst_beside_its_memory(monkeypa
 
 
 def test_off_the_turn_is_byte_identical_to_one_with_no_focus(served, db, monkeypatch):  # noqa: F811
-    monkeypatch.delenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN")
+    monkeypatch.setenv("AUGHOR_CANVAS_ASK_ABOUT_CHOSEN", "0")   # always on since 2026-10-28; "0" is the off path
     with_subject, handed = _turn(monkeypatch, {"kind": "objects", "objects": [f"Order:{k}" for k in _keys(db, "shipped", 2)]})
     plain, plain_handed = _turn(monkeypatch, None)
     assert "subject" not in with_subject and handed == plain_handed == [""]

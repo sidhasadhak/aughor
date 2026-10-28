@@ -46,7 +46,7 @@ def _search(client, **params) -> dict:
 
 
 def test_off_the_route_answers_as_if_it_did_not_exist(client, monkeypatch):
-    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setenv(_ENV, "0")  # always on since 2026-10-28 (ROADMAP §3.65); "0" is its off path until stage 2 deletes it
     off = client.get("/obs/logs", params={"q": "anything"})
     absent = client.get("/obs/no-such-route", params={"q": "anything"})
     assert off.status_code == absent.status_code == 404

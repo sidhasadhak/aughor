@@ -23,7 +23,7 @@ import datetime as _dt
 import hashlib
 from typing import Any
 
-FLAG = "aggregates.share"
+SETTING = "share_aggregates"   # the organisation's choice since 2026-10-28 (ROADMAP §3.65)
 #: Units whose level is a share, and so an aggregate, not a customer's number. `%` is NOT one: in the
 #: Record it is the convention for a RELATIVE band (a change against `before`, `scenario.against_band`),
 #: so a `%` prediction's band is a change, not a level, and falls under the relative-width rule.
@@ -141,13 +141,14 @@ def assert_no_identifiers(doc: Any, path: str = "") -> None:
 
 
 def sharing_enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
+    from aughor.orgsettings.allows import allows
+    return allows(SETTING)
 
 
 def export() -> dict[str, Any]:
     """The document that may leave the install — only when a person turned sharing on."""
     if not sharing_enabled():
-        raise PermissionError(f"sharing aggregates is off ({FLAG}, AUGHOR_AGGREGATES_SHARE): the user's call — nothing leaves "
+        from aughor.orgsettings.allows import WHERE
+        raise PermissionError(f"sharing aggregates is off ({WHERE}): the organisation's call — nothing leaves "
                               "this install until a person turns it on; the aggregate can still be read here")
     return {**compute(), "shareable": True}

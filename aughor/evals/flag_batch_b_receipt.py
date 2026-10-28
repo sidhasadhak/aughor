@@ -18,6 +18,7 @@ Premise-check results this batch encodes (each moved or confirmed scope):
 - `federation.planner` was queued as "invocation-gated" but has a THIRD call site that
   auto-federates fresh `/ask` turns (`_federation_eligible`) — an LLM-bearing routing
   change. It moved to EXPERIMENT and is deliberately NOT in this suite.
+  (2026-10-28: that path is gone — the planner is kept always on through its own doors, ROADMAP §3.65.)
 - `lifecycle.publish`'s named precondition dissolved: the wired stores journal
   ALONGSIDE the live row ("the row remains the live record (nothing about reads
   changes)"), so default-on cannot hide a legacy artifact from viewers.

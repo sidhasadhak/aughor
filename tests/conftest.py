@@ -28,11 +28,28 @@ os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
 # gate (`tests/test_govern_actions.py`, `test_govern_action_coverage.py`) unset or set the
 # variable themselves, so the default is still proven. setdefault: an operator's own value wins.
 os.environ.setdefault("AUGHOR_ACTION_APPROVAL", "0")
-# Arc OC's graduated flags (2026-10-10) are default-on for an install; the suite was written against their off path,
-# byte-identical by construction, so it runs there unless a test turns one on — each flag's own tests do.
-for _oc_flag_var in ("AUGHOR_ONTOLOGY_HISTORY", "AUGHOR_ONTOLOGY_RELEASE", "AUGHOR_ONTOLOGY_DASHBOARD_PIECES",
-                     "AUGHOR_ACTIONS_OUTBOX", "AUGHOR_ONTOLOGY_BUILDER_DOORS"):
-    os.environ.setdefault(_oc_flag_var, "0")
+# The flags that are part of the platform (ALWAYS_ON, ROADMAP §3.65, 2026-10-28 — Arc OC's five set the precedent on
+# 2026-10-10) are on for an install; the suite was written against their off paths, byte-identical by construction, so
+# it runs there until stage 2 deletes each off path — a test of one sets it on, or unsets it, since on is the default.
+# Read from the registry's SOURCE, not imported: nothing from aughor may load before the stores below are redirected.
+def _always_on_vars() -> list[str]:
+    import ast as _ast
+    src = (Path(__file__).resolve().parents[1] / "aughor" / "kernel" / "flags.py").read_text()
+    found: dict[str, dict] = {}
+    for node in _ast.parse(src).body:
+        target = (node.targets[0] if isinstance(node, _ast.Assign) else getattr(node, "target", None))
+        name = getattr(target, "id", None)
+        if name in ("FLAG_ENV", "ALWAYS_ON") and isinstance(node.value, _ast.Dict):
+            found[name] = {k.value: getattr(v, "value", None) for k, v in zip(node.value.keys, node.value.values)}
+    return [found["FLAG_ENV"][n] for n in found["ALWAYS_ON"]]
+
+
+#: These six were already default-on (FLAG_DEFAULT) and the suite ran them on; they stay on here.
+_RAN_ON = {"AUGHOR_ASK_CONVERSE", "AUGHOR_SEMOPS_BANDED_CASCADE", "AUGHOR_BRIEFING_BY_PERIOD", "AUGHOR_ANSWERS_RECHECK",
+           "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT", "AUGHOR_CHAT_BUTTONS_REACH_AGENT"}
+for _always_var in _always_on_vars():
+    if _always_var not in _RAN_ON:
+        os.environ.setdefault(_always_var, "0")
 # Hermetic kernel ledger — tests must never write to data/system.db.
 #
 # ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An

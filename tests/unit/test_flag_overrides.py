@@ -41,7 +41,7 @@ FLAG = "explore.route_wide"      # a registered, default-off flag — one of the
 # is an unsettled experiment, so it is off today. (Exemplars keep getting re-pointed as
 # the endgame deletes flags: ai_sql → obs.prompt_capture → semops.champion_validate →
 # explore.route_wide → these two, the grid-bound remainder of the registry.)
-OTHER = "federation.planner"
+OTHER = "automations.versions"   # federation.planner is always on since 2026-10-28 (§3.65)
 
 
 @pytest.fixture(autouse=True)

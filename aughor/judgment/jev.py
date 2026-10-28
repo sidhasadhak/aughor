@@ -322,12 +322,12 @@ def cheap_judge_for(cheap_provider: Any, *, post: Optional[Callable] = None
     that silently does nothing is two ways to be confused). Configured → a
     :class:`FallbackJudge` over Jev and that same provider.
     """
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("semops.jev_cheap_tier"):
+    from aughor.orgsettings.allows import allows
+    if not allows("outside_row_model"):     # the organisation's choice since 2026-10-28 (ROADMAP §3.65)
         return cheap_provider, ""
     jev, why = configured_judge(post=post)
     if jev is None:
-        return cheap_provider, f"semops.jev_cheap_tier is ON but unused: {why}"
+        return cheap_provider, f"the outside row model is allowed but unused: {why}"
     return FallbackJudge(jev, cheap_provider), ""
 
 

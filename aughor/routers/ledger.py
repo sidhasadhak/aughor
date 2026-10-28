@@ -483,7 +483,7 @@ def withdraw_method(name: str, principal=Depends(get_principal)) -> dict:
 def read_aggregates() -> dict:
     """This install's aggregate, computed locally — readable here whether or not sharing is on."""
     from aughor.packs import aggregates as AG
-    return {**AG.compute(), "sharing": AG.sharing_enabled(), "flag": AG.FLAG}
+    return {**AG.compute(), "sharing": AG.sharing_enabled(), "setting": AG.SETTING}
 
 
 @router.post("/aggregates/export")

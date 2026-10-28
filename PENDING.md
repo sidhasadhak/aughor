@@ -941,7 +941,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     ~~the rail row~~ — ✅ made to fit, mocked (`design-mockups/rail-fit.html`) and built 2026-10-28 at the user's word:
     every row in view at 1440×900, 16 px to spare (ROADMAP §3.64); **live** at `d6a8032e` the same day.
 
-67. [ ] **Flags into settings — always on, or an organisation's choice** (the user, 2026-10-28: *"let's consider not
+67. [~] **Flags into settings — always on, or an organisation's choice** (the user, 2026-10-28: *"let's consider not
     having any feature flags at all.. most of it comes as a default feature like always on and cannot be turned off..
     and some of them can be turned on off based on the requirements of the organisation and not the user mostly... this
     is one of the critical things that we need to do"*) — **studied 2026-10-28**, nothing built:
@@ -950,3 +950,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     one. Proposed: 57 always on now (all on live) · 10 always on after a live check · 4 on when set up · 5 flags → 4
     organisation settings (data leaving the install, model work nobody asked for, a governance posture) · 5 experiments
     decided once. New work merges on, or stays on its branch. **Four calls are the user's (study §8).**
+    ✅ *Calls taken 2026-10-28* (the user: *"All okay, except that lets keep federation.planner"*) — ROADMAP §6 item 57.
+    **Stage 1 BUILT** the same day (ROADMAP §3.65): 63 flags always on and gone from Settings; four organisation settings
+    in Settings ▸ Organization; the planner kept through its doors; the data profile block deleted by its own run.
+    **Open (stage 2):** each always-on flag's off path deleted, area by area; `explore.route_wide` and
+    `judgment.shadow_treatment` deleted; the ten off today checked live; the set-up four say what is missing.

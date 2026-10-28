@@ -61,7 +61,7 @@ def test_off_the_map_is_byte_identical_and_reads_no_window(client, monkeypatch):
     _run(a, "error")
     _run(a, "fired")
 
-    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setenv(_ENV, "0")  # always on since 2026-10-28 (ROADMAP §3.65); "0" is its off path until stage 2 deletes it
     off = client.get("/hub/map", params={"conn_id": conn_id}).json()
     off_window = client.get("/hub/map", params={"conn_id": conn_id, "window_days": 30}).json()
     assert off == off_window, "window_days changed the map while the flag was off"

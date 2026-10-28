@@ -20,7 +20,7 @@ KEPT = {"id": "placed_recently_and_shipped", "display_name": "Placed recently an
 
 
 def test_off_a_rule_refuses_the_last_days_as_it_always_did(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SET_SEGMENTS", raising=False)
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_SET_SEGMENTS", "0")   # always on since 2026-10-28; "0" is the off path
     problem = rule_spec_problem(KEPT)
     assert problem.startswith("a condition's op is one of") and "in_last" not in problem
     # and a rule without it reads exactly as before

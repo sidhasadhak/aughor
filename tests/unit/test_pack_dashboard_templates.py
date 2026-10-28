@@ -218,8 +218,8 @@ def test_a_template_with_no_card_this_connection_can_make_is_not_drafted_and_say
                            json={"connection_id": conn}).status_code == 404
 
 
-def test_the_flag_is_registered_off_by_default():
+def test_the_flag_is_part_of_the_platform(monkeypatch):
+    """Queued to graduate until 2026-10-28; always on since (ROADMAP §3.65) — on with nothing set."""
     from aughor.kernel.flags import FLAG_ENV, flag_disposition, flag_enabled
-    assert T.FLAG in FLAG_ENV and flag_disposition(T.FLAG) == "graduation_queue"
-    with flag_overrides({}):
-        assert flag_enabled(T.FLAG) is False
+    monkeypatch.delenv(FLAG_ENV[T.FLAG], raising=False)
+    assert flag_disposition(T.FLAG) == "always_on" and flag_enabled(T.FLAG) is True

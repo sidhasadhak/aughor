@@ -206,9 +206,11 @@ class _FlagPatch(BaseModel):
 
 @router.put("/system/flags/{name}")
 def set_system_flag(name: str, body: _FlagPatch):
-    from aughor.kernel.flags import FLAG_ENV, clear_flag, list_flags, set_flag
+    from aughor.kernel.flags import ALWAYS_ON, FLAG_ENV, AlwaysOn, clear_flag, list_flags, set_flag
     if name not in FLAG_ENV:
         raise HTTPException(status_code=404, detail=f"unknown flag '{name}'")
+    if name in ALWAYS_ON:     # part of the platform now (ROADMAP §3.65) — said, never silently ignored
+        raise HTTPException(status_code=409, detail=str(AlwaysOn(name)))
     if body.state is not None:
         st = body.state.strip().lower()
         if st == "auto":

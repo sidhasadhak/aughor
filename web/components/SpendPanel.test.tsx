@@ -17,7 +17,7 @@ const getRouteMix = vi.fn();
 const getAuditFeed = vi.fn();
 const getCostSql = vi.fn();
 const getConnections = vi.fn();
-const getSystemFlags = vi.fn();
+const getOrgAllows = vi.fn();
 const downloadAuditFeed = vi.fn();
 
 // Every read the panel makes is mocked: an unmocked one would reach the live API from jsdom.
@@ -34,7 +34,7 @@ vi.mock("@/lib/api", async importOriginal => {
     getAuditFeed: (...a: unknown[]) => getAuditFeed(...a),
     getCostSql: (...a: unknown[]) => getCostSql(...a),
     getConnections: (...a: unknown[]) => getConnections(...a),
-    getSystemFlags: (...a: unknown[]) => getSystemFlags(...a),
+    getOrgAllows: (...a: unknown[]) => getOrgAllows(...a),
     downloadAuditFeed: (...a: unknown[]) => downloadAuditFeed(...a),
   };
 });
@@ -66,7 +66,7 @@ beforeEach(() => {
   getAuditFeed.mockResolvedValue({ categories: ["governance_change"], category: null, count: 0, events: [] });
   getCostSql.mockResolvedValue({ sql: "SELECT 1", table: "session_events", kind: "llm_call" });
   getConnections.mockResolvedValue([{ id: "914df862", name: "LuxExperience" }]);
-  getSystemFlags.mockResolvedValue({});
+  getOrgAllows.mockResolvedValue({});
   downloadAuditFeed.mockResolvedValue(undefined);
 });
 
@@ -168,25 +168,25 @@ describe("SpendPanel", () => {
     expect(within(gov).getAllByTestId("governance-feed-row")).toHaveLength(4);
   });
 
-  // Arc TC, TC-5 — the full feed's dates and its export exist only while govern.justifications is on.
+  // Arc TC, TC-5 — the full feed's dates and its export exist only while the organisation asks for a reason.
   it("off, the full feed has no dates and no export", async () => {
     render(<SpendPanel />);
     const gov = await screen.findByTestId("spend-governance");
-    await waitFor(() => expect(getSystemFlags).toHaveBeenCalled());
+    await waitFor(() => expect(getOrgAllows).toHaveBeenCalled());
     fireEvent.click(within(gov).getByRole("button", { name: "Full feed" }));
     expect(within(gov).queryByTestId("feed-since")).toBeNull();
     expect(within(gov).queryByTestId("feed-export")).toBeNull();
   });
 
   it("on, the dates are read by the server, a To day inclusive, and the export takes the same filters", async () => {
-    getSystemFlags.mockResolvedValue({ "govern.justifications": { value: true } });
+    getOrgAllows.mockResolvedValue({ reason_to_read_runs: { allowed: true, set: true } });
     getAuditFeed.mockImplementation(async (_c: string, _l: number, w?: { since?: string }) => ({
       categories: ["data_access"], category: null, count: 0, events: [],
       ...(w?.since ? { next_cursor: "abc" } : {}),
     }));
     render(<SpendPanel />);
     const gov = await screen.findByTestId("spend-governance");
-    await waitFor(() => expect(getSystemFlags).toHaveBeenCalled());
+    await waitFor(() => expect(getOrgAllows).toHaveBeenCalled());
     fireEvent.click(within(gov).getByRole("button", { name: "Full feed" }));
     change(await within(gov).findByTestId("feed-since"), { target: { value: "2026-10-01" } });
     change(within(gov).getByTestId("feed-until"), { target: { value: "2026-10-20" } });

@@ -88,8 +88,9 @@ def _as(agent_record, fn):
 def test_the_flag_is_registered_off_by_default(monkeypatch):
     from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV, flag_disposition, flag_enabled
     monkeypatch.delenv(FLAG_ENV[FLAG], raising=False)
-    assert FLAG not in FLAG_DEFAULT and flag_disposition(FLAG) == "experiment"
-    assert flag_enabled(FLAG) is False
+    # part of the platform since 2026-10-28 (ROADMAP §3.65): on with nothing set, never a switch
+    assert FLAG not in FLAG_DEFAULT and flag_disposition(FLAG) == "always_on"
+    assert flag_enabled(FLAG) is True
 
 
 # ── the receipt ───────────────────────────────────────────────────────────────────────

@@ -37,17 +37,10 @@ WHAT = {
 
 
 def required() -> bool:
-    """Whether a reason is asked for. When the runtime override cannot be read, the environment
-    decides, as it does when no override is set — logged, not journaled, because the journal is
-    the store that could not be read."""
-    from aughor.kernel import flags
-    try:
-        return flags.flag_enabled("govern.justifications")
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger(__name__).warning(
-            "govern.justifications: the flag override could not be read (%s); the environment decides", exc)
-        return flags.env_enabled("govern.justifications")
+    """Whether a reason is asked for — the organisation's choice since 2026-10-28 (ROADMAP §3.65). Settings that
+    cannot be read fall back to the defaults, which read the former flag's variable, as an unset setting does."""
+    from aughor.orgsettings.allows import allows
+    return allows("reason_to_read_runs")
 
 
 def require_reason(reason: Any, what: str) -> str:

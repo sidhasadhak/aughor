@@ -49,18 +49,17 @@ def test_the_aggregate_never_carries_a_customers_data_and_the_rule_is_enforced()
 
 
 def test_nothing_leaves_until_a_person_turns_sharing_on(monkeypatch):
-    from aughor.kernel.flags import FLAG_ENV, clear_flag, flag_disposition
-    assert FLAG_ENV["aggregates.share"] == "AUGHOR_AGGREGATES_SHARE" and flag_disposition("aggregates.share") == "experiment"
-    clear_flag("aggregates.share")
+    from aughor.kernel.flags import FLAG_ENV
+    assert "aggregates.share" not in FLAG_ENV   # the organisation's setting since 2026-10-28 (ROADMAP §3.65)
     monkeypatch.delenv("AUGHOR_AGGREGATES_SHARE", raising=False)
     assert AG.sharing_enabled() is False
-    with pytest.raises(PermissionError, match="the user's call"):
+    with pytest.raises(PermissionError, match="the organisation's call"):
         AG.export()
     with pytest.raises(HTTPException) as e:
         R.export_aggregates()
     assert e.value.status_code == 403 and "nothing leaves" in e.value.detail
     local = R.read_aggregates()
-    assert local["sharing"] is False and local["flag"] == "aggregates.share" and "normal_ranges" in local
+    assert local["sharing"] is False and local["setting"] == "share_aggregates" and "normal_ranges" in local
     monkeypatch.setenv("AUGHOR_AGGREGATES_SHARE", "1")
     assert AG.sharing_enabled() is True
     out = R.export_aggregates()

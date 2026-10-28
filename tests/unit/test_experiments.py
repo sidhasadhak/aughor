@@ -31,7 +31,7 @@ from aughor.llm import provider as P
 # waves; the two predecessors were re-pointed for exactly that reason (evidence_stubs
 # deleted 2026-08-01, evidence_dedup hardwired by Wave 2d).
 FLAG = "explore.route_wide"
-OTHER = "federation.planner"
+OTHER = "automations.versions"   # federation.planner is always on since 2026-10-28 (§3.65)
 
 
 @pytest.fixture(autouse=True)

@@ -25,7 +25,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
-  deleteUsageCap, downloadAuditFeed, getAuditFeed, getConnections, getCostSql, getRouteMix, getSystemFlags,
+  deleteUsageCap, downloadAuditFeed, getAuditFeed, getConnections, getCostSql, getOrgAllows, getRouteMix,
   getUsageCaps, getUsageReport, getUsageSummary, putUsageCap,
   type AuditFeedEvent, type UsageCap, type UsageCapsResponse, type UsageReport, type UsageSummary,
 } from "@/lib/api";
@@ -428,8 +428,8 @@ function GovernanceCard() {
   const [full, setFull] = useState(false);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [shown, setShown] = useState<AuditFeedEvent[] | null>(null);
-  // Arc TC, TC-5 — with `govern.justifications` on, the full feed takes dates and exports its
-  // whole window from the server. A flag that cannot be read leaves both out.
+  // Arc TC, TC-5 — while the organisation asks for a reason to read runs (its setting since 2026-10-28), the full
+  // feed takes dates and exports its whole window from the server. A setting that cannot be read leaves both out.
   const [windowed, setWindowed] = useState(false);
 
   const read = useCallback(() => {
@@ -440,7 +440,7 @@ function GovernanceCard() {
     read();
     // Names a connection on a folded row; a read that fails leaves the name out, never the row.
     getConnections().then(cs => setNames(new Map(cs.map(c => [c.id, c.name])))).catch(() => setNames(new Map()));
-    getSystemFlags().then(f => setWindowed(!!f["govern.justifications"]?.value)).catch(() => setWindowed(false));
+    getOrgAllows().then(a => setWindowed(!!a.reason_to_read_runs?.allowed)).catch(() => setWindowed(false));
   }, [read]);
 
   const events = useMemo(() => feed?.events ?? [], [feed]);

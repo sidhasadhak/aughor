@@ -12759,7 +12759,7 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
   carries the mark, as the door lists. Seen on the way, not changed: while a choice is read again, one figure can show
   the new value a moment before the other.
 
-### 3.65 · Flags into settings — always on, or an organisation's choice (DRAFTED 2026-10-28 as `docs/FLAGS_TO_SETTINGS_2026-10-28.md`, at the user's *"let's consider not having any feature flags at all… this is one of the critical things that we need to do"* · not adopted; four calls open — PENDING item 67)
+### 3.65 · Flags into settings — always on, or an organisation's choice (DRAFTED 2026-10-28 as `docs/FLAGS_TO_SETTINGS_2026-10-28.md`, at the user's *"let's consider not having any feature flags at all… this is one of the critical things that we need to do"* · ✅ **ADOPTED the same day** — §6 item 57 · **stage 1 BUILT** — PENDING item 67)
 
 - **Measured:** 81 flags on the live install, 63 on; 44 set by a toggle, 13 by an environment variable, 24 by default;
   120 reads in the code. The 2026-07-31 strategy cut 91 to about 22 decisions; the count regrew because `AGENTS.md`'s
@@ -12769,6 +12769,16 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
   asked for, a governance posture · 5 experiments decided once. New work merges on, or stays on its branch; the receipt
   moves before the merge.
 - **Calls:** the rule for new work; the four settings; the ten off today; the five experiments (study §8).
+- **Stage 1, built 2026-10-28** (branch `claude/flags-to-settings`): 63 flags in `ALWAYS_ON` — on whatever a saved
+  override says, never listed in Settings, and the flags door answers a change with 409 and a sentence; an operator's
+  env var set to an explicit falsy value still turns one off until stage 2 deletes its off path (the suite runs them
+  off that way, as it ran Arc OC's five). Five flags became four organisation settings (`aughor/orgsettings/allows.py`,
+  Settings ▸ Organization ▸ *What Aughor may do*); one never set reads the former flag's variable and the screen says
+  so. `federation.planner` kept, through its own doors only — `/ask` no longer sends a fresh turn to it.
+  `grounding.data_profiles` deleted by its own falsifier (§3.38). `AGENTS.md`'s flag invariant replaced.
+- **Stage 2, not built:** delete each always-on flag's off path and off tests, area by area; `explore.route_wide` and
+  `judgment.shadow_treatment` deleted (the eval plane's tests take a synthetic flag); the ten off today checked live,
+  one by one; the four set-up features say what is missing where they would appear.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -15243,6 +15253,20 @@ the browser** · **measure the premise before building.**
     - ✅ *2026-10-28, the Grist study's calls 6–9, each as recommended:* the breakdown built behind
       `dashboard.breakdowns`, a click being the filter column's; rule marks after it, behind `dashboard.marks`; comments
       later; the rail made to fit — mocked first (§3.64 "The Grist study's breakdown piece and rule marks"). SV-3 built.
+
+57. ✅ **DECIDED 2026-10-28 — no feature flags: always on, or an organisation's choice** (§3.65;
+    `docs/FLAGS_TO_SETTINGS_2026-10-28.md`). The user: *"let's consider not having any feature flags at all.. most of it
+    comes as a default feature like always on and cannot be turned off.. and some of them can be turned on off based on
+    the requirements of the organisation and not the user mostly"*; asked first for every flag in plain English, then
+    *"All okay, except that lets keep federation.planner.. We may need cross querying across connections in the
+    future"*.
+    - **New work merges on;** unfinished work stays on its branch; no feature flags.
+    - **Four organisation settings,** off by default: share summary statistics, an outside row model, a reason to
+      read a run, model work on its own schedule.
+    - **The ten off today** are checked live, then always on.
+    - **Experiments:** `grounding.full_schema_first` kept on its record; `judgment.shadow_treatment` stopped;
+      `explore.route_wide` deleted; `federation.planner` kept (its doors, not chat's routing);
+      `grounding.data_profiles` deleted by its own clean run.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

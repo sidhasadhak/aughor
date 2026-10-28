@@ -1,5 +1,8 @@
 # Flags into settings — 2026-10-28
 
+> ✅ **Adopted 2026-10-28** — ROADMAP §6 item 57 (*"All okay, except that lets keep federation.planner"*). Stage 1
+> built the same day (§3.65): 63 flags always on, four organisation settings, the planner kept through its doors.
+
 **The ask** (the user, 2026-10-28): *"let's consider not having any feature flags at all.. instead of having 30-40
 feature flags, we will make sure that most of it comes as a default feature like always on and cannot be turned off..
 and some of them can be turned on off based on the requirements of the organisation and not the user mostly... this is

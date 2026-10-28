@@ -110,10 +110,12 @@ def test_off_the_briefings_cards_answer_exactly_as_they_do_on(client, desk):
     assert off.content == on.content
 
 
-def test_the_flag_is_registered_off_and_queued_to_graduate():
+def test_the_flag_is_part_of_the_platform(monkeypatch):
+    """Queued to graduate until 2026-10-28; always on since (ROADMAP §3.65) — on with nothing set."""
     from aughor.kernel import flags
-    assert flags.flag_enabled("dashboard.composed") is False
-    assert flags.flag_disposition("dashboard.composed") == "graduation_queue"
+    monkeypatch.delenv("AUGHOR_DASHBOARD_COMPOSED", raising=False)
+    assert flags.flag_enabled("dashboard.composed") is True
+    assert flags.flag_disposition("dashboard.composed") == "always_on"
 
 
 # ── the person's dashboards ─────────────────────────────────────────────────────

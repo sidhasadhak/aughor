@@ -202,6 +202,24 @@ export interface OrgSettings {
   /** Arc MC — how many approved headline metrics a Briefing measures; 0 = the platform's default (24 while the
    *  Briefing reads by area, 12 while it does not). */
   briefing_metric_cap?: number;
+  /** What Aughor may do (ROADMAP §3.65) — the organisation's four choices, each off by default; null = never set,
+   *  when the server's former flag variable answers (`getOrgAllows` says which). */
+  share_aggregates?: boolean | null;
+  outside_row_model?: boolean | null;
+  reason_to_read_runs?: boolean | null;
+  scheduled_model_work?: boolean | null;
+}
+
+/** The four choices an organisation makes about what Aughor may do (ROADMAP §3.65). */
+export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work";
+
+/** Each choice's answer, and whether an admin set it — one never set answers from the server's environment. */
+export type OrgAllows = Record<OrgAllowSetting, { allowed: boolean; set: boolean }>;
+
+export async function getOrgAllows(): Promise<OrgAllows> {
+  const res = await fetch(`${getApiBase()}/org-settings/allows`);
+  if (!res.ok) throw new Error("Failed to read what the organisation allows");
+  return res.json();
 }
 
 /** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */

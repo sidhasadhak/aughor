@@ -70,11 +70,14 @@ def test_the_conversion_ended_in_an_unconditional_trigger():
         "the trigger description outlives the flag — the receipt still names why it fired"
 
 
-def test_federation_planner_stays_an_experiment():
-    """The batch's premise-check finding, pinned: the planner auto-federates fresh
-    /ask turns, so it must not silently re-enter a graduation queue as
-    'invocation-gated'."""
-    from aughor.kernel.flags import EXPERIMENT, FLAG_DEFAULT
+def test_federation_planner_is_kept_and_no_longer_routes_chat_on_its_own(monkeypatch):
+    """The batch's premise-check finding stood until 2026-10-28: the planner auto-federated fresh /ask turns,
+    unmeasured. The user kept the planner ("We may need cross querying across connections in the future") and the
+    flags went (ROADMAP §3.65): it is always on through its own doors, and /ask no longer sends a turn to it."""
+    import aughor.routers.investigations as inv
+    from aughor.kernel.flags import ALWAYS_ON, EXPERIMENT, flag_enabled
 
-    assert "federation.planner" in EXPERIMENT
-    assert "federation.planner" not in FLAG_DEFAULT
+    monkeypatch.delenv("AUGHOR_FEDERATION_PLANNER", raising=False)   # the suite runs always-on flags off by default
+    assert "federation.planner" in ALWAYS_ON and "federation.planner" not in EXPERIMENT
+    assert flag_enabled("federation.planner") is True
+    assert not hasattr(inv, "_federation_eligible") and not hasattr(inv, "_stream_federated")

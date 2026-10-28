@@ -400,7 +400,9 @@ function FeatureFlags() {
     setBusy("");
   };
 
-  const entries = Object.entries(flags);
+  // ROADMAP §3.65 — a flag that is part of the platform is never offered as a switch; the rest are listed until each
+  // passes its own check. The organisation's choices are in Settings ▸ Organization.
+  const entries = Object.entries(flags).filter(([, f]) => f.disposition !== "always_on");
   if (flagsFailed !== null) {
     return (
       <Section title="Feature flags">

@@ -115,7 +115,7 @@ def not_pending(path, n: int) -> list[str]:
 
 def test_off_the_trigger_reads_nothing_says_it_is_off_and_the_palette_is_what_it_was(graph, monkeypatch):
     from aughor.automations.palette import ENTRIES, entries
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")  # always on since 2026-10-28 (ROADMAP §3.65); "0" is its off path until stage 2 deletes it
     monkeypatch.setattr(A, "_graph_for", lambda *_a: pytest.fail("the ontology was read with the flag off"))
     fired, detail, payload = check(watch())
     assert (fired, payload) == (False, {})
@@ -413,7 +413,7 @@ def test_withdrawing_a_watched_rule_segment_process_or_entity_is_refused(graph, 
 def test_the_save_door_refuses_the_trigger_off_and_a_segment_it_cannot_list(graph, client, monkeypatch):
     body = {"conn_id": CONN, "name": "act", "effects": [{"kind": "notify", "config": {"trigger_id": "t1"}}],
             "conditions": [{"kind": "objects_admitted", "config": {"entity": "Order", "segment": "pending_orders"}}]}
-    monkeypatch.delenv(FLAG_ENV, raising=False)
+    monkeypatch.setenv(FLAG_ENV, "0")  # always on since 2026-10-28 (ROADMAP §3.65); "0" is its off path until stage 2 deletes it
     off = client.post("/automations", json=body)
     assert off.status_code == 422 and "off on this deployment" in off.text
     monkeypatch.setenv(FLAG_ENV, "1")
