@@ -62,8 +62,9 @@ Everything else is either the product, or a piece of the product that waits for 
 **The five decided once:** `grounding.full_schema_first` has its own record in its favour (two test runs, never
 worse, twice answered where the shorter schema could not) — keep it. `judgment.shadow_treatment` makes one extra model
 call on every question to record how much work it needed, for PENDING item 4 — stop it, and measure once when item 4
-is taken up. `grounding.data_profiles`, `explore.route_wide` and `federation.planner` are off and unmeasured — delete
-the switches; their ideas stay in PENDING items 19 and 31.
+is taken up. `grounding.data_profiles` was measured twice without a clean answer — one clean run, then its own rule
+decides. `explore.route_wide` and `federation.planner` are off and were never measurable (no broad and no two-source
+questions in the test set) — delete them; nothing anyone sees changes.
 
 ## 4. The rule for new work (replaces the flag invariant)
 
@@ -110,7 +111,8 @@ the switches; their ideas stay in PENDING items 19 and 31.
 3. **The 10 that are off today:** check each on live and turn it on *(recommended)*; or delete the ones not worth
    checking now.
 4. **The 5 experiments:** decide now without spending — keep `grounding.full_schema_first`, stop
-   `judgment.shadow_treatment`, delete the other three *(recommended)*; or measure them (model calls).
+   `judgment.shadow_treatment`, one clean run for `grounding.data_profiles` (about 400 calls on the cheap model),
+   delete `explore.route_wide` and `federation.planner` *(recommended)*; or delete all three without measuring.
 
 ---
 
@@ -233,7 +235,7 @@ Admin-only, in Settings ▸ Organization ▸ *What Aughor may do*.
 Each changes prompts or routing. None stays a switch.
 
 - `grounding.full_schema_first` — For a small schema, the SQL writer sees every table, not only the ones picked for the question. *Today:* off. *Recommended:* Keep — always on — its own record: in two test runs it never wrote a worse query, and twice it answered where the shorter schema could not.
-- `grounding.data_profiles` — Adds a short data profile — row counts, ranges, common values — to the SQL writer's prompt. *Today:* off. *Recommended:* Delete the switch — nothing measured; it is PENDING 19's idea, better built and measured there than left as a switch.
-- `explore.route_wide` — A broad question gets a survey of many cuts instead of one deep analysis. *Today:* off. *Recommended:* Delete — unmeasured, and it changes how questions are routed.
-- `federation.planner` — Answers a question needing two connections: a model plans each query and the join. *Today:* off. *Recommended:* Delete — unmeasured, and it would route some questions on its own; the idea stays in PENDING 31.
+- `grounding.data_profiles` — Adds a short data profile — row counts, ranges, common values — to the SQL writer's prompt, from the profiler's cache. *Today:* off. *Recommended:* one clean with/without run, then its own rule decides (kept if it helps, deleted if not) — measured twice already (PENDING 19): 2026-09-24 a small gain that was not significant (paired t 1.49) and a regression on the 12 hard questions; 2026-10-04 no gain, on a run that lost a third of its calls to the provider's rate limit. Roughly 400 calls on the cheap model.
+- `explore.route_wide` — When Aughor chooses the route itself, a broad question ("how do sales vary across the business") goes to the survey engine — many cuts at once — instead of one deep analysis. *Today:* off. *Recommended:* Delete — it changes nothing anyone sees today; the shape table already sends a broad question asked for in depth to the survey engine; never measured, because none of the 102 test questions is broad.
+- `federation.planner` — A question needing two connections: a model plans one query for each and how to join them. *Today:* off. *Recommended:* Delete — no screen calls it, only automatic routing would, and the test questions are all single-source; it returns from history, measured, when a sheet beside the warehouse makes such questions common.
 - `judgment.shadow_treatment` — After every question, a model notes the smallest answer that would have done. *Today:* on. *Recommended:* Stop it — one extra model call on every question, for a record nobody reads yet; it can run as a one-off measurement when PENDING 4 is taken up.
