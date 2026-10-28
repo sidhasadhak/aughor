@@ -40,7 +40,7 @@ def wired(monkeypatch):
                         lambda cid, schema=None: _G())
     import aughor.actions.executor as ex
     calls: list = []
-    monkeypatch.setattr(ex, "default_dispatch", lambda a, p, s="": calls.append((a.id, p)))
+    monkeypatch.setattr(ex, "default_dispatch", lambda a, p, s="", **_k: calls.append((a.id, p)))
     return calls
 
 

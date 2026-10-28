@@ -14,7 +14,6 @@ import uuid
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 from aughor.record import byproducts as B
 from aughor.record import decisions as D
 from aughor.record import kinds as K
@@ -166,11 +165,3 @@ def test_the_routes_declare_as_the_person_signed_in_and_list_proposals(monkeypat
     assert got["objective"]["measurable"] is False and got["objective"]["note"]
     hold = next(p for p in got["proposals"] if p["kind"] == out["key"])["options"][1]["predicted"]
     assert hold["method"] == "history" and hold["says"] == got["objective"]["note"]
-
-
-def test_with_the_loop_off_a_kind_still_holds_its_rules():
-    """Kinds are the organisation's declarations, not the review's: they hold at the door with the loop off too."""
-    k = _kind(expectation_required=True)
-    with flag_overrides({"record.decision_loop": False}):
-        with pytest.raises(ValueError, match="says what it expects"):
-            B.declare_decision(question="Cut?", chosen="cut", decided_by="user:amit", kind=k.key)

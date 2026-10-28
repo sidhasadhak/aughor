@@ -105,12 +105,10 @@ def decision_from_recommendation(outcome, *, chosen: str, decided_by: str, conne
     metric = (expectation.metric if expectation is not None else "") or (getattr(outcome, "spec", None) or {}).get("metric_label") \
         or getattr(outcome, "metric_name", "") or ""
     objective = prior.objective if prior is not None and prior.objective else _mission_for(connection_id, metric)
-    options = list(_ACCEPT_OPTIONS)
-    if _dec.loop_on():
-        # PENDING 57, D-1: the same report's other recommended actions were on the table too — kept as the
-        # alternatives weighed; and the platform recommended accepting, so a decline is an override, counted.
-        options += _alternatives(outcome)
-        extra["recommended"] = "accept"
+    # PENDING 57, D-1: the same report's other recommended actions were on the table too — kept as the
+    # alternatives weighed; and the platform recommended accepting, so a decline is an override, counted.
+    options = list(_ACCEPT_OPTIONS) + _alternatives(outcome)
+    extra["recommended"] = "accept"
     decision = _dec.Decision(
         question=(outcome.rec_text or "").strip()[:500] or f"recommendation {outcome.rec_index}",
         owner=decided_by, options=options, chosen=chosen,
@@ -298,11 +296,9 @@ def outcome_from_review(outcome) -> Optional[str]:
     against, pred = against_expectation(decision, actual, outcome.history_value if outcome.history_value is not None
                                         else before)
     direction = str(pred.extra.get("direction") or "") if pred is not None else ""
-    drift = ""
-    if _dec.loop_on():
-        from aughor.record.scenario import drift_words
-        drift = drift_words(decision.connection_id, (pred.statement.metric if pred is not None else "")
-                            or str(getattr(outcome, "metric_name", "") or ""))
+    from aughor.record.scenario import drift_words
+    drift = drift_words(decision.connection_id, (pred.statement.metric if pred is not None else "")
+                        or str(getattr(outcome, "metric_name", "") or ""))
     verdict, why, effect = verdict_against_baseline(
         actual=actual, baseline=outcome.history_value, low=outcome.history_low, high=outcome.history_high,
         direction=direction, against=against, history_note=outcome.history_note, drift=drift,
@@ -414,7 +410,7 @@ def decision_from_proposal(p, *, chosen: str, actor: str) -> str:
                **({"trace_id": p.trace_id} if p.trace_id else {}),
                "expectation_note": "none: a staged proposal carries no expectation line",
                # PENDING 57, D-1: the proposer recommended approving; a rejection is an override, counted
-               **({"recommended": "approve"} if _dec.loop_on() else {})},
+               "recommended": "approve"},
     )
     return _dec.book_decision(decision, author=decided_by)
 
@@ -430,8 +426,8 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                      figure: Optional[dict] = None, kind: str = "", revises: str = "",
                      evidence: Optional[list[dict]] = None) -> str:
     """A decision taken elsewhere, declared in its own words. Refuses a relied-on id that is not a
-    claim (a decision cites what the Record holds, never a loose string). With the decision loop on, the server cites
-    what the decision was taken on: an Explorer finding's claim (``finding_id``), the claims a run's receipt booked
+    claim (a decision cites what the Record holds, never a loose string). The server cites what the decision was taken
+    on: an Explorer finding's claim (``finding_id``), the claims a run's receipt booked
     (``run_id`` — a dashboard Question's answer, a chat answer), or a Briefing figure measured for its days and booked
     as a reading (``figure``: metric, start, end) — the decision-framework study §3.2 and §8 step 3."""
     if not (question or "").strip():
@@ -458,7 +454,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
             raise ValueError(f"{cid!r} is not a claim in the Record; a decision relies on claims it can cite")
         cited.append(cid)
     finding_note = ""
-    if finding_id and _dec.loop_on():
+    if finding_id:
         # PENDING 57, D-1: a decision taken on a finding cites the finding's claim as it stands now; one the Record
         # does not hold is said on the decision, never guessed at.
         from aughor.record.writers import explorer_finding_claim
@@ -466,12 +462,12 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         if claim is not None and claim.id not in cited:
             cited.append(claim.id)
     notes = [finding_note] if finding_note else []
-    if run_id and _dec.loop_on():
+    if run_id:
         ids = relied_on_claims(connection_id, run_id)
         cited += [c for c in ids if c not in cited]
         if not ids:
             notes.append(f"run {run_id} booked no claim — what it answered is not in the Record to cite")
-    if figure and _dec.loop_on():
+    if figure:
         cid, why = reading_claim(connection_id, str(figure.get("metric") or ""), str(figure.get("start") or ""),
                                  str(figure.get("end") or ""))
         if cid and cid not in cited:
@@ -492,9 +488,9 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         connection_id=connection_id or "", kind=declared_kind.key if declared_kind is not None else "",
         extra={**({"note": note} if note else {}),
                **({} if expectation else {"expectation_note": "none declared — nothing to score"}),
-               **({"finding_id": finding_id} if finding_id and _dec.loop_on() else {}),
-               **({"run_id": run_id} if run_id and _dec.loop_on() else {}),
-               **({"figure": dict(figure)} if figure and _dec.loop_on() else {}),
+               **({"finding_id": finding_id} if finding_id else {}),
+               **({"run_id": run_id} if run_id else {}),
+               **({"figure": dict(figure)} if figure else {}),
                **({"revises": revised.id} if revised is not None else {}),
                # where it was taken — a conversation or a meeting, as a reference and a hash (study §3.2)
                **({"evidence": list(evidence)} if evidence else {}),
@@ -577,11 +573,9 @@ ACT, NOT_ACT = "act on it", "not act"
 
 
 def decision_not_to_act(*, connection_id: str, finding_id: str, finding_text: str, reason: str,
-                        decided_by: str, schema_name: str = "") -> Optional[str]:
+                        decided_by: str, schema_name: str = "") -> str:
     """Setting a finding aside as not worth acting on IS a decision — booked citing the finding, with the reason
-    as said. Before, "Not worth it" flagged the finding and the choice was lost. None when the loop is off."""
-    if not _dec.loop_on():
-        return None
+    as said. Before, "Not worth it" flagged the finding and the choice was lost."""
     return declare_decision(
         question=(finding_text or f"finding {finding_id}").strip()[:500], chosen=NOT_ACT, options=[ACT, NOT_ACT],
         connection_id=connection_id, decided_by=decided_by,

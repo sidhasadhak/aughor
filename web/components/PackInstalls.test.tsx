@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Where a pack is installed and what upgrading it brings (Arc FA, FA-6, flag `packs.installed_versions`). The API is
+ * Where a pack is installed and what upgrading it brings (Arc FA, FA-6). The API is
  * stood in for; what is asserted is what the row says of its version, how the diff marks what a person declined, and
  * that the upgrade is asked for the connection the row names.
  */
@@ -54,8 +54,8 @@ describe("the words", () => {
 });
 
 describe("PackInstalls", () => {
-  it("draws nothing while installed versions are off", async () => {
-    api.getPackInstalls.mockResolvedValue(null);
+  it("draws nothing when where it is installed cannot be read", async () => {
+    api.getPackInstalls.mockRejectedValue(new Error("Where the pack is installed could not be read"));
     const { container } = render(<PackInstalls packId="banking" />);
     await waitFor(() => expect(api.getPackInstalls).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();

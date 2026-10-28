@@ -9,7 +9,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { DashboardQuestion } from "@/lib/api";
 import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 
-const api = vi.hoisted(() => ({ readQuestion: vi.fn(), askQuestionNow: vi.fn(), getSystemFlags: vi.fn(), getMetrics: vi.fn() }));
+const api = vi.hoisted(() => ({ readQuestion: vi.fn(), askQuestionNow: vi.fn(), getMetrics: vi.fn() }));
 vi.mock("@/lib/api", async original => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 const nav = vi.hoisted(() => ({ requestTab: vi.fn() }));
 vi.mock("@/lib/navigate", async original => ({ ...(await original<typeof import("@/lib/navigate")>()), ...nav }));
@@ -44,7 +44,6 @@ beforeEach(() => { api.readQuestion.mockReset(); api.askQuestionNow.mockReset();
 describe("a question on a dashboard", () => {
   it("offers Decide under its latest answer, on the dashboard's connection, citing that answer's run", async () => {
     api.readQuestion.mockResolvedValue(DAILY);
-    api.getSystemFlags.mockResolvedValue({ "record.decision_loop": { value: true } });
     api.getMetrics.mockResolvedValue([]);
     render(<QuestionPiece automation="aut-daily-1" connectionId="thelook" />);
     const door = await screen.findByTestId("question-decide");

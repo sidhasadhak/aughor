@@ -2,7 +2,7 @@
 /**
  * The Decide door on what a person reads (the decision-framework study §3.2, §8 step 3): one button, then what was
  * decided and what it should move; the server cites what it was taken on — a run's answer, or a Briefing figure for
- * its edition's days. With the decision loop off, or nowhere to book it, the door is not shown.
+ * its edition's days. With nowhere to book it, the door is not shown.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,14 +10,14 @@ import { Theme } from "@radix-ui/themes";
 
 import { fireEvent, render, screen, waitFor } from "@/lib/testing";
 
-const api = vi.hoisted(() => ({ getSystemFlags: vi.fn(), getMetrics: vi.fn() }));
+const api = vi.hoisted(() => ({ getMetrics: vi.fn() }));
 vi.mock("@/lib/api", async original => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 const rec = vi.hoisted(() => ({ declareDecision: vi.fn() }));
 vi.mock("@/lib/record", async original => ({ ...(await original<typeof import("@/lib/record")>()), ...rec }));
 const nav = vi.hoisted(() => ({ requestTab: vi.fn() }));
 vi.mock("@/lib/navigate", async original => ({ ...(await original<typeof import("@/lib/navigate")>()), ...nav }));
 
-const { DecideDoor, forgetDecisionLoop } = await import("@/components/decisions/DecideDoor");
+const { DecideDoor } = await import("@/components/decisions/DecideDoor");
 
 /** Choose a select's option the way a keyboard does (a Radix select, as Home's test drives it). */
 function choose(label: string, value: string) {
@@ -37,8 +37,6 @@ function offered(label: string): (string | null)[] {
 const BOOKED = { id: "dec-1", review_on: "2026-11-25", relied_on: ["claim-1"], extra: {} };
 
 beforeEach(() => {
-  forgetDecisionLoop();
-  api.getSystemFlags.mockReset().mockResolvedValue({ "record.decision_loop": { value: true } });
   api.getMetrics.mockReset().mockResolvedValue([
     { name: "gmv", label: "GMV", status: "approved", time_kind: "flow", time_column: "orders.order_date", dimensions: ["platform"] },
     { name: "draft_one", label: "Draft", status: "draft", time_kind: "flow", time_column: "orders.order_date" },
@@ -84,15 +82,8 @@ describe("the Decide door", () => {
     expect(await screen.findByText(/holds no rows of GMV · nothing expected, so it cannot be scored/)).toBeInTheDocument();
   });
 
-  it("is not shown with the decision loop off, or with nowhere to book it", async () => {
-    api.getSystemFlags.mockResolvedValue({ "record.decision_loop": { value: false } });
-    const { container } = render(<Theme><DecideDoor connectionId="c2" question="q" on={{ kind: "run", runId: "r" }} testId="d" /></Theme>);
-    await waitFor(() => expect(api.getSystemFlags).toHaveBeenCalled());
-    expect(container.querySelector("[data-testid='d']")).toBeNull();
-    api.getSystemFlags.mockClear();
-    forgetDecisionLoop();
+  it("is not shown with nowhere to book it", () => {
     const none = render(<Theme><DecideDoor connectionId="" question="q" on={{ kind: "run", runId: "r" }} testId="d2" /></Theme>);
     expect(none.container.querySelector("[data-testid='d2']")).toBeNull();
-    expect(api.getSystemFlags).not.toHaveBeenCalled();
   });
 });

@@ -177,9 +177,8 @@ def failure_rates(autos: list, conn_id: str = "",
 
 
 def hub_map(conn_id: str = "", window_days: int = FAILURE_WINDOW_DAYS) -> dict:
-    """The map. One row per automation and per monitor, every column the roadmap names.
-
-    ``window_days`` is read only while ``hub.failure_rate`` is on; off, the map is as it was."""
+    """The map. One row per automation and per monitor, every column the roadmap names, and each row's failure rate
+    over ``window_days`` (Arc TC, TC-5)."""
     from aughor.automations.models import now_iso_z
     from aughor.automations.store import get_runs, last_run, list_automations
     from aughor.govern.departure import GRADUATION_MIN_MARKED, GRADUATION_PRECISION
@@ -275,10 +274,8 @@ def hub_map(conn_id: str = "", window_days: int = FAILURE_WINDOW_DAYS) -> dict:
             "probation": sum(1 for r in rows if r["probation"]["on"]),
         },
     }
-    from aughor.kernel.flags import flag_enabled
-    if flag_enabled("hub.failure_rate"):
-        rates, window = failure_rates([a for a, _ in autos], conn_id=conn_id, window_days=window_days)
-        for r in rows:
-            r["failure_rate"] = rates[r["id"]]
-        out["failure_window"] = window
+    rates, window = failure_rates([a for a, _ in autos], conn_id=conn_id, window_days=window_days)
+    for r in rows:
+        r["failure_rate"] = rates[r["id"]]
+    out["failure_window"] = window
     return out

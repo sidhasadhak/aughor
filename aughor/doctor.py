@@ -160,7 +160,7 @@ def _model() -> Check:
 
 def _backups(root: Path | None = None, now: datetime | None = None) -> Check:
     """Arc SV, SV-2 — whether this install's own state has a recent backup. Answered from the backups folder and its
-    last-run note, the two plain files `/health`'s backups block reads — never through the flag store, which would open
+    last-run note, the two plain files `/health`'s backups block reads — never through a store, which would open
     `system.db`; and not through that block itself, which answers for the API's process, not this one."""
     from aughor.db import backups
     wanted = "a backup of this install's own state, checked within the last two hours"
@@ -173,8 +173,7 @@ def _backups(root: Path | None = None, now: datetime | None = None) -> Check:
     if not kept:
         return Check("backups", WARN, found="none taken", wanted=wanted,
                      reason="a damaged store has nothing to come back from",
-                     fix="turn on “Back up Aughor's own state every hour” in Settings ▸ System; the API takes the first "
-                         "a few minutes after it starts")
+                     fix="start the API (`aughor up`); it takes the first a few minutes after it starts")
     now = now or datetime.now(timezone.utc)
     newest = kept[0]
     try:
@@ -194,8 +193,8 @@ def _backups(root: Path | None = None, now: datetime | None = None) -> Check:
                      fix="free some disk; old copies are thinned out on their own")
     if now - checked > backups.STALE_AFTER:
         return Check("backups", WARN, found=found, wanted=wanted,
-                     reason="backups are taken only while the API runs with them on",
-                     fix="start the API, and check “Back up Aughor's own state every hour” is on in Settings ▸ System")
+                     reason="backups are taken only while the API runs",
+                     fix="start the API (`aughor up`)")
     return Check("backups", OK, found=found, wanted=wanted)
 
 

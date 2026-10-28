@@ -370,7 +370,7 @@ def test_kinetic_effect_criterion_failure_returns_the_authored_message_verbatim(
                         lambda conn_id, schema=None: _graph_with(action))
     dispatched = []
     monkeypatch.setattr("aughor.actions.executor.default_dispatch",
-                        lambda a, p, s="": dispatched.append(a.id))
+                        lambda a, p, s="", **_k: dispatched.append(a.id))
 
     a = _automation(effects=[Effect(kind="kinetic_action",
                                     config={"action_id": "refund",
@@ -389,7 +389,7 @@ def test_kinetic_effect_executes_when_the_criteria_hold(monkeypatch):
                         lambda conn_id, schema=None: _graph_with(action))
     seen = []
 
-    def fake_dispatch(act, params, scope=""):
+    def fake_dispatch(act, params, scope="", **_k):
         seen.append((act.id, params, scope))
         return {"ok": True}
 

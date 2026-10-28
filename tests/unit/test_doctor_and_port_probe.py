@@ -141,10 +141,10 @@ class TestTheBackupsCheck:
         c.close()
         return root
 
-    def test_none_taken_is_a_warning_that_says_how_to_turn_them_on(self, tmp_path):
+    def test_none_taken_is_a_warning_that_says_where_they_come_from(self, tmp_path):
         check = doctor._backups(self._state(tmp_path))
         assert check.status == doctor.WARN and check.found == "none taken"
-        assert "Settings ▸ System" in check.fix
+        assert "the API" in check.fix
 
     def test_a_backup_checked_lately_is_ok_and_an_old_one_is_said(self, tmp_path):
         from datetime import timedelta

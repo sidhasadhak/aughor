@@ -1,9 +1,8 @@
 """Packs as products — the version a pack was installed at, what it offered then, and the upgrade to the version it is
-now (Arc FA, FA-6; ROADMAP §3.60). Behind ``packs.installed_versions``.
+now (Arc FA, FA-6; ROADMAP §3.60).
 
 A binding stored whatever version its caller sent (the web sent none, so every binding read 1) and no record of what
-the pack proposed when it was bound, so nothing could say what a newer version brings. With the flag on, a bind
-records the MANIFEST's version, who bound it, and a snapshot of what the pack offered at that version
+the pack proposed when it was bound, so nothing could say what a newer version brings. A bind now records the MANIFEST's version, who bound it, and a snapshot of what the pack offered at that version
 (:func:`offered`): its terms, the bands of its alert priors, its metric recipes and the structure its map claims —
 each item with a hash of its content, so a later version's item reads as added, changed or unchanged.
 
@@ -35,8 +34,6 @@ from typing import Any, Callable, Optional
 
 from aughor.packs.models import Pack
 
-FLAG = "packs.installed_versions"
-
 #: The kinds of item a pack offers, in the order a diff lists them.
 KINDS = ("term", "alert", "metric", "structure")
 
@@ -53,10 +50,6 @@ UNRECORDED = ("this binding was made before installed versions were recorded, so
 
 _SUFFIX = re.compile(r"@v(\d+)$")
 
-
-def on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def _hash(content: Any) -> str:
@@ -149,7 +142,7 @@ def offered(pack: Pack, *, graph=None) -> dict[str, Any]:
 
 
 def install_record(pack: Pack, *, by: str, graph=None) -> dict[str, Any]:
-    """What a bind records with the flag on: who bound the pack, and the snapshot of what it offered."""
+    """What a bind records: who bound the pack, and the snapshot of what it offered."""
     from aughor.util.time import now_iso_z
     snap = offered(pack, graph=graph)
     snap["at"] = now_iso_z()

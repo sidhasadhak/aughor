@@ -2,8 +2,8 @@
 
 /**
  * Where a pack is installed, the version installed there, and what upgrading to the pack's version brings (Arc FA,
- * FA-6, flag `packs.installed_versions`; `aughor/packs/upgrade.py`). Drawn under a pack in System → Packs only while
- * the flag is on — the parent reads it — and the routes answer 404 otherwise, when this draws nothing at all.
+ * FA-6; `aughor/packs/upgrade.py`). Drawn under a pack in System → Packs; when where it is installed cannot be read it
+ * draws nothing at all.
  *
  * The diff is the server's: items added, changed and removed since the installed version, each one a person declined
  * marked "you declined this in vN", and the unchanged ones they declined, which stay declined. Upgrading proposes only

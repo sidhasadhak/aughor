@@ -304,7 +304,7 @@ class BindIn(BaseModel):
     connection_id: str
     bindings: dict
     verified: bool = False
-    version: int = 1
+    version: int = 1        # ignored: the binding records the pack's manifest version (Arc FA, FA-6)
     schema_name: Optional[str] = Field(default=None, alias="schema")  # dataset on a multi-schema connection
     table_cols: Optional[dict[str, list[str]]] = None   # if given, verify columns exist
 
@@ -315,24 +315,20 @@ def post_bind(pack_id: str, body: BindIn, request: Request):
     bound columns are checked to actually exist and `verified` reflects that (column-existence
     half of verification; recipe dry-run is the live step).
 
-    Arc FA, FA-6 (`packs.installed_versions`): on, the binding records the MANIFEST's version — never the
-    `version` a caller sends — who bound it, and a snapshot of what the pack offered, which an upgrade is
-    diffed against. Off, the binding is stored exactly as it always was."""
+    Arc FA, FA-6: the binding records the MANIFEST's version — never the `version` a caller sends — who
+    bound it, and a snapshot of what the pack offered, which an upgrade is diffed against."""
     # G1: declared LOW — auto-allowed and AUDITED. A binding decides which columns a
     # pack's recipes read, so who pinned it and when belongs in the governance trail.
     from aughor import govern
     govern.guard("pack.bind", pack_id)
     from aughor.packs import upgrade as _upgrade
-    installed = None
-    version = body.version
-    if _upgrade.on():
-        try:
-            pack = load_pack(_dir_for(pack_id))
-        except PacksError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        version = int(pack.manifest.version or 0)
-        installed = _upgrade.install_record(pack, by=_who(get_principal(request)),
-                                            graph=_graph_for(body.connection_id, body.schema_name))
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    version = int(pack.manifest.version or 0)
+    installed = _upgrade.install_record(pack, by=_who(get_principal(request)),
+                                        graph=_graph_for(body.connection_id, body.schema_name))
     from aughor.packs import verify_binding_columns
     from aughor.packs.dryrun import dry_run_binding
     verified = body.verified
@@ -351,9 +347,8 @@ def post_bind(pack_id: str, body: BindIn, request: Request):
         tolerate(e, "bind dry-run skipped; connection unreachable", counter="packs.bind_dryrun")
     rec = save_binding(pack_id, body.connection_id, body.bindings,
                        version=version, verified=verified, schema=body.schema_name or "", installed=installed)
-    if installed is not None:
-        rec["bound_by"] = installed["bound_by"]
-        rec["offered"] = {"version": installed["offered"]["version"], "items": len(installed["offered"]["items"])}
+    rec["bound_by"] = installed["bound_by"]
+    rec["offered"] = {"version": installed["offered"]["version"], "items": len(installed["offered"]["items"])}
     rec["missing"] = missing
     rec["dry_run_errors"] = dry_errors
     # C7 — the day a pack is bound, its terms are proposed for confirmation and its alerts, each with
@@ -375,13 +370,7 @@ def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
     return load_binding(pack_id, connection_id, schema or "")
 
 
-# ── Arc FA, FA-6 — the installed version and the upgrade (`packs.installed_versions`) ────────────
-
-def _installed_on() -> None:
-    from aughor.packs import upgrade
-    if not upgrade.on():
-        raise HTTPException(status_code=404, detail="installed versions need the 'packs.installed_versions' flag")
-
+# ── Arc FA, FA-6 — the installed version and the upgrade ─────────────────────────────────────
 
 def _loaded(pack_id: str):
     try:
@@ -394,7 +383,6 @@ def _loaded(pack_id: str):
 def get_pack_installs(pack_id: str):
     """Every connection and schema this pack is bound on: the version installed there, whether what it offered then
     was recorded, who bound it, and the version the pack is at now."""
-    _installed_on()
     from aughor.packs.bindings import installs_of
     pack = _loaded(pack_id)
     available = int(pack.manifest.version or 0)
@@ -414,7 +402,6 @@ def get_pack_upgrade(pack_id: str, connection_id: str, schema: Optional[str] = N
     """What upgrading this connection's binding would bring: the version installed and the one available, the items
     added, changed and removed since, each one a person declined marked with the version it was declined in, and the
     unchanged items they declined, which stay declined. Read-only, no model call."""
-    _installed_on()
     from aughor.packs.bindings import load_install
     from aughor.packs.upgrade import diff
     pack = _loaded(pack_id)
@@ -436,7 +423,6 @@ def post_pack_upgrade(pack_id: str, body: UpgradeIn, request: Request):
     """Upgrade this connection's binding to the pack's version: the role map is kept, only the new and changed terms
     and alerts are proposed — never an unchanged one a person declined — and what the pack now offers is recorded.
     Refused (409) when there is nothing to upgrade to."""
-    _installed_on()
     from aughor import govern
     govern.guard("pack.bind", pack_id)           # an upgrade re-binds, so it is the bind's own act on the trail
     from aughor.packs.bindings import load_install

@@ -15,8 +15,7 @@ router = APIRouter(tags=["hub"], dependencies=[Depends(connection_owner_guard)])
 @router.get("/hub/map")
 def get_hub_map(conn_id: str = "",
                 window_days: int = Query(default=7, ge=1, le=90,
-                                         description="hub.failure_rate: the failure rate's window, "
-                                                     "in days counting today")):
+                                         description="the failure rate's window, in days counting today")):
     """The map. Omit `conn_id` for the whole hub; pass it to narrow to one connection.
 
     `cost` on every row is a floor, not a total (`floor: true` says so in the payload):
@@ -25,8 +24,7 @@ def get_hub_map(conn_id: str = "",
     free. `probation.precision` is null until anything is marked — "not measured", never
     0%.
 
-    Arc TC, TC-5 (`hub.failure_rate`, off by default): each row's `failure_rate` over
-    `window_days` — measured, "no runs" (never 0%), or "not permitted" (no count, the node
-    kept). Off, `window_days` is read by nothing."""
+    Arc TC, TC-5: each row's `failure_rate` over `window_days` — measured, "no runs" (never
+    0%), or "not permitted" (no count, the node kept)."""
     from aughor.hub.map import hub_map
     return hub_map(conn_id=conn_id, window_days=window_days)

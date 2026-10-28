@@ -485,18 +485,14 @@ def _keyed_triggers(payload: dict) -> dict:
 
 
 def _admitted_triggers(payload: dict) -> dict:
-    """Arc FA, FA-5 — an `objects_admitted` trigger is refused at the save door while its flag is off, and, on, when
-    the segment it names cannot be listed on the automation's connection: the listing is compiled once, as the person
+    """Arc FA, FA-5 — an `objects_admitted` trigger is refused at the save door when the segment it names cannot be
+    listed on the automation's connection: the listing is compiled once, as the person
     saving, and nothing is run. 422 with the compiler's own words — a trigger that cannot read its segment would sit
     looking schedulable and say so only on its first check."""
     for c in payload.get("conditions") or []:
         if not (isinstance(c, dict) and c.get("kind") == "objects_admitted"):
             continue
-        from aughor.automations.admitted import FLAG, enabled, listing_problem
-        if not enabled():
-            raise HTTPException(status_code=422, detail=(
-                f"the objects_admitted trigger is off on this deployment ({FLAG}) — turn it on to act on the objects "
-                "a rule admits"))
+        from aughor.automations.admitted import listing_problem
         try:
             cond = Condition(**c)
         except ValidationError as exc:

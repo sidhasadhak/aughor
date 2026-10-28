@@ -13,7 +13,6 @@ import uuid
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 from aughor.kernel.ledger import DEEP_REPORT_KIND
 from aughor.record import byproducts as B
 from aughor.record import claims as C
@@ -24,11 +23,9 @@ from aughor.record import writers as W
 
 
 @pytest.fixture(autouse=True)
-def _loop_on(monkeypatch):
+def _settled(monkeypatch):
     import aughor.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 0)
-    with flag_overrides({"record.decision_loop": True}):
-        yield
 
 
 def _answered(conn: str) -> tuple[str, str, str]:

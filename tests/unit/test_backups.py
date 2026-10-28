@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 
 from aughor.db import backups
-from aughor.kernel.flags import flag_overrides
 
 NOW = datetime(2026, 10, 27, 14, 0, tzinfo=timezone.utc)
 
@@ -363,88 +362,57 @@ def test_pruning_keeps_what_retention_keeps_and_sv1_copies_thirty_days(state):
     assert young.exists() and not old.exists() and old.name in gone
 
 
-# ── the flag, the clock and /health ────────────────────────────────────────────────
+# ── the clock and /health ──────────────────────────────────────────────────────────
 
-def test_off_nothing_is_scheduled_and_on_the_job_appears(state):
+def test_the_job_is_put_on_the_clock_when_it_starts(state):
     from aughor.monitors import scheduler
     try:
-        with flag_overrides({"state.backups": False}):
-            scheduler._sync_backups_job()
-            assert scheduler._scheduler.get_job(scheduler.BACKUPS_JOB_ID) is None
-        with flag_overrides({"state.backups": True}):
-            scheduler._sync_backups_job()
-            job = scheduler._scheduler.get_job(scheduler.BACKUPS_JOB_ID)
-            assert job is not None and job.func is scheduler.backup_state_once
-        with flag_overrides({"state.backups": False}):
-            scheduler._sync_backups_job()                       # turned off at runtime: the next tick removes it
-            assert scheduler._scheduler.get_job(scheduler.BACKUPS_JOB_ID) is None
+        scheduler._schedule_backups()
+        job = scheduler._scheduler.get_job(scheduler.BACKUPS_JOB_ID)
+        assert job is not None and job.func is scheduler.backup_state_once
     finally:
         if scheduler._scheduler.get_job(scheduler.BACKUPS_JOB_ID) is not None:
             scheduler._scheduler.remove_job(scheduler.BACKUPS_JOB_ID)
 
 
-def test_off_the_hourly_run_writes_nothing(state):
-    with flag_overrides({"state.backups": False}):
-        assert backups.run_scheduled(now=NOW).status == "off"
-    assert not (state.root / "backups").exists()
-
-
 def test_the_hourly_run_happens_only_in_the_serving_process_and_at_most_hourly(state, monkeypatch):
-    with flag_overrides({"state.backups": True}):
-        monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: os.getpid() + 1)
-        assert backups.run_scheduled(now=NOW).status == "not_serving"
-        assert not (state.root / "backups").exists()
-        monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: os.getpid())
-        assert backups.run_scheduled(now=NOW).status == "taken"
-        assert backups.run_scheduled(now=NOW + timedelta(minutes=30)).status == "not_due"
-        state.write("metrics.instance.json", '{"changed": true}')
-        assert backups.run_scheduled(now=NOW + timedelta(minutes=61)).status == "taken"
+    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: os.getpid() + 1)
+    assert backups.run_scheduled(now=NOW).status == "not_serving"
+    assert not (state.root / "backups").exists()
+    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: os.getpid())
+    assert backups.run_scheduled(now=NOW).status == "taken"
+    assert backups.run_scheduled(now=NOW + timedelta(minutes=30)).status == "not_due"
+    state.write("metrics.instance.json", '{"changed": true}')
+    assert backups.run_scheduled(now=NOW + timedelta(minutes=61)).status == "taken"
 
 
-HEALTH_KEYS = ["status", "ledger", "migrations", "stores", "fixture_db", "llm", "secrets", "object_store"]
-
-
-def test_off_health_reads_as_it_did(state, monkeypatch):
-    from aughor.routers.system import health
-
-    def never(*_a, **_k):
-        raise AssertionError("the backups were read with the flag off")
-
-    (state.root / "backups").mkdir()
-    (state.root / "backups" / "last_run.json").write_text(json.dumps({"at": "2020-01-01T00:00:00+00:00",
-                                                                      "outcome": "failed", "reason": "x"}))
-    monkeypatch.setattr(backups, "health_block", never)
-    with flag_overrides({"state.backups": False}):
-        health()                                    # first, so the stores the route itself opens are open
-        with_record = health()
-        shutil.rmtree(state.root / "backups")
-        without = health()
-    assert list(with_record) == HEALTH_KEYS
-    assert json.dumps(with_record, default=str) == json.dumps(without, default=str)
-
-
-def test_on_health_says_what_the_last_backup_did(state, monkeypatch):
+def test_health_says_what_the_last_backup_did(state, monkeypatch):
     from aughor.routers.system import health
     monkeypatch.setattr(backups, "_now", lambda: NOW + timedelta(minutes=5))
-    with flag_overrides({"state.backups": True}):
-        empty = health()["backups"]
-        assert not empty["ok"] and "no backup" in empty["detail"]
-        out = _take()
-        body = health()
-        assert body["backups"]["ok"] and body["backups"]["last_backup"] == out.stamp
-        assert body["backups"]["copied"] == out.copied and body["backups"]["total_bytes"] > 0
-        assert list(body)[:4] == ["status", "ledger", "migrations", "backups"]
-        monkeypatch.setattr(backups, "_now", lambda: NOW + timedelta(hours=3))
-        stale = health()
-        assert stale["status"] == "degraded" and "3.0 hours" in stale["backups"]["detail"]
+    empty = health()["backups"]
+    assert empty["ok"] is False and "no backup" in empty["detail"]
+    out = _take()
+    body = health()
+    assert body["backups"]["ok"] and body["backups"]["last_backup"] == out.stamp
+    assert body["backups"]["copied"] == out.copied and body["backups"]["total_bytes"] > 0
+    assert list(body)[:4] == ["status", "ledger", "migrations", "backups"]
+    monkeypatch.setattr(backups, "_now", lambda: NOW + timedelta(hours=3))
+    stale = health()
+    assert stale["status"] == "degraded" and "3.0 hours" in stale["backups"]["detail"]
 
 
-def test_health_says_where_the_clock_never_runs(state, monkeypatch):
+def test_health_says_where_the_clock_never_runs_and_is_not_degraded_by_it(state, monkeypatch):
+    """No backup is ever taken where the clock never runs — a test process, a serverless instance. Said, with `ok`
+    None, never read as a failing backup: a process that never keeps the state is not failing to keep it."""
+    from aughor.routers.system import health
     monkeypatch.setenv("AUGHOR_DISABLE_SCHEDULERS", "1")
-    assert "clocks are off" in backups.health_block(now=NOW)["detail"]
+    block = backups.health_block(now=NOW)
+    assert block["ok"] is None and "clocks are off" in block["detail"]
+    body = health()
+    assert body["backups"]["ok"] is None and body["status"] == "ok", body
     monkeypatch.setenv("VERCEL", "1")
     block = backups.health_block(now=NOW)
-    assert not block["ok"] and "serverless" in block["detail"]
+    assert block["ok"] is None and "serverless" in block["detail"]
 
 
 def test_a_failed_backup_degrades_health(state, monkeypatch):
@@ -458,7 +426,7 @@ def test_a_failed_backup_degrades_health(state, monkeypatch):
     monkeypatch.setattr(backups, "_copy_file", fail_on_metrics)
     _take()
     block = backups.health_block(now=NOW + timedelta(minutes=1))
-    assert not block["ok"] and "metrics.instance.json" in block["last_error"]
+    assert block["ok"] is False and "metrics.instance.json" in block["last_error"]
 
 
 # ── restore ────────────────────────────────────────────────────────────────────────

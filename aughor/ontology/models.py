@@ -1008,8 +1008,7 @@ class SideEffect(BaseModel):
     kind: Literal["notify", "webhook", "trigger_investigation", "http"]
     config: dict = Field(default_factory=dict)
     #: Arc OC-6 — ``writeback``: the one call that must succeed BEFORE the action's edits are written (its failure
-    #: leaves everything unwritten); ``after`` (default): sent once the edits are written — through the outbox while
-    #: `actions.outbox` is on.
+    #: leaves everything unwritten); ``after`` (default): sent once the edits are written — through the outbox.
     lane: Literal["after", "writeback"] = "after"
 
 

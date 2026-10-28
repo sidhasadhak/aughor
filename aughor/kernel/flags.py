@@ -135,7 +135,9 @@ FLAG_ENV = {
     # "ontology.census" (AUGHOR_ONTOLOGY_CENSUS) — Arc OC-0, the daily ontology census journaled — was made
     # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
     # is ignored.
-    "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
+    # "actions.outbox" (AUGHOR_ACTIONS_OUTBOX) — Arc OC-6, a declared action's calls to other systems queued, retried by a
+    # worker and never sent twice — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path
+    # is deleted. An operator's env var is ignored.
     # "ontology.builder_doors" (AUGHOR_ONTOLOGY_BUILDER_DOORS) — Arc OC-8, the contract and doors for outside programs —
     # was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
     # env var is ignored.
@@ -246,13 +248,9 @@ FLAG_ENV = {
     # "dashboard.marks" (AUGHOR_DASHBOARD_MARKS) — rows marked by a declared rule, the Grist study §10 — was made
     # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
     # is ignored.
-    # PENDING 57 (2026-10-24, docs/DECISION_LOOP_STUDY_2026-10-24.md, D-1 to D-3). ON: a decision is booked in full where
-    # it is made (Home's Decide cites its finding and may state an expectation; "Not worth it" books not acting; a
-    # recommendation keeps its report's other actions as alternatives and marks what was recommended), every decision
-    # that expected something is reviewed on its date, and an outcome is scored against what would have happened anyway
-    # (a comparison group for a segment of a metric that adds up; "cannot tell" where the metric's own history band
-    # misses one way). OFF: decisions are booked, reviewed and scored as before.
-    "record.decision_loop": "AUGHOR_RECORD_DECISION_LOOP",
+    # "record.decision_loop" (AUGHOR_RECORD_DECISION_LOOP) — PENDING 57, D-1 to D-3, a decision booked in full where it is
+    # made and reviewed on its date against what would have happened anyway — was made unconditional 2026-10-28: part of
+    # the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # The decision-framework study §3.2 (the user's call, 2026-10-27: email reopened for ARRIVALS only). ON: each
     # decision has an address on the install's inbound domain; a mail a provider posts to `POST /doors/email` with the
     # inbound secret becomes an approval (a named approver, verified), a dissent, or evidence. OFF: the door answers 404
@@ -261,16 +259,12 @@ FLAG_ENV = {
     # The decision-framework study §3.2 (the user's call, 2026-10-27). ON: a person names one Google file on a decision
     # and its comments are read onto it as later evidence through their own Google grant. OFF: the door answers 404.
     "arrivals.google_comments": "AUGHOR_ARRIVALS_GOOGLE_COMMENTS",
-    # Arc TC, TC-2 (ROADMAP §3.59). ON: every edit's history row, every action-audit row and every action's ledger entry
-    # names the run it was made through (a question asked, an automation, a monitor, an agent's job) and its trace, and
-    # an object's changes door reads them oldest first with each run's metered cost. OFF: they record who
-    # made them, as before, and the changes door answers 404.
-    "actions.run_attribution": "AUGHOR_ACTIONS_RUN_ATTRIBUTION",
-    # Arc SV, SV-2 (ROADMAP §3.63, adopted 2026-10-27). ON: the API backs up its own state every hour that something
-    # changed — every SQLite store but checkpoints.db through the backup API, every other file copied — kept by Grist's
-    # retention rule, restored with `aughor restore` (`db/backups.py`). OFF: nothing is scheduled, nothing is written,
-    # and /health reads as before.
-    "state.backups": "AUGHOR_STATE_BACKUPS",
+    # "actions.run_attribution" (AUGHOR_ACTIONS_RUN_ATTRIBUTION) — Arc TC-2, every edit and action naming the run it was
+    # made through, and an object's changes door — was made unconditional 2026-10-28: part of the platform (ROADMAP
+    # §3.65); its off path is deleted. An operator's env var is ignored.
+    # "state.backups" (AUGHOR_STATE_BACKUPS) — Arc SV-2, the API's hourly backups of its own state (`db/backups.py`) — was
+    # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
     # Arc TC, TC-4 (ROADMAP §3.59). ON: the first check back within its limit after an alert writes one *recovered*
     # alert naming the alert it closes, when, and the value that came back; the alert lists and the Monitors page read
     # that alert as closed; a check says "within its limit" apart from "suppressed by its grace period"; and a recovery
@@ -284,20 +278,15 @@ FLAG_ENV = {
     # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
     # replaces the definition, runs keep neither, and the version and replay doors answer 404.
     "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
-    # Arc FA, FA-5 (ROADMAP §3.60; the user's calls, 2026-10-26). ON: an automation may be triggered by the objects a
-    # rule or segment newly admits — each check lists the segment's keys under the row policy of the person who saved
-    # the automation, the first check records who is already in and says so without firing, and a later check fires once
-    # with the keys that entered (withheld, with their count said, above the 50 a step runs once per). OFF: the trigger
-    # is not offered, a save naming it is refused, and a stored one reads nothing and says it is off.
-    "automations.objects_admitted": "AUGHOR_AUTOMATIONS_OBJECTS_ADMITTED",
-    # Arc TC, TC-5 (ROADMAP §3.59). ON: each automation and monitor on the hub map says how often its runs failed over a
-    # window (seven days unless asked), counted at the run store: "no runs" where none ran, never 0%, and "not permitted"
-    # where the reader may not see its runs, never left off. OFF: the map carries no failure rate.
-    "hub.failure_rate": "AUGHOR_HUB_FAILURE_RATE",
-    # Arc TC, TC-5. ON: GET /obs/logs searches the lines the journal kept for every run over the last thirty days — words,
-    # level, the kind of run — newest first from a cursor, saying how many runs it searched and how old its oldest line is.
-    # OFF: the route answers 404 and a run's lines are read one trace at a time (`/traces/{id}/logs`).
-    "obs.log_search": "AUGHOR_OBS_LOG_SEARCH",
+    # "automations.objects_admitted" (AUGHOR_AUTOMATIONS_OBJECTS_ADMITTED) — Arc FA-5, an automation triggered by the
+    # objects a rule or segment newly admits — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65);
+    # its off path is deleted. An operator's env var is ignored.
+    # "hub.failure_rate" (AUGHOR_HUB_FAILURE_RATE) — Arc TC-5, each automation's and monitor's failure rate on the hub
+    # map — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "obs.log_search" (AUGHOR_OBS_LOG_SEARCH) — Arc TC-5, `GET /obs/logs`, the lines of every run over thirty days
+    # searched — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
     # Arc TC, TC-5 (§6 item 4, "a reason recorded"). ON: the governance feed takes since, until and an opaque cursor and
     # exports as CSV or JSON lines; reading a run's payload and exporting the ledger need a reason, refused by name without
     # one, and each such read is journaled once as `access.justified`. OFF: the feed reads its newest thousand, and a
@@ -332,11 +321,9 @@ FLAG_ENV = {
     # "federation.planner" (AUGHOR_FEDERATION_PLANNER) — Rec 2, questions across connections, served through
     # `/query/federated-answer` and `/query/auto-federated-answer` — was made unconditional 2026-10-28: part of the
     # platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
-    # Arc FA, FA-6 (ROADMAP §3.60). ON: a binding records the manifest's version (never the caller's), who bound it and
-    # a snapshot of what the pack offered — its terms, alert priors, metrics and structure claims — and the upgrade doors
-    # diff that snapshot against the pack as it stands, proposing only new and changed items. OFF: a binding stores the
-    # version the caller sends and nothing else, and the upgrade doors answer 404.
-    "packs.installed_versions": "AUGHOR_PACKS_INSTALLED_VERSIONS",
+    # "packs.installed_versions" (AUGHOR_PACKS_INSTALLED_VERSIONS) — Arc FA-6, a pack's installed version and what it
+    # offered, and the upgrade doors — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
+    # path is deleted. An operator's env var is ignored.
     # "packs.dashboard_templates" (AUGHOR_PACKS_DASHBOARD_TEMPLATES) — Arc FA-6, a pack's dashboard templates — was
     # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
     # env var is ignored.
@@ -562,41 +549,6 @@ FLAG_META = {
                        "approver the decision names, with the sender verified; anything else is kept as evidence and "
                        "says why. Nothing reads a mailbox. Off: decisions have no address.",
     },
-    "record.decision_loop": {
-        "label": "Decisions reviewed honestly",
-        "summary": "A decision keeps its evidence, options and expectation, and is reviewed on its date against what "
-                   "would have happened anyway.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads each due metric once"},
-                  {"kind": "schedule", "text": "Checks hourly for due reviews"}],
-        "description": "Deciding on a finding cites it and may say what you expect; setting one aside records the choice "
-                       "not to act. On its review date a decision is measured over the thirty days after it, against "
-                       "its group or its own past. Where that past itself drifts, it says it cannot tell. Off: "
-                       "decisions are kept and reviewed as before.",
-    },
-    "actions.run_attribution": {
-        "label": "Which run made each change",
-        "summary": "Every edit and action on an object records the run that made it. An object's changes say who "
-                   "changed it, through which run, at what cost.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "route", "text": "Adds an object's changes"}],
-        "description": "An edit or action made inside a question asked, an automation, a monitor or an agent's work "
-                       "keeps that run and its trace. One made by a person outside any run says so. An object's "
-                       "changes list every edit and action on it, oldest first, with the run's model cost when it was "
-                       "metered. Off: changes record who made them, as before.",
-    },
-    "state.backups": {
-        "label": "Back up Aughor's own state every hour",
-        "summary": "Every hour that something changed, Aughor keeps a checked copy of its own stores and files. "
-                   "Old copies are thinned out over eight weeks.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "schedule", "text": "Hourly, when something changed"},
-                  {"kind": "needs", "text": "Free disk space"}],
-        "description": "It keeps the newest five, one an hour for a day, one a day for two weeks and one a week for "
-                       "eight. A copy is skipped when the disk is nearly full, and the health check says so. A "
-                       "restore asks first and never rewinds the query audit or the model-call log. Turned on, the "
-                       "first copy comes within the hour. Off: nothing is scheduled or copied.",
-    },
     "monitors.recovery": {
         "label": "Alerts that close when a metric recovers",
         "summary": "The first check back within its limit after an alert closes that alert. A check also says "
@@ -618,49 +570,6 @@ FLAG_META = {
                        "when it kept less. A past run can be replayed: its own version walks what started it, and "
                        "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
                        "keeps neither.",
-    },
-    "automations.objects_admitted": {
-        "label": "Act on each object a rule admits",
-        "summary": "An automation can start when objects enter a rule or a segment. It hands its steps the keys of "
-                   "the objects that entered.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads keys every minute"},
-                  {"kind": "private", "text": "Sees only what its owner sees"}],
-        "description": "The first check records the objects already in and says how many, without firing. Each "
-                       "later check fires once for the objects that entered since, and says how many left. More "
-                       "than 50 at once are counted and their keys withheld. The objects are listed under the row "
-                       "policy of the person who saved the automation. Off: the trigger is not offered.",
-    },
-    "hub.failure_rate": {
-        "label": "Failure rate on the hub map",
-        "summary": "Each automation and monitor says how often its runs failed over the last week. One that did not "
-                   "run says no runs.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Says when you may not see"}],
-        "description": "A run failed when it broke, or when one of its steps failed. A node with no runs in the window "
-                       "says no runs, never 0%. One whose runs you may not see says not permitted. Off: the map "
-                       "shows no failure rate.",
-    },
-    "obs.log_search": {
-        "label": "Search logs across runs",
-        "summary": "Search the lines every run wrote over the last thirty days. It says how many runs it searched.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "For people who manage the organisation"}],
-        "description": "Words match a line as it was kept. You may narrow by level, error, warning or info, and by the "
-                       "kind of run. The newest lines come first, a page at a time. It says how old the oldest line "
-                       "searched is, since the log may keep fewer days. Off: a run's lines are read one run at a time.",
-    },
-    "actions.outbox": {
-        "label": "Send action calls through an outbox",
-        "summary": "Calls a declared action makes to other systems are queued and retried by a worker. "
-                   "A call that landed is never sent twice.",
-        "facts": [{"kind": "sends", "text": "Calls other systems"},
-                  {"kind": "free", "text": "No model calls"}],
-        "description": "A failed call is retried by why it failed; a refusal is never retried. A call with "
-                       "no answer is checked with the action's verification read before any resend. An "
-                       "undeliverable call waits under Actions → Sends for a person. An action may also "
-                       "require one call to succeed before its edits are written. Off: calls go out once, "
-                       "inline, as before.",
     },
     "ontology.security": {
         "label": "Limit who sees which objects and properties",
@@ -728,17 +637,6 @@ FLAG_META = {
                        "says how many are declared and do not hold. An analysis no longer proposes causes of its own, and "
                        "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
                        "as before.",
-    },
-    "packs.installed_versions": {
-        "label": "Record each pack's installed version",
-        "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
-                   "what changed before you upgrade.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Never re-offers what you declined"}],
-        "description": "Each binding keeps the pack's own version and a record of the terms, alerts, metrics and "
-                       "structure it offered. When the pack moves on, its page lists what was added, changed and "
-                       "removed, and marks what you declined. Upgrading proposes only what is new or changed. Off: a "
-                       "binding keeps whatever version the caller sends, and there is no upgrade.",
     },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
@@ -827,18 +725,10 @@ CAPABILITY_TRIGGER: dict = {
 #: path is deleted (stage 2, area by area), an operator's env var set to an explicit falsy value still turns one
 #: off — the suite runs them that way — and a run-scoped override (tests, eval grids) still wins.
 ALWAYS_ON: dict[str, str] = {
-    "actions.outbox": "Off sends once with no retry — less safe.",
-    "actions.run_attribution": "Free, and it is the audit trail.",
     "arrivals.email": "Works once its setup exists (a mail domain and its secret); setting it up is the choice.",
     "arrivals.google_comments": "Works once its setup exists (your Google OAuth client); setting it up is the choice.",
-    "automations.objects_admitted": "It is offered; the automation's owner chooses it.",
-    "hub.failure_rate": "Free; it says 'no runs', never 0%.",
     "knowledge.hybrid_documents": "Works once its setup exists (the vector store running); setting it up is the choice.",
-    "obs.log_search": "Free; who may use it is a permission, not a switch.",
-    "packs.installed_versions": "Free, and it never re-offers what you declined.",
-    "record.decision_loop": "No model calls; live since 10-24.",
     "slack.managed_supervisor": "Works once its setup exists (Slack configured, and Node.js); setting it up is the choice.",
-    "state.backups": "The safety net for everything else; it says so when the disk is too full.",
 }
 
 #: Deliberately OFF, forever or until the named condition — the only category that

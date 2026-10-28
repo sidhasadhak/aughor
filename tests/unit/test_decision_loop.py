@@ -5,12 +5,12 @@ Decide sent the finding only as text in a note and "Not worth it" booked nothing
 reviewed; and an outcome was judged against the metric's own history, which the Record's own calibration showed
 missing above for revenue (5 of 8 windows) and units sold (7 of 8) — a do-nothing decision would be credited the trend.
 
-What these hold, with the flag `record.decision_loop` on: a decision taken on a finding cites the finding's claim; not
+What these hold: a decision taken on a finding cites the finding's claim; not
 acting is a decision; a recommendation keeps its report's other actions and says what was recommended, so an override
 is countable; every due decision is reviewed once; a part of a metric that adds up is judged against the rest of its
 group, so a trend the group shares is not credited (the placebo below); a whole metric whose own band drifts one way
 says cannot tell; a review window with no rows says the data ended; another decision on the same metric in the same
-weeks is named. And with it off, every door books exactly what it did.
+weeks is named.
 
 The reviews run their SQL on a real DuckDB: a fake that returns a number would prove only the wording.
 """
@@ -27,7 +27,6 @@ import duckdb
 import pytest
 
 from aughor.db.history import complete_investigation, create_investigation
-from aughor.kernel.flags import flag_overrides
 from aughor.playbook import outcomes as O
 from aughor.record import byproducts as B
 from aughor.record import decisions as D
@@ -49,18 +48,6 @@ def _hermetic(tmp_path, monkeypatch):
     monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "recommendation_outcomes.json")
     import aughor.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 0)
-
-
-@pytest.fixture
-def on():
-    with flag_overrides({"record.decision_loop": True}):
-        yield
-
-
-@pytest.fixture
-def off():
-    with flag_overrides({"record.decision_loop": False}):
-        yield
 
 
 def _conn() -> str:
@@ -127,7 +114,7 @@ def _finding(conn: str, fid: str = "synth__share__5", text: str = "Jeans run at 
 
 # ── D-1 · booked in full where it is made ──────────────────────────────────────────────────
 
-def test_a_decision_on_a_finding_cites_the_findings_claim(on):
+def test_a_decision_on_a_finding_cites_the_findings_claim():
     conn = _conn()
     cid = _finding(conn)
     d = _declare(conn, finding_id="synth__share__5")
@@ -139,7 +126,7 @@ def test_a_decision_on_a_finding_cites_the_findings_claim(on):
     assert d2.relied_on == [] and "has no claim in the Record" in d2.extra["relied_on_note"]
 
 
-def test_a_finding_id_two_schemas_share_is_said_and_never_picked(on):
+def test_a_finding_id_two_schemas_share_is_said_and_never_picked():
     conn = _conn()
     _finding(conn, fid="pinned__0", schema="main")
     _finding(conn, fid="pinned__0", schema="olist")
@@ -149,7 +136,7 @@ def test_a_finding_id_two_schemas_share_is_said_and_never_picked(on):
     assert claim is not None and why == ""
 
 
-def test_not_acting_on_a_finding_is_a_decision(on, monkeypatch):
+def test_not_acting_on_a_finding_is_a_decision(monkeypatch):
     conn = _conn()
     cid = _finding(conn)
     import aughor.explorer.store as ES
@@ -171,7 +158,7 @@ def _deep(conn: str, actions: list[str]) -> str:
     return inv_id
 
 
-def test_a_recommendation_keeps_the_reports_other_actions_and_says_what_was_recommended(on):
+def test_a_recommendation_keeps_the_reports_other_actions_and_says_what_was_recommended():
     conn = _conn()
     inv_id = _deep(conn, ["Tighten the outerwear size guide", "Add fit photos", "Cut free returns on sale items"])
     inv.log_recommendation_outcome(inv_id, 0, inv.OutcomeRequest(rec_text="Tighten the outerwear size guide",
@@ -186,33 +173,16 @@ def test_a_recommendation_keeps_the_reports_other_actions_and_says_what_was_reco
     assert [o.id for o in declined.options][2:] == ["alt_0", "alt_1"] and B.overridden(declined) is True
 
 
-def test_an_approval_says_approve_was_recommended(on):
+def test_an_approval_says_approve_was_recommended():
     p = SimpleNamespace(id="p-" + uuid.uuid4().hex[:6], kind="declared_action", action_id="open_case", source="builder",
                         reasoning="order 2 is overdue", connection_id=_conn(), proposer="amit", trace_id="")
     d = D.get_decision(B.decision_from_proposal(p, chosen="decline", actor="amit"))
     assert d.extra["recommended"] == "approve" and B.overridden(d) is True
 
 
-def test_with_the_flag_off_every_door_books_what_it_did(off, monkeypatch):
-    conn = _conn()
-    _finding(conn)
-    d = _declare(conn, finding_id="synth__share__5")
-    assert d.relied_on == [] and "finding_id" not in d.extra and "relied_on_note" not in d.extra
-    inv_id = _deep(conn, ["a", "b"])
-    inv.log_recommendation_outcome(inv_id, 0, inv.OutcomeRequest(rec_text="a", status="accepted"), principal=None)
-    rec = D.latest_decision(D.Source(kind="recommendation", ref=f"{inv_id}_rec_0"))
-    assert [o.id for o in rec.options] == ["accept", "decline"] and "recommended" not in rec.extra
-    import aughor.explorer.store as ES
-    monkeypatch.setattr(ES, "dismiss_insight_conn", lambda c, f, reason="": {"id": f, "finding": "x"})
-    from aughor.routers.exploration import DismissRequest, dismiss_connection_finding
-    assert dismiss_connection_finding(conn, "synth__share__5", DismissRequest(reason="r"), principal=None) == \
-        {"insight_id": "synth__share__5", "dismissed": True}
-    assert RV.review_due_decisions(now=dt.datetime(2026, 10, 15, tzinfo=dt.timezone.utc)) == []
-
-
 # ── D-2 · every due decision is reviewed, once ─────────────────────────────────────────────
 
-def test_a_decision_that_expected_nothing_is_said_once_to_have_nothing_to_score(on):
+def test_a_decision_that_expected_nothing_is_said_once_to_have_nothing_to_score():
     conn = _conn()
     d = _declare(conn)
     now = dt.datetime(2026, 10, 15, tzinfo=dt.timezone.utc)
@@ -225,7 +195,7 @@ def test_a_decision_that_expected_nothing_is_said_once_to_have_nothing_to_score(
 
 # ── D-3 · against what would have happened anyway ─────────────────────────────────────────
 
-def test_the_placebo_a_trend_the_group_shares_is_not_credited_to_a_do_nothing_decision(on, metric):
+def test_the_placebo_a_trend_the_group_shares_is_not_credited_to_a_do_nothing_decision(metric):
     """The study's falsifier §5.1, on a business whose four categories grow together: a do-nothing decision on each
     category in each of nine months (36), reviewed against its group, is credited about nothing in the median — where
     each category's own history, on the very same windows, credits it the trend. An 80% band still misses about one
@@ -264,7 +234,7 @@ def _part_history(shop, decided: dt.date, cat: str = "Jeans") -> list[float]:
     return out
 
 
-def test_a_real_effect_on_the_part_is_measured_against_its_group(on, metric):
+def test_a_real_effect_on_the_part_is_measured_against_its_group(metric):
     conn = _conn()
     metric["revenue"] = _revenue(conn)
     d = _declare(conn, expectation={"metric": "revenue", "direction": "up", "segment_dimension": "category",
@@ -275,7 +245,7 @@ def test_a_real_effect_on_the_part_is_measured_against_its_group(on, metric):
     assert o.verdict == "as_expected"
 
 
-def test_a_statement_metric_is_judged_against_its_group_too(on, metric):
+def test_a_statement_metric_is_judged_against_its_group_too(metric):
     """The Lux run of 2026-10-25: the metrics door accepts only whole SELECT statements now, and the review could cut
     only an expression by a segment — so every decision's review on a metric defined today said cannot tell. The
     same decision on the same business, with revenue written as a statement, reads the same comparison."""
@@ -290,7 +260,7 @@ def test_a_statement_metric_is_judged_against_its_group_too(on, metric):
     assert o.extra["segment"] == {"dimension": "category", "value": "Jeans"}
 
 
-def test_a_whole_metric_whose_band_drifts_one_way_says_cannot_tell(on, metric, monkeypatch):
+def test_a_whole_metric_whose_band_drifts_one_way_says_cannot_tell(metric, monkeypatch):
     conn = _conn()
     metric["revenue"] = _revenue(conn)
     d = _declare(conn, expectation={"metric": "revenue", "direction": "up"})
@@ -322,7 +292,7 @@ def test_a_band_that_holds_or_misses_both_ways_names_no_drift(monkeypatch):
     assert "missed above in 3 of 8" in S.drift_words("c", "repeat")
 
 
-def test_a_review_window_with_no_rows_says_the_data_ended(on, metric):
+def test_a_review_window_with_no_rows_says_the_data_ended(metric):
     conn = _conn()
     metric["revenue"] = _revenue(conn)
     d = _declare(conn, expectation={"metric": "revenue", "direction": "up"})
@@ -330,7 +300,7 @@ def test_a_review_window_with_no_rows_says_the_data_ended(on, metric):
     assert o.verdict == "cannot_tell" and "hold no rows of Revenue" in o.why and "the data ended" in o.why
 
 
-def test_another_decision_on_the_same_metric_in_the_same_weeks_is_named(on, metric):
+def test_another_decision_on_the_same_metric_in_the_same_weeks_is_named(metric):
     conn = _conn()
     metric["revenue"] = _revenue(conn)
     exp = {"metric": "revenue", "direction": "up", "segment_dimension": "category", "segment_value": "Jeans"}
@@ -340,7 +310,7 @@ def test_another_decision_on_the_same_metric_in_the_same_weeks_is_named(on, metr
     assert o.extra["shared_with"] == [second.id] and "is not split" in o.why
 
 
-def test_the_recommendation_review_carries_the_same_guard(on, monkeypatch):
+def test_the_recommendation_review_carries_the_same_guard(monkeypatch):
     conn = _conn()
     inv_id = _deep(conn, ["Raise prices"])
     inv.log_recommendation_outcome(inv_id, 0, inv.OutcomeRequest(
@@ -408,7 +378,7 @@ def test_a_hold_with_no_band_says_so_and_a_comparison_names_its_baseline():
     assert v == "missed" and "against its comparison group" in why and "own history" not in why, why
 
 
-def test_a_hold_on_a_part_that_moved_is_missed_live_through_the_review(on, metric):
+def test_a_hold_on_a_part_that_moved_is_missed_live_through_the_review(metric):
     conn = _conn()
     metric["revenue"] = _revenue(conn)
     d = _declare(conn, expectation={"metric": "revenue", "direction": "hold", "low": -3.0, "mid": 0.0, "high": 3.0,
@@ -419,7 +389,7 @@ def test_a_hold_on_a_part_that_moved_is_missed_live_through_the_review(on, metri
     assert o.extra["band_read_against"] == "baseline"
 
 
-def test_a_relative_band_is_read_against_the_baseline_not_the_window_before(on, metric, monkeypatch):
+def test_a_relative_band_is_read_against_the_baseline_not_the_window_before(metric, monkeypatch):
     """Defect 8: "hold within 3% of the other shops" was read against the part's own prior window, so a business
     growing 10% a month put every do-nothing part above its band while the verdict, against the group, read nothing.
     Both now read the same baseline."""
@@ -474,7 +444,7 @@ def _cover(conn: str) -> MetricDefinition:
                             time_column="snaps.snapshot_date", time_kind="flow")
 
 
-def test_a_monthly_snapshot_between_two_thirty_day_windows_is_read_by_the_month(on, metric):
+def test_a_monthly_snapshot_between_two_thirty_day_windows_is_read_by_the_month(metric):
     """Scenario 6 on Lux: decided on 1 March, the thirty days ran to the 30th and the snapshot is dated the 31st —
     "no rows", every time. Read by the month the metric is reported by, March holds its snapshot."""
     conn = _conn()
@@ -488,7 +458,7 @@ def test_a_monthly_snapshot_between_two_thirty_day_windows_is_read_by_the_month(
     assert o.actual == 20.0 and o.extra["before"] == 16.0, (o.actual, o.extra)
 
 
-def test_a_month_that_has_not_ended_moves_the_review_date_and_says_why(on, metric):
+def test_a_month_that_has_not_ended_moves_the_review_date_and_says_why(metric):
     conn = _conn()
     metric["cover"] = _cover(conn)
     d = _declare(conn, decided=dt.date(2026, 3, 1), expectation={"metric": "cover", "direction": "up"})
@@ -500,7 +470,7 @@ def test_a_month_that_has_not_ended_moves_the_review_date_and_says_why(on, metri
     assert o.extra["review_by"] == "month" and o.actual == 14.0, o.why
 
 
-def test_a_month_with_no_rows_either_says_both_were_read(on, metric):
+def test_a_month_with_no_rows_either_says_both_were_read(metric):
     conn = _conn()
     metric["cover"] = _cover(conn)
     d = _declare(conn, decided=dt.date(2027, 3, 1), expectation={"metric": "cover", "direction": "up"})
@@ -520,7 +490,7 @@ def _run_with_answer(conn: str, run: str = "") -> tuple[str, str]:
     return run, out["observation"]
 
 
-def test_a_decision_on_a_runs_answer_cites_what_its_receipt_booked(on):
+def test_a_decision_on_a_runs_answer_cites_what_its_receipt_booked():
     """A dashboard Question's answer or a chat answer is a run: the decision taken on it cites the claims the run's
     receipt booked, chosen by the server — a run that booked none is said, never guessed at."""
     conn = _conn()
@@ -535,7 +505,7 @@ def test_a_decision_on_a_runs_answer_cites_what_its_receipt_booked(on):
     assert d.relied_on == [] and "booked no claim" in d.extra["relied_on_note"]
 
 
-def test_a_decision_on_a_briefing_figure_books_the_reading_it_relied_on(on, metric, monkeypatch):
+def test_a_decision_on_a_briefing_figure_books_the_reading_it_relied_on(metric, monkeypatch):
     """The Briefing figure is measured for the edition's days by the metric's own compiler and booked as a reading
     with its own receipt — the page's number is never taken on trust — and the decision cites it."""
     conn = _conn()
@@ -564,16 +534,7 @@ def test_a_decision_on_a_briefing_figure_books_the_reading_it_relied_on(on, metr
     assert "not a metric on this connection" in D.get_decision(did).extra["relied_on_note"]
 
 
-def test_with_the_loop_off_a_run_or_figure_is_not_cited(off):
-    conn = _conn()
-    run, _obs = _run_with_answer(conn)
-    did = B.declare_decision(question="Pause?", chosen="pause it", connection_id=conn, decided_by="user:amit",
-                             run_id=run, figure={"metric": "revenue", "start": "2026-08-03", "end": "2026-08-10"})
-    d = D.get_decision(did)
-    assert d.relied_on == [] and "run_id" not in d.extra and "figure" not in d.extra
-
-
-def test_a_decision_said_in_slack_cites_the_threads_answer_and_its_card_books_approvals(on):
+def test_a_decision_said_in_slack_cites_the_threads_answer_and_its_card_books_approvals():
     from fastapi import HTTPException
 
     from aughor.routers import arrivals as A

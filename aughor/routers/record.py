@@ -242,12 +242,12 @@ class DeclareDecisionRequest(BaseModel):
     expectation: Optional[ExpectationIn] = None
     note: str = ""
     # The Explorer finding the decision was taken on (Home's Decide): cited as the claim it relied on, by the
-    # server, with the decision loop on (PENDING 57, D-1). The schema, when the page knows it.
+    # server (PENDING 57, D-1). The schema, when the page knows it.
     finding_id: str = ""
     schema_name: str = ""
     # The run whose answer it was taken on (a dashboard Question's, a chat answer): the server cites the claims the
     # run's receipt booked. The Briefing figure it was taken on: the server measures it for those days and books the
-    # reading to cite (the decision-framework study §3.2). Both with the decision loop on.
+    # reading to cite (the decision-framework study §3.2).
     run_id: str = ""
     figure: Optional[FigureIn] = None
     # The declared kind of decision it is (`record/kinds.py`): its rules hold at the door.

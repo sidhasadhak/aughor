@@ -15,7 +15,7 @@ from tests.unit.test_kinetic_inbox import _action, _proposal, flag_on, graph_of 
 def _dispatching(monkeypatch) -> list:
     calls: list = []
     monkeypatch.setattr("aughor.actions.executor.default_dispatch",
-                        lambda action, params, scope="": calls.append((action.id, dict(params))) or {"ok": True})
+                        lambda action, params, scope="", **_k: calls.append((action.id, dict(params))) or {"ok": True})
     return calls
 
 

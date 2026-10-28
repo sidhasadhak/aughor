@@ -515,8 +515,8 @@ def _size(n: Optional[int]) -> str:
 def backups_cmd(name: Optional[str]) -> None:
     """List the backups of this install's own state, newest first — or show what one holds.
 
-    Backups are taken by the API every hour that something changed, while the `state.backups` flag is on. This only
-    reads the backups folder, so it is safe while the API is serving.
+    Backups are taken by the API every hour that something changed. This only reads the backups folder, so it is safe
+    while the API is serving.
     """
     from aughor.db import backups as _backups
 
@@ -553,7 +553,7 @@ def backups_cmd(name: Optional[str]) -> None:
         console.print(f"Last check {last.get('at')}: [bold]{last.get('outcome')}[/bold] — {escape(last.get('reason') or '')}")
     if not found:
         console.print(f"[yellow]No backups yet[/yellow] in {_backups.backups_dir()}. "
-                      "They are taken by the API while the state.backups flag is on.")
+                      "The API takes the first a few minutes after it starts.")
         return
     table = Table(box=box.SIMPLE, show_edge=False)
     table.add_column("Backup", no_wrap=True)

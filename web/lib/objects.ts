@@ -628,8 +628,9 @@ export interface ActionSend {
   note: string;
 }
 
-/** Arc OC-6 — the outbox of a connection's declared actions (empty and `enabled: false` while it is off). */
-export async function getSends(connectionId: string): Promise<{ enabled: boolean; sends: ActionSend[] }> {
+/** Arc OC-6 — the outbox of a connection's declared actions: each call kept, retried by why it failed, and handed to
+ *  a person when no retry will deliver it. */
+export async function getSends(connectionId: string): Promise<{ sends: ActionSend[] }> {
   const res = await fetch(`${getApiBase()}/actions/outbox?connection_id=${encodeURIComponent(connectionId)}`);
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { countNoun } from "@/lib/format";
 import {
   getPacks, proposePackBindings, bindPack, evaluatePack, getPackDeltas, setPackDeltaStatus,
-  getConnections, getCatalogTree, getSystemFlags,
+  getConnections, getCatalogTree,
   type PackSummary, type BindingCandidateDTO, type PackDeltaDTO,
 } from "@/lib/api";
 import { PackInstalls } from "@/components/PackInstalls";
@@ -17,12 +17,9 @@ export function PacksManager() {
   const [enabled, setEnabled] = useState(false);
   const [packs, setPacks] = useState<PackSummary[]>([]);
   const [sel, setSel] = useState<string | null>(null);
-  // Arc FA, FA-6 — where each pack is installed and what upgrading it brings, while `packs.installed_versions` is on
-  const [installsOn, setInstallsOn] = useState(false);
 
   useEffect(() => {
     getPacks().then(r => { setEnabled(r.enabled); setPacks(r.packs); }).catch(() => {});
-    getSystemFlags().then(f => setInstallsOn(!!f["packs.installed_versions"]?.value)).catch(() => setInstallsOn(false));
   }, []);
 
   if (packs.length === 0) return null;
@@ -56,7 +53,8 @@ export function PacksManager() {
               // nothing to bind or evaluate, so it says what it carries instead.
               ? <p className="aug-fs-xs text-zinc-400 mt-2">{p.description || "Reference knowledge every connection reads."}</p>
               : <PackDeploy packId={p.id} />)}
-            {sel === p.id && installsOn && <PackInstalls packId={p.id} />}
+            {/* Arc FA, FA-6 — where the pack is installed and what upgrading it brings */}
+            {sel === p.id && <PackInstalls packId={p.id} />}
           </div>
         ))}
       </div>

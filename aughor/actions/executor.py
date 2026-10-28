@@ -643,7 +643,7 @@ def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor
 
 
 def dispatch_effect(se: SideEffect, action: KineticAction, params: dict, scope: str = "") -> dict:
-    """ONE side effect, by its kind — what the inline dispatch and the outbox's worker both send."""
+    """ONE side effect, by its kind — what the writeback lane and the outbox both send."""
     if se.kind == "notify" and (se.config or {}).get("destination"):
         return _dispatch_destination(se, action, params)
     if se.kind in ("notify", "webhook"):
@@ -655,22 +655,11 @@ def dispatch_effect(se: SideEffect, action: KineticAction, params: dict, scope: 
     raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
 
 
-def two_lanes(action: KineticAction) -> bool:
-    """Arc OC-6 — whether a side-effect action runs in two lanes: it declares a writeback or edits, or the outbox is on.
-    Every other action is dispatched exactly as before."""
-    if action.kind != "side_effect":
-        return False
-    if action.edits or any(getattr(se, "lane", "after") == "writeback" for se in action.side_effects):
-        return True
-    from aughor.actions import outbox
-    return outbox.enabled()
-
-
 def _dispatch_lanes(action: KineticAction, params: dict, scope: str, *, actor: str, objects: Optional[dict],
                     expected: Optional[dict], schema_name: str) -> dict:
-    """Arc OC-6 — two lanes. The writeback (at most one call) runs FIRST, and anything short of a delivered answer
-    leaves everything unwritten; then the edits; then every other call — through the outbox while `actions.outbox` is
-    on (sent at once, finished by its worker), else once, inline, as before."""
+    """Arc OC-6 — a side-effect action runs in two lanes. The writeback (at most one call) runs FIRST, and anything
+    short of a delivered answer leaves everything unwritten; then the edits; then every other call — through the
+    outbox (sent at once, finished by its worker)."""
     from aughor.actions import outbox
     results: list[dict] = []
     for se in action.side_effects:
@@ -685,13 +674,11 @@ def _dispatch_lanes(action: KineticAction, params: dict, scope: str, *, actor: s
     if action.edits:
         out.update(_dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {}, expected=expected))
     after = [(i, se) for i, se in enumerate(action.side_effects) if getattr(se, "lane", "after") != "writeback"]
-    if after and outbox.enabled():
+    if after:
         sends = [outbox.send_now(outbox.enqueue(action, i, params, scope, schema_name).id) for i, _ in after]
         out["outbox"] = [{"id": s.id, "status": s.status, "cause": s.cause, "attempts": s.attempts,
                           "error": s.last_error} for s in sends if s is not None]
         results += [s.outcome for s in sends if s is not None and s.status == "delivered"]
-    else:
-        results += [dispatch_effect(se, action, params, scope) for _, se in after]
     out["side_effects"] = results
     return out
 
@@ -701,10 +688,8 @@ def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, ac
     """The wired-in dispatcher. ``notify``/``webhook`` and ``annotate`` fire now; the rest are
     seams that raise with the PR that will wire them, so a caller sees a clear signal not a no-op."""
     if action.kind == "side_effect":
-        if two_lanes(action):
-            return _dispatch_lanes(action, params, scope, actor=actor, objects=objects, expected=expected,
-                                   schema_name=schema_name)
-        return {"side_effects": [dispatch_effect(se, action, params, scope) for se in action.side_effects]}
+        return _dispatch_lanes(action, params, scope, actor=actor, objects=objects, expected=expected,
+                               schema_name=schema_name)
     if action.kind == "annotate":
         return _dispatch_annotate(action, params, scope, actor=actor, objects=objects, expected=expected)
     if action.kind == "query":
@@ -908,9 +893,9 @@ def execute_kinetic_action(
     try:
         if dispatch is not None:
             outcome = dispatch(action, coerced, scope)
-        elif action.edits or two_lanes(action):
-            # ON-4 — only an action that sets object properties (or, Arc OC-6, runs in two lanes) needs who ran it,
-            # what it read and where; every other dispatch is called exactly as before.
+        elif action.edits or action.kind == "side_effect":
+            # ON-4 — only an action that sets object properties (or, Arc OC-6, a side-effect action, which runs in two
+            # lanes) needs who ran it, what it read and where; every other dispatch is called exactly as before.
             outcome = default_dispatch(action, coerced, scope, actor=actor, objects=objects,
                                        expected=expected_versions, schema_name=schema_name)
         else:

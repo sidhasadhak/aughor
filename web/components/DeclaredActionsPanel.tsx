@@ -115,7 +115,7 @@ interface LayerEdit {
 const readActions = (c: string) => apiFetch(`/ontology/kinetic-actions?${on(c)}`).then(r => Object.values(r ?? {}) as Declared[]);
 const readEdits = (c: string) => apiFetch(`${EDITS}?${on(c)}`).then(r => (r?.edits ?? []) as LayerEdit[]);
 const readPending = (c: string) => getProposals(c, "pending");
-const readOutbox = (c: string) => getSends(c).then(r => ({ enabled: !!r?.enabled, sends: r?.sends ?? [] }));
+const readOutbox = (c: string) => getSends(c).then(r => ({ sends: r?.sends ?? [] }));
 
 interface Read<T> { data: T | null; error: string | null; status: number; reload: () => void }
 
@@ -391,7 +391,7 @@ function ProposeForm({ connectionId, nameOf, onClose, onStaged }: {
 function Waiting({ connectionId, pending, outbox, onResolved }: {
   connectionId: string;
   pending: Read<StagedProposal[]>;
-  outbox: Read<{ enabled: boolean; sends: ActionSend[] }>;
+  outbox: Read<{ sends: ActionSend[] }>;
   onResolved: (t: "ok" | "err", message: string) => void;
 }) {
   const [busy, setBusy] = useState("");
@@ -598,32 +598,22 @@ function AnnotateForm({ connectionId, onClose, onSaved }: { connectionId: string
 // ── Calls to other systems ───────────────────────────────────────────────────────
 
 /** Arc OC-6 — the outbox of this connection's declared actions: what was delivered or is being sent again, and why.
- *  The calls that wait for a person are under Needs you, with Retry and Dismiss. Off is said, never implied: a section
- *  that hid itself read as a feature that does not exist (2026-10-10). */
-function Calls({ read }: { read: Read<{ enabled: boolean; sends: ActionSend[] }> }) {
+ *  The calls that wait for a person are under Needs you, with Retry and Dismiss. */
+function Calls({ read }: { read: Read<{ sends: ActionSend[] }> }) {
   const all = read.data?.sends ?? [];
   const rest = all.filter(s => !waits(s));
   const shown = rest.slice(0, CALLS_SHOWN);
   return (
     <section aria-label="Calls to other systems" data-testid="actions-calls" style={CARD}>
-      <Label right={read.data && <>
-        {rest.length > CALLS_SHOWN && <Chip title="The newest calls are listed; older ones are kept and not shown">newest {CALLS_SHOWN} of {formatCount(rest.length)}</Chip>}
-        <Chip title={read.data.enabled ? "Each call is kept, retried by why it failed, and handed to you when no retry will deliver it"
-          : "Switched off in Settings → System → Feature flags"}>
-          {read.data.enabled ? "outbox on" : "outbox off"}
-        </Chip>
-      </>}>
+      <Label right={read.data && rest.length > CALLS_SHOWN &&
+        <Chip title="The newest calls are listed; older ones are kept and not shown">newest {CALLS_SHOWN} of {formatCount(rest.length)}</Chip>}>
         Calls to other systems
       </Label>
       {read.data === null
         ? (read.error ? <ReadFailed what="the outbox" error={read.error} onRetry={read.reload} /> : <Loading what="the outbox" />)
         : <>
           {read.error && <RefreshFailed error={read.error} onRetry={read.reload} />}
-          {!read.data.enabled && all.length === 0 ? (
-            <div data-testid="sends-off">
-              <Empty>Calls go out once and are not kept. Switch the outbox on in Settings → System → Feature flags to keep and retry them.</Empty>
-            </div>
-          ) : rest.length === 0 ? (
+          {rest.length === 0 ? (
             <Empty>{all.length ? "Every call is under Needs you." : "No call has been sent yet."}</Empty>
           ) : shown.map((s, i) => <CallRow key={s.id} s={s} first={i === 0} />)}
         </>}

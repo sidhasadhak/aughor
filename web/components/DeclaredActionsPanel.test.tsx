@@ -21,7 +21,6 @@ type Call = { url: string; method: string; body: unknown };
 const calls: Call[] = [];
 let annotations: Record<string, unknown>[] = [];
 let sends: Record<string, unknown>[] = [];
-let outboxOn = true;
 let inboxFails = false;
 
 function jsonResponse(body: unknown) {
@@ -32,7 +31,6 @@ beforeEach(() => {
   calls.length = 0;
   annotations = [];
   sends = [];
-  outboxOn = true;
   inboxFails = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -40,7 +38,7 @@ beforeEach(() => {
     calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (url.includes("/actions/outbox")) {
       if (method === "POST") { sends = []; return jsonResponse({ send: {} }); }
-      return jsonResponse({ enabled: outboxOn, sends });
+      return jsonResponse({ sends });
     }
     if (url.includes("/ontology/kinetic-actions")) return jsonResponse({});
     if (url.includes("/inbox") && inboxFails) return { ok: false, status: 500, json: async () => ({}), text: async () => "" } as Response;
@@ -140,14 +138,6 @@ describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)",
     render(<DeclaredActionsPanel connectionId="c1" />);
     expect((await screen.findByTestId("send-left-by")).textContent).toBe("by ana — the carrier closed that account");
     expect(screen.queryByTestId("send-dismiss")).toBeNull();                     // nothing left to decide
-  });
-
-  it("says the outbox is off, and where to switch it on, when it holds no call", async () => {
-    outboxOn = false;
-    render(<DeclaredActionsPanel connectionId="c1" />);
-    const off = await screen.findByTestId("sends-off");
-    expect(off.textContent).toContain("Settings → System → Feature flags");
-    expect(screen.queryAllByTestId("send-row")).toHaveLength(0);
   });
 });
 

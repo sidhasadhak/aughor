@@ -1321,7 +1321,7 @@ class Ledger:
             })
         return out
 
-    # ── Arc TC, TC-5: the journal's run lines, read across runs (flag obs.log_search) ──
+    # ── Arc TC, TC-5: the journal's run lines, read across runs (`obs/log_search.py`) ──
 
     def run_lines(
         self,

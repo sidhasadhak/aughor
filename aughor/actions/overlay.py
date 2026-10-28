@@ -77,7 +77,7 @@ def _edit_history(c: sqlite3.Connection) -> None:
 
 def _run_attribution(c: sqlite3.Connection) -> None:
     """Arc TC, TC-2 — a history row names the run it was made through and that run's trace (`actions/attribution.py`).
-    Empty on every row written before, and on every row written with `actions.run_attribution` off; ``run_kind``
+    Empty on every row written before it (and while `actions.run_attribution` was a flag, off); ``run_kind``
     ``none`` is a change recorded outside any run."""
     for column in ("run_id", "run_kind", "trace_id"):
         add_column_if_missing(c, "overlay_edit_history", column, "TEXT NOT NULL DEFAULT ''")
@@ -91,7 +91,7 @@ def _sheet_changes(c: sqlite3.Connection) -> None:
     c.execute('CREATE INDEX IF NOT EXISTS ix_overlay_history_table ON overlay_edit_history (connection_id, "table")')
 
 
-#: The columns TC-2 added, which a read with `actions.run_attribution` off does not return.
+#: The columns TC-2 added.
 RUN_COLUMNS = ("run_id", "run_kind", "trace_id")
 
 #: Arc SH — the edits that ARE a sheet's values, read by the sheets' projection and never merged onto a query result as
@@ -214,9 +214,9 @@ def _history_version(c: sqlite3.Connection, edit_id: str) -> int:
 
 def _record(c: sqlite3.Connection, edit: OverlayEdit, event: str, previous: str, version: int,
             run: Optional[dict] = None, change_id: str = "") -> None:
-    """One history row. ``run`` (TC-2 — `attribution.stamp`, empty with `actions.run_attribution` off) adds the run and
-    the trace the change was made through, and its moment to the microsecond; without it the row is written as it always
-    was. ``change_id`` (Arc SH) names the change the row belongs to; "" for an edit made on its own."""
+    """One history row. ``run`` (TC-2 — `attribution.stamp`, empty when the run in force could not be read) adds the run
+    and the trace the change was made through, and its moment to the microsecond; without it the row is written as it
+    always was. ``change_id`` (Arc SH) names the change the row belongs to; "" for an edit made on its own."""
     import uuid
     columns = ["id", "edit_id", "org_id", "connection_id", "object_type", '"table"', "column", "row_key", "event",
                "body", "previous", "note", "actor", "origin", "source", "version", "at"]
@@ -256,7 +256,7 @@ def save_edit(edit: OverlayEdit, *, expected_version: Optional[int] = None) -> O
     edit.id = edit.id or edit.natural_key()   # natural_key hashes org_id — stamp it FIRST
     edit.created_at = edit.created_at or _now()
     from aughor.actions.attribution import stamp
-    run = stamp()                             # TC-2 — the run in force, read outside the lock; {} with the flag off
+    run = stamp()                             # TC-2 — the run in force, read outside the lock
     with _LOCK:
         c = _conn()
         try:
@@ -349,7 +349,7 @@ def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] =
     if not edit_id:
         return None
     from aughor.actions.attribution import stamp
-    run = stamp()                             # TC-2 — a withdrawal names its run too; {} with the flag off
+    run = stamp()                             # TC-2 — a withdrawal names its run too
     with _LOCK:
         c = _conn()
         try:
@@ -608,8 +608,8 @@ def purge_sheet(sheet_id: str, org_id: str = "") -> int:
 def edit_history(connection_id: str, *, object_type: str = "", row_key: str = "", column: str = "",
                  org_id: Optional[str] = None, limit: int = 200) -> list[dict]:
     """Arc OC-6 — every version of the edits on a connection's objects, newest first: who set what, what it replaced,
-    who withdrew it — narrowed to one entity, one object, one property. TC-2 — with `actions.run_attribution` on, each
-    also says through which run (`attribution.describe`)."""
+    who withdrew it — narrowed to one entity, one object, one property. TC-2 — each also says through which run
+    (`attribution.describe`)."""
     sql, args = "SELECT * FROM overlay_edit_history WHERE connection_id = ?", [connection_id]
     if org_id is not None:
         sql += " AND org_id = ?"
@@ -625,13 +625,10 @@ def edit_history(connection_id: str, *, object_type: str = "", row_key: str = ""
             c.close()
     out = [r for r in rows if (not object_type or word(r["object_type"]) == word(object_type))
            and (not row_key or str(r["row_key"]) == str(row_key)) and (not column or r["column"].lower() == column.lower())]
-    # Arc TC, TC-2 — with `actions.run_attribution` on, each version says which run made it; off, a row reads exactly as
-    # it did before the columns existed.
-    from aughor.actions.attribution import describe, enabled
+    # Arc TC, TC-2 — each version says which run made it.
+    from aughor.actions.attribution import describe
     # Arc SH — the change a row belongs to is a sheet's (read by `sheet_history`); an object's history reads as before
-    if enabled():
-        return [{**{k: v for k, v in r.items() if k != "change_id"}, **describe(r)} for r in out[:limit]]
-    return [{k: v for k, v in r.items() if k not in RUN_COLUMNS and k != "change_id"} for r in out[:limit]]
+    return [{**{k: v for k, v in r.items() if k != "change_id"}, **describe(r)} for r in out[:limit]]
 
 
 # ── read-time merge ─────────────────────────────────────────────────────────────

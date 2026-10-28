@@ -1,4 +1,4 @@
-"""Arc FA, FA-5 — act on each object a rule admits (`automations.objects_admitted`; ROADMAP §3.60).
+"""Arc FA, FA-5 — act on each object a rule admits (ROADMAP §3.60).
 
 Held on the seeded samples warehouse through the real compiler: a rule `pending_orders` (status = pending) is
 declared and measured, an automation watches it, and the warehouse is changed between checks — orders made pending
@@ -20,7 +20,6 @@ from tests.unit.test_object_bindings import seed
 from tests.unit.test_object_processes import _DEADLINES, FULFILMENT, declare, declare_rule, fresh_graph
 
 CONN = "fa5-admitted-t"
-FLAG_ENV = "AUGHOR_AUTOMATIONS_OBJECTS_ADMITTED"
 PENDING = {"id": "pending_orders", "entity": "Order", "kind": "condition",
            "conditions": [{"path": "status", "op": "=", "value": "pending"}]}
 
@@ -82,11 +81,6 @@ def graph(warehouse, tmp_path, monkeypatch):
     return g
 
 
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv(FLAG_ENV, "1")
-
-
 def watch(segment: str = "pending_orders", effects=None, **kw) -> Automation:
     return Automation(id=kw.pop("id", _ID[0]), conn_id=CONN, name="act on pending orders",
                       conditions=[Condition(kind="objects_admitted", config={"entity": "Order", "segment": segment})],
@@ -112,24 +106,9 @@ def not_pending(path, n: int) -> list[str]:
                                     f"ORDER BY order_id LIMIT {n}")]
 
 
-# ── off ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-def test_off_the_trigger_reads_nothing_says_it_is_off_and_the_palette_is_what_it_was(graph, monkeypatch):
-    from aughor.automations.palette import ENTRIES, entries
-    monkeypatch.setenv(FLAG_ENV, "0")  # always on since 2026-10-28 (ROADMAP §3.65); "0" is its off path until stage 2 deletes it
-    monkeypatch.setattr(A, "_graph_for", lambda *_a: pytest.fail("the ontology was read with the flag off"))
-    fired, detail, payload = check(watch())
-    assert (fired, payload) == (False, {})
-    assert "off on this deployment (automations.objects_admitted) — nothing was read" in detail
-    assert [e["kind"] for e in entries(CONN)] == [e.kind for e in ENTRIES]       # the palette, byte for byte
-    from aughor.automations.store import get_admitted_keys
-    assert get_admitted_keys(_ID[0], target(watch())) == set()
-
-
-def test_off_a_chain_without_the_trigger_runs_exactly_as_before(graph, monkeypatch):
+def test_a_chain_without_the_trigger_runs_exactly_as_before(graph, monkeypatch):
     """The engine's only new work is a commit that returns at once when no condition is this kind."""
     from aughor.automations.engine import run_automation
-    monkeypatch.delenv(FLAG_ENV, raising=False)
     monkeypatch.setattr(A, "_graph_for", lambda *_a: pytest.fail("the ontology was read"))
     for touched in ("add_admitted", "get_admitted_keys", "record_admitted", "drop_admitted"):
         monkeypatch.setattr(f"aughor.automations.store.{touched}", lambda *_a, **_k: pytest.fail("keys were touched"))
@@ -149,7 +128,7 @@ def test_off_a_chain_without_the_trigger_runs_exactly_as_before(graph, monkeypat
 
 # ── the user's call 1: the first check records, a later one fires ───────────────────────────────────────────────────
 
-def test_the_first_check_records_who_is_already_in_and_says_so_without_firing(graph, warehouse, on):
+def test_the_first_check_records_who_is_already_in_and_says_so_without_firing(graph, warehouse):
     from aughor.automations.store import get_admitted_keys
     auto = watch()
     fired, detail, payload = check(auto)
@@ -162,7 +141,7 @@ def test_the_first_check_records_who_is_already_in_and_says_so_without_firing(gr
     assert not fired and f"none new ({len(want):,} in)" in detail
 
 
-def test_an_object_that_enters_afterwards_fires_once_with_its_key(graph, warehouse, on):
+def test_an_object_that_enters_afterwards_fires_once_with_its_key(graph, warehouse):
     auto = watch()
     check(auto)
     fresh = not_pending(warehouse, 2)
@@ -177,7 +156,7 @@ def test_an_object_that_enters_afterwards_fires_once_with_its_key(graph, warehou
     assert not fired and "none new" in detail
 
 
-def test_through_the_engine_each_admitted_key_is_one_step_and_the_next_tick_is_quiet(graph, warehouse, on):
+def test_through_the_engine_each_admitted_key_is_one_step_and_the_next_tick_is_quiet(graph, warehouse):
     from aughor.automations.engine import run_automation
     sent: list = []
 
@@ -199,7 +178,7 @@ def test_through_the_engine_each_admitted_key_is_one_step_and_the_next_tick_is_q
     assert third.outcome == "not_fired" and "none new" in third.reason and len(sent) == 3
 
 
-def test_an_arrival_held_back_by_another_condition_is_not_swallowed(graph, warehouse, on):
+def test_an_arrival_held_back_by_another_condition_is_not_swallowed(graph, warehouse):
     """`all` with a false second condition: the arrival is seen, not fired, and stays new until a tick fires."""
     from aughor.automations.engine import run_automation
     auto = watch()
@@ -217,7 +196,7 @@ def test_an_arrival_held_back_by_another_condition_is_not_swallowed(graph, wareh
 
 # ── withheld, left, capped ──────────────────────────────────────────────────────────────────────────────────────────
 
-def test_more_than_fifty_arrivals_are_withheld_and_their_count_said(graph, warehouse, on):
+def test_more_than_fifty_arrivals_are_withheld_and_their_count_said(graph, warehouse):
     auto = watch()
     check(auto)
     make_pending(warehouse, *not_pending(warehouse, 60))
@@ -227,7 +206,7 @@ def test_more_than_fifty_arrivals_are_withheld_and_their_count_said(graph, wareh
     assert "more than the 50 a step runs once per, so their keys are withheld" in payload["admitted"]["said"]
 
 
-def test_a_for_each_over_a_withheld_list_is_refused_with_its_sentence_never_run_as_empty(graph, warehouse, on):
+def test_a_for_each_over_a_withheld_list_is_refused_with_its_sentence_never_run_as_empty(graph, warehouse):
     from aughor.automations.dataflow import FAN_EMPTY_SKIP
     from aughor.automations.engine import run_automation
     sent: list = []
@@ -253,7 +232,7 @@ def test_the_dataflow_refuses_a_withheld_list_and_still_runs_a_real_one():
     assert fan_items(step, {"trigger": {"admitted": []}}) == []                    # a real empty list stays one
 
 
-def test_objects_that_left_are_dropped_and_counted_and_one_that_returns_is_new_again(graph, warehouse, on):
+def test_objects_that_left_are_dropped_and_counted_and_one_that_returns_is_new_again(graph, warehouse):
     from aughor.automations.store import get_admitted_keys
     auto = watch()
     check(auto)
@@ -268,7 +247,7 @@ def test_objects_that_left_are_dropped_and_counted_and_one_that_returns_is_new_a
     assert fired and payload["admitted"] == [leaving[0]]
 
 
-def test_above_the_cap_the_check_says_too_many_to_track_and_records_nothing(graph, warehouse, on, monkeypatch):
+def test_above_the_cap_the_check_says_too_many_to_track_and_records_nothing(graph, warehouse, monkeypatch):
     from aughor.automations.store import get_admitted_keys, get_probe_baseline
     monkeypatch.setattr(A, "MAX_TRACKED", 100)
     auto = watch()
@@ -293,7 +272,7 @@ def secured(graph, monkeypatch):
     return graph
 
 
-def test_the_owner_s_row_policy_holds_and_what_it_withholds_is_said(secured, warehouse, on, monkeypatch):
+def test_the_owner_s_row_policy_holds_and_what_it_withholds_is_said(secured, warehouse, monkeypatch):
     from aughor.automations.store import get_admitted_keys
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ben")       # the install's operator is someone else — never read as
     auto = watch(declared_by="user:ana")
@@ -315,19 +294,19 @@ def test_the_owner_s_row_policy_holds_and_what_it_withholds_is_said(secured, war
     assert "only the Order objects user:ana may see are shown" in payload["said"]
 
 
-def test_a_reader_in_no_group_lists_none_and_is_told_which_groups_would(secured, warehouse, on):
+def test_a_reader_in_no_group_lists_none_and_is_told_which_groups_would(secured, warehouse):
     fired, detail, _ = check(watch(declared_by="user:carl"))
     assert not fired and "0 already in" in detail
     assert "user:carl is in none of its groups (cards)" in detail
 
 
-def test_an_automation_that_records_no_one_is_listed_as_the_operator_and_says_so(graph, on, monkeypatch):
+def test_an_automation_that_records_no_one_is_listed_as_the_operator_and_says_so(graph, monkeypatch):
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "operator-o")
     _, detail, _ = check(watch(declared_by=""))
     assert "listed as user:operator-o, this install's operator — the automation records no one who saved it" in detail
 
 
-def test_a_changed_row_policy_records_afresh_instead_of_firing_for_what_became_visible(secured, warehouse, on):
+def test_a_changed_row_policy_records_afresh_instead_of_firing_for_what_became_visible(secured, warehouse):
     auto = watch(declared_by="user:ana")
     check(auto)
     from aughor.ontology.models import RowPolicy
@@ -339,7 +318,7 @@ def test_a_changed_row_policy_records_afresh_instead_of_firing_for_what_became_v
 
 # ── what the record is taken against ────────────────────────────────────────────────────────────────────────────────
 
-def test_a_changed_rule_records_afresh_without_firing(graph, warehouse, on):
+def test_a_changed_rule_records_afresh_without_firing(graph, warehouse):
     auto = watch()
     check(auto)
     db = _open(warehouse)
@@ -369,7 +348,7 @@ def test_an_overdue_segment_is_defined_by_its_promise_not_by_the_moment_it_was_m
     assert A.definition_of(graph, order, "overdue_delivery") != before
 
 
-def test_taking_the_trigger_off_takes_its_record_and_deleting_takes_the_rest(graph, on):
+def test_taking_the_trigger_off_takes_its_record_and_deleting_takes_the_rest(graph):
     from aughor.automations.store import (delete_automation, get_admitted_keys, get_probe_baseline,
                                           upsert_automation)
     auto = upsert_automation(watch())
@@ -411,13 +390,9 @@ def test_withdrawing_a_watched_rule_segment_process_or_entity_is_refused(graph, 
     assert dependents_of(graph, CONN, "rule", "some_other_rule", automations=autos) == []
 
 
-def test_the_save_door_refuses_the_trigger_off_and_a_segment_it_cannot_list(graph, client, monkeypatch):
+def test_the_save_door_refuses_a_segment_it_cannot_list(graph, client):
     body = {"conn_id": CONN, "name": "act", "effects": [{"kind": "notify", "config": {"trigger_id": "t1"}}],
             "conditions": [{"kind": "objects_admitted", "config": {"entity": "Order", "segment": "pending_orders"}}]}
-    monkeypatch.setenv(FLAG_ENV, "0")  # always on since 2026-10-28 (ROADMAP §3.65); "0" is its off path until stage 2 deletes it
-    off = client.post("/automations", json=body)
-    assert off.status_code == 422 and "off on this deployment" in off.text
-    monkeypatch.setenv(FLAG_ENV, "1")
     unknown = {**body, "conditions": [{"kind": "objects_admitted",
                                        "config": {"entity": "Order", "segment": "no_such_rule"}}]}
     refused = client.post("/automations", json=unknown)
@@ -427,7 +402,7 @@ def test_the_save_door_refuses_the_trigger_off_and_a_segment_it_cannot_list(grap
     assert client.delete(f"/automations/{made.json()['id']}").status_code == 200
 
 
-def test_the_palette_offers_it_only_on_and_ready_only_where_a_segment_can_be_watched(on, monkeypatch):
+def test_the_palette_offers_it_ready_only_where_a_segment_can_be_watched(monkeypatch):
     from aughor.automations.palette import NEEDS_SETUP, READY, entries
     monkeypatch.setattr(A, "watchable_segments", lambda conn_id: 1)
     row = next(r for r in entries("c1") if r["kind"] == "objects_admitted")
@@ -441,11 +416,11 @@ def test_the_client_offers_the_same_words_and_the_canvas_names_the_trigger():
     from pathlib import Path
 
     from aughor.automations.graph import condition_label
-    from aughor.automations.palette import FLAGGED
+    from aughor.automations.palette import ENTRIES
     web = Path(__file__).resolve().parents[2] / "web"
     rows = (web / "components" / "automations" / "AutomationRows.tsx").read_text()
-    for _flag, entry in FLAGGED:
-        assert f'value: "{entry.kind}", label: "{entry.label}"' in rows
+    entry = next(e for e in ENTRIES if e.kind == "objects_admitted")
+    assert f'value: "{entry.kind}", label: "{entry.label}"' in rows
     assert condition_label(watch().conditions[0]) == "objects_admitted · Order · pending_orders"
     assert watch().conditions[0].describe() == "objects_admitted(Order.pending_orders)"
 

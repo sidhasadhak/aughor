@@ -19,7 +19,7 @@ import { ActorField, useActor } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { getMetrics, getSystemFlags, type Metric } from "@/lib/api";
+import { getMetrics, type Metric } from "@/lib/api";
 import {
   ANSWERS, ASKED, bookSaid, byDay, dayMonth, dayWords, daysBehind, dismissFinding, domainFindings, leadDetail, metricWords,
   pickLead, pickQuestion, pickWorthALook, rangeText, readYou, recheckFinding, standingQuestions, weekAhead,
@@ -77,13 +77,6 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
   onDraft: (question: string) => void;
 }) {
   const actor = useActor();
-  // PENDING 57, D-1: with the decision loop on, a decision taken here cites its finding and may say what is expected.
-  const [loop, setLoop] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setLoop(!!f["record.decision_loop"]?.value); }).catch(() => { if (alive) setLoop(false); });
-    return () => { alive = false; };
-  }, []);
   // The previous visit, read before this one is written: "since your last visit" means that one.
   const [since] = useState<string | null>(() => {
     try { return window.localStorage.getItem(LAST_SEEN_KEY); } catch { return null; }
@@ -142,7 +135,7 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
         <div style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
           <QuestionCard key={question?.about.id ?? "none"} question={question} connectionId={connectionId}
             actor={actor} onBooked={id => { setAnsweredNow(prev => new Set([...prev, id])); reloadRecord(); }} />
-          <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId} loop={loop}
+          <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId}
             onDecided={reloadRecord} />
         </div>
       </div>
@@ -276,13 +269,12 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
   );
 }
 
-function LookCard({ findings, acted, connectionId, onDecided, loop = false }: {
+/** PENDING 57, D-1: a decision taken here cites its finding, offers not acting, and may say what is expected. */
+function LookCard({ findings, acted, connectionId, onDecided }: {
   findings: Finding[] | null;
   acted: ReadonlySet<string>;
   connectionId: string;
   onDecided: () => void;
-  /** The decision loop (PENDING 57): the decision cites its finding, offers not acting, and may expect something. */
-  loop?: boolean;
 }) {
   const [skip, setSkip] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"" | "decide" | "dismiss">("");
@@ -291,13 +283,13 @@ function LookCard({ findings, acted, connectionId, onDecided, loop = false }: {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [expect, setExpect] = useState({ metric: "", direction: "up", dimension: "", part: "" });
   useEffect(() => {
-    if (!loop || mode !== "decide") return;
+    if (mode !== "decide") return;
     let alive = true;
     // approved, and knowing its dates — the only metrics a review can measure for the weeks after the decision
     getMetrics(connectionId).then(ms => { if (alive) setMetrics(ms.filter(x => x.status === "approved" && x.time_kind && x.time_column)); })
       .catch(() => { if (alive) setMetrics([]); });
     return () => { alive = false; };
-  }, [loop, mode, connectionId]);
+  }, [mode, connectionId]);
   const finding = findings ? pickWorthALook(findings, acted, skip) : null;
   if (findings === null) return <section aria-label="Worth another look" style={card}><Label>Needs you · a finding to act on</Label></section>;
   if (!finding) {
@@ -314,26 +306,23 @@ function LookCard({ findings, acted, connectionId, onDecided, loop = false }: {
   };
   const decide = async () => {
     try {
-      const expectation: ExpectationIn | null = loop && expect.metric ? {
+      const expectation: ExpectationIn | null = expect.metric ? {
         metric: expect.metric, direction: expect.direction,
         ...(expect.dimension && expect.part.trim() ? { segment_dimension: expect.dimension, segment_value: expect.part.trim() } : {}),
       } : null;
-      const d = await declareDecision(loop ? {
+      const d = await declareDecision({
         question: finding.text, chosen: text.trim(), options: [text.trim(), NOT_ACT], connection_id: connectionId,
         note: `Decided from Home on finding ${finding.id}`, finding_id: finding.id, ...(expectation ? { expectation } : {}),
-      } : {
-        question: finding.text, chosen: text.trim(), connection_id: connectionId,
-        note: `Decided from Home on finding ${finding.id}`,
       });
       onDecided();
       next(`Booked as a decision · review ${dayWords(d.review_on)}`
-        + (loop && !expectation ? " · nothing expected, so it cannot be scored" : ""));
+        + (!expectation ? " · nothing expected, so it cannot be scored" : ""));
     } catch (e) { setSaidLine(e instanceof Error ? e.message : String(e)); }
   };
   const dismiss = async () => {
     try {
       await dismissFinding(connectionId, finding.id, text.trim());
-      next(loop ? "Set aside · booked as a decision not to act · it can be restored" : "Set aside · it can be restored");
+      next("Set aside · booked as a decision not to act · it can be restored");
     }
     catch (e) { setSaidLine(e instanceof Error ? e.message : String(e)); }
   };
@@ -366,7 +355,7 @@ function LookCard({ findings, acted, connectionId, onDecided, loop = false }: {
           <Button size="sm" variant="ghost" onClick={() => { setMode(""); setText(""); }}>Cancel</Button>
         </div>
       )}
-      {loop && mode === "decide" && <ExpectRow metrics={metrics} value={expect} onChange={setExpect} />}
+      {mode === "decide" && <ExpectRow metrics={metrics} value={expect} onChange={setExpect} />}
       {said && <div className="aug-fs-xs" style={{ ...muted, marginTop: 8 }}>{said}</div>}
     </section>
   );

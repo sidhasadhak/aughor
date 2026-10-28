@@ -158,7 +158,7 @@ def audit(action: str, scope: str, decision: str, *, actor: str = "", detail: st
         "action": action, "risk": (risk or classify(action)).value, "decision": decision,
         "scope": scope or "", "actor": attribution_key(actor),
         "org_id": current_org_id(), "detail": detail,
-        # Arc TC, TC-2 — the run and trace this decision was made under (`actions.run_attribution`; nothing when off)
+        # Arc TC, TC-2 — the run and trace this decision was made under (`actions/attribution.py`)
         **stamp(),
     }, conn_id=(scope or None))
 

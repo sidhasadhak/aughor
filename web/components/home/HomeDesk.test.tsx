@@ -129,9 +129,8 @@ describe("HomeDesk", () => {
     fireEvent.change(screen.getByPlaceholderText("What was decided?"), { target: { value: "Move spend to email" } });
   }
 
-  it("with the decision loop on, cites the finding, offers not acting and sends what is expected of one part", async () => {
+  it("cites the finding, offers not acting and sends what is expected of one part", async () => {
     const api = await import("@/lib/api");
-    vi.mocked(api.getSystemFlags).mockResolvedValue({ "record.decision_loop": { value: true } } as never);
     vi.mocked(api.getMetrics).mockResolvedValue([REVENUE, { ...REVENUE, name: "draft_one", status: "proposed" },
                                                  { ...REVENUE, name: "undated", time_kind: null }] as never);
     const { declareDecision } = await import("@/lib/record");
@@ -150,41 +149,22 @@ describe("HomeDesk", () => {
       finding_id: "f1",
       expectation: { metric: "revenue", direction: "up", segment_dimension: "traffic_source", segment_value: "Email" },
     });
-    vi.mocked(api.getSystemFlags).mockResolvedValue({} as never);
     vi.mocked(api.getMetrics).mockResolvedValue([] as never);
   });
 
-  it("with the loop on and nothing expected, says the decision cannot be scored", async () => {
-    const api = await import("@/lib/api");
-    vi.mocked(api.getSystemFlags).mockResolvedValue({ "record.decision_loop": { value: true } } as never);
+  it("with nothing expected, says the decision cannot be scored", async () => {
     await openDecide();
     await screen.findByTestId("home-expect");
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Book it" })); });
     expect(await screen.findByText(/nothing expected, so it cannot be scored/)).toBeInTheDocument();
-    vi.mocked(api.getSystemFlags).mockResolvedValue({} as never);
   });
 
-  it("with the loop off, books exactly what it did — no finding, no options, no expectation row", async () => {
-    const { declareDecision } = await import("@/lib/record");
-    await openDecide();
-    expect(screen.queryByTestId("home-expect")).toBeNull();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Book it" })); });
-    expect(vi.mocked(declareDecision)).toHaveBeenLastCalledWith({
-      question: "Email drives the most unique user activity.", chosen: "Move spend to email", connection_id: "c1",
-      note: "Decided from Home on finding f1",
-    });
-  });
-
-  it("with the loop on, setting a finding aside says it was booked as a decision not to act", async () => {
-    const api = await import("@/lib/api");
-    vi.mocked(api.getSystemFlags).mockResolvedValue({ "record.decision_loop": { value: true } } as never);
+  it("setting a finding aside says it was booked as a decision not to act", async () => {
     render(<Theme><HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} /></Theme>);
     await screen.findByText("Email drives the most unique user activity.");
-    await waitFor(() => expect(api.getSystemFlags).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "Not worth it" }));
     fireEvent.change(screen.getByPlaceholderText("Why is it not worth it?"), { target: { value: "it is seasonal" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Set aside" })); });
     expect(await screen.findByText("Set aside · booked as a decision not to act · it can be restored")).toBeInTheDocument();
-    vi.mocked(api.getSystemFlags).mockResolvedValue({} as never);
   });
 });

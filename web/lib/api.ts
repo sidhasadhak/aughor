@@ -5583,8 +5583,7 @@ export type ConditionKind =
   // HB-3 — the hub's two triggers: a declared promise measured broken, a new finding
   // recorded. Both publish a payload the chain binds as `trigger.<key>`.
   | "promise_breached" | "finding_created"
-  // Arc FA, FA-5 — the objects a rule or segment newly admits; offered only while
-  // `automations.objects_admitted` is on (the served palette says so).
+  // Arc FA, FA-5 — the objects a rule or segment newly admits.
   | "objects_admitted"
   // DS-17. Named for what it is from the chain's side: something outside calls it. The
   // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
@@ -6689,8 +6688,8 @@ export interface HubMapRow {
   cost: HubCost;
   probation: HubProbation;
   exposed_as_tool: boolean;
-  /** Arc TC, TC-5 (`hub.failure_rate`) — present only while the flag is on. */
-  failure_rate?: HubFailureRate;
+  /** Arc TC, TC-5 — how often its runs failed over the map's failure window. */
+  failure_rate: HubFailureRate;
 }
 
 /** How often a node's runs failed over the window, as the server counted it. "no runs" is
@@ -6712,7 +6711,7 @@ export interface HubMapResponse {
   window_days: number;
   generated_at: string;
   totals: { automations: number; monitors: number; live: number; probation: number };
-  failure_window?: { days: number; since: string };
+  failure_window: { days: number; since: string };
 }
 
 /** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel
@@ -9531,7 +9530,7 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
   return res.ok;
 }
 
-// ── Arc FA, FA-6 — the installed version and the upgrade (flag `packs.installed_versions`) ──────
+// ── Arc FA, FA-6 — the installed version and the upgrade ──────────────────────────────────────
 
 /** One thing a pack offers on a connection, as an upgrade's diff lists it (`aughor/packs/upgrade.py`). */
 export interface PackOfferedItem {
@@ -9593,9 +9592,8 @@ export interface PackUpgraded {
 }
 
 /** Where a pack is bound and the version installed there — null while installed versions are off (the route 404s). */
-export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] } | null> {
+export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] }> {
   const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/installs`);
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Where the pack is installed could not be read"));
   return res.json();
 }

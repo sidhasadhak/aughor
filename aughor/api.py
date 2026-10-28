@@ -939,21 +939,20 @@ async def _start_ontology_refresh_loop() -> None:
     asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
 
 
-#: Arc OC-6 — how often the outbox's worker looks for a call that is due (a no-op while `actions.outbox` is off).
+#: Arc OC-6 — how often the outbox's worker looks for a call that is due.
 _OUTBOX_EVERY_S = 15
 
 
 async def _outbox_worker_loop() -> None:
     """Arc OC-6 — the outbox's worker: each pass claims the calls that are due under a lease and delivers them (a call
-    whose fate is unknown is checked first). Off, nothing is read."""
+    whose fate is unknown is checked first)."""
     import uuid as _uuid
     worker = f"api:{os.getpid()}:{_uuid.uuid4().hex[:6]}"
     while True:
         await asyncio.sleep(_OUTBOX_EVERY_S)
         try:
             from aughor.actions import outbox
-            if outbox.enabled():
-                await asyncio.get_running_loop().run_in_executor(None, lambda: outbox.work_once(worker))
+            await asyncio.get_running_loop().run_in_executor(None, lambda: outbox.work_once(worker))
         except Exception as exc:
             logger.warning("Outbox pass failed: %s", exc)
 

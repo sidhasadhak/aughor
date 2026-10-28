@@ -177,7 +177,7 @@ def run_due_reviews_hourly(*, now: Optional[float] = None, force: bool = False) 
     for o in reviewed:
         logger.info("review due on %s asked %s: %s", o.id, o.review_asked_to or "(nobody linked)",
                     o.review_question[:120])
-    # PENDING 57, D-2: every other decision that came due is reviewed in the same tick (nothing when the loop is off)
+    # PENDING 57, D-2: every other decision that came due is reviewed in the same tick
     from aughor.record.reviews import review_due_decisions
     booked = review_due_decisions()
     for oid in booked:

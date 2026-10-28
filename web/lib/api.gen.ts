@@ -160,8 +160,8 @@ export interface paths {
         };
         /**
          * List Outbox
-         * @description Arc OC-6 — a declared action's calls in the outbox (`actions.outbox`), newest first: delivered, waiting to be
-         *     sent again and why, and those that wait for a person — `dead` (not deliverable by the worker) and `unknown`.
+         * @description Arc OC-6 — a declared action's calls in the outbox, newest first: delivered, waiting to be sent again and why,
+         *     and those that wait for a person — `dead` (not deliverable by the worker) and `unknown`.
          */
         get: operations["list_outbox_actions_outbox_get"];
         put?: never;
@@ -6782,8 +6782,8 @@ export interface paths {
          * Dismiss Connection Finding
          * @description Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
          *     from intel, kept in the store, reversible) and logs the reason for the guard
-         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file. With the
-         *     decision loop on, setting it aside is booked as the decision not to act on it.
+         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file. Setting it
+         *     aside is booked as the decision not to act on it.
          */
         post: operations["dismiss_connection_finding_exploration__connection_id__findings__finding_id__dismiss_post"];
         delete?: never;
@@ -7490,9 +7490,8 @@ export interface paths {
          *     free. `probation.precision` is null until anything is marked — "not measured", never
          *     0%.
          *
-         *     Arc TC, TC-5 (`hub.failure_rate`, off by default): each row's `failure_rate` over
-         *     `window_days` — measured, "no runs" (never 0%), or "not permitted" (no count, the node
-         *     kept). Off, `window_days` is read by nothing.
+         *     Arc TC, TC-5: each row's `failure_rate` over `window_days` — measured, "no runs" (never
+         *     0%), or "not permitted" (no count, the node kept).
          */
         get: operations["get_hub_map_hub_map_get"];
         put?: never;
@@ -11433,15 +11432,14 @@ export interface paths {
         };
         /**
          * Search Run Logs
-         * @description Arc TC, TC-5 (`obs.log_search`, off by default) — the lines `/traces/{id}/logs` reads
-         *     for one run, searched across every run of the last thirty days: words, a level (``error`` ·
-         *     ``warning`` · ``info``) and the kind of run, newest first, a page at a time from an opaque
-         *     cursor. No copy of the lines: the journal's own rows, read in place.
+         * @description Arc TC, TC-5 — the lines `/traces/{id}/logs` reads for one run, searched across every
+         *     run of the last thirty days: words, a level (``error`` · ``warning`` · ``info``) and the
+         *     kind of run, newest first, a page at a time from an opaque cursor. No copy of the lines:
+         *     the journal's own rows, read in place.
          *
          *     The answer says what it searched — the runs and lines in the window and the oldest line
          *     kept there — because the journal sweeps some kinds within days, and a search that read two
-         *     days must not read as thirty. Off: the answer of a route that does not exist, byte for byte,
-         *     and a run's lines are read one trace at a time.
+         *     days must not read as thirty.
          */
         get: operations["search_run_logs_obs_logs_get"];
         put?: never;
@@ -14147,9 +14145,8 @@ export interface paths {
          *     bound columns are checked to actually exist and `verified` reflects that (column-existence
          *     half of verification; recipe dry-run is the live step).
          *
-         *     Arc FA, FA-6 (`packs.installed_versions`): on, the binding records the MANIFEST's version — never the
-         *     `version` a caller sends — who bound it, and a snapshot of what the pack offered, which an upgrade is
-         *     diffed against. Off, the binding is stored exactly as it always was.
+         *     Arc FA, FA-6: the binding records the MANIFEST's version — never the `version` a caller sends — who
+         *     bound it, and a snapshot of what the pack offered, which an upgrade is diffed against.
          */
         post: operations["post_bind_packs__pack_id__bind_post"];
         delete?: never;
@@ -37895,7 +37892,7 @@ export interface operations {
         parameters: {
             query?: {
                 conn_id?: string;
-                /** @description hub.failure_rate: the failure rate's window, in days counting today */
+                /** @description the failure rate's window, in days counting today */
                 window_days?: number;
             };
             header?: never;

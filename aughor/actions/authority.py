@@ -176,7 +176,7 @@ def book_action(*, action, params: dict, scope: str, actor: str, status: str, ou
                "reversibility": getattr(action, "reversibility", "") or "",
                "undo": (action.undo.model_dump() if getattr(action, "undo", None) is not None else None),
                "decision": decision_id, "at": _now(), **({"compensates": compensates} if compensates else {}),
-               # Arc TC, TC-2 — the run and trace it ran through (`actions.run_attribution`; nothing when off)
+               # Arc TC, TC-2 — the run and trace it ran through (`actions/attribution.py`)
                **_run_stamp()}
     edges = [("verification", payload["verification"].get("status", ""), (payload["verification"].get("why") or "")[:400])]
     if grant_id:

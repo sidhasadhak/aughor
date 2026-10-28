@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS automation_run_stamps (
 -- key, keyed PER AUTOMATION and per target like `probe_state` (whose row for the same target holds
 -- what the keys were listed under). A sidecar in the base DDL for `probe_state`'s reason — IF NOT
 -- EXISTS converges fresh and existing stores alike, so it needs no migration number — and written
--- only by that trigger, so with `automations.objects_admitted` off it stays empty.
+-- only by that trigger.
 CREATE TABLE IF NOT EXISTS admitted_keys (
     automation_id TEXT NOT NULL,
     target        TEXT NOT NULL,

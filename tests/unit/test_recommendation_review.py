@@ -180,6 +180,8 @@ class TestTheHeartbeatAsksHourly:
         from aughor.automations import scheduler as S
         calls: list[int] = []
         monkeypatch.setattr(O, "run_due_reviews", lambda now=None, *, run_sql_for, path=None: calls.append(1) or [])
+        # every other due decision is reviewed in the same tick; what other tests left due is not this test's count
+        monkeypatch.setattr("aughor.record.reviews.review_due_decisions", lambda **k: [])
         monkeypatch.setattr(S, "_last_review_check", 0.0)
         assert S.run_due_reviews_hourly(now=10_000.0) == 0 and len(calls) == 1
         assert S.run_due_reviews_hourly(now=10_000.0 + 60) == 0 and len(calls) == 1      # a minute later: no

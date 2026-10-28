@@ -4,7 +4,7 @@ what that run cost.
 Before this the edit layer recorded who, never which run: an edit an automation made read "by automation:<id>" and could
 not be joined to the run that made it, nor to what that run spent. The run is ambient — `telemetry.bind_run`, bound where
 runs start (the ask door, `run_automation`, the kernel's job runner) beside the trace `bind_trace` already pins — so
-nothing threads a run id through a caller. With flag `actions.run_attribution` on, three existing records stamp it:
+nothing threads a run id through a caller. Three existing records stamp it:
 
 - an edit's history row (`overlay_edit_history`: ``run_id``, ``run_kind``, ``trace_id``);
 - every action-audit row (`govern.actions.audit`, the ``action.approval`` events — its ``trace_id`` column was already
@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-FLAG = "actions.run_attribution"
 #: The stored ``run_kind`` of a change recorded with no run in force. Empty means the run was not recorded at all.
 OUTSIDE = "none"
 #: How a run's kind reads in a sentence.
@@ -37,11 +36,6 @@ ACTION_CAP = 2000
 COST_SCAN = 5000
 
 
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
-
-
 def ambient() -> dict:
     """The run and trace in force now: ``{run_id, run_kind, trace_id}``, ``run_kind`` ``none`` outside any run."""
     from aughor import telemetry
@@ -51,10 +45,10 @@ def ambient() -> dict:
 
 
 def stamp() -> dict:
-    """What a record adds with the flag on — :func:`ambient` — and ``{}`` with it off, so a record written with it off is
-    the record written before. Never raises: an unreadable run is left unrecorded (and reads so), never invented."""
+    """What a record adds — :func:`ambient`. Never raises: an unreadable run is left unrecorded (``{}``, and reads so),
+    never invented."""
     try:
-        return ambient() if enabled() else {}
+        return ambient()
     except Exception as exc:  # noqa: BLE001 — attribution must never break the change it attributes
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the run in force could not be read; the change is recorded without it",
