@@ -955,5 +955,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     in Settings ▸ Organization; the planner kept through its doors; the data profile block deleted by its own run.
     ✅ **Stage 2 BUILT 2026-10-28** (ROADMAP §3.65): every flag deleted — the 63 area by area, the ten off live each
     checked on live data first with what the checks found fixed, the set-up four saying what is missing; the registry
-    holds none. Open: live (with the alert summary's impacts read on theLook after the deploy), and the named gaps in
-    §3.65.
+    holds none. **LIVE 2026-10-28** at `9b5e22da` (the API restarted, :3000 hot-reloaded — no CSS, package, data or
+    migration moved): `/system/flags` answers `{}`, Settings shows no flag section and Organization shows *What Aughor
+    may do* (Jev on through the environment, said so), the object and SQL doors read 124,669 orders, and the alert
+    summary — serving for the first time — names theLook's one declared impact, "not measured to hold". Open: the
+    named gaps in §3.65.

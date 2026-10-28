@@ -12804,6 +12804,9 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
     links; a refusal at the organisation's level check was audited with no principal; `/dashboards/from-object`
     ignored an acting agent and left a masked figure out unsaid; a listing's completeness named no masked property; a
     person's Run now kept no asker.
+  - **LIVE 2026-10-28** at `9b5e22da`: no flag registered (`/system/flags` → `{}`); the four settings in Settings ▸
+    Organization; queries read as before (no policy is declared live); the alert summary names theLook's one declared
+    impact — "1 declared impact not measured to hold: Dispatch bears on delivery" — and no model-proposed cause.
   - **Named, not fixed:** publishing a release clears neither `forget_declared` nor the schema cache (a declaration
     can take ~30 s to reach the trust checks); `ensure_first_release` writes outside `tolerate`; `/objects/catalog`,
     `/object-types` and `/object-paths` describe entities outside a principal's grant, and an action on one is still
