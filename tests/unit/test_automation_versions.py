@@ -1,11 +1,11 @@
 """Arc TC, TC-3 — versions for automations and monitors, a run that names its own, and a replay.
 
-What these hold, with `automations.versions` on:
+What these hold (part of the platform since 2026-10-28):
 
 * **Every save keeps the definition before it**, numbered, with who saved it and when —
   superseded in the ledger, never deleted. Saving the same definition twice keeps one version,
-  and lifecycle (pausing, switching off) is not a version at all. A chain saved while versions
-  were off keeps its earlier definition at its first save with them on.
+  and lifecycle (pausing, switching off) is not a version at all. A chain saved before versions
+  began keeps its earlier definition at its first save since.
 * **A save that cannot keep its version is refused** and writes nothing: the store never holds a
   definition whose version was not kept.
 * **Every recorded run names the version it ran under and keeps its trigger** — the tick, who
@@ -15,11 +15,12 @@ What these hold, with `automations.versions` on:
   dispatched, nothing is written, and a step bound to `trigger.<key>` reads the value that run
   read. A replay whose version or payload was not kept is refused by name.
 
-And with it off, everything is what it was: no version, no stamp, no extra read on a save, the
-same run record, the same runs response, and the new doors answer 404.
+What was saved and run before versions began — every chain on the live install until 2026-10-28 — is stood in for by
+`_before_versions`, which keeps nothing, as the platform did then.
 """
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime, timezone
 
 import pytest
@@ -41,18 +42,18 @@ from aughor.kernel.ledger import Ledger
 from aughor.monitors.models import Monitor
 from aughor.monitors.store import set_monitor_enabled, upsert_monitor
 
-ENV = "AUGHOR_AUTOMATIONS_VERSIONS"
 NOW = datetime(2026, 10, 26, 9, 0, tzinfo=timezone.utc)
 
 
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv(ENV, "1")
-
-
-@pytest.fixture
-def off(monkeypatch):
-    monkeypatch.delenv(ENV, raising=False)
+@contextlib.contextmanager
+def _before_versions(monkeypatch):
+    """A save or a run as it was before versions began: nothing kept, no version and no stamp."""
+    with monkeypatch.context() as m:
+        m.setattr(V, "keep_automation_version", lambda automation: None)
+        m.setattr(V, "keep_monitor_version", lambda monitor: None)
+        m.setattr(V, "version_for_run", lambda automation: {})
+        m.setattr(V, "keep_run", lambda run, kept: None)
+        yield
 
 
 def _auto(name="Refund watch", conn_id="conn-tc3", **kw) -> Automation:
@@ -99,7 +100,7 @@ def _artifact_count() -> int:
 
 # ── every save keeps the definition before it ────────────────────────────────────
 
-def test_every_save_keeps_the_earlier_definition_numbered_with_who_and_when(on):
+def test_every_save_keeps_the_earlier_definition_numbered_with_who_and_when():
     from aughor.org.context import reset_actor, set_actor
     token = set_actor("amit")
     try:
@@ -120,14 +121,14 @@ def test_every_save_keeps_the_earlier_definition_numbered_with_who_and_when(on):
     assert current["current_version"] == 2 and current["current_kept"]
 
 
-def test_saving_the_same_definition_twice_keeps_one_version(on):
+def test_saving_the_same_definition_twice_keeps_one_version():
     a = upsert_automation(_auto())
     upsert_automation(a)
     upsert_automation(get_automation(a.id))
     assert [v["version"] for v in _versions(a.id)] == [1]
 
 
-def test_lifecycle_is_not_a_version(on):
+def test_lifecycle_is_not_a_version():
     """Pausing, switching off and on, an expiry: the chain did not change, so no version."""
     a = upsert_automation(_auto())
     pause_automation(a.id, "2027-01-01T00:00:00Z")
@@ -137,11 +138,10 @@ def test_lifecycle_is_not_a_version(on):
     assert [v["version"] for v in _versions(a.id)] == [1]
 
 
-def test_a_chain_saved_while_off_keeps_its_earlier_definition_at_its_first_save_on(monkeypatch):
-    monkeypatch.delenv(ENV, raising=False)
-    a = upsert_automation(_auto())
+def test_a_chain_saved_before_versions_keeps_its_earlier_definition_at_its_first_save_since(monkeypatch):
+    with _before_versions(monkeypatch):
+        a = upsert_automation(_auto())
     assert _versions(a.id) == []
-    monkeypatch.setenv(ENV, "1")
     upsert_automation(a.model_copy(update={
         "effects": [Effect(kind="notify", config={"trigger_id": "t2"})]}))
     vs = _versions(a.id)
@@ -150,7 +150,7 @@ def test_a_chain_saved_while_off_keeps_its_earlier_definition_at_its_first_save_
     assert vs[1]["saved_by"] == "", "nobody is named for a save nobody recorded"
 
 
-def test_a_save_whose_version_cannot_be_kept_is_refused_and_writes_nothing(on, monkeypatch):
+def test_a_save_whose_version_cannot_be_kept_is_refused_and_writes_nothing(monkeypatch):
     a = upsert_automation(_auto())
 
     def broken(self, *args, **kwargs):
@@ -163,7 +163,7 @@ def test_a_save_whose_version_cannot_be_kept_is_refused_and_writes_nothing(on, m
 
 # ── a run names its version and keeps its trigger ────────────────────────────────
 
-def test_every_run_names_its_version_and_keeps_its_trigger(on):
+def test_every_run_names_its_version_and_keeps_its_trigger():
     a = upsert_automation(_promise_auto())
     payload = {"about": "promise:p.d", "breach_rate": 0.0935}
     first = run_automation(a, now=NOW, probe=_probe(payload), dispatch=_stub())
@@ -185,15 +185,14 @@ def test_every_run_names_its_version_and_keeps_its_trigger(on):
 
 
 def test_a_definition_no_save_kept_is_kept_when_it_runs(monkeypatch):
-    monkeypatch.delenv(ENV, raising=False)
-    a = upsert_automation(_auto())
-    monkeypatch.setenv(ENV, "1")
+    with _before_versions(monkeypatch):
+        a = upsert_automation(_auto())
     run = run_automation(a, now=NOW, probe=_probe(), dispatch=_stub(), manual=True)
     assert get_run_stamp(run.id)["version"] == 1
     assert [(v["version"], v["source"]) for v in _versions(a.id)] == [(1, V.KEPT_AT_RUN)]
 
 
-def test_the_trigger_payload_is_capped_and_the_cap_said(on):
+def test_the_trigger_payload_is_capped_and_the_cap_said():
     a = upsert_automation(_promise_auto())
     big = {"about": "promise:p.d", "breach_rate": 0.1, "segment": "x" * (V.TRIGGER_CAP_BYTES + 10)}
     run = run_automation(a, now=NOW, probe=_probe(big), dispatch=_stub())
@@ -206,7 +205,7 @@ def test_the_trigger_payload_is_capped_and_the_cap_said(on):
         V.replay(get_run(run.id))
 
 
-def test_a_gated_run_keeps_its_gate_and_its_replay_is_refused_by_name(on):
+def test_a_gated_run_keeps_its_gate_and_its_replay_is_refused_by_name():
     a = upsert_automation(_auto(enabled=False))
     run = run_automation(a, now=NOW, probe=_probe(), dispatch=_stub())
     assert run.outcome == "gated"
@@ -216,15 +215,14 @@ def test_a_gated_run_keeps_its_gate_and_its_replay_is_refused_by_name(on):
 
 
 def test_a_run_from_before_versions_is_refused_by_name(monkeypatch):
-    monkeypatch.delenv(ENV, raising=False)
-    a = upsert_automation(_auto())
-    run = run_automation(a, now=NOW, probe=_probe(), dispatch=_stub(), manual=True)
-    monkeypatch.setenv(ENV, "1")
-    with pytest.raises(V.NotReplayable, match="it ran while versions were off"):
+    with _before_versions(monkeypatch):
+        a = upsert_automation(_auto())
+        run = run_automation(a, now=NOW, probe=_probe(), dispatch=_stub(), manual=True)
+    with pytest.raises(V.NotReplayable, match="it ran before versions were kept"):
         V.replay(get_run(run.id))
 
 
-def test_a_runs_stamp_goes_with_its_run_and_a_removed_connection_takes_its_versions(on):
+def test_a_runs_stamp_goes_with_its_run_and_a_removed_connection_takes_its_versions():
     from aughor.automations.store import delete_automation, purge_connection
     a = upsert_automation(_auto(conn_id="conn-tc3-del"))
     one = run_automation(a, now=NOW, probe=_probe(), dispatch=_stub(), manual=True)
@@ -253,7 +251,7 @@ def _no_dispatch(monkeypatch):
     monkeypatch.setattr(engine, "default_dispatch", refuse)
 
 
-def test_a_replay_walks_its_own_version_against_its_kept_trigger_and_sends_nothing(on, monkeypatch):
+def test_a_replay_walks_its_own_version_against_its_kept_trigger_and_sends_nothing(monkeypatch):
     a = upsert_automation(_promise_auto())
     payload = {"about": "promise:p.d", "breach_rate": 0.0935}
     sent: list[dict] = []
@@ -278,14 +276,14 @@ def test_a_replay_walks_its_own_version_against_its_kept_trigger_and_sends_nothi
     assert _artifact_count() == artifacts_before, "a replay wrote to the ledger"
 
 
-def test_without_the_kept_trigger_the_same_dry_run_cannot_read_it(on):
+def test_without_the_kept_trigger_the_same_dry_run_cannot_read_it():
     """The contrast that makes the replay worth having: an ordinary dry run has no payload, so a
     step bound to the trigger reads nothing."""
     dry = run_automation(_promise_auto(), dry_run=True)
     assert dry.effects[0].status == "skipped"
 
 
-def test_a_replay_is_always_a_dry_run_even_when_the_caller_does_not_say_so(on):
+def test_a_replay_is_always_a_dry_run_even_when_the_caller_does_not_say_so():
     called: list = []
     trigger = {"at": "2026-10-26T09:00:00Z", "via": "tick",
                "conditions": [{"kind": "schedule", "held": True, "detail": "due"}], "data": {}}
@@ -294,7 +292,7 @@ def test_a_replay_is_always_a_dry_run_even_when_the_caller_does_not_say_so(on):
     assert run.effects[0].message.startswith("would run")
 
 
-def test_a_replay_re_reads_the_kept_verdicts_under_the_versions_logic(on):
+def test_a_replay_re_reads_the_kept_verdicts_under_the_versions_logic():
     both = [Condition(kind="schedule", config={"cron": "0 9 * * *"}),
             Condition(kind="metric", config={"monitor_id": "m1"})]
     trigger = {"at": "2026-10-26T09:00:00Z", "via": "tick", "data": {},
@@ -316,7 +314,7 @@ def _monitor(**kw) -> Monitor:
     return Monitor(**base)
 
 
-def test_a_monitor_save_keeps_versions_and_switching_it_off_is_not_one(on):
+def test_a_monitor_save_keeps_versions_and_switching_it_off_is_not_one():
     m = upsert_monitor(_monitor())
     upsert_monitor(m.model_copy(update={"warning_threshold": 20.0}))
     set_monitor_enabled(m.id, False)
@@ -325,7 +323,7 @@ def test_a_monitor_save_keeps_versions_and_switching_it_off_is_not_one(on):
     assert [v["definition"]["warning_threshold"] for v in vs] == [20.0, 10.0]
 
 
-def test_a_monitors_run_names_the_monitors_version_and_replays_as_it(on, monkeypatch):
+def test_a_monitors_run_names_the_monitors_version_and_replays_as_it(monkeypatch):
     from aughor.automations.adopt import monitor_as_automation
     m = upsert_monitor(_monitor())
     run = run_automation(monitor_as_automation(m), now=NOW, dispatch=_stub())
@@ -341,50 +339,9 @@ def test_a_monitors_run_names_the_monitors_version_and_replays_as_it(on, monkeyp
     assert [(o.kind, o.status) for o in dry.effects] == [("monitor", "executed")]
 
 
-# ── with the flag off, everything is what it was ─────────────────────────────────
+# ── a verdict list ───────────────────────────────────────────────────────────────
 
-def _comparable(run) -> dict:
-    """A run's record without what differs between any two runs: its clock and timings."""
-    d = run.model_dump()
-    for k in ("id", "trace_id", "started_at", "finished_at", "duration_ms"):
-        d.pop(k, None)
-    for e in d["effects"]:
-        e.pop("duration_ms", None)
-        e.pop("started_at", None)
-    return d
-
-
-def test_off_a_save_keeps_nothing_and_reads_nothing_more(off, monkeypatch):
-    from aughor.automations import store
-    before = _artifact_count()
-    reads: list = []
-    real = store.get_automation
-    monkeypatch.setattr(store, "get_automation", lambda i: reads.append(i) or real(i))
-    a = upsert_automation(_auto())
-    upsert_automation(a.model_copy(update={"name": "Renamed"}))
-    upsert_monitor(_monitor())
-    assert reads == [], "a save read the row it replaces with versions off"
-    assert _artifact_count() == before, "a save kept a version with versions off"
-
-
-def test_off_a_run_keeps_no_stamp_and_its_record_is_the_same_as_with_it_on(monkeypatch):
-    payload = {"about": "promise:p.d", "breach_rate": 0.0935}
-    monkeypatch.delenv(ENV, raising=False)
-    a = upsert_automation(_promise_auto())
-    off_run = run_automation(a, now=NOW, probe=_probe(payload), dispatch=_stub())
-    assert get_run_stamp(off_run.id) is None
-    assert set(off_run.model_dump()) == set(get_run(off_run.id).model_dump())
-
-    monkeypatch.setenv(ENV, "1")
-    b = upsert_automation(_promise_auto())
-    on_run = run_automation(b, now=NOW, probe=_probe(payload), dispatch=_stub())
-    assert get_run_stamp(on_run.id) is not None
-    off_d, on_d = _comparable(get_run(off_run.id)), _comparable(get_run(on_run.id))
-    off_d.pop("automation_id"), on_d.pop("automation_id")
-    assert off_d == on_d, "the run record differs with versions on — the stamp belongs beside it"
-
-
-def test_off_evaluate_conditions_answers_as_it_did():
+def test_evaluate_conditions_answers_the_same_with_a_verdict_list():
     a = _auto(conditions=[Condition(kind="metric", config={"monitor_id": "m1"})])
     plain = evaluate_conditions(a, now=NOW, probe=_probe(fired=False))
     collected: list = []
@@ -406,24 +363,7 @@ BODY = {"conn_id": "conn-tc3-api", "name": "Refund watch",
         "effects": [{"kind": "notify", "config": {"trigger_id": "t1"}}]}
 
 
-def test_off_the_doors_answer_404_and_the_runs_list_is_unchanged(off, client):
-    aid = client.post("/automations", json=BODY).json()["id"]
-    run = run_automation(get_automation(aid), now=NOW, probe=_probe(), dispatch=_stub(),
-                         manual=True)
-    got = client.get(f"/automations/{aid}/runs")
-    assert got.status_code == 200
-    import json
-    assert got.json() == json.loads(json.dumps(
-        {"runs": [r.model_dump() for r in get_runs(automation_id=aid, limit=50)]}))
-    assert "version" not in got.json()["runs"][0]
-    m = upsert_monitor(_monitor())
-    for path in (f"/automations/{aid}/versions", f"/automations/runs/{run.id}/version",
-                 f"/monitors/{m.id}/versions"):
-        assert client.get(path).status_code == 404, path
-    assert client.post(f"/automations/runs/{run.id}/replay").status_code == 404
-
-
-def test_on_the_doors_read_versions_a_runs_stamp_and_replay_it(on, client):
+def test_the_doors_read_versions_a_runs_stamp_and_replay_it(client):
     aid = client.post("/automations", json=BODY).json()["id"]
     changed = {**BODY, "effects": [{"kind": "notify", "config": {"trigger_id": "t2"}}]}
     assert client.put(f"/automations/{aid}", json=changed).status_code == 200
@@ -447,20 +387,19 @@ def test_on_the_doors_read_versions_a_runs_stamp_and_replay_it(on, client):
     assert client.post("/automations/runs/no-such-run/replay").status_code == 404
 
 
-def test_on_a_replay_of_a_run_that_kept_nothing_is_a_409_that_says_why(client, monkeypatch):
-    monkeypatch.delenv(ENV, raising=False)
-    aid = client.post("/automations", json=BODY).json()["id"]
-    run = run_automation(get_automation(aid), now=NOW, probe=_probe(), dispatch=_stub(),
-                         manual=True)
-    monkeypatch.setenv(ENV, "1")
+def test_a_replay_of_a_run_that_kept_nothing_is_a_409_that_says_why(client, monkeypatch):
+    with _before_versions(monkeypatch):
+        aid = client.post("/automations", json=BODY).json()["id"]
+        run = run_automation(get_automation(aid), now=NOW, probe=_probe(), dispatch=_stub(),
+                             manual=True)
     refused = client.post(f"/automations/runs/{run.id}/replay")
     assert refused.status_code == 409
-    assert "it ran while versions were off" in refused.json()["detail"]
+    assert "it ran before versions were kept" in refused.json()["detail"]
     view = client.get(f"/automations/runs/{run.id}/version").json()
-    assert view["kept"] is False and "versions were off" in view["why_not"]
+    assert view["kept"] is False and "before versions were kept" in view["why_not"]
 
 
-def test_on_a_save_that_cannot_keep_its_version_is_a_503(on, client, monkeypatch):
+def test_a_save_that_cannot_keep_its_version_is_a_503(client, monkeypatch):
     aid = client.post("/automations", json=BODY).json()["id"]
 
     def broken(self, *args, **kwargs):
@@ -471,7 +410,7 @@ def test_on_a_save_that_cannot_keep_its_version_is_a_503(on, client, monkeypatch
     assert get_automation(aid).name == "Refund watch"
 
 
-def test_on_a_monitors_versions_door(on, client):
+def test_a_monitors_versions_door(client):
     m = upsert_monitor(_monitor())
     upsert_monitor(m.model_copy(update={"warning_threshold": 20.0}))
     body = client.get(f"/monitors/{m.id}/versions").json()

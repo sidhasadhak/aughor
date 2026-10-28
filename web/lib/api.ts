@@ -3062,7 +3062,7 @@ export interface DashboardVersion {
   published_by?: string;
   /** Arc OC-4 — the ontology release a version holding pieces was composed against. */
   ontology_release?: string;
-  /** Arc ED-4 (flag `dashboard.app_versions`) — where this version stands: a keep is a draft until it is published. */
+  /** Arc ED-4 — where this version stands: a keep is a draft until it is published. */
   state?: "draft" | "published" | "archived";
   /** Arc ED-4 — on the newest version only: the version the App's readers read, null while it reaches nobody. */
   published_version?: number | null;
@@ -4302,29 +4302,6 @@ export async function getProcessMap(connId: string, entityId: string, schemaName
   return res.json();
 }
 
-// ── Causal Graph ──────────────────────────────────────────────────────────────
-
-export interface CausalEdge {
-  id: string;
-  from_signal: string;
-  to_signal: string;
-  from_entity: string | null;
-  to_entity: string | null;
-  weight: number;
-  confirmed_by: string[];
-  conn_id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export async function getCausalGraph(connId: string): Promise<CausalEdge[]> {
-  const res = await fetch(
-    `${getApiBase()}/connections/${encodeURIComponent(connId)}/causal-graph`,
-  );
-  if (!res.ok) return [];
-  return res.json();
-}
-
 // ── Canvas ────────────────────────────────────────────────────────────────────
 
 export interface CanvasScope {
@@ -5393,7 +5370,7 @@ export interface MonitorAlert {
   caveat?: string | null;
   acknowledged: boolean;
   acknowledged_at: string | null;
-  /** Arc TC, TC-4 (`monitors.recovery` on) — the recovery that closed this alert, and when. Absent while it is open. */
+  /** Arc TC, TC-4 — the recovery that closed this alert, and when. Absent while it is open. */
   closed_by?: string;
   closed_at?: string;
   /** On a recovery (`alert_on: "recovered"`): the alert it closes — the one its message names. */
@@ -6569,8 +6546,8 @@ export interface AutomationRun {
   error: string;
   /** DS-8 — engine-internal resume state. Present only while `outcome === "paused"`. */
   checkpoint?: Record<string, unknown>;
-  /** TC-3 — the version this run ran under. Absent while versions are off; null when the run
-   *  kept none (it ran before versions were on, or its version could not be kept). */
+  /** TC-3 — the version this run ran under. Absent from a server before versions; null when the
+   *  run kept none (it ran before versions were kept, or its version could not be kept). */
   version?: number | null;
 }
 
@@ -6595,7 +6572,7 @@ export interface AutomationVersions {
   why_not: string;
 }
 
-/** TC-3 — an automation's kept versions, newest first; null while versions are off (404). */
+/** TC-3 — an automation's kept versions, newest first; null when there is no such automation and no version (404). */
 export async function getAutomationVersions(id: string): Promise<AutomationVersions | null> {
   const res = await fetch(`${getApiBase()}/automations/${id}/versions`);
   if (res.status === 404) return null;

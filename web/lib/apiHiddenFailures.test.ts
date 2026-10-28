@@ -14,7 +14,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const HIDES = /if \(!res\.ok\) return (?:\[\]|null|\{\}|false);/g;
-const BASELINE = 29;   // 30 → 29 (2026-10-13): the Evidence layer's claim ledger says a refusal (getRecentEvidenceClaims).
+const BASELINE = 28;   // 29 → 28 (2026-10-28): getCausalGraph went with the causal graph (Arc ED-5, made part of the platform).
+                       // 30 → 29 (2026-10-13): the Evidence layer's claim ledger says a refusal (getRecentEvidenceClaims).
                        // 31 → 30 (2026-10-13): the outcomes read says a refusal; the report and the Inbox say so
                        // 32 → 31, Arc OC-4 (2026-10-09): the roster reads through getDeclaredActions, which says a refusal
 

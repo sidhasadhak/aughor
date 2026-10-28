@@ -83,7 +83,6 @@ def generate_sql_chat(question: str, connection_id: str, schema: str, temperatur
         sql_examples_section="",
         metrics_section="",
         exploration_section="",
-        causal_section="",
         document_section="",
     )
     if dialect_rules:
@@ -164,11 +163,6 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
         s = render_exploration_annotations(connection_id)
         return (s + "\n\n") if s else ""
 
-    def _causal() -> str:
-        from aughor.lifecycle.causal import build_causal_context_section
-        s = build_causal_context_section(question, conn_id=connection_id)
-        return (s + "\n") if s else ""
-
     def _docs() -> str:
         from aughor.knowledge.indexer import build_external_context_section
         s = build_external_context_section(question, top_k=2)
@@ -179,7 +173,6 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     conn_kb_section = _safe_str(_ckb)
     sql_examples_section = _safe_str(_sqlex)
     exploration_section = _safe_str(_expl)
-    causal_section = _safe_str(_causal)
     document_section = _safe_str(_docs)
 
     pb_entries = []
@@ -255,7 +248,6 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
         sql_examples_section=sql_examples_section,
         metrics_section=metrics_section,
         exploration_section=exploration_section,
-        causal_section=causal_section,
         document_section=document_section,
     )
     if rules_block:

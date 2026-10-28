@@ -62,7 +62,6 @@ ABSENT_WHY: dict[str, str] = {
     "kb_patterns": "no knowledge-base pattern matched the question",
     "sql_examples": "nothing similar was answered here before",
     "exploration": "the explorer has noted nothing about this connection",
-    "causal": "no declared cause bears on the question",
     "docs": "",            # said from the agent's own document scope, below
 }
 

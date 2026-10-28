@@ -267,7 +267,7 @@ CHAT_PROMPT = """\
 DATABASE SCHEMA:
 {schema}
 
-{metrics_section}{conn_kb_section}{exploration_section}{causal_section}{document_section}{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
+{metrics_section}{conn_kb_section}{exploration_section}{document_section}{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
 
 Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
 NEVER invent column names — if a column is not in the schema, it does not exist.

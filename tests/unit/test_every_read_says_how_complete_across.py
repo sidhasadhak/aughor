@@ -3,16 +3,10 @@ types live on more than one connection: the same field on the same doors, and a 
 part of a far source's rows is refused, said as ``refused``."""
 from __future__ import annotations
 
-import pytest
 
 from tests.unit.test_object_sources import _isolated, sources, wide  # noqa: F401 — fixtures by name
 
 DOMAIN = {"domain": "default"}
-
-
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBJECTS_COMPLETENESS", "1")
 
 
 def _said(r) -> dict:
@@ -20,7 +14,7 @@ def _said(r) -> dict:
     return r.json()["completeness"]
 
 
-def test_the_organisations_doors_say_it_too(client, wide, on):  # noqa: F811
+def test_the_organisations_doors_say_it_too(client, wide):  # noqa: F811
     assert _said(client.get("/objects/Customer/C00001", params=DOMAIN))["state"] == "complete"
     linked = client.get("/objects/Customer/C00001/links/customer_to_order", params={**DOMAIN, "limit": 2})
     assert _said(linked)["shown"] == len(linked.json()["rows"])
@@ -34,7 +28,7 @@ def test_the_organisations_doors_say_it_too(client, wide, on):  # noqa: F811
     assert refused["state"] == "refused"
 
 
-def test_a_query_cut_at_the_cap_says_truncated_and_one_over_the_cross_source_cap_refused(client, wide, on,  # noqa: F811
+def test_a_query_cut_at_the_cap_says_truncated_and_one_over_the_cross_source_cap_refused(client, wide,  # noqa: F811
                                                                                            monkeypatch):
     monkeypatch.setattr("aughor.db.connection.MAX_ROWS", 1)
     cut = client.post("/objects/query", params=DOMAIN,

@@ -191,12 +191,6 @@ def exploration_annotations(question: str, connection_id: str) -> str:
     return _safe(lambda: render_exploration_annotations(connection_id), "grounding: exploration annotations")
 
 
-def causal_context(question: str, connection_id: str) -> str:
-    from aughor.lifecycle.causal import build_causal_context_section
-    return _safe(lambda: build_causal_context_section(question, conn_id=connection_id),
-                 "grounding: causal context")
-
-
 def external_docs(question: str, connection_id: str = "", canvas_id: str = "") -> str:
     """Uploaded-document context, including any pinned to the active canvas.
 
@@ -316,7 +310,6 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
     ("kb_patterns", "Knowledge-base planning patterns", lambda q, c, **k: kb_patterns(q, c), False),
     ("sql_examples", "Prior-analysis SQL examples", lambda q, c, **k: sql_examples(q, c), False),
     ("exploration", "Exploration annotations", lambda q, c, **k: exploration_annotations(q, c), False),
-    ("causal", "Causal context", lambda q, c, **k: causal_context(q, c), False),
     ("docs", "Connection documents",
      lambda q, c, **k: external_docs(q, c, k.get("canvas_id") or ""), False),
 ]

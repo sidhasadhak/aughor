@@ -79,8 +79,6 @@ def get_edit_history(connection_id: str = BUILTIN_ID, object_type: str = "", row
     from aughor.org.context import current_org_id
     history = edit_history(connection_id, object_type=object_type, row_key=row_key, column=column,
                            org_id=current_org_id() or None)
-    if not security_sql.enabled():
-        return {"history": history}
     # Arc ED, ED-1 — as the reader may read it: a masked property's values emptied, an object outside their rows withheld
     shown, withheld = security_sql.history_as_read(connection_id, history)
     return {"history": shown, **({"withheld": withheld} if withheld else {})}
@@ -90,14 +88,12 @@ def get_edit_history(connection_id: str = BUILTIN_ID, object_type: str = "", row
 def get_object_changes(object_type: str, row_key: str, connection_id: str = BUILTIN_ID):
     """Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
     what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
-    cost when it was metered — "not metered" said, never zero. Read as the edit history is: with object security on, a
-    masked property's values are emptied and an object outside the reader's rows is withheld and counted."""
+    cost when it was metered — "not metered" said, never zero. Read as the edit history is: a masked property's values
+    are emptied and an object outside the reader's rows is withheld and counted."""
     from aughor.actions import attribution
     from aughor.ontology import security_sql
     from aughor.org.context import current_org_id
     out = attribution.object_changes(connection_id, object_type, row_key, org_id=current_org_id() or None)
-    if not security_sql.enabled():
-        return out
     shown, withheld = security_sql.history_as_read(connection_id, out["changes"])
     return {**out, "changes": shown, **({"withheld": withheld} if withheld else {})}
 

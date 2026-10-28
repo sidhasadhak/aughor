@@ -1,11 +1,11 @@
 /**
- * What an App's owner is told about the version its readers read (Arc ED, ED-4, flag `dashboard.app_versions`; the
- * user, 2026-10-24: readers see the last published version).
+ * What an App's owner is told about the version its readers read (Arc ED, ED-4; the user, 2026-10-24: readers see the
+ * last published version).
  *
- * With App versions on, each kept version says where it stands — draft, published or archived — and the newest says
- * which version the App's readers read (`published_version`, null while it reaches nobody). A keep since then is the
- * owner's draft: it is said beside the door that publishes it, and publishing to the same audience publishes it. A
- * server with App versions off says neither, and every word here reads as before.
+ * Each kept version says where it stands — draft, published or archived — and the newest says which version the App's
+ * readers read (`published_version`, null while it reaches nobody). A keep since then is the owner's draft: it is said
+ * beside the door that publishes it, and publishing to the same audience publishes it. A server from before App
+ * versions says neither, and every word here reads as it did then.
  */
 import type { DashboardVersion } from "@/lib/api";
 

@@ -72,7 +72,6 @@ def test_too_few_letters_is_refused_with_why(served, client):
 @pytest.fixture
 def policed(served, monkeypatch):
     from aughor.rbac.groups import add_member, upsert_group
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY", "1")
     for group, members in (("germany", ["user:ana"]), ("finance", ["user:ben"])):
         upsert_group("default", group, group.capitalize())
         for m in members:
@@ -114,8 +113,7 @@ def test_a_masked_name_is_not_searched_and_says_why(policed, client, monkeypatch
     assert [h for h in _find(client, "alice")["hits"] if h["type"] == "customer"]
 
 
-def test_with_completeness_on_the_answer_says_withheld_as_the_object_doors_do(policed, client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBJECTS_COMPLETENESS", "1")
+def test_the_answer_says_withheld_as_the_object_doors_do(policed, client, monkeypatch):
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
     said = _find(client, "davis")["completeness"]
     assert said["state"] == "withheld" and said["withheld"] == ["Customer"]

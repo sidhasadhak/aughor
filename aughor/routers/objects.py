@@ -59,10 +59,10 @@ _MAX_ROWS = 1000
 
 
 def _complete(out: Any, clock: Any, **facts) -> Any:
-    """Arc ED-6 — the answer with how complete its read is (`semantic/completeness.py`), when ``objects.completeness``
-    is on; as it was when off. A refusal is said as ``refused``, with its reason."""
+    """Arc ED-6 — the answer with how complete its read is (`semantic/completeness.py`). A refusal is said as
+    ``refused``, with its reason."""
     from aughor.semantic import completeness as C
-    if not C.enabled() or not isinstance(out, dict):
+    if not isinstance(out, dict):
         return out
     if out.get("path") == "refused":
         return {**out, "completeness": C.refused(str(out.get("refused") or ""), clock)}
@@ -70,10 +70,10 @@ def _complete(out: Any, clock: Any, **facts) -> Any:
 
 
 def _truthful(out: dict, result: Any) -> dict:
-    """With ``objects.completeness`` on, ``truncated`` says what the connection did: it stopped at its own cap (500)
-    long before the 1,000 this door compares with, so the old boolean was never true. Off: as before."""
+    """``truncated`` says what the connection did: it stopped at its own cap (500) long before the 1,000 this door
+    compares with, so the old boolean was never true."""
     from aughor.semantic import completeness as C
-    if C.enabled() and C.cut(result):
+    if C.cut(result):
         out["truncated"] = True
     return out
 

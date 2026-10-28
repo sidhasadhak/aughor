@@ -148,7 +148,6 @@ def test_chosen_objects_are_named_by_key_and_one_that_is_not_there_is_counted(se
 
 def test_a_chosen_object_a_row_policy_withholds_is_dropped_and_said_never_listed(served, db, monkeypatch):  # noqa: F811
     from aughor.rbac.groups import add_member, upsert_group
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY", "1")
     upsert_group("default", "fulfilment", "Fulfilment")
     add_member("default", "fulfilment", "user:ana")
     served.entities["Order"].row_policies = [
@@ -163,8 +162,7 @@ def test_a_chosen_object_a_row_policy_withholds_is_dropped_and_said_never_listed
     prose = subject.prose()
     assert not any(k in prose for k in not_hers)                  # the falsifier: never listed, only counted
     assert any("user:ana" in c for c in subject.said)             # the door's own words for the policy
-    # with row policies off, a key the reader cannot list is not there — nothing is said to be withheld
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY")
+    # a key that names no order is missing, not withheld — it is not there for anyone
     assert ask_subject.resolve(AskFocus(kind="objects", objects=["Order:NOPE"]), CONN).parts[0].withheld == 0
 
 

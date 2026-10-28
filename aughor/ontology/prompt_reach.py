@@ -476,16 +476,24 @@ def _mutated(value: Any, ann: Any) -> Any:
     if ann is str:
         return f"{value} {MUT}".strip()
     if origin is list or ann is list:
-        return list(value or []) + [MUT]
+        # A list of declarations gets one more VALID declaration, never a bare string: a renderer that reads it (object
+        # security's row policies, since 2026-10-28 on every compiled query) would otherwise meet a value no store holds.
+        item = args[0] if args else None
+        return list(value or []) + [_fresh(item) if _is_model(item) else MUT]
     if origin is dict or ann is dict:
         out = dict(value or {})
-        out[MUT] = MUT
+        item = args[1] if len(args) == 2 else None
+        out[MUT] = _fresh(item) if _is_model(item) else MUT
         return out
     if isinstance(value, BaseModel):
         # A nested declaration (phase 4's Verification and Undo on an action): mutate its first field.
         name, field = next(iter(type(value).model_fields.items()))
         return value.model_copy(update={name: _mutated(getattr(value, name), field.annotation)})
     raise TypeError(f"no mutation rule for {ann!r} (value {value!r})")
+
+
+def _is_model(t: Any) -> bool:
+    return isinstance(t, type) and issubclass(t, BaseModel)
 
 
 def _fresh(t: Any) -> Any:

@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 from aughor.dashboards import queries as Q
 from aughor.db.connection import open_connection
 from aughor.demo.setup import _seed_ecommerce
-from aughor.kernel.flags import flag_overrides
 
 CONN = "queries-t"
 SALES = ("SELECT o.order_date, c.country, o.total_amount, o.customer_id, o.status FROM ecommerce.orders o "
@@ -228,20 +227,16 @@ def test_a_query_over_a_table_a_row_policy_narrows_is_refused_while_policies_hol
                           backing=Backing(table="users", primary_key="id"))
     graph = OntologyGraph(connection_id=CONN, schema_name="ecommerce", schema_fingerprint="fp")
     graph.entities = {"Order": order, "User": user}
-    with flag_overrides({"ontology.security": True}):
-        assert Q.policy_refusal(graph, ["users", "orders"]) == (
-            "This query reads orders straight from its table, and Order has a row policy: a query cannot be narrowed to "
-            "each reader. Read Order through a set instead.")
-        assert Q.policy_refusal(graph, ["users"]) is None
-    with flag_overrides({"ontology.security": False}):
-        assert Q.policy_refusal(graph, ["orders"]) is None
+    assert Q.policy_refusal(graph, ["users", "orders"]) == (
+        "This query reads orders straight from its table, and Order has a row policy: a query cannot be narrowed to "
+        "each reader. Read Order through a set instead.")
+    assert Q.policy_refusal(graph, ["users"]) is None
     # an entity read through a keyed query still names the tables it is made of
     keyed = OntologyEntity(id="Line", display_name="Line", source_tables=["order_items"], identity_key="id", grain_verified=True,
                            backing=Backing(kind="query", sql="SELECT * FROM order_items", primary_key="id"),
                            row_policies=[RowPolicy(group="support", conditions=[])])
     graph.entities = {"Line": keyed}
-    with flag_overrides({"ontology.security": True}):
-        assert "Line has a row policy" in (Q.policy_refusal(graph, ["order_items"]) or "")
+    assert "Line has a row policy" in (Q.policy_refusal(graph, ["order_items"]) or "")
 
 
 # ── stopped after the time limit ──────────────────────────────────────────────────────────────────────────────────────
@@ -355,8 +350,7 @@ def test_the_door_keeps_no_query_over_a_table_a_row_policy_narrows_and_a_kept_on
     shown = {"as": "figure", "series": [{"column": "total_amount", "agg": "sum"}]}
     kept = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown}).json()["card"]
     monkeypatch.setattr("aughor.dashboards.pieces.served_graph", lambda c: _policed())
-    with flag_overrides({"ontology.security": True}):
-        r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown})
-        assert r.status_code == 422 and "Order has a row policy" in r.json()["detail"]["refused"][0]
-        run = client.post(f"/cards/{kept['id']}/run").json()
-        assert run["shown"] is None and "Order has a row policy" in run["error"]
+    r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown})
+    assert r.status_code == 422 and "Order has a row policy" in r.json()["detail"]["refused"][0]
+    run = client.post(f"/cards/{kept['id']}/run").json()
+    assert run["shown"] is None and "Order has a row policy" in run["error"]

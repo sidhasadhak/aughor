@@ -546,7 +546,7 @@ class AughorClient:
 
     async def service_principal_me(self, name: str, key: str) -> tuple[int, Optional[dict]]:
         """Arc ED, ED-2 — ``(status, body)`` the API gives a presented service principal: 200 with its grant, 401 when the
-        name and key do not match, 404 when callers as principals are off there. 0 when the API could not be asked."""
+        name and key do not match. 0 when the API could not be asked."""
         token = CURRENT_CALLER.set((name, key))
         try:
             async with self._mk_client() as c:

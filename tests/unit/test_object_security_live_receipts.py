@@ -212,7 +212,6 @@ def test_the_from_object_door_reads_as_the_narrower_of_the_agent_and_the_person(
 # ── 7. a listing's completeness says what it masked ─────────────────────────────
 
 def test_a_listing_says_in_its_completeness_the_property_it_masked(client, served, monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBJECTS_COMPLETENESS", "1")
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
     r = client.post("/objects/list", params={"connection_id": CONN, "schema_name": "ecommerce"},
                     json={"entity": "Order", "columns": ["status", "total_amount"], "limit": 50})
@@ -238,7 +237,6 @@ def test_the_dashboard_from_an_object_says_the_figure_it_left_out_and_why(client
 # ── 9. a run keeps who asked ────────────────────────────────────────────────────
 
 def test_a_persons_run_now_keeps_who_asked_on_the_runs_start(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_AUTOMATIONS_VERSIONS", "1")
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
     body = {"conn_id": "conn-asked-by", "name": "Refund watch", "enabled": False,       # gated: nothing is dispatched
             "conditions": [{"kind": "schedule", "config": {"cron": "0 9 * * *"}}],

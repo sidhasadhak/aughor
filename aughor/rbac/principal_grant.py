@@ -1,7 +1,7 @@
 """Arc ED, ED-2 (ROADMAP §3.58) — a service principal's grant, held at the API's door.
 
-An outside program that presents a service principal is held to the organisation's agent policy (`agent_gate`).
-Behind ``security.principal_scopes`` its own grant narrows that further — never widens it — on every request it makes:
+An outside program that presents a service principal is held to the organisation's agent policy (`agent_gate`). Its
+own grant narrows that further — never widens it — on every request it makes:
 
 * the **areas** it may work in: each route belongs to one (`area_of`); a principal whose grant names areas is refused
   a route in any other, and a route in none, so a door added later is closed to it until it is placed;
@@ -22,8 +22,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from fastapi import HTTPException
-
-FLAG = "security.principal_scopes"
 
 #: Routes every principal may reach whatever its grant: what it is, and what the organisation allows it.
 OPEN: frozenset = frozenset({("GET", "/ledger/v1/principals/service/me"), ("GET", "/org-settings/agent-policy")})
@@ -58,11 +56,6 @@ _ROUTES: tuple = (
     ("GET", "/chat/", "catalog:read"),
 )
 _ENTITY_KEYS = ("entity", "object_type")
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def area_of(method: str, template: str, tool: Optional[str] = None) -> Optional[str]:
@@ -190,9 +183,7 @@ def refused_here(detail: str) -> GrantRefused:
 
 
 def grant_for(request: Any) -> Optional[dict]:
-    """The grant the request is held to: the presenting service principal's, while the flag is on; else None."""
-    if not enabled():
-        return None
+    """The grant the request is held to: the presenting service principal's; None when it presents none."""
     principal = principal_of(request)
     if principal is None:
         return None

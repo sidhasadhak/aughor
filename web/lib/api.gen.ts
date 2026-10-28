@@ -101,8 +101,8 @@ export interface paths {
          * Get Object Changes
          * @description Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
          *     what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
-         *     cost when it was metered — "not metered" said, never zero. Read as the edit history is: with object security on, a
-         *     masked property's values are emptied and an object outside the reader's rows is withheld and counted.
+         *     cost when it was metered — "not metered" said, never zero. Read as the edit history is: a masked property's values
+         *     are emptied and an object outside the reader's rows is withheld and counted.
          */
         get: operations["get_object_changes_actions_edits_changes_get"];
         put?: never;
@@ -3376,7 +3376,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Causal Graph */
+        /**
+         * Get Causal Graph
+         * @description Gone (Arc ED, ED-5; the user, 2026-10-24: "Impacts are the one store"). An empty list would read as "nothing bears
+         *     on anything"; the answer moved, and is said.
+         */
         get: operations["get_causal_graph_connections__conn_id__causal_graph_get"];
         put?: never;
         post?: never;
@@ -4383,6 +4387,8 @@ export interface paths {
          *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
          *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
          *     it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+         *     Arc OC-7 — read as the object doors read: an agent acting for the person (``X-Aughor-Acting-Agent``) reads only
+         *     what both may.
          */
         get: operations["propose_from_object_dashboards_from_object_get"];
         put?: never;
@@ -9392,7 +9398,7 @@ export interface paths {
         /**
          * Service Principal Me
          * @description Arc ED, ED-2 — the service principal this request presents, and the grant it is held to: what the MCP server
-         *     asks before it lets a caller in as itself (`mcp.caller_principals`). A name and key that do not match an active
+         *     asks before it lets a caller in as itself (`mcp/callers.py`). A name and key that do not match an active
          *     principal are refused here whatever the install's identity mode — elsewhere, without sign-in, they would read as
          *     the install's own operator.
          */
@@ -10949,8 +10955,8 @@ export interface paths {
         /**
          * Monitor Versions
          * @description TC-3 — every kept version of this monitor, newest first, each with who saved it, when and
-         *     how it came to be kept; and which one is current. 404 while ``automations.versions`` is off.
-         *     Superseded, never deleted: a deleted monitor still answers with its versions.
+         *     how it came to be kept; and which one is current. Superseded, never deleted: a deleted
+         *     monitor still answers with its versions.
          */
         get: operations["monitor_versions_monitors__monitor_id__versions_get"];
         put?: never;
@@ -12440,7 +12446,7 @@ export interface paths {
          * @description Arc OC-7 — which objects of an entity each group sees: each policy names a group and the conditions on the
          *     entity's own properties its objects meet. Once any is declared, a reader sees only the objects a policy of one of
          *     their groups admits — none, and told which groups would, when they are in none. An empty list withdraws them all.
-         *     Enforced at the object doors while `ontology.security` is on.
+         *     Enforced at the object doors and at the connection's own door.
          */
         put: operations["declare_row_policies_ontology_entities__entity_id__row_policies_put"];
         post?: never;

@@ -1092,7 +1092,7 @@ class BearerGate:
 
     Arc ED, ED-2 — or presents a service principal (its name and key) that the API recognises, and is then served as
     that principal (`mcp/callers.py`). A name and key the API refuses are refused here, whatever token comes with
-    them; while the API's switch is off, the shared token is the door as before."""
+    them."""
 
     def __init__(self, app: Any, token: str, client: "AughorClient | None" = None) -> None:
         if not token:
@@ -1117,7 +1117,7 @@ class BearerGate:
         caller = callers.presented(scope.get("headers") or [])
         if caller is not None:
             status, _ = await callers.answer(caller[0], caller[1], self._client or _client)
-            if status == 200 or (status == 404 and token_ok):
+            if status == 200:
                 return await self.app(scope, receive, send)
             return await self._refuse(send, callers.refused_because(status).encode("utf-8"))
         if token_ok:

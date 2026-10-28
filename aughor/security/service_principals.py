@@ -16,7 +16,7 @@ Rows live in the kernel ledger's kv store; no new store.
 Arc ED, ED-2 — a principal may also carry a GRANT that narrows what the organisation's agent policy allows it: the
 areas it may work in (`AREAS`), the entities it may read and the declared actions it may propose. Each is stored only
 when a person names it, so a principal minted without one is the row it always was; the agent gate holds a request to
-it behind ``security.principal_scopes`` (`rbac/principal_grant.py`).
+it (`rbac/principal_grant.py`).
 """
 from __future__ import annotations
 

@@ -101,6 +101,11 @@ def test_deleted_flags_stay_deleted():
                       "ask.clarify", "ask.brief_context", "deep_analysis.evidence_dedup",
                       "intake.loss_signals", "report.argument_style",
                       "chart.exhibit_grammar", "lens.decision_grade", "preflight.parallel",
-                      "schema.two_tier_catalog", "explore.wandering_detector"):
+                      "schema.two_tier_catalog", "explore.wandering_detector",
+                      # 2026-10-28 — the last ten switches, checked on live data and made unconditional.
+                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
+                      "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
+                      "ontology.impacts_only", "objects.completeness", "monitors.recovery",
+                      "automations.versions"):
         assert tombstone not in FLAG_ENV, tombstone
         assert all(tombstone not in s for s in SETS.values()), tombstone

@@ -68,7 +68,7 @@ def _read_schema(connection_id: str, *, canvas_id: Optional[str] = None,
     """``(text, withheld)``: the schema text a turn may see — the scoped connection's own, narrowed to a canvas's
     table list when it has one (a table-list scope carries no schema name, so the pin alone constrains nothing — the
     quick body filters the same way) — and, while the ontology's declarations apply to the request
-    (`ontology.security_sql`), read as the reader may read it: a policied table's row count, sample values and value
+    (`security_sql.applies`), read as the reader may read it: a policied table's row count, sample values and value
     lists and a masked column's values withheld, each said per table (`security_sql.schema_as_read`)."""
     schema = _connection(connection_id, canvas_id=canvas_id, schema_scope=schema_scope).get_schema()
     if canvas_id:

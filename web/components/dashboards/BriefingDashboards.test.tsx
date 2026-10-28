@@ -816,7 +816,7 @@ describe("an App publishes one version (Arc ED, ED-4)", () => {
     expect(within(rows[0]).queryByTestId("dashboard-history-read")).toBeNull();
   });
 
-  it("a server with App versions off says no state: the door reads as before, and the same audience is not offered again", async () => {
+  it("a server from before App versions says no state: the door reads as before, and the same audience is not offered again", async () => {
     api.dashboardAudiences.mockResolvedValue({ groups: [sales], roles: [] });
     api.getDashboard.mockResolvedValue(withNewest({ ...version(3), spec: SPEC, published_to: [sales] }));
     await openBuilder();
@@ -833,7 +833,6 @@ describe("an App publishes one version (Arc ED, ED-4)", () => {
 
 describe("previewing as a group (Arc AP-6)", () => {
   it("reads the dashboard as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
-    api.getSystemFlags.mockResolvedValue({ "ontology.security": { value: true } });
     api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }, { id: "fulfilment", name: "Fulfilment" }] });
     show();
     fireEvent.click(await screen.findByTestId("dashboard-edit"));
@@ -872,9 +871,9 @@ describe("previewing as a group (Arc AP-6)", () => {
     await openBuilder();
     await waitFor(() => expect(optionsOf(screen.getByLabelText("Preview as")).map(o => o.value)).toEqual(["", "support"]));
     await choose(screen.getByLabelText("Preview as"), "support");
-    // where limiting who sees which objects is off, a member of the group reads what the person reads — said so
+    // nothing withheld from the group: said so, never left blank
     expect(await screen.findByTestId("dashboard-preview-nothing")).toHaveTextContent(
-      "Limiting who sees which objects is off here, so a member of Support reads what you read.");
+      "No row policy or mask holds back what these pieces read from this group.");
     fireEvent.click(screen.getByTestId("builder-done"));
     await waitFor(() => expect(screen.queryByTestId("dashboard-builder")).toBeNull());
     fireEvent.click(await screen.findByTestId("dashboard-edit"));

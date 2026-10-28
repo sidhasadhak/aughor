@@ -13,7 +13,7 @@ The reader is the person a request acts for (`authz.caller`) and, when an agent 
 property is masked if EITHER may not — an agent never reads beyond the person it acts for, nor beyond its own grants.
 
 Enforced at the three object doors through their one FROM (`object_query.backing_from`), the compiler's one property
-resolution (`_Compiler.prop`) and the object page — behind `ontology.security` (off; byte-identical when off). Every
+resolution (`_Compiler.prop`) and the object page. An entity that declares neither reads exactly as it did before. Every
 withheld thing is said: the listing's and the page's caveats name the policy, the group and what to ask for.
 """
 from __future__ import annotations
@@ -28,7 +28,6 @@ from starlette.requests import Request
 
 from aughor.ontology.models import OntologyEntity
 
-FLAG = "ontology.security"
 EVERYONE = "*"
 #: The header an agent's runtime sends when it acts for the person the request is identified as.
 AGENT_HEADER = "X-Aughor-Acting-Agent"
@@ -43,8 +42,8 @@ _PRINCIPAL = re.compile(r"^agent:[A-Za-z0-9_.:-]{1,128}$")
 
 
 def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG) and not _unfiltered.get()
+    """Whether the declarations hold for this read — always, except inside the platform's own `unfiltered` check."""
+    return not _unfiltered.get()
 
 
 @contextlib.contextmanager
@@ -167,7 +166,8 @@ def _admitted(entity: OntologyEntity, groups: set[str]) -> list:
 
 def row_condition(entity: OntologyEntity, alias: str, who: Optional[Reader] = None) -> Optional[str]:
     """The SQL condition the reader's objects of ``entity`` meet under ``alias``, or None when nothing restricts them
-    (the flag off, or no policy declared). "FALSE" when a party is in none of the policies' groups."""
+    (no policy declared, or the platform's own `unfiltered` check). "FALSE" when a party is in none of the policies'
+    groups."""
     if not enabled() or not entity.row_policies:
         return None
     who = who or reader()
@@ -227,7 +227,7 @@ def sees_every(entity: OntologyEntity, who: Optional[Reader] = None) -> bool:
 
 
 def restricts(entity: OntologyEntity) -> bool:
-    """Whether a reader's objects of ``entity`` are a policy's — the flag on and a row policy declared."""
+    """Whether a reader's objects of ``entity`` are a policy's — a row policy declared, outside an `unfiltered` check."""
     return enabled() and bool(entity.row_policies)
 
 

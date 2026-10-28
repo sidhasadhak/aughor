@@ -4732,7 +4732,7 @@ def declare_row_policies(entity_id: str, body: _RowPolicies, connection_id: str 
     """Arc OC-7 — which objects of an entity each group sees: each policy names a group and the conditions on the
     entity's own properties its objects meet. Once any is declared, a reader sees only the objects a policy of one of
     their groups admits — none, and told which groups would, when they are in none. An empty list withdraws them all.
-    Enforced at the object doors while `ontology.security` is on."""
+    Enforced at the object doors and at the connection's own door."""
     from aughor.ontology.models import RowPolicy
     from aughor.ontology.security import condition_problem
     effective, entity = _security_entity(connection_id, schema_name, entity_id)

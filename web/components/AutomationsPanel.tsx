@@ -93,7 +93,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
   // runs view
   const [runsFor, setRunsFor] = useState<Automation | null>(null);
   const [runs, setRuns] = useState<AutomationRun[]>([]);
-  /** TC-3 — the chosen automation's kept versions: null while versions are off, "failed"
+  /** TC-3 — the chosen automation's kept versions: null when there are none to read (404), "failed"
    *  when they could not be read (said, never shown as an empty history). */
   const [versions, setVersions] = useState<AutomationVersions | null | "failed">(null);
 
@@ -675,14 +675,14 @@ export function versionLine(v: AutomationVersion): string {
   return `${who} · ${relTime(v.saved_at)}${how}`;
 }
 
-/** TC-3 — what a run card says about its version: nothing while versions are off (the key is
- *  absent), "no version kept" when the run kept none, else the number. */
+/** TC-3 — what a run card says about its version: nothing from a server before versions (the key
+ *  is absent), "no version kept" when the run kept none, else the number. */
 export function runVersionLabel(run: AutomationRun): string {
   if (run.version === undefined) return "";
   return run.version === null ? "no version kept" : `v${run.version}`;
 }
 
-/** TC-3 — the definitions this automation has had, newest first. Nothing while versions are off. */
+/** TC-3 — the definitions this automation has had, newest first. Nothing when none could be found. */
 export function VersionsList({ versions }: { versions: AutomationVersions | null | "failed" }) {
   if (versions === null) return null;
   if (versions === "failed") {

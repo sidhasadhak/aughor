@@ -60,7 +60,7 @@ import { toast } from "@/components/ui/toast";
 import {
   DashboardRefused, acceptProposal, askDashboard, dashboardAudiences, dashboardImageUrl, copySharedDashboard, draftDashboard, findingOfCard,
   getDeclaredActions,
-  getDashboard, getGroups, getProposalById, getSharedDashboard, getSuggestedShapes, getSystemFlags, keepDashboard, listDashboards, listSharedDashboards, moveCanvasDashboard,
+  getDashboard, getGroups, getProposalById, getSharedDashboard, getSuggestedShapes, keepDashboard, listDashboards, listSharedDashboards, moveCanvasDashboard,
   publishDashboard, rejectProposal, restoreDashboard, retireDashboard, runCard, startMyDashboard, unpublishDashboard,
   uploadDashboardImage,
   type BriefingRange, type DashboardAudience, type DashboardDrafted, type DashboardKept, type DashboardList, type DashboardVersion,
@@ -743,8 +743,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [imaging, setImaging] = useState(false);
   // Any recorded finding of the connection, as a card (B3); who the dashboard is published to (B5).
   const [picking, setPicking] = useState(false);
-  // Arc AP-6 — whether row policies and masks hold here (`ontology.security`): off, a previewed group reads all the person reads
-  const [limitsOn, setLimitsOn] = useState(false);
   // PENDING 54 — a question the agent answers on a rhythm
   const [questioning, setQuestioning] = useState(false);
   // Arc AP-7 — a query of the person's own, written for a section
@@ -783,14 +781,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
 
   const rangeKey = JSON.stringify(range ?? null);
   const reload = useCallback(() => setTick(t => t + 1), []);
-
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => {
-      if (alive) setLimitsOn(!!f["ontology.security"]?.value);
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
 
   // The person's dashboards.
   useEffect(() => {
@@ -1241,8 +1231,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                       <span key={k} className="aug-fs-xs" data-testid="dashboard-preview-withheld" style={{ color: "var(--t2)" }}>Withheld — {w}.</span>
                     )) : (
                       <span className="aug-fs-xs" data-testid="dashboard-preview-nothing" style={{ color: "var(--t3)" }}>
-                        {limitsOn ? "No row policy or mask holds back what these pieces read from this group."
-                          : `Limiting who sees which objects is off here, so a member of ${groups.find(g => g.id === previewing)?.name ?? previewing} reads what you read.`}
+                        No row policy or mask holds back what these pieces read from this group.
                       </span>
                     )}
                   </span>

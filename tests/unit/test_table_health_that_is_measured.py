@@ -6,7 +6,7 @@ checked". An automation step now measures a table's expectations, read-only, thr
 records each verdict in the one store.
 
 Held on the seeded samples warehouse through the real DuckDB connection and the real compiler, and the readers read
-what it wrote. The falsifier is the flag entry's: a table read as failing because a query could not run → stop.
+what it wrote. The falsifier is ROADMAP §3.58's: a table read as failing because a query could not run → stop.
 """
 from __future__ import annotations
 
@@ -19,11 +19,6 @@ from aughor.quality import expectations as X
 from aughor.quality.results import count_failing, latest_for_tables
 from aughor.quality.rules import RuleError
 from tests.unit.test_object_actions import db  # noqa: F401 — the samples warehouse, by name
-
-
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_QUALITY_EXPECTATIONS", "1")
 
 
 def _conn() -> str:
@@ -133,7 +128,7 @@ def _automation(conn: str, effects) -> Automation:
                       conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})], effects=effects)
 
 
-def test_the_step_measures_and_publishes_what_it_found(db, on, monkeypatch):  # noqa: F811
+def test_the_step_measures_and_publishes_what_it_found(db, monkeypatch):  # noqa: F811
     from tests.unit.test_object_actions import _Borrowed
     from aughor.automations.engine import _dispatch_expectations
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))
@@ -147,15 +142,7 @@ def test_the_step_measures_and_publishes_what_it_found(db, on, monkeypatch):  # 
     assert "orders: 1 of 1 expectation met" in out.message and "1 could not be measured" in out.message
 
 
-def test_off_the_step_is_skipped_and_says_so(db, monkeypatch):  # noqa: F811
-    from aughor.automations.engine import _dispatch_expectations
-    monkeypatch.delenv("AUGHOR_QUALITY_EXPECTATIONS", raising=False)
-    effect = Effect(kind="expectations", config={"expectations": [_x(name="ids", kind="not_null", column="order_id")]})
-    out = _dispatch_expectations(effect, _automation(_conn(), [effect]))
-    assert out.status == "skipped" and "off on this install" in out.message
-
-
-def test_a_step_where_nothing_could_be_measured_fails_rather_than_reads_healthy(db, on, monkeypatch):  # noqa: F811
+def test_a_step_where_nothing_could_be_measured_fails_rather_than_reads_healthy(db, monkeypatch):  # noqa: F811
     from tests.unit.test_object_actions import _Borrowed
     from aughor.automations.engine import _dispatch_expectations
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))

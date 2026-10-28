@@ -251,14 +251,3 @@ def build_playbook_prompt_section(entries: list[PlaybookEntry]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_causal_playbook_section(question: str, conn_id: str) -> str:
-    """
-    Prepend upstream causal context from the confirmed causal graph.
-    Injected into the playbook section so ADA knows which upstream drivers
-    have been previously confirmed as causes.
-    """
-    try:
-        from aughor.lifecycle.causal import build_causal_context_section
-        return build_causal_context_section(question, conn_id=conn_id)
-    except Exception:
-        return ""

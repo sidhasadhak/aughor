@@ -8,6 +8,11 @@ when no override is set, the env var still decides.
 
 `flag_enabled(name)` is the resolver the feature code calls. The override is read from
 SQLite per call (one indexed kv read — negligible; these aren't ultra-hot paths).
+
+Since 2026-10-28 the registry holds no feature flag (the user: "no feature flags at all", ROADMAP §3.65): every
+flag was made unconditional or deleted, and the only switches are an organisation's settings
+(`aughor/orgsettings/allows.py`). The machinery stays, working over an empty registry — the suite holds it with
+flags it registers for the test (`tests/conftest.py`, `synthetic_flags`).
 """
 from __future__ import annotations
 
@@ -143,26 +148,28 @@ FLAG_ENV = {
     # "ontology.builder_doors" (AUGHOR_ONTOLOGY_BUILDER_DOORS) — Arc OC-8, the contract and doors for outside programs —
     # was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
     # env var is ignored.
-    "ontology.security": "AUGHOR_ONTOLOGY_SECURITY",
-    # Arc ED, ED-1 (ROADMAP §3.58). ON (with ontology.security): a connection's door applies the released ontology's row
-    # policies and sensitive properties to every statement a request runs — narrowed to the reader's objects, a masked
-    # property refused. OFF: only the object doors apply them, and every statement reads as before.
-    "ontology.security_sql": "AUGHOR_ONTOLOGY_SECURITY_SQL",
-    # Arc ED, ED-2 (ROADMAP §3.58). ON: GET /ledger/v1/principals/service/me answers for a presented service principal, so the MCP
-    # server lets an HTTP caller in as itself — each call made as it, its tools listed by its own grant. OFF: the route
-    # says it is off and every HTTP client shares the server's token, as before.
-    "mcp.caller_principals": "AUGHOR_MCP_CALLER_PRINCIPALS",
-    # Arc ED, ED-2. ON: a service principal's grant — areas, entities, declared actions, connections — narrows what the
-    # agent policy allows it on every request, and its contract is cut to it. OFF: the policy alone holds it.
-    "security.principal_scopes": "AUGHOR_SECURITY_PRINCIPAL_SCOPES",
-    # Arc ED, ED-3 (ROADMAP §3.58). ON: an automation's expectations step measures a table read-only and records each
-    # verdict in the quality plane, which answers, the MCP table-health tool and the Briefing already read. OFF: the step
-    # is skipped and says so; the plane reads "not checked" as before.
-    "quality.expectations": "AUGHOR_QUALITY_EXPECTATIONS",
-    # Arc ED, ED-4 (ROADMAP §3.58; the user, 2026-10-24: readers see the last published version). ON: a keep on a
-    # dashboard is a draft, and an App's readers read the version last published until its owner publishes again.
-    # OFF: readers read every version the moment it is kept, as before.
-    "dashboard.app_versions": "AUGHOR_DASHBOARD_APP_VERSIONS",
+    # The last ten switches — each checked on live data first, its defects fixed (09aae58f) — were made unconditional
+    # 2026-10-28; after them FLAG_ENV holds no feature flag (the user, 2026-10-28: "no feature flags at all"):
+    # "ontology.security" (AUGHOR_ONTOLOGY_SECURITY) — Arc OC-7, a row policy's objects and a sensitive property masked
+    # at the object doors, said wherever it bites; an entity that declares neither reads as before — was made
+    # unconditional 2026-10-28 — part of the platform (ROADMAP §3.65), checked on live data first; its off path is
+    # deleted. An operator's env var is ignored.
+    # "ontology.security_sql" (AUGHOR_ONTOLOGY_SECURITY_SQL) — Arc ED-1, the same declarations at a connection's own
+    # door, on every statement a request runs — was made unconditional 2026-10-28 — part of the platform (ROADMAP
+    # §3.65), checked on live data first; its off path is deleted. An operator's env var is ignored.
+    # "mcp.caller_principals" (AUGHOR_MCP_CALLER_PRINCIPALS) — Arc ED-2, an MCP caller over HTTP as its own service
+    # principal; a caller presenting the server's token is served as before — was made unconditional 2026-10-28 — part
+    # of the platform (ROADMAP §3.65), checked on live data first; its off path is deleted. An operator's env var is
+    # ignored.
+    # "security.principal_scopes" (AUGHOR_SECURITY_PRINCIPAL_SCOPES) — Arc ED-2, a service principal's grant narrowing
+    # the agent policy on every request, its contract cut to it — was made unconditional 2026-10-28 — part of the
+    # platform (ROADMAP §3.65), checked on live data first; its off path is deleted. An operator's env var is ignored.
+    # "quality.expectations" (AUGHOR_QUALITY_EXPECTATIONS) — Arc ED-3, an automation's expectations step measuring a
+    # table into the quality plane — was made unconditional 2026-10-28 — part of the platform (ROADMAP §3.65), checked
+    # on live data first; its off path is deleted. An operator's env var is ignored.
+    # "dashboard.app_versions" (AUGHOR_DASHBOARD_APP_VERSIONS) — Arc ED-4, a keep a draft and an App's readers reading
+    # the version last published — was made unconditional 2026-10-28 — part of the platform (ROADMAP §3.65), checked
+    # on live data first; its off path is deleted. An operator's env var is ignored.
     # Arc SH (ROADMAP §3.64), 2026-10-27 — Sheets: tables people make, edit, combine and chat with. Its eight waves were
     # made unconditional 2026-10-28 — part of the platform (ROADMAP §3.65); their off paths are deleted. An operator's
     # env var is ignored:
@@ -174,14 +181,13 @@ FLAG_ENV = {
     # "sheets.everywhere" (AUGHOR_SHEETS_EVERYWHERE) — SH-6, a dashboard made from a sheet;
     # "sheets.sharing" (AUGHOR_SHEETS_SHARING) — SH-8, a sheet shared with chosen people and groups;
     # "sheets.model_columns" (AUGHOR_SHEETS_MODEL_COLUMNS) — SH-5, a column a model writes.
-    # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
-    # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
-    # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
-    "ontology.impacts_only": "AUGHOR_ONTOLOGY_IMPACTS_ONLY",
-    # Arc ED, ED-6 (ROADMAP §3.58). ON: every object door's answer says how complete its read is — complete, truncated
-    # at the connection's cap, withheld by a row policy or a masked property, or refused — and how long it took; the
-    # contract describes it. OFF: each door answers as before.
-    "objects.completeness": "AUGHOR_OBJECTS_COMPLETENESS",
+    # "ontology.impacts_only" (AUGHOR_ONTOLOGY_IMPACTS_ONLY) — Arc ED-5, the declared impacts the one store of what bears
+    # on what; the causal graph (`lifecycle/causal.py`), its proposals and its prompt sections are deleted, its files
+    # left on disk unread, its door answering 410 — was made unconditional 2026-10-28 — part of the platform (ROADMAP
+    # §3.65), checked on live data first; its off path is deleted. An operator's env var is ignored.
+    # "objects.completeness" (AUGHOR_OBJECTS_COMPLETENESS) — Arc ED-6, every object door's answer saying how complete
+    # its read is, the contract describing it — was made unconditional 2026-10-28 — part of the platform (ROADMAP
+    # §3.65), checked on live data first; its off path is deleted. An operator's env var is ignored.
     # "agents.grounding_read" (AUGHOR_AGENTS_GROUNDING_READ) — Arc FA-7, what an agent would read for a question, at
     # its key door and as the MCP tool `ground_agent` — was made unconditional 2026-10-28: part of the platform
     # (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
@@ -268,19 +274,14 @@ FLAG_ENV = {
     # "state.backups" (AUGHOR_STATE_BACKUPS) — Arc SV-2, the API's hourly backups of its own state (`db/backups.py`) — was
     # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
     # is ignored.
-    # Arc TC, TC-4 (ROADMAP §3.59). ON: the first check back within its limit after an alert writes one *recovered*
-    # alert naming the alert it closes, when, and the value that came back; the alert lists and the Monitors page read
-    # that alert as closed; a check says "within its limit" apart from "suppressed by its grace period"; and a recovery
-    # ends the grace period, so the next alert opens a new one. A recovery is recorded and listed in alert summaries,
-    # never sent as an alert. OFF: an alert stays open until a person acknowledges it, and a quiet check says "no alert"
-    # whichever it was.
-    "monitors.recovery": "AUGHOR_MONITORS_RECOVERY",
-    # Arc TC, TC-3 (ROADMAP §3.59, 2026-10-26). ON: every save of an automation or a monitor keeps the definition it
-    # replaces as a numbered version in the ledger (superseded, never deleted) with who saved it and when; every
-    # recorded run keeps beside its row the version it ran under and its trigger as received (the payload capped at
-    # 16 KB, the cap said); a past run replays as a dry run of its own version against its kept trigger. OFF: a save
-    # replaces the definition, runs keep neither, and the version and replay doors answer 404.
-    "automations.versions": "AUGHOR_AUTOMATIONS_VERSIONS",
+    # "monitors.recovery" (AUGHOR_MONITORS_RECOVERY) — Arc TC-4, the first check back within its limit closing an open
+    # alert with one recovery, recorded and never sent, and a recovery ending the grace period — was made unconditional
+    # 2026-10-28 — part of the platform (ROADMAP §3.65), checked on live data first; its off path is deleted. An
+    # operator's env var is ignored.
+    # "automations.versions" (AUGHOR_AUTOMATIONS_VERSIONS) — Arc TC-3, each save of an automation or a monitor kept as a
+    # version, each run naming its version and trigger, a past run replayed dry — was made unconditional 2026-10-28 —
+    # part of the platform (ROADMAP §3.65), checked on live data first; its off path is deleted. An operator's env var
+    # is ignored.
     # "automations.objects_admitted" (AUGHOR_AUTOMATIONS_OBJECTS_ADMITTED) — Arc FA-5, an automation triggered by the
     # objects a rule or segment newly admits — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65);
     # its off path is deleted. An operator's env var is ignored.
@@ -519,118 +520,8 @@ FLAG_DEFAULT: dict = {
 # No route, arc or wave id, ROADMAP section, function name or decision date in any of them:
 # that history lives in the comments and dispositions above and below, where engineers read
 # it. tests/unit/test_flag_copy.py holds the line (house style, PLATFORM text-density pilot).
-FLAG_META = {
-    "monitors.recovery": {
-        "label": "Alerts that close when a metric recovers",
-        "summary": "The first check back within its limit after an alert closes that alert. A check also says "
-                   "whether its grace period held an alert back.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "A recovery is never sent alone"}],
-        "description": "The recovery names the alert it closes, when it fired and the value that came back. A second "
-                       "quiet check writes nothing more, and the next alert after a recovery opens a new one. A "
-                       "recovery is shown here and in alert summaries, never sent as an alert. Off: an alert stays "
-                       "open until someone acknowledges it.",
-    },
-    "automations.versions": {
-        "label": "Versions and replays for automations",
-        "summary": "Each save of an automation or a monitor keeps the one before it as a version. Each run "
-                   "names its version and keeps what started it.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Nothing is deleted"}],
-        "description": "A version says who saved it and when. A run keeps what started it, up to 16 KB, and says "
-                       "when it kept less. A past run can be replayed: its own version walks what started it, and "
-                       "nothing is sent, run or asked of a model. Off: a save replaces the definition, and a run "
-                       "keeps neither.",
-    },
-    "ontology.security": {
-        "label": "Limit who sees which objects and properties",
-        "summary": "Each reader sees only the objects their groups may see. Sensitive properties are "
-                   "masked for everyone else.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Readers are told what is hidden"}],
-        "description": "A row policy names a group and the conditions its objects meet. A sensitive "
-                       "property names the groups that may read it; others see it empty, with the reason, "
-                       "and it cannot shape an answer. An agent acting for a person reads only what both "
-                       "may. It applies to dashboards, object pages and outside programs. Off: every reader "
-                       "sees every object and property.",
-    },
-    "mcp.caller_principals": {
-        "label": "Outside programs connect as themselves",
-        "summary": "A program can connect to the MCP server with its own service principal. Each call then runs "
-                   "as that program, not as the server.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "needs", "text": "Needs a minted principal"}],
-        "description": "Over HTTP, a program presents its principal's name and key instead of the server's shared "
-                       "token. The server checks them with the platform, lists only the tools that program may "
-                       "use, and makes every call as it. Off: every HTTP client shares the server's token and "
-                       "acts as the server.",
-    },
-    "quality.expectations": {
-        "label": "Measure what tables must meet",
-        "summary": "An automation can measure a table's expectations and record each result as its health. "
-                   "Answers about the table then say when one is not met.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Queries the warehouse when run"},
-                  {"kind": "schedule", "text": "Runs on its automation's schedule"}],
-        "description": "An expectation says what a table's data must meet: a column never empty, a key never "
-                       "repeated, the newest row recent enough. Each is counted read-only, never copying rows. "
-                       "One that cannot be measured is said, not counted as failing. Off: the step is skipped, "
-                       "and table health reads not checked.",
-    },
-    "objects.completeness": {
-        "label": "Every object read says how complete it is",
-        "summary": "Each object read says whether it is complete, cut short, narrowed for you, or refused. It also "
-                   "says how long it took.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Says what is withheld from you"}],
-        "description": "A read can stop at the connection's limit of rows, and then it says there are more. A row "
-                       "policy or a masked property is named. Outside programs read the same field, described in "
-                       "their contract. Off: a cut read can look complete.",
-    },
-    "ontology.impacts_only": {
-        "label": "Read what bears on what from impacts only",
-        "summary": "The impacts a person declared are the one record of what one promise does to another. "
-                   "Summaries word them as measured.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Nothing is deleted"}],
-        "description": "An alert summary names each impact that holds, in the words of how it was shown. It also "
-                       "says how many are declared and do not hold. An analysis no longer proposes causes of its own, and "
-                       "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
-                       "as before.",
-    },
-    "dashboard.app_versions": {
-        "label": "Readers see an App's published version",
-        "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
-                   "reading the version you last published.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Readers never see a draft"}],
-        "description": "Publishing makes the dashboard as it stands the App its readers read. Each later change is a "
-                       "draft, and the dashboard says which version they read. Unpublishing still reaches nobody at "
-                       "once. Off: readers read every change the moment it is kept.",
-    },
-    "security.principal_scopes": {
-        "label": "Limit what each outside program may do",
-        "summary": "A principal can be limited to some areas, entities and actions. It never gets more than the "
-                   "agent policy allows.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Refusals say why"}],
-        "description": "When minting a principal, a person names the areas it may work in, such as reading "
-                       "objects. They may also name the entities and actions it may use. A request outside them is "
-                       "refused with why, and its contract lists only what it may use. Off: every principal is "
-                       "held to the agent policy alone.",
-    },
-    "ontology.security_sql": {
-        "label": "Apply object security to every answer",
-        "summary": "Answers, deep analyses and the SQL editor read only the objects the reader may see. "
-                   "A masked property cannot be read there either.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "needs", "text": "Needs object security on"},
-                  {"kind": "private", "text": "Readers are told what is hidden"}],
-        "description": "The row policies and sensitive properties declared on an entity also apply "
-                       "where a question runs its own query. A query that would read a masked property is "
-                       "refused, with why. Scheduled checks still count every object. Off: only object "
-                       "pages, dashboards and outside programs apply them.",
-    },
+FLAG_META: dict = {
+    # EMPTY since 2026-10-28: the last ten entries left with their flags, made unconditional (tombstones in FLAG_ENV).
 }
 
 
@@ -713,22 +604,10 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
-    # 2026-10-28: the entries that were on, and the two kept on their record, moved to ALWAYS_ON with the
-    # flags-into-settings decision (ROADMAP §3.65); what stays here is still a switch until its own exit.
-    # Arc TC, TC-4 (ROADMAP §3.59), 2026-10-26. It changes what an open alert means and lets a recovery end the grace
-    # period, so it is watched before it graduates.
-    "monitors.recovery": "do alerts close on their own — over two weeks on live monitors, is every alert that came back "
-                         "within its limit closed by exactly one recovery, and does the open count fall to the alerts "
-                         "still out of limit? Falsifiers (set with the wave; §3.59 named none): a monitor writes two "
-                         "recoveries for one alert, or a "
-                         "monitor flapping across its line writes more than two alerts a day that its grace period used "
-                         "to fold — either stops it",
-    # Arc TC, TC-3 (ROADMAP §3.59), 2026-10-26. It keeps more of every save and every run, so it is watched before it
-    # graduates.
-    "automations.versions": "is a past run replayed or an earlier version read — within four weeks, is one in three or "
-                            "more of the automations changed in that time opened at a version or a replay? Falsifier "
-                            "(§3.59, TC-3): a replay sends a message, runs an action, calls a model or writes a run — "
-                            "stop",
+    # EMPTY since 2026-10-28. The entries that were on, and the two kept on their record, moved to ALWAYS_ON with the
+    # flags-into-settings decision (ROADMAP §3.65); the last two switches here — "monitors.recovery" (TC-4) and
+    # "automations.versions" (TC-3) — were made unconditional the same day once checked on live data (see their
+    # FLAG_ENV tombstones). Their falsifiers are on ROADMAP §3.59.
     # "agents.testing_centre" and "agents.learning_loop" left this set 2026-10-28 for the organisation setting
     # `scheduled_model_work` (see their FLAG_ENV tombstones).
     # "grounding.data_profiles" left this set 2026-10-28: DELETED (see the FLAG_ENV tombstone) — its own
@@ -800,42 +679,11 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
-    # 2026-10-28: the entries that were on, and the two kept on their record, moved to ALWAYS_ON with the
-    # flags-into-settings decision (ROADMAP §3.65); what stays here is still a switch until its own exit.
-    # Arc ED, ED-6 (ROADMAP §3.58), queued 2026-10-25. No model call.
-    "objects.completeness": "receipt: on theLook, an object query over more rows than the connection returns says "
-                            "truncated, a group with a row policy reads withheld, and the contract describes the field. "
-                            "Falsifier: an object read cut at the cap that says complete stops it",
-    # Arc ED, ED-5 (ROADMAP §3.58), queued 2026-10-24. No model call; it trims one field from an analysis's answer.
-    "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
-                             "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "
-                             "alert summary names a cause the impacts store does not hold stops it",
-    # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
-    "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
-                              "the group reads the published version until its owner publishes, then the new one. "
-                              "Falsifier: a reader reads a version its owner never published stops it",
-    # Arc ED, ED-3 (ROADMAP §3.58), queued 2026-10-24. No model call.
-    "quality.expectations": "receipt: on theLook, a scheduled step measures one table's expectations, the verdicts reach "
-                            "an answer's caveats and the table-health tool, and one it cannot measure is said, not "
-                            "counted. Falsifier: a table read as failing because a query could not run stops it",
-    # Arc ED, ED-2 (ROADMAP §3.58), queued 2026-10-24. No model call.
-    "mcp.caller_principals": "receipt: on the live install, two outside programs connect over HTTP as two principals with "
-                             "different grants; each lists its own tools and every call is audited under its own name. "
-                             "Falsifier: two principals with different grants see the same tool list — stop",
-    "security.principal_scopes": "receipt: a principal granted reading objects of one entity reads it, is refused another "
-                                 "with why, and its contract lists only that entity. Falsifier: a request outside the "
-                                 "grant that reaches its handler stops it",
-    # Arc ED, ED-1 (ROADMAP §3.58), queued 2026-10-24. No model call.
-    "ontology.security_sql": "receipt: on a scratch install over theLook, a group with a row policy gets the same count from "
-                             "a quick answer as from the object door, and a question that reads a masked property is "
-                             "refused, with why. Falsifier: one count that differs between the two doors stops it. It "
-                             "needs ontology.security, so live waits for sign-in as that does",
-    # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
-    "ontology.security": "receipt: on a scratch install, two people open the same dashboard and see different rows and a "
-                         "masked property, each told why, and an agent acting for one reads no more than that person does. "
-                         "Falsifier: a policy test that passes with enforcement off is testing nothing — the suite "
-                         "turns it off and every policy assertion must fail. Live needs sign-in (the organisation "
-                         "install); until then it stays off there",
+    # EMPTY since 2026-10-28. The entries that were on, and the two kept on their record, moved to ALWAYS_ON with the
+    # flags-into-settings decision (ROADMAP §3.65); the last eight queued here — Arc OC-7's ontology.security and Arc
+    # ED's ontology.security_sql, mcp.caller_principals, security.principal_scopes, quality.expectations,
+    # dashboard.app_versions, ontology.impacts_only and objects.completeness — were made unconditional the same day once
+    # their receipts were taken on live data (ROADMAP §3.65; tombstones in FLAG_ENV).
     # EMPTY again as of 2026-08-28: ask.resume_stream (FL-1b, queued 2026-08-28)
     # graduated on its declared receipt, delivered live the same day: a browser soak
     # (85s deep run, tab killed at ~4s, a reloading client reattached via

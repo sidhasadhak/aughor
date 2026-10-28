@@ -79,8 +79,20 @@ def test_the_synthesis_shape_spells_out_its_objects_and_choices():
     assert ('"recommendations": [{"action": string, "expected_impact": string, '
             '"owner": string, "timeline": string}]') in text
     assert '"confidence": "HIGH"|"MEDIUM"|"LOW"' in text
-    assert '"from_entity": string|null' in text
+    assert '"attribution_waterfall": [{"cause": string, "amount_label": string, "pct_of_total": number' in text
     assert text.lstrip().startswith("Return ONLY a JSON object")
+
+
+def test_an_optional_field_is_spelled_as_it_may_be_null():
+    # (The synthesis model's own nullable field went with `causal_links`, 2026-10-28 — Arc ED-5.)
+    class Link(BaseModel):
+        to_signal: str
+        from_entity: Optional[str] = None
+
+    class Holder(BaseModel):
+        links: list[Link] = []
+
+    assert '"from_entity": string|null' in LLMProvider._json_stream_instruction(Holder)
 
 
 def test_a_recursive_model_is_named_not_expanded_forever():

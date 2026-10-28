@@ -264,7 +264,6 @@ def test_above_the_cap_the_check_says_too_many_to_track_and_records_nothing(grap
 def secured(graph, monkeypatch):
     from aughor.ontology.models import RowPolicy
     from aughor.rbac.groups import add_member, upsert_group
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY", "1")
     upsert_group("default", "cards", "Cards")
     add_member("default", "cards", "user:ana")
     graph.entities["Order"].row_policies = [

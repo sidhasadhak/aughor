@@ -1,14 +1,14 @@
 """Arc ED, ED-1 (ROADMAP §3.58) — one row policy at every door: OC-7's declarations applied where SQL is run.
 
-OC-7 (`ontology.security`) declares on an entity which objects each group may see and which properties only some may
+OC-7 (`ontology/security.py`) declares on an entity which objects each group may see and which properties only some may
 read, and enforces both at the object doors (`object_query.backing_from`, the compiler's property resolution and the
 object page). A quick answer, a deep analysis and the SQL editor reach the same rows another way: through a
 connection's own door, where only the RBAC row policy (`rbac/row_policy.py`, which ships empty) applied. So a reader
 denied an order on its page could count it in an answer.
 
-Behind ``ontology.security_sql`` (off; it needs ``ontology.security``) the connection's door applies the same
-declarations to every statement a request runs (`db.connection.enforce_row_policy`), on the tables that back the
-entities of the connection's released ontology:
+The connection's door applies the same declarations to every statement a request runs
+(`db.connection.enforce_row_policy`), on the tables that back the entities of the connection's released ontology — and
+a connection whose released ontology declares none reads exactly as it did before:
 
 * a table that backs an entity with row policies is read through the reader's objects, the condition the object door
   applies (`security.row_condition`), and the answer says so (`db.doors.say`);
@@ -29,8 +29,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Optional
 
-FLAG = "ontology.security_sql"
-
 #: How the connection's door begins the error of a statement it refused: the object policies' refusal
 #: (`db.connection._enforce_object_policies`) and the RBAC row policy's that could not be applied. A refusal, never a
 #: mistake: the model is told to say it, not to rewrite around it (`agent/converse_tools.route_error`).
@@ -43,12 +41,6 @@ _NARROWED = re.compile(r" — this answer read \S+ through \S+'s row policy$")
 #: Set around the object doors' own statements: they read the reader's rows through `backing_from` and mask what they
 #: show, so the connection's door leaves them to it. Set by code only — never by anything a statement carries.
 _door: contextvars.ContextVar[bool] = contextvars.ContextVar("aughor_object_door", default=False)
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    from aughor.ontology import security
-    return flag_enabled(FLAG) and security.enabled()
 
 
 @contextlib.contextmanager
@@ -67,9 +59,11 @@ async def object_door_from_request() -> None:
 
 
 def applies() -> bool:
-    """Whether the connection's door applies the declarations to the statement in flight: the flags on, a request
-    acting for someone, and neither an object door's statement nor the platform's own."""
-    if not enabled() or _door.get():
+    """Whether the connection's door applies the declarations to the statement in flight: a request acting for
+    someone, outside the platform's own `unfiltered` check, and neither an object door's statement nor the platform's
+    own."""
+    from aughor.ontology import security
+    if not security.enabled() or _door.get():
         return False
     from aughor.db.doors import statement_is_internal
     from aughor.org.context import current_actor
@@ -349,7 +343,7 @@ def _admitted_keys(connection_id: str, entity, keys: set) -> Optional[set]:
 
 
 def history_as_read(connection_id: str, rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """``(shown, withheld)``: the edit history as the reader may read it (`ontology.security_sql`). A masked property's
+    """``(shown, withheld)``: the edit history as the reader may read it. A masked property's
     values are emptied and say why; an edit to an object outside the reader's rows is withheld, and each entity's
     withheld edits are counted and said. An edit to no object (a table's or a column's) is kept."""
     from aughor.ontology import security

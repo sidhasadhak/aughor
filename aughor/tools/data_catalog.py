@@ -18,7 +18,7 @@ Design constraints:
   (``tools/schema.apply_schema_enrichment``); only the catalog did not.
 - Sample cells are truncated (``_MAX_CELL_CHARS``). Untruncated cells are how two
   multi-paragraph review tables became 29% of a 28.5k-char airline-outlier prompt.
-- **The reader's access policy holds too** (Arc ED, ED-1; `ontology.security_sql`): while the ontology's declarations
+- **The reader's access policy holds too** (Arc ED, ED-1; `ontology/security_sql.py`): while the ontology's declarations
   apply to the request, a table a row policy narrows for the reader shows no sample rows — they were read over every
   row, past the door — and a column masked for them is never sampled; each is said (`security_sql.tables_held`). The
   cache is keyed by the reader then, so one reader's catalog is never served to another.

@@ -56,9 +56,9 @@ def inject_row_filters(sql: str, filters: dict[str, str], dialect: str = "duckdb
 
 @dataclass(frozen=True)
 class EntityRule:
-    """One entity's declarations as the SQL door applies them to the table that backs it (`ontology.security_sql`).
+    """One entity's declarations as the SQL door applies them to the table that backs it (`ontology/security_sql.py`).
 
-    ``predicate`` is the reader's objects as DuckDB SQL over the alias ``__rp`` (`ontology.security.row_condition`), or
+    ``predicate`` is the reader's objects as DuckDB SQL over the alias ``__rp`` (`ontology/security.row_condition`), or
     None when their rows are not restricted. ``masked`` pairs each column the reader may not read with why. ``refused``
     is set when the declarations cannot be applied to raw SQL at all (an entity backed by a query, whose base tables
     hold the rows it restricts): any statement reading the table is refused, with why."""

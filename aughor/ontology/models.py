@@ -390,7 +390,7 @@ class OntologyEntity(BaseModel):
     #: Arc OC-6 — the declared moves of the properties the edit layer holds (see EditStateMachine), by property.
     edit_states: dict[str, EditStateMachine] = Field(default_factory=dict)
     #: Arc OC-7 — who sees which of its objects (see RowPolicy) and which properties are masked for whom (see
-    #: Sensitivity). Enforced at the object doors while `ontology.security` is on; empty on every graph built before.
+    #: Sensitivity). Enforced at the object doors and a connection's own door; empty on every graph built before.
     row_policies: list[RowPolicy] = Field(default_factory=list)
     sensitive: dict[str, Sensitivity] = Field(default_factory=dict)
     #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the

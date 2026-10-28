@@ -1,4 +1,4 @@
-"""Alerts that close — Arc TC, TC-4 (ROADMAP §3.59), behind ``monitors.recovery`` (off by default).
+"""Alerts that close — Arc TC, TC-4 (ROADMAP §3.59).
 
 Before this, an alert opened and never closed: the only way out of "open" was a person's Acknowledge, so a metric that
 came back the next hour read as a live alert for as long as nobody clicked, and nothing recorded that it came back.
@@ -22,7 +22,7 @@ from the alert it closes, so two checks racing to close one alert write one row 
 where a given alert went, and neither record of a send can say: the send log keys it by monitor
 (``investigation_id = monitor:<id>``) and the departure record by its source, the monitor — never by alert.
 :func:`aughor.monitors.notify.dispatch_alert` therefore records a recovery and sends nothing — and opens no inquiry,
-since nothing moved that needs asking about — and the run and the flag say so. An alert summary, which goes through
+since nothing moved that needs asking about — and the run says so. An alert summary, which goes through
 the departure gate as a whole, lists a recovery beside the alerts it closes and never counts it as one.
 """
 from __future__ import annotations
@@ -34,7 +34,6 @@ if TYPE_CHECKING:                                  # pragma: no cover
     from aughor.monitors.models import Monitor, MonitorAlert
     from aughor.monitors.runner import MonitorRun
 
-FLAG = "monitors.recovery"
 #: The kind (``alert_on``) of the alert a recovery writes.
 RECOVERED = "recovered"
 #: The rules with a limit a reading can come back within.
@@ -43,11 +42,6 @@ _OPENING = frozenset({"warning", "critical"})
 #: How far back the open alert is looked for.
 _SCAN = 200
 _NAMESPACE = uuid.UUID("6f0c4d0e-1c4a-4f0e-9a51-7c2b2d5e7a14")
-
-
-def enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
 
 
 def _opens(alert_on: str, severity: str) -> bool:
@@ -96,11 +90,11 @@ def closes_words(closed: "MonitorAlert") -> str:
 
 def recovery_alert(monitor: "Monitor", run: "MonitorRun") -> Optional[tuple["MonitorAlert", "MonitorAlert"]]:
     """``(recovery, the alert it closes)`` — the one alert a check back within its limit writes when an alert of its
-    monitor is open — or None: off, a check not within its limit, or nothing open."""
+    monitor is open — or None: a check not within its limit, or nothing open."""
     from aughor.monitors.models import MonitorAlert
     from aughor.monitors.runner import WITHIN, plain_figure, reading_words
     from aughor.util.time import now_iso
-    if not enabled() or run.outcome != WITHIN:      # only a rule with a limit judges a value within it
+    if run.outcome != WITHIN:      # only a rule with a limit judges a value within it
         return None
     closed = open_alert(monitor.id)
     if closed is None:
@@ -140,8 +134,8 @@ def links(monitor_ids: Iterable[str]) -> tuple[dict[str, tuple[str, str]], dict[
 
 def annotate(alerts: list[dict]) -> list[dict]:
     """The alert rows a route returns, each closed alert carrying ``closed_by`` and ``closed_at`` and each recovery
-    ``closes`` — when the flag is on. Off, the rows are returned as they came."""
-    if not alerts or not enabled():
+    ``closes``."""
+    if not alerts:
         return alerts
     closed_by, closes = links(a.get("monitor_id", "") for a in alerts)
     out = []
@@ -156,10 +150,10 @@ def annotate(alerts: list[dict]) -> list[dict]:
 
 
 def still_open(unacknowledged: list["MonitorAlert"]) -> list["MonitorAlert"]:
-    """Of alerts no person has acknowledged, the ones still waiting on one: never a recovery, and — with the flag on —
-    never an alert a recovery closed."""
+    """Of alerts no person has acknowledged, the ones still waiting on one: never a recovery, and never an alert a
+    recovery closed."""
     waiting = [a for a in unacknowledged if getattr(a, "alert_on", "") != RECOVERED]
-    if not waiting or not enabled():
+    if not waiting:
         return waiting
     closed_by, _ = links(getattr(a, "monitor_id", "") for a in waiting)
     return [a for a in waiting if getattr(a, "id", None) not in closed_by]

@@ -123,7 +123,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc SV, SV-2 (ROADMAP §3.63), 2026-10-27: `state.backups` — the API's hourly backups of its own state. No model
     # call; it graduates on a week of the live install's backups read and one restore proven on a copy, and its entry
     # names the p95 falsifier that moves it to a quiet hour.
-    # 2026-10-28: the entries that were on moved to ALWAYS_ON (ROADMAP §3.65); what stays waits for its live check.
-    assert set(GRADUATION_QUEUE) == {"dashboard.app_versions", "mcp.caller_principals", "objects.completeness", "ontology.impacts_only", "ontology.security", "ontology.security_sql", "quality.expectations", "security.principal_scopes"}
-    assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
+    # 2026-10-28: the entries that were on moved to ALWAYS_ON (ROADMAP §3.65), and the last eight were made unconditional
+    # the same day once each was checked on live data — the queue is empty, and no product flag is left to join it.
+    assert GRADUATION_QUEUE == {}
     assert MIGRATION == {}

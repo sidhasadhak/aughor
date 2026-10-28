@@ -237,7 +237,7 @@ def _objects(refs: list[Any], connection_id: str, schema_name: Optional[str], *,
 def _existing(connection_id: str, schema_name: Optional[str], entity: Any, key: str, keys: list[str]) -> int:
     """How many of ``keys`` name an object at all — the platform's own check, so a chosen object the reader may not see
     is said to be withheld rather than missing (`security.unfiltered`, as the object page says it). Only the count leaves
-    here; with row policies off, a key the reader cannot list is not there."""
+    here; inside the platform's own unfiltered check nothing is withheld, so a key the reader cannot list is not there."""
     from aughor.ontology import security
     if not security.enabled():
         return 0

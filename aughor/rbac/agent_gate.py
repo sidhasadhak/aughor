@@ -47,14 +47,14 @@ def is_agent_request(request: Request) -> bool:
     from aughor.security.service_principals import is_service
     if is_service(getattr(request.state, "principal", None)):
         return True
-    # Arc ED, ED-2 — with grants held, a service principal is one whether or not identity is enforced: an install
-    # without sign-in still holds the program that presents one to its grant. Asked only of a request that presents
-    # one, so every other request is decided as before, with no flag read.
+    # Arc ED, ED-2 — a service principal is one whether or not identity is enforced: an install without sign-in still
+    # holds the program that presents one to its grant. Asked only of a request that presents one, so every other
+    # request is decided as before.
     from aughor.security.service_principals import headers_present
     if not headers_present(request):
         return False
     from aughor.rbac import principal_grant
-    return principal_grant.enabled() and principal_grant.principal_of(request) is not None
+    return principal_grant.principal_of(request) is not None
 
 
 def _bounded(value: Any) -> Any:
@@ -152,8 +152,8 @@ async def enforce_agent_policy(request: Request) -> AsyncIterator[None]:
     elif not policy.allows_connection(connection):
         code = CODE_CONNECTION
 
-    # Arc ED, ED-2 — then the presenting service principal's own grant (`security.principal_scopes`, off: none): it
-    # narrows what the policy allowed, never widens it. The principal is named on the audit whichever check refused —
+    # Arc ED, ED-2 — then the presenting service principal's own grant (`rbac/principal_grant.py`): it narrows what
+    # the policy allowed, never widens it. The principal is named on the audit whichever check refused —
     # the organisation's or its grant's.
     detail, principal = "", ""
     grant = principal_grant.grant_for(request)

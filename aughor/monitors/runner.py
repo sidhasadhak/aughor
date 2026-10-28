@@ -274,7 +274,7 @@ def _suppressed_by_grace(monitor: Monitor, alert: MonitorAlert) -> bool:
     if _SEVERITY_RANK.get(alert.severity, 0) > _SEVERITY_RANK.get(last.severity, 0):
         return False  # escalation fires immediately
     from aughor.monitors import recovery
-    if recovery.enabled() and recovery.recovered_after(monitor.id, last):
+    if recovery.recovered_after(monitor.id, last):
         # TC-4 — the alert this window was folding repeats of is closed: what fired now is a new one, and holding it back
         # would leave the monitor reading "recovered" while its metric is out of limit again.
         return False

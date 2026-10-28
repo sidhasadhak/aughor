@@ -45,7 +45,7 @@ def get_ontology_contract(request: Request, connection_id: str = BUILTIN_ID,
     from aughor.ontology.builder_doors import ontology_contract
     from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
-    # Arc ED, ED-2 — a service principal reads the contract its grant names (`security.principal_scopes`)
+    # Arc ED, ED-2 — a service principal reads the contract its grant names (`rbac/principal_grant.py`)
     return narrow_contract(ontology_contract(graph, release), grant_for(request))
 
 

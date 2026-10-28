@@ -379,24 +379,18 @@ def mint_service_principal(req: ServicePrincipalIn, principal=Depends(get_princi
 @router.get("/principals/service/me")
 def service_principal_me(request: Request) -> dict:
     """Arc ED, ED-2 — the service principal this request presents, and the grant it is held to: what the MCP server
-    asks before it lets a caller in as itself (`mcp.caller_principals`). A name and key that do not match an active
+    asks before it lets a caller in as itself (`mcp/callers.py`). A name and key that do not match an active
     principal are refused here whatever the install's identity mode — elsewhere, without sign-in, they would read as
     the install's own operator."""
-    from aughor.kernel.flags import flag_enabled
-    from aughor.rbac import principal_grant
     from aughor.security import service_principals as SP
-    if not flag_enabled("mcp.caller_principals"):
-        raise HTTPException(status_code=404, detail="callers as their own principals are off on this install")
     if not SP.headers_present(request):
         raise HTTPException(status_code=404, detail=f"no service principal presented ({SP.NAME_HEADER} and {SP.KEY_HEADER})")
     principal = SP.resolve(request)
     if principal is None:
         raise HTTPException(status_code=401, detail="the name and key do not match an active service principal")
     name = SP.name_of(principal)
-    held = principal_grant.enabled()
     return {"principal": SP.principal_id(name), "name": name, "org_id": principal.org_id,
-            "grant": SP.grant(name) if held else {"areas": [], "entities": [], "actions": [], "connections": []},
-            "grant_held": held, "areas": SP.AREAS}
+            "grant": SP.grant(name), "areas": SP.AREAS}
 
 
 @router.get("/principals/service")

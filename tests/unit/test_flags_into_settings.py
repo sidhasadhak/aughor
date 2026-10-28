@@ -54,12 +54,13 @@ def client():
     return TestClient(app)
 
 
-def test_the_flags_door_refuses_an_always_on_flag_and_still_switches_one_that_is_not(client, always_on):
+def test_the_flags_door_refuses_an_always_on_flag_and_still_switches_one_that_is_not(client, always_on,
+                                                                                    synthetic_default_off):
     r = client.put(f"/system/flags/{always_on}", json={"state": "off"})
     assert r.status_code == 409 and "part of the platform now" in r.text
-    r = client.put("/system/flags/monitors.recovery", json={"state": "on"})
+    r = client.put(f"/system/flags/{synthetic_default_off}", json={"state": "on"})
     assert r.status_code == 200 and r.json()["value"] is True
-    client.put("/system/flags/monitors.recovery", json={"state": "auto"})
+    client.put(f"/system/flags/{synthetic_default_off}", json={"state": "auto"})
 
 
 def test_until_its_off_path_is_deleted_an_explicit_falsy_variable_still_turns_one_off(always_on, monkeypatch):
@@ -95,6 +96,15 @@ UNCONDITIONAL = {
     "arrivals.email", "arrivals.google_comments", "knowledge.hybrid_documents", "slack.managed_supervisor",
 }
 
+#: The last ten — switches, off on the live install, never in ALWAYS_ON — made unconditional once each was checked on
+#: live data (ROADMAP §3.65).
+LAST_TEN = {
+    # the ten checked on live data, 2026-10-28
+    "ontology.security", "ontology.security_sql", "mcp.caller_principals", "security.principal_scopes",
+    "quality.expectations", "dashboard.app_versions", "ontology.impacts_only", "objects.completeness",
+    "monitors.recovery", "automations.versions",
+}
+
 
 def test_every_flag_that_was_on_is_always_on_and_the_settings_left_the_registry():
     assert len(F.ALWAYS_ON) == 63 - len(UNCONDITIONAL) and all(F.ALWAYS_ON.values())
@@ -103,6 +113,35 @@ def test_every_flag_that_was_on_is_always_on_and_the_settings_left_the_registry(
         assert gone not in F.FLAG_ENV, gone
     for gone in UNCONDITIONAL:
         assert gone not in F.FLAG_ENV and gone not in F.ALWAYS_ON and gone not in F.FLAG_META, gone
+
+
+def test_the_last_ten_left_every_part_of_the_registry():
+    for gone in LAST_TEN:
+        assert gone not in F.FLAG_ENV and gone not in F.FLAG_META, gone
+        assert gone not in F.EXPERIMENT and gone not in F.GRADUATION_QUEUE and gone not in F.ALWAYS_ON, gone
+        assert F.flag_disposition(gone) == "undispositioned", gone
+    for var in ("AUGHOR_ONTOLOGY_SECURITY", "AUGHOR_ONTOLOGY_SECURITY_SQL", "AUGHOR_MCP_CALLER_PRINCIPALS",
+                "AUGHOR_SECURITY_PRINCIPAL_SCOPES", "AUGHOR_QUALITY_EXPECTATIONS", "AUGHOR_DASHBOARD_APP_VERSIONS",
+                "AUGHOR_ONTOLOGY_IMPACTS_ONLY", "AUGHOR_OBJECTS_COMPLETENESS", "AUGHOR_MONITORS_RECOVERY",
+                "AUGHOR_AUTOMATIONS_VERSIONS"):
+        assert var not in F.FLAG_ENV.values() and var not in F.RETIRED_ENV, var
+
+
+def test_no_product_flag_is_left():
+    """Every flag still registered is one a test registered for itself — none, outside a fixture. The machinery
+    stays for them; the only switches are an organisation's settings."""
+    assert all(name.startswith("_synthetic.") for name in F.FLAG_ENV), sorted(F.FLAG_ENV)
+    assert not F.FLAG_DEFAULT and not F.ALWAYS_ON and not F.RENAMED and not F.RETIRED_ENV
+    assert not F.EXPERIMENT and not F.GRADUATION_QUEUE and not F.INTENTIONALLY_OFF and not F.MIGRATION
+    assert all(name.startswith("_synthetic.") for name in F.FLAG_META), sorted(F.FLAG_META)
+    assert all(name.startswith("_synthetic.") for name in F.list_flags())
+
+
+def test_the_flags_door_lists_nothing_with_no_flag_registered(client):
+    """Settings' "Feature flags" section hides itself on an empty answer; the door still answers, with nothing."""
+    r = client.get("/system/flags")
+    assert r.status_code == 200 and r.json() == {}
+    assert client.put("/system/flags/monitors.recovery", json={"state": "on"}).status_code == 404
 
 
 @pytest.fixture

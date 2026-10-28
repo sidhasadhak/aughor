@@ -157,7 +157,6 @@ function ClusterTile({
           selectedEntityId={selectedEntityId}
           onSelectEntity={onSelectEntity}
           showColLabels={false}
-          showCausal={false}
         />
       </div>
     </div>

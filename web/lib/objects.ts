@@ -528,9 +528,9 @@ export interface ObjectQueryRequest {
   limit?: number;
 }
 
-/** Arc ED-6 (flag `objects.completeness`) — how complete an object read is, on every object door's answer: every row
- *  asked for · cut at the connection's cap with more to read · narrowed by a row policy or a masked property ·
- *  refused. `said` puts it in words, empty when complete. A server with it off sends none. */
+/** Arc ED-6 — how complete an object read is, on every object door's answer: every row asked for · cut at the
+ *  connection's cap with more to read · narrowed by a row policy or a masked property · refused. `said` puts it in
+ *  words, empty when complete. A server from before it sends none. */
 export interface ObjectCompleteness {
   state: "complete" | "truncated" | "withheld" | "refused";
   shown: number;

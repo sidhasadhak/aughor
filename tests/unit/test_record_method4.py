@@ -1,14 +1,13 @@
 """Phase 5 of the 2027 study, P5-4 — scenario method 4 fed from Outcome entries and nothing else
-(`record/scenario.intervention`), the confirmed-cause graph grown from the install's own reviewed
-decisions (`lifecycle/causal.promote_on_record_outcome`), and a procedure's success rate learned
-from outcomes, not from use, said with its count (`playbook/outcomes.update_playbook_success_rates`).
+(`record/scenario.intervention`), and a procedure's success rate learned from outcomes, not from
+use, said with its count (`playbook/outcomes.update_playbook_success_rates`). (The confirmed-cause
+graph the review once wrote back to left 2026-10-28 with `lifecycle/causal.py`: what one promise
+does to another is a declared impact — Arc ED, ED-5.)
 
 What these hold: method 4 needs the kind of decision, projects nothing below three past cases and
 says how many it has, and above the floor projects the mean measured effect with its band, the
 count and how many went the wanted way; it is on the ladder's interface and a prediction under it
-carries its method; the review's measured verdict confirms or weakens the investigation's proposed
-causes and leaves them alone when it could not tell, and the outcome says what was written back;
-a play's rate is counted from the Record's verdicts first, then from people's answers where the
+carries its method; the outcome the review books says what was written back; a play's rate is counted from the Record's verdicts first, then from people's answers where the
 Record has none, stored with n and its source, and the prompt says "held in 1 of 2 reviewed
 outcomes", never a bare percentage.
 """
@@ -19,7 +18,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from aughor.lifecycle import causal as CG
 from aughor.playbook import outcomes as O
 from aughor.record import claims as C
 from aughor.record import decisions as D
@@ -29,8 +27,6 @@ from aughor.record import scenario as S
 @pytest.fixture(autouse=True)
 def _hermetic(tmp_path, monkeypatch):
     monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "recommendation_outcomes.json")
-    monkeypatch.setenv("AUGHOR_CAUSAL_PROPOSALS_FILE", str(tmp_path / "causal_proposals.json"))
-    monkeypatch.setenv("AUGHOR_CAUSAL_GRAPH_FILE", str(tmp_path / "causal_graph.json"))
     monkeypatch.setenv("AUGHOR_PLAYBOOK_PATH", str(tmp_path / "playbook.json"))
     import aughor.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: None)
@@ -97,28 +93,11 @@ def test_method_4_reads_outcome_entries_and_nothing_else_and_says_its_count():
     assert "(intervention)" in pred.statement.text
 
 
-# ── the confirmed-cause graph grows from reviewed decisions ────────────────────────────────
+# ── the review says what it wrote back ────────────────────────────────────────────────────
 
-def test_the_reviews_measured_verdict_confirms_or_weakens_the_proposed_causes():
-    inv = "inv-" + uuid.uuid4().hex[:6]
-    CG.save_proposals(inv, [CG.CausalProposal(from_signal="late dispatch", to_signal="refund rate", inv_id=inv, conn_id="c1")])
-    assert CG.load_causal_graph("c1") == []
-    told = CG.promote_on_record_outcome(inv, "cannot_tell")
-    assert told == {"affected": 0, "did": "nothing: the review could not tell", "verdict": "cannot_tell"} and CG.load_causal_graph("c1") == []
-    assert CG.promote_on_record_outcome(inv, "better")["did"] == "confirmed"
-    edges = CG.load_causal_graph("c1")
-    assert len(edges) == 1 and edges[0].weight == 1 and edges[0].confirmed_by == [inv]
-    assert CG.promote_on_record_outcome(inv, "as_expected")["affected"] == 1 and CG.load_causal_graph("c1")[0].weight == 2
-    assert CG.promote_on_record_outcome(inv, "worse")["did"] == "weakened" and CG.load_causal_graph("c1")[0].weight == 1
-    CG.promote_on_record_outcome(inv, "worse")
-    assert CG.load_causal_graph("c1") == []                   # at weight 0 the edge is gone
-    assert CG.promote_on_record_outcome("inv-none", "better")["did"].startswith("nothing: no proposed causes")
-
-
-def test_the_review_writes_back_to_the_graph_and_the_outcome_says_so():
+def test_the_review_says_what_it_wrote_back():
     from aughor.record.byproducts import decision_from_recommendation, outcome_from_review
     conn, inv = _conn(), "inv-" + uuid.uuid4().hex[:6]
-    CG.save_proposals(inv, [CG.CausalProposal(from_signal="a price rise", to_signal="total sales", inv_id=inv, conn_id=conn)])
     rec = O.RecOutcome(id=f"{inv}_rec_0", inv_id=inv, rec_index=0, rec_text="Roll back the price rise on basics",
                        status="accepted", metric_name="total sales", connection_id=conn, metric_before=100.0,
                        baseline_value=100.0, review_value=150.0, reviewed_at="2026-11-01T09:00:00+00:00",
@@ -130,9 +109,8 @@ def test_the_review_writes_back_to_the_graph_and_the_outcome_says_so():
     booked = D.outcome_by_id(oid)
     assert booked.verdict == "better"
     # the one outcome version the review books says what it wrote back — no restatement for bookkeeping
-    assert booked.writes_back == ["prediction scored", "confirmed-cause graph: confirmed 1 edge"]
+    assert booked.writes_back == ["prediction scored"]
     assert D.latest_decision(D.Source(kind="recommendation", ref=rec.id)).outcome == oid
-    assert CG.load_causal_graph(conn)[0].to_signal == "total sales"
 
 
 # ── a procedure's success rate learned from outcomes, said with its count ──────────────────

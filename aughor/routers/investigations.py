@@ -1912,11 +1912,6 @@ def _answer_core(
             s = render_exploration_annotations(connection_id)
             return (s + "\n\n") if s else ""
 
-        def _causal() -> str:
-            from aughor.lifecycle.causal import build_causal_context_section
-            s = build_causal_context_section(question, conn_id=connection_id)
-            return (s + "\n") if s else ""
-
         def _docs() -> str:
             from aughor.knowledge.indexer import build_external_context_section
             # The canvas is passed so ITS pinned documents reach the prompt. Without
@@ -1969,11 +1964,11 @@ def _answer_core(
             # introspects; hits within the window skip it.
             _f_schema = _prelude.submit(_get_schema_cached, connection_id, db)
             _f_ctx = [_prelude.submit(_safe, _fn)
-                      for _fn in (_kb, _ckb, _sqlex, _expl, _causal, _docs)]
+                      for _fn in (_kb, _ckb, _sqlex, _expl, _docs)]
             _f_pb = _prelude.submit(_safe_list, _pb_match)
             schema = _f_schema.result()
             (kb_patterns_section, conn_kb_section, sql_examples_section,
-             exploration_section, causal_section, document_section) = [
+             exploration_section, document_section) = [
                 _f.result() for _f in _f_ctx]
             pb_entries = _f_pb.result()
         _checkpoint()   # the gather is the prelude's longest silent stretch
@@ -2189,7 +2184,6 @@ def _answer_core(
             sql_examples_section=sql_examples_section,
             metrics_section=metrics_section,
             exploration_section=exploration_section,
-            causal_section=causal_section,
             document_section=document_section,
         )
         if rules_block:
@@ -6857,13 +6851,6 @@ def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest,
             tolerate(exc, "booking the outcome in the Record is best-effort; the answer itself is logged",
                      counter="record.outcome_from_review")
         update_playbook_success_rates()
-        try:
-            from aughor.lifecycle.causal import promote_on_outcome
-            promote_on_outcome(inv_id, contradicted=(req.status == "rejected"))
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "causal-playbook promotion on outcome is best-effort; the outcome itself is already logged",
-                     counter="investigation.outcome_promote")
     return outcome.model_dump()
 
 

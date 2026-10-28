@@ -141,7 +141,7 @@ export function removedWords(alerts: Pick<MonitorAlert, "monitor_id">[], live: R
 }
 
 /** Arc TC, TC-4 — the kind of the alert a monitor writes on its first check back within its limit after an alert: it
- *  closes that alert (`aughor/monitors/recovery.py`, flag `monitors.recovery`). Recorded here, never sent. */
+ *  closes that alert (`aughor/monitors/recovery.py`). Recorded here, never sent. */
 export const RECOVERED = "recovered";
 
 export const isRecovery = (a: Pick<MonitorAlert, "alert_on">): boolean => a.alert_on === RECOVERED;

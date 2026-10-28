@@ -194,10 +194,8 @@ for _env, _file in (
     # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
     # got a seeded playbook written into its `data/`.
     ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
-    # Phase 5 of the 2027 study — the review now writes the confirmed-cause graph
-    # (`lifecycle/causal.py`), so both of its files join the hermetic set in the same commit.
-    ("AUGHOR_CAUSAL_PROPOSALS_FILE", "causal_proposals.json"),
-    ("AUGHOR_CAUSAL_GRAPH_FILE", "causal_graph.json"),
+    # (AUGHOR_CAUSAL_PROPOSALS_FILE / AUGHOR_CAUSAL_GRAPH_FILE left 2026-10-28 with `lifecycle/causal.py`: what one
+    # promise does to another is a declared impact, Arc ED-5, and nothing reads or writes those files.)
     # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
     # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
     ("AUGHOR_INDUSTRIES_FILE", "industries.json"),

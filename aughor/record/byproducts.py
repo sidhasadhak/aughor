@@ -303,10 +303,9 @@ def outcome_from_review(outcome) -> Optional[str]:
         actual=actual, baseline=outcome.history_value, low=outcome.history_low, high=outcome.history_high,
         direction=direction, against=against, history_note=outcome.history_note, drift=drift,
         band=band_of(pred))
-    # Phase 5: the measured verdict writes back to the confirmed-cause graph BEFORE the outcome is booked,
-    # so the one outcome version the review books says what it wrote back.
-    writes_back = (["prediction scored"] if pred is not None else []) + \
-        _causal_write_back(str(getattr(outcome, "inv_id", "") or ""), verdict)
+    # The one outcome version the review books says what it wrote back. (The confirmed-cause graph it once wrote back
+    # to is retired: what one promise does to another is a declared impact — Arc ED, ED-5.)
+    writes_back = ["prediction scored"] if pred is not None else []
     result = _dec.Outcome(of=decision.id, measured_on=(outcome.reviewed_at or _dt.datetime.now(_dt.timezone.utc).isoformat())[:10],
                           actual=actual, baseline=outcome.history_value, effect=effect, verdict=verdict, why=why,
                           against_expectation=against, measured_by="system:review", writes_back=writes_back,
@@ -322,24 +321,6 @@ def outcome_from_review(outcome) -> Optional[str]:
             _claims.restate(latest.key, latest, conn_id=decision.connection_id or None)
     _relearn_playbook()
     return oid
-
-
-def _causal_write_back(inv_id: str, verdict: str) -> list[str]:
-    """Phase 5: the measured verdict confirms or weakens the investigation's proposed causes
-    (`lifecycle/causal.promote_on_record_outcome`). Best-effort; returns the write-back line for the
-    outcome's record, or nothing when there was nothing to write."""
-    if not inv_id:
-        return []
-    try:
-        from aughor.lifecycle.causal import promote_on_record_outcome
-        done = promote_on_record_outcome(inv_id, verdict)
-    except Exception as exc:  # noqa: BLE001
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "the outcome stands; the confirmed-cause graph could not be written back", counter="record.causal_writeback")
-        return []
-    if not done["affected"]:
-        return []
-    return [f"confirmed-cause graph: {done['did']} {done['affected']} edge{'s' if done['affected'] != 1 else ''}"]
 
 
 def _relearn_playbook() -> int:

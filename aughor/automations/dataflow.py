@@ -821,7 +821,7 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # actually fails.
     "mcp_call":       ("arguments",),
     # Arc ED, ED-3 — nothing. The step names tables and columns a person wrote; a value bound in from upstream would
-    # let a chain choose what is measured, and `quality.expectations.parse` refuses anything that is not a plain name.
+    # let a chain choose what is measured, and `quality/expectations.parse` refuses anything that is not a plain name.
     "expectations":   (),
 }
 

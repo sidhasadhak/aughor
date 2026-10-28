@@ -124,11 +124,11 @@ def test_outside_a_read_the_grounding_receipt_reads_exactly_as_before(client, wa
     """The watch on a failing producer is inert outside a read: the chat's receipt says nothing it did not say
     before."""
     def _boom(*a, **k):
-        raise RuntimeError("causal store unreadable")
-    monkeypatch.setattr("aughor.lifecycle.causal.build_causal_context_section", _boom)
+        raise RuntimeError("exploration store unreadable")
+    monkeypatch.setattr("aughor.explorer.store.render_exploration_annotations", _boom)
     body = client.get("/ask/context", params={"connection": warehouse, "question": QUESTION}).json()
-    causal = {b["key"]: b for b in body["receipt"]["blocks"]}["causal"]
-    assert causal["present"] is False and "note" not in causal
+    failed = {b["key"]: b for b in body["receipt"]["blocks"]}["exploration"]
+    assert failed["present"] is False and "note" not in failed
 
 
 # ── the HTTP door ───────────────────────────────────────────────────────────────────
@@ -229,12 +229,12 @@ def test_a_paused_agent_reads_nothing_and_says_so(client, warehouse):
 def test_a_block_whose_producer_failed_says_so_instead_of_reading_as_empty(client, warehouse, embedder,
                                                                             monkeypatch):
     def _boom(*a, **k):
-        raise RuntimeError("causal store unreadable")
-    monkeypatch.setattr("aughor.lifecycle.causal.build_causal_context_section", _boom)
+        raise RuntimeError("exploration store unreadable")
+    monkeypatch.setattr("aughor.explorer.store.render_exploration_annotations", _boom)
     agent = create_agent("Failing", instructions="x", connection_id=warehouse)
-    causal = _blocks(client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION},
-                                 headers=_key(agent)).json())["causal"]
-    assert causal["present"] is False and "could not be produced (RuntimeError)" in causal["why"]
+    failed = _blocks(client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION},
+                                 headers=_key(agent)).json())["exploration"]
+    assert failed["present"] is False and "could not be produced (RuntimeError)" in failed["why"]
 
 
 def test_a_search_the_embedder_failed_is_not_read_as_nothing_matched(client, warehouse, monkeypatch):

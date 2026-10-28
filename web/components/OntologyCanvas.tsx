@@ -18,9 +18,7 @@ import type {
   OntologyRelationship,
   QueryTemplate,
   OntologyMetric,
-  CausalEdge,
 } from "@/lib/api";
-import { getCausalGraph } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -733,84 +731,9 @@ function FlowEdges({
   );
 }
 
-// ── Causal edges overlay ──────────────────────────────────────────────────────
-// Rendered on top of structural edges; dashed orange arrows between entities.
-
-function CausalEdges({
-  causalEdges,
-  nodeMap,
-  canvasW,
-  canvasH,
-}: {
-  causalEdges: CausalEdge[];
-  nodeMap: Record<string, { x: number; y: number; h: number }>;
-  canvasW: number;
-  canvasH: number;
-}) {
-  const positioned = useMemo(() => {
-    return causalEdges.flatMap(e => {
-      if (!e.from_entity || !e.to_entity) return [];
-      const src = nodeMap[e.from_entity];
-      const dst = nodeMap[e.to_entity];
-      if (!src || !dst) return [];
-      const y1 = src.y + src.h / 2 + 8;   // slight vertical offset from structural edges
-      const y2 = dst.y + dst.h / 2 + 8;
-      let x1: number, x2: number;
-      if (src.x + NODE_W <= dst.x) {
-        x1 = src.x + NODE_W; x2 = dst.x;
-      } else if (dst.x + NODE_W <= src.x) {
-        x1 = src.x; x2 = dst.x + NODE_W;
-      } else {
-        x1 = src.x + NODE_W * 0.75;
-        x2 = dst.x + NODE_W * 0.25;
-      }
-      return [{ edge: e, x1, y1, x2, y2 }];
-    });
-  }, [causalEdges, nodeMap]);
-
-  if (positioned.length === 0) return null;
-
-  return (
-    <svg
-      className="absolute inset-0 overflow-visible"
-      width={canvasW}
-      height={canvasH}
-      style={{ zIndex: 1, pointerEvents: "none" }}
-    >
-      <defs>
-        <marker id="arr-causal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--amb4)" opacity="0.9" />
-        </marker>
-      </defs>
-      {positioned.map(({ edge, x1, y1, x2, y2 }) => {
-        const { d, mx, my } = stepLink(x1, y1, x2, y2);
-        const weightLabel = edge.weight > 1 ? `×${edge.weight}` : "";
-        return (
-          <g key={edge.id} opacity={0.75}>
-            <path
-              d={d}
-              fill="none"
-              stroke="var(--amb4)"
-              strokeWidth={1.5}
-              strokeDasharray="6 4"
-              markerEnd="url(#arr-causal)"
-            />
-            {weightLabel && (
-              <g transform={`translate(${mx},${my - 14})`}>
-                <rect x={-12} y={-7} width={24} height={14} rx={3} fill="var(--amb1)" stroke="var(--amb4)" strokeWidth={0.7} opacity={0.9} />
-                <text textAnchor="middle" dominantBaseline="central" fontSize={8} fontFamily="monospace" fill="var(--amb4)">{weightLabel}</text>
-              </g>
-            )}
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
 // ── Legend ────────────────────────────────────────────────────────────────────
 
-function CanvasLegend({ showCausal }: { showCausal: boolean }) {
+function CanvasLegend() {
   return (
     <div className="flex items-center gap-4 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-[var(--r3)] px-4 py-2.5 pointer-events-none flex-wrap">
       {/* Entity types */}
@@ -844,12 +767,6 @@ function CanvasLegend({ showCausal }: { showCausal: boolean }) {
             strokeDasharray="3 30" style={{ animation: "edge-flow-verified 2.2s linear infinite" }} />
         </svg>
         <span className="aug-fs-xs text-zinc-500">verified</span>
-      </div>
-      <div className="flex items-center gap-1.5" style={{ opacity: showCausal ? 1 : 0.3 }}>
-        <svg width="28" height="8" className="shrink-0">
-          <line x1="0" y1="4" x2="28" y2="4" stroke="var(--amb4)" strokeWidth="1.5" strokeDasharray="6 4" />
-        </svg>
-        <span className="aug-fs-xs text-zinc-500">causal</span>
       </div>
     </div>
   );
@@ -936,8 +853,6 @@ export function EntityCluster({
   onSelectEntity,
   onInvestigate,
   onClickEdge,
-  causalEdges = [],
-  showCausal = false,
   showColLabels = true,
   compact = false,
   storageKey,
@@ -948,8 +863,6 @@ export function EntityCluster({
   onSelectEntity: (id: string | null) => void;
   onInvestigate?: (q: string) => void;
   onClickEdge?: (rel: OntologyRelationship) => void;
-  causalEdges?: CausalEdge[];
-  showCausal?: boolean;
   showColLabels?: boolean;
   compact?: boolean;
   /** When set, node drags are enabled and persisted under this key. */
@@ -1055,10 +968,6 @@ export function EntityCluster({
         hasFocus={focusId !== null}
       />
 
-      {showCausal && (
-        <CausalEdges causalEdges={causalEdges} nodeMap={nodeMap} canvasW={canvasW} canvasH={canvasH} />
-      )}
-
       {nodes.map(nl => {
         const actionCount = Object.values(graph.actions).filter(a => a.entity === nl.entity.id).length;
         const metricCount = Object.values(graph.metrics).filter(m => m.entity === nl.entity.id).length;
@@ -1116,19 +1025,12 @@ export function OntologyCanvas({
   onClickEdge?: (rel: OntologyRelationship) => void;
 }) {
   const [zoom,        setZoom]        = useState(INITIAL_ZOOM);
-  const [causalEdges, setCausalEdges] = useState<CausalEdge[]>([]);
-  const [showCausal,  setShowCausal]  = useState(true);
   // Bumping this remounts the cluster with fresh (computed) positions.
   const [layoutNonce, setLayoutNonce] = useState(0);
 
   // Scroll viewport — trackpad pinch + ⌘/Ctrl-wheel zoom-to-cursor.
   const scrollRef = useRef<HTMLDivElement>(null);
   useWheelZoom(scrollRef, zoom, setZoom, { min: 0.2, max: 2.0 });
-
-  useEffect(() => {
-    if (!connId) return;
-    getCausalGraph(connId).then(setCausalEdges).catch(() => {});
-  }, [connId]);
 
   const { w: rawW, h: rawH } = useMemo(() => measureCluster(graph), [graph]);
   // The pannable plane wraps the content with PAN_PAD on every side.
@@ -1160,23 +1062,8 @@ export function OntologyCanvas({
   return (
     <div className="w-full h-full relative" style={{ background: "var(--bg-1)" }}>
 
-      {/* Zoom controls + causal toggle — pinned top-right, outside scroll area */}
+      {/* Zoom controls — pinned top-right, outside scroll area */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-[var(--r3)] px-2.5 py-1.5 pointer-events-auto select-none">
-        {/* Causal arrows toggle */}
-        <Button
-          variant={showCausal ? "secondary" : "outline"} size="xs"
-          onClick={() => setShowCausal(v => !v)}
-          title={showCausal ? "Hide causal arrows" : "Show causal arrows"}
-        >
-          <svg width="14" height="8" className="shrink-0">
-            <line x1="0" y1="4" x2="10" y2="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3" />
-            <path d="M8,1.5 L13,4 L8,6.5 Z" fill="currentColor" />
-          </svg>
-          causal
-        </Button>
-
-        <div className="w-px h-3 bg-zinc-700 mx-0.5" />
-
         {/* Tidy — reset dragged positions back to the computed auto-layout */}
         <Button
           variant="outline" size="xs"
@@ -1246,8 +1133,6 @@ export function OntologyCanvas({
               onSelectEntity={onSelectEntity}
               onInvestigate={onInvestigate}
               onClickEdge={onClickEdge}
-              causalEdges={causalEdges}
-              showCausal={showCausal}
               scale={zoom}
               storageKey={connId ? `${connId}:${graph.schema_name}` : undefined}
             />
@@ -1257,7 +1142,7 @@ export function OntologyCanvas({
 
       {/* Legend — pinned top-left, outside scroll/zoom area */}
       <div className="absolute top-3 left-3 z-20 pointer-events-none">
-        <CanvasLegend showCausal={showCausal} />
+        <CanvasLegend />
       </div>
     </div>
   );
