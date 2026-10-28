@@ -524,7 +524,7 @@ def generate_narrative(
     """
     Call the LLM narrator and return a serialisable briefing dict.
 
-    ``period`` (idea 3) is a period brief's block (``knowledge.period_brief.window_block``,
+    ``period`` (idea 3) is a range Briefing's block (``briefing.ranges.range_block``,
     measured): the narrator is told which version it is writing and gets the period prompt,
     and the block rides the result. ``None`` — the standing brief — changes nothing.
 

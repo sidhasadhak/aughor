@@ -32,10 +32,6 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-FLAG_PROPOSALS = "metrics.coverage_proposals"
-FLAG_WRITER = "metrics.coverage_writer"
-FLAG_BLIND = "metrics.blind_spot_proposals"
-
 STATE_PROPOSED = "proposed"
 STATE_GATE_FAILED = "gate_failed"
 
@@ -56,11 +52,6 @@ GATE_WORDS = {"runs": "it runs", "dated": "it has a date", "window": "a window b
               "pattern": "it computes its pattern", "count": "it counts what the ontology counts",
               "binding": "its roles are bound to the right columns", "moves": "it moves",
               "sane_range": "it sits in its sane range", "twin": "no approved metric measures the same"}
-
-
-def any_on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return any(flag_enabled(f) for f in (FLAG_PROPOSALS, FLAG_WRITER, FLAG_BLIND))
 
 
 def now() -> str:
@@ -452,10 +443,9 @@ def blind_spot_proposals(connection_id: str, schema_name: Optional[str], mmap, m
 # ── the run ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = False, why: str = "") -> dict:
-    """One coverage run: the code proposers whose flags are on, and — with ``write`` and `metrics.coverage_writer` on —
-    one model call per uncovered area; every proposal through the gates; kept beside the profile. Returns the payload."""
+    """One coverage run: the code proposers, and — with ``write`` — one model call per uncovered area; every proposal
+    through the gates; kept beside the profile. Returns the payload."""
     from aughor.business_profile import store as profile_store
-    from aughor.kernel.flags import flag_enabled
     from aughor.semantic.metric_coverage import defined_metrics
     from aughor.semantic.metric_map import map_for
 
@@ -472,19 +462,16 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
     db = (open_connection_for_with_schema(connection_id, schema_name) if schema_name
           else open_connection_for(connection_id))
     try:
-        if flag_enabled(FLAG_PROPOSALS):
-            proposals += recipe_proposals(connection_id, schema_name, mmap)
-            from aughor.agent.framing import served_graph
-            proposals += ontology_proposals(connection_id, schema_name, served_graph(connection_id, schema_name), db,
-                                            mmap)
-        if flag_enabled(FLAG_BLIND):
-            proposals += blind_spot_proposals(connection_id, schema_name, mmap, metrics)
-        if write and flag_enabled(FLAG_WRITER):
+        proposals += recipe_proposals(connection_id, schema_name, mmap)
+        from aughor.agent.framing import served_graph
+        proposals += ontology_proposals(connection_id, schema_name, served_graph(connection_id, schema_name), db, mmap)
+        proposals += blind_spot_proposals(connection_id, schema_name, mmap, metrics)
+        if write:
             from aughor.semantic import coverage_writer
             written, spend = coverage_writer.write(connection_id, schema_name, mmap, db=db, taken=proposals)
             spend["why"] = why                          # the calls keep the reason they were made
             proposals += written
-        elif previous.get("spend") and flag_enabled(FLAG_WRITER):
+        elif previous.get("spend"):
             # a run without the writer keeps what the last written run wrote, re-checked below
             from aughor.semantic.metric_map import OTHER
             proposals += [p for p in previous.get("proposals") or []
@@ -524,8 +511,7 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the coverage run's connection did not close", counter="coverage.close")
     one_measure_once(kept)
-    payload = {"run_at": now(), "why": why, "proposals": kept, "spend": spend, "said": said + mmap.problems,
-               "flags": {f: flag_enabled(f) for f in (FLAG_PROPOSALS, FLAG_WRITER, FLAG_BLIND)}}
+    payload = {"run_at": now(), "why": why, "proposals": kept, "spend": spend, "said": said + mmap.problems}
     if not profile_store.save_coverage(connection_id, schema_name, payload):
         payload["said"].append("this dataset has no business profile yet, so the proposals were not kept — profile it")
     return payload
@@ -583,9 +569,7 @@ def recipe_verdict(connection_id: str, schema_name: Optional[str], name: str, bo
 
 
 def run_in_background(connection_id: str, schema_name: Optional[str], *, write: bool, why: str) -> bool:
-    """Start a run on a thread, when any coverage flag is on — the hook a profiling build calls. False when none is."""
-    if not any_on():
-        return False
+    """Start a run on a thread — the hook a profiling build calls. True once it is started."""
     import threading
 
     def _go() -> None:

@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   createBriefSubscription, deleteBriefSubscription, getActionTriggers,
-  getBriefSubscriptions, getSystemFlags, testBriefSubscription, updateBriefSubscription,
+  getBriefSubscriptions, testBriefSubscription, updateBriefSubscription,
   type ActionTrigger, type BriefSubscription,
 } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
@@ -29,7 +29,7 @@ const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Mondays 8:00 UTC", cron: "0 8 * * 1" },
 ];
 
-// Idea 3 (`briefing.by_period`) — the month and the year, offered only with the flag on.
+// Idea 3 — the month and the year send the Briefing written for the period.
 const PERIOD_CRON: Record<"month" | "year", { label: string; cron: string }> = {
   month: { label: "1st of the month 8:00 UTC", cron: "0 8 1 * *" },
   year: { label: "1 January 8:00 UTC", cron: "0 8 1 1 *" },
@@ -63,13 +63,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
   const [note, setNote] = useState("");
   const [form, setForm] = useState({ name: "", period: "week" as BriefSubscription["period"],
     content: "alert_summary" as "alert_summary" | "briefing", send_cron: CRON_PRESETS[0].cron, trigger_id: "" });
-  const [periodsOn, setPeriodsOn] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => { if (alive) setPeriodsOn(!!f["briefing.by_period"]?.value); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  const presets = periodsOn && (form.period === "month" || form.period === "year")
+  const presets = (form.period === "month" || form.period === "year")
     ? [PERIOD_CRON[form.period]] : CRON_PRESETS;
 
   const load = useCallback(async () => {
@@ -166,18 +160,16 @@ export function BriefSchedule({ connId }: { connId: string }) {
                 ? { ...f, period, content: "briefing", send_cron: PERIOD_CRON[period].cron }
                 : { ...f, period, send_cron: CRON_PRESETS.some(p => p.cron === f.send_cron) ? f.send_cron : CRON_PRESETS[0].cron });
             }}>
-            <option value="week">{periodsOn ? "weekly" : "weekly brief"}</option>
-            <option value="day">{periodsOn ? "daily" : "daily brief"}</option>
-            {periodsOn && <option value="month">monthly</option>}
-            {periodsOn && <option value="year">yearly</option>}
+            <option value="week">weekly</option>
+            <option value="day">daily</option>
+            <option value="month">monthly</option>
+            <option value="year">yearly</option>
           </SelectField>
-          {periodsOn && (
-            <SelectField style={field} value={form.content} aria-label="What to send"
-              onChange={e => setForm(f => ({ ...f, content: e.target.value as "alert_summary" | "briefing" }))}>
-              {(form.period === "week" || form.period === "day") && <option value="alert_summary">alert summary</option>}
-              <option value="briefing">briefing for the period</option>
-            </SelectField>
-          )}
+          <SelectField style={field} value={form.content} aria-label="What to send"
+            onChange={e => setForm(f => ({ ...f, content: e.target.value as "alert_summary" | "briefing" }))}>
+            {(form.period === "week" || form.period === "day") && <option value="alert_summary">alert summary</option>}
+            <option value="briefing">briefing for the period</option>
+          </SelectField>
           <SelectField style={field} value={form.send_cron}
             onChange={e => setForm(f => ({ ...f, send_cron: e.target.value }))}>
             {presets.map(p => <option key={p.cron} value={p.cron}>{p.label}</option>)}

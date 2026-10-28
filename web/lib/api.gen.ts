@@ -6220,10 +6220,9 @@ export interface paths {
          * @description Generate (or return cached) an LLM synthesis narrative for the connection.
          *
          *     ``period`` = ``day`` | ``week`` | ``month`` | ``year`` asks for the Briefing written for
-         *     that period (idea 3, flag ``briefing.by_period``); absent or ``history`` is the standing
-         *     Briefing, exactly as before. With ``briefing.ranges`` on (Arc BR-3), ``preset`` (or
-         *     ``start`` and ``end``, both inclusive ISO days) asks for the Briefing of any range, and a
-         *     named ``period`` is read as its preset.
+         *     that period, read as its preset (idea 3); absent or ``history`` is the standing Briefing.
+         *     ``preset`` (or ``start`` and ``end``, both inclusive ISO days) asks for the Briefing of any
+         *     range (Arc BR-3).
          */
         post: operations["generate_briefing_exploration__conn_id__briefing_post"];
         delete?: never;
@@ -6534,7 +6533,7 @@ export interface paths {
          * @description BR-7, joined to BR-9: every explorer finding of this scope re-asked for the range — its own
          *     SQL over the range and the previous range, cut on the main date of the first table it reads —
          *     ranked by the size of the change; the ones that cannot be re-asked listed apart with why.
-         *     No model call. Refused like the range Briefing when `briefing.ranges` is off.
+         *     No model call.
          */
         get: operations["reask_findings_for_range_exploration__conn_id__findings_reask_get"];
         put?: never;
@@ -8657,7 +8656,7 @@ export interface paths {
          * Execute Action
          * @description Run one declared action. A criterion failure returns 422 with the authored message; a
          *     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
-         *     or, asked with ``propose_if_gated`` while `ontology.dashboard_pieces` is on, is staged for a person
+         *     or, asked with ``propose_if_gated``, is staged for a person
          *     and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
          *     with the dispatch outcome, what its verification found, and its Action ledger entry — the answer had dropped the
          *     last two, so a press read "done" whatever its check said.
@@ -11042,8 +11041,8 @@ export interface paths {
          * @description ROADMAP §3.60 (Arc FA, FA-3) — every entity of the scope ranked by how often audited statements named its tables
          *     in the last ``window`` days, the least read first — the list a person cleaning up reads: each with its reads, the
          *     day it was last read, how many people read it where the session log says who ran the statement, and the tables it
-         *     shares with another entity (a statement naming a shared table counts for both, said beside it). Behind
-         *     `ontology.entity_usage`: off, the door says so. No model call; the platform's own log, never the warehouse.
+         *     shares with another entity (a statement naming a shared table counts for both, said beside it). No model call;
+         *     the platform's own log, never the warehouse.
          */
         get: operations["get_object_types_by_reads_object_types_uses_get"];
         put?: never;
@@ -11088,8 +11087,7 @@ export interface paths {
          * Get Object Type Uses
          * @description ROADMAP §6 item 53 — what one entity is used by: its dependents (automations, processes, rules, actions,
          *     links, parts, metrics — each with how), every dashboard whose pieces read it, and how many audited statements
-         *     named its tables in each of the last twelve months. Behind `ontology.entity_usage`: off, the door says so and
-         *     the type's own page is exactly what it was. An unknown type is `path: refused`.
+         *     named its tables in each of the last twelve months. An unknown type is `path: refused`.
          */
         get: operations["get_object_type_uses_object_types__object_type__uses_get"];
         put?: never;
@@ -11133,11 +11131,11 @@ export interface paths {
         put?: never;
         /**
          * Post Object Find
-         * @description Arc FA, FA-1 (flag ``objects.find``) — the objects whose name holds the words, across the served entities: each
+         * @description Arc FA, FA-1 — the objects whose name holds the words, across the served entities: each
          *     entity titled by a text property is listed by its key and title with the words as a ``contains`` condition, through
          *     the object door's compiler and its row policies, on one connection. At most 12 entities and a few objects each;
          *     ``said`` is how many entities it searched of how many there are, ``skipped`` each other one with why, ``more`` those
-         *     with more matches than shown. 404 while the flag is off. No model call.
+         *     with more matches than shown. No model call.
          */
         post: operations["post_object_find_objects_find_post"];
         delete?: never;
@@ -11798,7 +11796,7 @@ export interface paths {
          * Get Ontology Census
          * @description Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of
          *     it, and what leans on it — counted now, from cached ontologies only, beside the daily readings the journal kept
-         *     (`ontology.census`, while that flag is on). Each Arc OC wave is judged against these numbers.
+         *     (`ontology.census`). Each Arc OC wave is judged against these numbers.
          */
         get: operations["get_ontology_census_ontology_census_get"];
         put?: never;
@@ -11894,8 +11892,7 @@ export interface paths {
         /**
          * Get Declaration Dependents
          * @description Arc OC-1 — what depends on one declaration (ROADMAP §3.56): automations, processes, rules, actions, declared
-         *     links, parts and metrics, each with how. Read whether or not `ontology.history` is on; with it on, a withdrawal
-         *     of anything listed here is refused.
+         *     links, parts and metrics, each with how. A withdrawal of anything listed here is refused.
          */
         get: operations["get_declaration_dependents_ontology_dependents_get"];
         put?: never;
@@ -12661,9 +12658,10 @@ export interface paths {
         };
         /**
          * Get Declaration History
-         * @description Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal kept while `ontology.history`
-         *     is on, newest first, each with what changed and who made it; with ``as_of``, what it said at that moment — or
-         *     that what it said then is not known, never that nothing was declared.
+         * @description Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal, newest first, each with what
+         *     changed and who made it; with ``as_of``, what it said at that moment — or that what it said then is not known,
+         *     never that nothing was declared. ``put_back`` (Arc FA, FA-3) says whether an earlier version can go back into the
+         *     draft here, and why not.
          */
         get: operations["get_declaration_history_ontology_history_get"];
         put?: never;
@@ -12688,8 +12686,8 @@ export interface paths {
          * @description Arc FA, FA-3 — put an earlier version of one declaration back (ROADMAP §3.60). Its fields go through the normal
          *     save path into the DRAFT, counted again by the kind's own measurement first and classed like any change, so readers
          *     get it only when a person publishes. A withdrawn version puts back the fields it had; one that says what readers
-         *     read already takes the waiting change away. Refused with a sentence while `ontology.put_back` or releases are off
-         *     and for an organisation's ontology (409), for a version the history does not hold (404), and for one that no
+         *     read already takes the waiting change away. Refused with a sentence for an organisation's ontology (409), for a
+         *     version the history does not hold (404), and for one that no
          *     longer counts on this ontology (400) — nothing is written then. No model call.
          */
         post: operations["put_back_declaration_version_ontology_history_put_back_post"];
@@ -13194,8 +13192,8 @@ export interface paths {
          * Change Declared Process
          * @description Change a declared process (Arc OC-1) — a promise moved from two days to three, a stage added — through the same
          *     law as declaring it: every anchor resolved, the whole declaration counted before anything is written, 400 with the
-         *     reason when it cannot be. Until now a promise changed only by withdrawing the process and declaring it again; with
-         *     `ontology.history` on, each change is a version of the same element.
+         *     reason when it cannot be. Until now a promise changed only by withdrawing the process and declaring it again; now
+         *     each change is a version of the same element.
          */
         put: operations["change_declared_process_ontology_processes__process_id__put"];
         post?: never;
@@ -13322,8 +13320,7 @@ export interface paths {
          * Get Ontology Release
          * @description Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
          *     each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
-         *     by field, and the automations, claims and dashboard cards it touches. While `ontology.release` is off the draft is
-         *     empty and says so: a declaration is published when it is saved.
+         *     by field, and the automations, claims and dashboard cards it touches.
          */
         get: operations["get_ontology_release_ontology_release_get"];
         put?: never;
@@ -13390,14 +13387,14 @@ export interface paths {
          * @description Arc FA, FA-3 — mark one declaration of any kind *retiring* (ROADMAP §3.60): it still serves, and every reader is
          *     told "retiring on <date> — use <successor> instead". The successor must be another element of the same kind on this
          *     ontology (400 otherwise, with the sentence; 404 for an element there is none of). Written through the normal save
-         *     path — with releases on it waits in the draft as a MEANING change. 409 while `ontology.retiring` is off.
+         *     path — it waits in the draft as a MEANING change.
          */
         put: operations["mark_declaration_retiring_ontology_retiring_put"];
         post?: never;
         /**
          * Unmark Declaration Retiring
          * @description Arc FA, FA-3 — take a retiring mark off: the element is no longer said to be going. A MEANING change like the mark
-         *     itself; the element's other declarations are untouched. 404 when it carries no mark; 409 while the setting is off.
+         *     itself; the element's other declarations are untouched. 404 when it carries no mark.
          */
         delete: operations["unmark_declaration_retiring_ontology_retiring_delete"];
         options?: never;
@@ -16876,8 +16873,8 @@ export interface paths {
         };
         /**
          * Groups
-         * @description The view's rows grouped by a column, the largest group first, each with its first rows — and, with
-         *     ``sheets.views`` on, each group's totals over its own rows.
+         * @description The view's rows grouped by a column, the largest group first, each with its first rows and its totals over its
+         *     own rows.
          */
         get: operations["groups_sheets__sheet_id__groups_get"];
         put?: never;
@@ -16992,8 +16989,8 @@ export interface paths {
         };
         /**
          * Record
-         * @description A row as a record: every field and where it came from, its linked rows, its history, its comments — and, with
-         *     ``sheets.views`` on, the rules that mark it.
+         * @description A row as a record: every field and where it came from, its linked rows, its history, its comments, and the
+         *     rules that mark it.
          */
         get: operations["record_sheets__sheet_id__records__row__get"];
         put?: never;
@@ -17051,8 +17048,8 @@ export interface paths {
         /**
          * Rows
          * @description One page of a view of a sheet — its rows, how many the view holds, its totals over those rows, its groups when
-         *     grouped — and, for the cells on the page people have set, who set them, when, and at which version; with
-         *     ``sheets.views`` on, the rules marking each row on it.
+         *     grouped — and, for the cells on the page people have set, who set them, when, and at which version; and the rules
+         *     marking each row on it.
          */
         get: operations["rows_sheets__sheet_id__rows_get"];
         put?: never;
@@ -17209,8 +17206,8 @@ export interface paths {
         get?: never;
         /**
          * Save View
-         * @description Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet. With
-         *     ``sheets.views`` (SH-3) a view may also be grouped with its totals, a board or a calendar, and kept to its maker.
+         * @description Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet; or (SH-3) grouped
+         *     with its totals, a board or a calendar, or kept to its maker.
          */
         put: operations["save_view_sheets__sheet_id__views_put"];
         post?: never;
@@ -18399,14 +18396,13 @@ export interface components {
          * AskFocus
          * @description SP-15 — what is on screen when Spotlight is summoned: one object by kind and id.
          *
-         *     Arc FA-2 (`canvas.ask_about_chosen`) — or what a reader chose on a dashboard, as the question's subject: ``objects``,
+         *     Arc FA-2 — or what a reader chose on a dashboard, as the question's subject: ``objects``,
          *     up to fifty ``<type>:<key>`` references, of one entity or several (``label`` names the set they were ticked from); or
          *     ``set``, a dashboard's set by name, with the values and the chosen objects the page read it with and the reader's
          *     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
-         *     (`agent.ask_subject`); off, they contribute nothing.
+         *     (`agent.ask_subject`).
          *
-         *     Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with
-         *     ``sheets.chat`` on).
+         *     Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>``.
          */
         AskFocus: {
             /** Chosen */
@@ -21387,7 +21383,7 @@ export interface components {
         OrgSettings: {
             /**
              * Briefing Metric Cap
-             * @description How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the platform's default — 24 while `briefing.metric_cap` is on, 12 while it is off. Each metric costs three warehouse queries per Briefing.
+             * @description How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the platform's default, 24. Each metric costs three warehouse queries per Briefing.
              * @default 0
              */
             briefing_metric_cap: number;

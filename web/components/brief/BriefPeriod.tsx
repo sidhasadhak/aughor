@@ -1,45 +1,20 @@
 /**
- * Briefings by period (idea 3, flag `briefing.by_period`).
+ * Briefings by period (idea 3).
  *
  * The standing Briefing reads everything the platform knows; a period brief reads one
  * complete day, week, month or year and says what moved in it against the period before.
- * This file holds the two pieces the Briefing panel adds for it: the switch that picks
- * which version to read, and the table of what was MEASURED for the period — every
- * headline metric with its value, its comparison and the change, and every metric that
- * could not be measured with the reason. A missing number is said, never implied.
+ * The range control (`BriefRange.tsx`) picks which version to read; this file holds the
+ * sentence said when a period has nothing to brief on, and the table of what was MEASURED
+ * for the period — every headline metric with its value, its comparison and the change,
+ * and every metric that could not be measured with the reason. A missing number is said,
+ * never implied.
  *
  * Values arrive formatted by the server (the same rule the brief's sentences use), so the
  * table and the narrative cannot disagree about a figure; only the change is formatted here.
  */
-import { Button } from "@/components/ui/button";
-import type { BriefingPeriod, BriefingPeriodBlock } from "@/lib/api";
+import type { BriefingPeriodBlock } from "@/lib/api";
 import { formatVariance } from "@/lib/format";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-
-const OPTIONS: { value: BriefingPeriod; label: string }[] = [
-  { value: "history", label: "Standing" },
-  { value: "day", label: "Day" },
-  { value: "week", label: "Week" },
-  { value: "month", label: "Month" },
-  { value: "year", label: "Year" },
-];
-
-export function PeriodSwitch({ value, onChange, disabled }: {
-  value: BriefingPeriod;
-  onChange: (p: BriefingPeriod) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div role="group" aria-label="Briefing period" className="flex items-center gap-1">
-      {OPTIONS.map((o) => (
-        <Button key={o.value} size="xs" variant={o.value === value ? "secondary" : "ghost"}
-          aria-pressed={o.value === value} disabled={disabled} onClick={() => onChange(o.value)}>
-          {o.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 /** The sentence shown when a period has nothing to brief on: which period, and why. */
 export function periodUnavailable(block: Pick<BriefingPeriodBlock, "covers" | "unmeasured"> | undefined): string {

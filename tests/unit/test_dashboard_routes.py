@@ -21,7 +21,6 @@ from aughor.dashboards import cards, compose, host, validate as V, versions
 from aughor.dashboards.home import FIRST, Home, approver
 from aughor.cards import store as card_store
 from aughor.cards.models import StoredCard
-from aughor.kernel.flags import flag_overrides
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -125,33 +124,22 @@ def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(clie
 
 
 @needs_rules
-def test_a_range_needs_the_briefings_own_flag(client):
-    desk = Desk(connection="thelook")
-    client.put(desk.path, params=desk.q, json={"spec": desk.spec})
-    with flag_overrides({"briefing.ranges": False}):
-        r = client.get(desk.path, params={**desk.q, "preset": "last_month"})
-        assert r.status_code == 404 and "briefing.ranges" in r.json()["detail"]
-        assert client.get(desk.path, params=desk.q).json()["ranges_on"] is False
-
-
-@needs_rules
 def test_a_range_is_read_for_the_cockpits_connection(client):
     desk = Desk(connection="thelook")
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
-    with flag_overrides({"briefing.ranges": True}):
-        r = client.get(desk.path, params={**desk.q, "preset": "last_month"})
-        assert r.status_code == 200, r.text
-        block = r.json()["range"]
-        assert block["status"] == "final" and block["preset"] == "last_month"
-        assert block["covers"] and block["start"] < block["last_day"]
-        assert r.json()["ranges_on"] is True
+    r = client.get(desk.path, params={**desk.q, "preset": "last_month"})
+    assert r.status_code == 200, r.text
+    block = r.json()["range"]
+    assert block["status"] == "final" and block["preset"] == "last_month"
+    assert block["covers"] and block["start"] < block["last_day"]
+    assert "ranges_on" not in r.json()
 
-        to_date = client.get(desk.path, params={**desk.q, "preset": "month_to_date"}).json()["range"]
-        assert to_date["status"] == "to_date"
+    to_date = client.get(desk.path, params={**desk.q, "preset": "month_to_date"}).json()["range"]
+    assert to_date["status"] == "to_date"
 
-        bad = client.get(desk.path, params={**desk.q, "preset": "fortnight"})
-        assert bad.status_code == 422 and "a range is one of" in bad.json()["detail"]
-        assert client.get(desk.path, params={**desk.q, "start": "28/09/2026"}).status_code == 422
+    bad = client.get(desk.path, params={**desk.q, "preset": "fortnight"})
+    assert bad.status_code == 422 and "a range is one of" in bad.json()["detail"]
+    assert client.get(desk.path, params={**desk.q, "start": "28/09/2026"}).status_code == 422
 
 
 # ── the range's status, from its dates ────────────────────────────────────────

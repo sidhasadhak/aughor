@@ -55,17 +55,12 @@ LABEL = {"yesterday": "Daily", "last_week": "Weekly", "last_month": "Monthly", "
          "previous_year": "Last year"}
 #: The longest custom range; a longer question is the Year recipe's, or Ask's.
 MAX_RANGE_DAYS = 3 * 366
-#: The most headline metrics measured per Briefing — the standing Briefing's own cap.
-#: Raised from 8 to 12 on 2026-09-27: theLook had ten approved definitions and the Briefing
-#: measured seven, so three were silently reported as having "no approved definition" — the
-#: cap's overflow falls through to the north-star loop, which cannot tell "over the cap" from
-#: "never approved" and says the second. Twelve covers a connection that has governed its
-#: headline set without inviting a Briefing that measures everything; the cost is per metric
-#: per window (three windows), so each one past the cap is three more warehouse queries.
-MAX_METRICS = 12
-#: Arc MC, MC-6 (the user's call, 2026-10-26, §6 item 55(f): "Raise the default") — the cap while `briefing.metric_cap`
-#: is on, unless the workspace sets its own (`OrgSettings.briefing_metric_cap`).
-CAPPED_METRICS = 24
+#: The most headline metrics measured per Briefing, unless the workspace sets its own
+#: (`OrgSettings.briefing_metric_cap`). Raised from 8 to 12 on 2026-09-27 (theLook had ten approved
+#: definitions and the Briefing measured seven), and to 24 by Arc MC, MC-6 (the user's call,
+#: 2026-10-26, §6 item 55(f): "Raise the default"). The cost is per metric per window (three
+#: windows), so each one past the cap is three more warehouse queries; one past it is still named.
+MAX_METRICS = 24
 #: How many days a window's rows may start late or end early before its value stops being
 #: that window's (§3.27's slack, by length).
 def _slack(days: int) -> int:
@@ -552,27 +547,22 @@ def _get_kind(metric: Any) -> str:
 
 
 def metric_cap(conn_id: str) -> int:
-    """How many headline metrics a Briefing of this connection measures: 12 while `briefing.metric_cap` is off; the
-    workspace's own number, else 24, while it is on."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("briefing.metric_cap"):
-        return MAX_METRICS
+    """How many headline metrics a Briefing of this connection measures: the workspace's own number, else 24."""
     try:
         from aughor.orgsettings.store import effective_settings
         from aughor.workspace.store import workspace_for_connection
         own = int(effective_settings(workspace_for_connection(conn_id)).briefing_metric_cap or 0)
     except Exception as exc:  # noqa: BLE001 — an unreadable setting reads the default, never fewer
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "the workspace's Briefing cap could not be read; the default holds", counter="briefing.metric_cap")
+        tolerate(exc, "the workspace's Briefing cap could not be read; the default holds", counter="briefing.cap_setting")
         own = 0
-    return own or CAPPED_METRICS
+    return own or MAX_METRICS
 
 
 def areas_of(conn_id: str, metrics: list, schema: Optional[str] = None) -> dict[str, dict]:
-    """Arc MC — name → the area of the map each metric reads on (``{"id", "name", "order"}``), while
-    `briefing.metric_cap` is on; {} otherwise, so the Briefing reads as it did."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("briefing.metric_cap") or not metrics:
+    """Arc MC — name → the area of the map each metric reads on (``{"id", "name", "order"}``); {} when there
+    are none, or they cannot be placed."""
+    if not metrics:
         return {}
     try:
         from aughor.semantic.metric_coverage import place_metric, place_table, tables_of

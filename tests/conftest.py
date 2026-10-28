@@ -45,7 +45,7 @@ def _always_on_vars() -> list[str]:
 
 
 #: These were already default-on (FLAG_DEFAULT) and the suite ran them on; they stay on here.
-_RAN_ON = {"AUGHOR_ASK_CONVERSE", "AUGHOR_SEMOPS_BANDED_CASCADE", "AUGHOR_BRIEFING_BY_PERIOD", "AUGHOR_ANSWERS_RECHECK",
+_RAN_ON = {"AUGHOR_ASK_CONVERSE", "AUGHOR_SEMOPS_BANDED_CASCADE", "AUGHOR_ANSWERS_RECHECK",
            "AUGHOR_CHAT_BUTTONS_REACH_AGENT"}
 for _always_var in _always_on_vars():
     if _always_var not in _RAN_ON:
@@ -764,6 +764,23 @@ def _no_provider_credentials(request):
                          "AUGHOR_NARRATOR_MODEL", "AUGHOR_FAST_NARRATOR_MODEL"):
                 mp.delenv(_var, raising=False)
             mp.setenv("AUGHOR_FALLBACK_BACKENDS", "none")
+        yield
+    finally:
+        mp.undo()
+
+
+@pytest.fixture(autouse=True)
+def _no_coverage_run_after_profiling():
+    """Arc MC — a profile that is built starts a coverage run on a thread, and that run's writer makes one model call
+    per uncovered area (`coverage_proposals.run_in_background`, unconditional since 2026-10-28). In the suite the hook
+    starts nothing: a thread would outlive the test that profiled and call a model, or write another test's stores. A
+    test of a coverage run calls `coverage_proposals.run` itself, with its provider stubbed.
+
+    A private MonkeyPatch, for the teardown-order reason `_no_provider_credentials` gives."""
+    from aughor.semantic import coverage_proposals as _cp
+    mp = pytest.MonkeyPatch()
+    mp.setattr(_cp, "run_in_background", lambda *a, **k: False)
+    try:
         yield
     finally:
         mp.undo()

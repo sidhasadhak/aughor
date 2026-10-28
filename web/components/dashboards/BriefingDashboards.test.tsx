@@ -69,7 +69,6 @@ const READ: PersonDashboard = {
   cockpit: { ...version(3), spec: SPEC },
   cards: [card("c7f3a001", "Return rate"), card("c91b2002", "Net merchandise revenue"), card("cafe0003", "Pinned for everyone", false)],
   range: { status: "standing", preset: null, start: null, last_day: null, covers: "", as_of: null, lag_days: null, still_moving: [] },
-  ranges_on: true,
   history: [version(3), { ...version(2), current: false }, { ...version(1), current: false }],
 };
 
@@ -103,7 +102,6 @@ beforeEach(() => {
   // A person who left off on a dashboard of their own. Nothing remembered opens the metrics —
   // the last block below.
   localStorage.setItem("aughor:cockpit:thelook", "returns-1");
-  // Ranges off unless a test turns them on: the dashboard then reads as written.
   api.getSystemFlags.mockResolvedValue({});
   api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [] });
   api.listDashboards.mockResolvedValue(LIST);
@@ -117,14 +115,14 @@ beforeEach(() => {
 });
 
 describe("a person's dashboards", () => {
-  it("lists them in a strip and draws the one the person left off on, each card it places run as written", async () => {
+  it("lists them in a strip and draws the one the person left off on, each card it places run for the month", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     expect(stripTabs()).toEqual(["Metrics", "Returns", "Pricing"]);
-    expect(api.getDashboard).toHaveBeenCalledWith("thelook", "returns-1", null);
+    expect(api.getDashboard).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" });
     // Only the cards the spec places are run — the pinned card it does not place is not.
     expect(api.runCard.mock.calls.map(c => c[0]).sort()).toEqual(["c7f3a001", "c91b2002"]);
-    expect(api.runCard.mock.calls[0][1]).toBeNull();
+    expect(api.runCard.mock.calls[0][1]).toEqual({ preset: "previous_month" });
     const last = drawn.props.at(-1)!;
     expect(last.spec).toEqual(SPEC);
     expect(last.sym).toBe("$");
@@ -134,8 +132,7 @@ describe("a person's dashboards", () => {
     expect(screen.getByTestId("dashboard-version")).toHaveTextContent("Version 3 · kept by person");
   });
 
-  it("with ranges on, opens on last month and asks each card how it moved against the one before", async () => {
-    api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
+  it("opens on last month and asks each card how it moved against the one before", async () => {
     api.getDashboard.mockResolvedValue({ ...READ, currency_symbol: "€",
       range: { ...READ.range, status: "final", preset: "last_month", covers: "July 2026" } });
     show();
@@ -147,17 +144,10 @@ describe("a person's dashboards", () => {
     await waitFor(() => expect(drawn.props.at(-1)!.sym).toBe("€"));
   });
 
-  it("with ranges off, there is no period to choose", async () => {
-    api.getDashboard.mockResolvedValue({ ...READ, ranges_on: false });
-    show();
-    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
-    expect(screen.queryByTestId("dashboard-period")).toBeNull();
-  });
-
   it("opens the one the person chose last time", async () => {
     localStorage.setItem("aughor:cockpit:thelook", "pricing-1");
     show();
-    await waitFor(() => expect(api.getDashboard).toHaveBeenCalledWith("thelook", "pricing-1", null));
+    await waitFor(() => expect(api.getDashboard).toHaveBeenCalledWith("thelook", "pricing-1", { preset: "previous_month" }));
   });
 
   it("'Remove' on a card takes it off THIS dashboard and keeps the card", async () => {
@@ -366,7 +356,6 @@ describe("the metrics, the dashboard a person opens on", () => {
   beforeEach(() => { localStorage.clear(); });
 
   it("is first in the strip and open when nothing was chosen; no dashboard of the person's is read", async () => {
-    api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
     show();
     const metrics = await screen.findByRole("tab", { name: "Metrics" });
     expect(metrics).toHaveAttribute("aria-selected", "true");
@@ -384,12 +373,6 @@ describe("the metrics, the dashboard a person opens on", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Returns" }));   // a Radix tab opens on mouseDown
     await waitFor(() => expect(api.getDashboard).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" }));
     expect(localStorage.getItem("aughor:cockpit:thelook")).toBe("returns-1");
-  });
-
-  it("says a metric needs a period where periods are off, and measures nothing", async () => {
-    show();
-    expect(await screen.findByText(/periods are off on this install/)).toBeInTheDocument();
-    expect(api.measureRange).not.toHaveBeenCalled();
   });
 
   it("still explains what a dashboard of your own is when you have none", async () => {

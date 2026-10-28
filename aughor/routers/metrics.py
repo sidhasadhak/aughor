@@ -184,26 +184,14 @@ def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
             # Counted apart from `needs_formula` on purpose: a connection where every
             # metric lands here is telling you about the CONNECTION, not about missing SQL.
             "formula_rejected": sum(1 for r in rows if r.state == "formula_rejected"),
-            # Arc MC — proposed for an area of the map, and the proposals a gate refused (never adoptable as they are);
-            # counted only while a coverage flag is on, so the answer is the one it was while they are off.
-            **({"coverage": sum(1 for r in rows if r.source == "coverage"),
-                "gate_failed": sum(1 for r in rows if r.state == "gate_failed")} if _coverage_on() else {}),
+            # Arc MC — proposed for an area of the map, and the proposals a gate refused (never adoptable as they are).
+            "coverage": sum(1 for r in rows if r.source == "coverage"),
+            "gate_failed": sum(1 for r in rows if r.state == "gate_failed"),
         },
     }
 
 
-def _coverage_on() -> bool:
-    from aughor.semantic.coverage_proposals import any_on
-    return any_on()
-
-
 # ── Arc MC — the areas a connection's metrics cover ─────────────────────────────────────────────────────────────────
-
-def _require(flag: str, what: str) -> None:
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(flag):
-        raise HTTPException(status_code=404, detail=f"{what} is off ({flag})")
-
 
 @router.get("/metrics/coverage/{conn_id}")
 def get_metric_coverage(conn_id: str, schema: Optional[str] = None, figures: bool = False):
@@ -211,7 +199,6 @@ def get_metric_coverage(conn_id: str, schema: Optional[str] = None, figures: boo
     map's order, the data placed in it, its metrics, the knowledge base's patterns, the proposals waiting — every
     placement with its reason. ``figures`` reads the approved metrics' figures that were not read within the hour, so no
     area is said covered by one that never moves; without it, an unread metric is said as not checked."""
-    _require("metrics.coverage_map", "the coverage view")
     from aughor.business_profile import store as profile_store
     from aughor.semantic import coverage_proposals as CP
     from aughor.semantic.metric_coverage import coverage
@@ -222,9 +209,6 @@ def get_metric_coverage(conn_id: str, schema: Optional[str] = None, figures: boo
     out["proposals"] = CP.stored(conn_id, schema)
     out["run"] = {"run_at": run.get("run_at"), "why": run.get("why") or "", "spend": run.get("spend"),
                   "said": run.get("said") or []} if run else None
-    from aughor.kernel.flags import flag_enabled
-    out["flags"] = {f: flag_enabled(f) for f in ("metrics.coverage_proposals", "metrics.coverage_writer",
-                                                  "metrics.blind_spot_proposals", "metrics.figure_gates")}
     return out
 
 
@@ -235,9 +219,6 @@ def run_metric_coverage(conn_id: str, schema: Optional[str] = None):
     (2026-10-26). No model call — the writer's last proposals are kept and checked again; it writes only when the
     connection is profiled, or on its own door."""
     from aughor.semantic import coverage_proposals as CP
-    if not CP.any_on():
-        raise HTTPException(status_code=404, detail="no coverage proposer is on (metrics.coverage_proposals, "
-                                                    "metrics.blind_spot_proposals)")
     schema = schema or _declared_schema(conn_id)
     started = CP.run_in_background(conn_id, schema, write=False, why=f"run by {caller()}")
     return {"started": started, "connection_id": conn_id, "schema": schema}
@@ -248,7 +229,6 @@ def write_metric_coverage(conn_id: str, schema: Optional[str] = None):
     """Arc MC, MC-5 — the knowledge base's patterns written for this schema now, one model call per open area, on
     a thread; the coverage view says the calls when they are made. The same run starts by itself when the connection is
     profiled (the user's call, 2026-10-26)."""
-    _require("metrics.coverage_writer", "the coverage writer")
     from aughor.semantic import coverage_proposals as CP
     schema = schema or _declared_schema(conn_id)
     started = CP.run_in_background(conn_id, schema, write=True, why=f"written at {caller()}'s request")
@@ -356,7 +336,7 @@ def adopt_metrics(conn_id: str, req: _AdoptRequest, schema: Optional[str] = None
             continue
         m = m.model_copy(update={k: v for k, v in time.items() if k in MetricDefinition.model_fields})
         figures = _figure_gates(m, conn_id)
-        if figures and figures.get("refused"):
+        if figures.get("refused"):
             skip(figures["refused"][1])
             continue
         twin = _twin_check(m, conn_id)
@@ -981,13 +961,10 @@ def transition_metric(name: str, req: TransitionRequest):
     return {"metric": updated, "audit": audit}
 
 
-def _figure_gates(m: MetricDefinition, connection: str) -> Optional[dict]:
-    """Arc MC, MC-0 — ``metric_gates.check`` while `metrics.figure_gates` is on: ``{"gates", "refused", "unread"}``,
-    ``refused`` the first gate that failed as ``(reason, why)``. None while the flag is off, so approval reads exactly as
-    before."""
+def _figure_gates(m: MetricDefinition, connection: str) -> dict:
+    """Arc MC, MC-0 — ``metric_gates.check``: ``{"gates", "refused", "unread"}``, ``refused`` the first gate that failed
+    as ``(reason, why)``."""
     from aughor.semantic import metric_gates
-    if not metric_gates.enabled():
-        return None
     verdict = metric_gates.check(m, connection)
     gates = {g: verdict[g] for g in ("moves", "sane_range", "binding")}
     return {"gates": gates, "refused": metric_gates.refusal(verdict), "unread": metric_gates.not_read(verdict)}

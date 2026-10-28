@@ -100,8 +100,7 @@ class OrgSettings(BaseModel):
         default=0, ge=0, le=60,
         description=(
             "How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the "
-            "platform's default — 24 while `briefing.metric_cap` is on, 12 while it is off. Each metric costs three "
-            "warehouse queries per Briefing."
+            "platform's default, 24. Each metric costs three warehouse queries per Briefing."
         ),
     )
 

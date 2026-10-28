@@ -41,10 +41,10 @@ class _SubscriptionBody(BaseModel):
     channel:    str = ""
     schema_name: str = ""
     supersedes: str = ""
-    period:     str = "week"        # "week" | "day" (+ "month" | "year" with briefing.by_period)
+    period:     str = "week"        # "week" | "day" | "month" | "year"
     send_cron:  str = ""            # optional explicit cron; derived from period if blank
     enabled:    bool = True
-    content:    str = "alert_summary"      # "alert_summary" | "briefing" (briefing.by_period)
+    content:    str = "alert_summary"      # "alert_summary" | "briefing"
 
 
 def _validate_destination(body: "_SubscriptionBody") -> None:
@@ -71,13 +71,6 @@ def _validate_period(period: str, content: str = "alert_summary") -> None:
         return
     from aughor.briefing.models import CONTENTS
     from aughor.knowledge import period_brief
-    if not period_brief.enabled():
-        if content == "alert_summary":
-            # Unchanged while the flag is off: the same refusal a client has always received.
-            raise HTTPException(status_code=422, detail="period must be 'week' or 'day'")
-        raise HTTPException(status_code=422, detail=(
-            "briefings by period are off on this install — a subscription that sends the "
-            f"Briefing needs the '{period_brief.FLAG}' flag"))
     if period not in period_brief.PERIODS:
         raise HTTPException(status_code=422, detail=period_brief.refusal(period))
     if content not in CONTENTS:
@@ -191,8 +184,8 @@ def update_briefing_subscription(sub_id: str, body: _SubscriptionBody):
     if not existing:
         raise HTTPException(status_code=404, detail="Subscription not found")
     if (body.period, body.content) != (existing.period, existing.content):
-        # validated only when it CHANGES: a briefing subscription saved while the flag was on can
-        # still be paused or renamed after it is turned off (branch review, 2026-09-24)
+        # validated only when it CHANGES: a subscription saved under an earlier rule can still be
+        # paused or renamed (branch review, 2026-09-24)
         _validate_period(body.period, body.content)
 
     existing.conn_id    = body.conn_id

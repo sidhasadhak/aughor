@@ -150,7 +150,6 @@ def test_the_cap_is_said():
 
 def test_the_door_serves_the_re_ask_and_its_cache_and_refuses_without_a_range(monkeypatch):
     from aughor.routers import exploration as ex
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (SPEC, ""))
     monkeypatch.setattr(ex, "_domain_insights_for", lambda cid, schema: {
         "Orders": {"insights": [{"id": "f2", "sql": "SELECT COUNT(*) AS n FROM orders", "signature": {"tables": ["orders"]}}]},
@@ -175,5 +174,3 @@ def test_the_door_serves_the_re_ask_and_its_cache_and_refuses_without_a_range(mo
     again = client.get("/exploration/c-reask/findings/reask", params={"preset": "last_week"}).json()
     assert again["cached"] is True and seen["opened"] == 1
     assert client.get("/exploration/c-reask/findings/reask").status_code == 422
-    monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "0")
-    assert client.get("/exploration/c-reask/findings/reask", params={"preset": "last_week"}).status_code == 404

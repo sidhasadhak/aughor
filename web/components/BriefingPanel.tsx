@@ -30,8 +30,6 @@ import {
   getOrgIntelligence,
   generateBriefingNarrative,
   generateCanvasBriefingNarrative,
-  getSystemFlags,
-  type BriefingPeriod,
   getExplorerStatus,
   startExplorer,
   stopExplorer,
@@ -74,7 +72,7 @@ import { useOpenInQuery } from "@/lib/openInQuery";
 import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
-import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
+import { periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
 import {
   AskBar, DeskColumns, InBrief, PaperDateline, PaperEdgeNotice, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
@@ -2651,36 +2649,20 @@ export function BriefingPanel({
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
-  // Idea 3 — which version of the Briefing is on screen: the standing one, or the one written
-  // for the last complete day / week / month / year. Offered only when the install has the
-  // `briefing.by_period` flag on, and never on a canvas (its endpoint has no period).
-  const [period, setPeriod]                 = useState<BriefingPeriod>("history");
-  const [periodsOn, setPeriodsOn]           = useState(false);
   // A period with nothing to brief on is a statement about the period, not a failure.
   const [periodNote, setPeriodNote]         = useState<string | null>(null);
   // The scope is turned off for analysis: the page says so and nothing found before is shown.
   const [offScope, setOffScope]             = useState<BriefingOff | null>(null);
-  // Arc BR-3 — `briefing.ranges`: one control for any range, the standing view being what the
-  // platform knows. The range scopes the page; off, the switch above is exactly §3.27's.
-  const [rangesOn, setRangesOn]             = useState(false);
-  // §6 item 34(d): with ranges on, the Briefing OPENS on the Day; "What we know" is one click away.
+  // Arc BR-3 — one control for any range, the standing view being what the platform knows. The
+  // range scopes the page; never on a canvas (its endpoint has no range).
+  // §6 item 34(d): the Briefing OPENS on the Day; "What we know" is one click away.
   const [chosen, setRange]                  = useState<RangeChoice | null>(null);
   // BR-7 — the findings re-asked for the range on screen, keyed by that range so a stale
   // answer never renders under a newer heading; null on the standing view.
   const [reaskFor, setReaskFor]             = useState<{ key: string; data: FindingsReask } | null>(null);
   // The range whose findings could not be measured (the read failed) — said, never read as "none".
   const [reaskFailedFor, setReaskFailedFor] = useState<string | null>(null);
-  const range = useMemo<RangeChoice>(
-    () => chosen ?? (rangesOn ? { preset: "yesterday" } : { preset: "standing" }), [chosen, rangesOn]);
-  useEffect(() => {
-    let alive = true;
-    getSystemFlags().then(f => {
-      if (!alive) return;
-      setPeriodsOn(!!f["briefing.by_period"]?.value);
-      setRangesOn(!!f["briefing.ranges"]?.value);
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  const range = useMemo<RangeChoice>(() => chosen ?? { preset: "yesterday" }, [chosen]);
   // The scope this panel is currently rendering. Mirrors the server's `scope_key` EXACTLY
   // (`canvas:<id>` | `<conn>:<schema>` | `<conn>`) so a returned brief can be checked
   // against it — see the scope guard in `generateNarrative`.
@@ -2773,7 +2755,7 @@ export function BriefingPanel({
     // a new schema's verdict (the two are separate state; only the hero re-derived).
     setNarrative(null);
     try {
-      const onRange = rangesOn && !canvasId && range.preset !== "standing";
+      const onRange = !canvasId && range.preset !== "standing";
       const readRange = async () => {
         // A READ never builds: the snapshot when there is one; otherwise it is built — the
         // user's call (§6 item 34(g)): a custom range is built without asking.
@@ -2784,10 +2766,8 @@ export function BriefingPanel({
       };
       const result = onRange ? await readRange() : canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
-        : period === "history"
-          // the standing brief is requested exactly as it always was
-          ? await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId)
-          : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId, period);
+        // the standing brief is requested exactly as it always was
+        : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
       if (myReq !== reqSeq.current) return;   // superseded → don't paint a stale brief (the flip guard)
       // Scope guard: the server stamps the scope it generated FOR. A brief that doesn't
       // claim THIS scope is never painted — that makes a cross-scope leak structurally
@@ -2808,7 +2788,7 @@ export function BriefingPanel({
     } finally {
       if (myReq === reqSeq.current) setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, schema, workspaceId, narrativeScope, period, rangesOn, range]);
+  }, [connectionId, canvasId, schema, workspaceId, narrativeScope, range]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
@@ -2972,13 +2952,13 @@ export function BriefingPanel({
     // WP-5 — wait for the shared schema selector to settle before the first connection-scoped
     // fetch, so we never issue an unscoped briefing request that then races the scoped one.
     if (!canvasId && !schemaReady) return;
-    // the version on screen is part of what was fetched: switching period re-fetches
-    const fetchKey = `${narrativeScope}#${rangesOn ? JSON.stringify(range) : period}`;
+    // the version on screen is part of what was fetched: switching range re-fetches
+    const fetchKey = `${narrativeScope}#${JSON.stringify(range)}`;
     if (fetchKey === fetchedScope.current) return;
     fetchedScope.current = fetchKey;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, canvasId, schema, schemaReady, narrativeScope, period, rangesOn, range]);
+  }, [connectionId, canvasId, schema, schemaReady, narrativeScope, range]);
 
   // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
   // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
@@ -3133,9 +3113,9 @@ export function BriefingPanel({
   const rangeBlock     = useMemo(() => (storedBlock ? ownFigures(storedBlock) : null), [storedBlock]);
   // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
   // must not fall back to the standing view's figures, which read as this range's.
-  const rangePending   = rangesOn && !canvasId && range.preset !== "standing" && !rangeBlock;
+  const rangePending   = !canvasId && range.preset !== "standing" && !rangeBlock;
   // BR-9 — every part below the hero that is not measured for the range says so.
-  const rangeSelected  = rangesOn && !canvasId && range.preset !== "standing";
+  const rangeSelected  = !canvasId && range.preset !== "standing";
   const scopeNote      = rangeScopeNote(rangeSelected, rangeBlock);
   // BR-7 — re-ask the findings for the range: their own SQL over it and the previous range,
   // no model, once per range. The state is set only when the answer arrives, keyed by the
@@ -3326,7 +3306,7 @@ export function BriefingPanel({
           what a control is doing, an action that was refused, and a run in flight still are. */}
       <PaperMasthead
         scope={schema ?? ""}
-        edition={rangesOn && !canvasId ? <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} /> : null}
+        edition={!canvasId ? <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} /> : null}
         tools={<>
           {run && (
             <Button variant="secondary" size="xs" disabled={controlsLocked} onClick={runStop}>
@@ -3392,9 +3372,6 @@ export function BriefingPanel({
                     variant="secondary" size="xs"
                     disabled={controlsLocked} onClick={runStop}
                   >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
-                )}
-                {!rangesOn && periodsOn && !canvasId && (
-                  <PeriodSwitch value={period} onChange={setPeriod} disabled={narrativeLoading} />
                 )}
                 {/* PX-6 — the scheduled-delivery door. */}
                 <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"

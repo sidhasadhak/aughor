@@ -193,17 +193,14 @@ def read_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
     period; a card the reader may not read stands and says so."""
     from aughor.dashboards import cards, host, images, sharing
     from aughor.dashboards.home import person_of
-    from aughor.kernel.flags import flag_enabled
     from aughor.routers.investigations import resolve_currency_symbol
     try:
         got = sharing.read_shared(connection_id, owner, cockpit_id, reader=person_of(request))
     except sharing.Refused as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     home, kept = got["home"], got["cockpit"]
-    ranges_on = flag_enabled("briefing.ranges")
-    block, why = host.range_state(connection_id, preset if ranges_on else None,
-                                  start=_day(start, "start") if ranges_on else None,
-                                  end=_day(end, "end") if ranges_on else None, workspace_id=workspace_id)
+    block, why = host.range_state(connection_id, preset, start=_day(start, "start"), end=_day(end, "end"),
+                                  workspace_id=workspace_id)
     if block is None:
         raise HTTPException(status_code=422, detail=why)
     return {
@@ -211,7 +208,6 @@ def read_shared_dashboard(request: Request, owner: str, cockpit_id: str, connect
         "cockpit": kept,
         "cards": [_as_read(c, connection_id) for c in cards.cards_of(home)],
         "range": block,
-        "ranges_on": ranges_on,
         "currency_symbol": resolve_currency_symbol(connection_id, None),
         "images": images.stamps_for(connection_id, kept.get("spec")),
         "published_by": kept.get("published_by") or "",
@@ -426,15 +422,11 @@ def read_dashboard(request: Request, cockpit_id: str, connection_id: str, preset
     """One of the asker's dashboards as it stands: its newest version with its spec, every card
     it may place (theirs and the connection's), the range it is read for, and its history."""
     from aughor.dashboards import cards, host, images, versions
-    from aughor.kernel.flags import flag_enabled
     from aughor.routers.investigations import resolve_currency_symbol
     home = _home(request, connection_id, cockpit_id)
     kept = versions.latest(home)
     if kept is None:
         raise HTTPException(status_code=404, detail="No such dashboard")
-    ranges_on = flag_enabled("briefing.ranges")
-    if (preset or start or end) and not ranges_on:
-        raise HTTPException(status_code=404, detail="a dashboard for a date range needs the 'briefing.ranges' flag")
     block, why = host.range_state(connection_id, preset, start=_day(start, "start"), end=_day(end, "end"),
                                   workspace_id=workspace_id)
     if block is None:
@@ -446,7 +438,6 @@ def read_dashboard(request: Request, cockpit_id: str, connection_id: str, preset
         "cockpit": kept,
         "cards": [{**_as_read(c, connection_id), "not_offered": withheld.get(c.id, "")} for c in held],
         "range": block,
-        "ranges_on": ranges_on,
         "history": versions.history(home),
         "currency_symbol": resolve_currency_symbol(connection_id, None),
         # What the spec's images are, from the volume's own rows; one the dashboard may not show says why.

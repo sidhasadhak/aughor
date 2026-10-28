@@ -68,6 +68,9 @@ UNCONDITIONAL = {
     "ontology.history", "ontology.release", "ontology.put_back", "ontology.retiring", "ontology.census",
     "ontology.entity_usage", "ontology.builder_doors", "ontology.set_segments", "ontology.keyed_metrics",
     "ontology.explore_on_connect", "graph.declarations", "objects.find",
+    # the metrics and Briefing area, 2026-10-28
+    "metrics.figure_gates", "metrics.coverage_map", "metrics.coverage_proposals", "metrics.blind_spot_proposals",
+    "metrics.coverage_writer", "briefing.by_period", "briefing.ranges", "briefing.metric_cap",
 }
 
 

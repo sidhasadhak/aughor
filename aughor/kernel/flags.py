@@ -119,8 +119,11 @@ FLAG_ENV = {
     # model call after every settled turn for a record nobody yet read — stopped with the flags-into-settings decision
     # (ROADMAP §3.65). Its rows stay readable (`treatment.shadow_corpus`). An operator's env var is ignored.
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
-    "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
-    "briefing.ranges": "AUGHOR_BRIEFING_RANGES",
+    # "briefing.by_period" (AUGHOR_BRIEFING_BY_PERIOD) — idea 3, the Briefing for a day, week, month or year — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
+    # "briefing.ranges" (AUGHOR_BRIEFING_RANGES) — Arc BR, the Briefing for any date range — was made unconditional
+    # 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # P1 of the canvas-output study (docs/CANVAS_OUTPUT_STUDY_2026-10-14.md), 2026-10-14. ON gives the
     # analyst a `conclude` tool: its answer ends with a headline, prose and the results it cites, and
     # the canvas draws each cited result once. OFF → the answer's first sentence is cut as the headline
@@ -334,30 +337,24 @@ FLAG_ENV = {
     # "packs.dashboard_templates" (AUGHOR_PACKS_DASHBOARD_TEMPLATES) — Arc FA-6, a pack's dashboard templates — was
     # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
     # env var is ignored.
-    # Arc MC, MC-0 (ROADMAP §3.62, §6 item 55(d)). ON: approving a metric — one at a time or a set adopted together —
-    # reads its last six months at the day its data ends and refuses one that reads one value in every month, one whose
-    # median is outside its recipe's sane range, and one whose recipe roles are bound to columns of the wrong type or to
-    # a column the formula tests for emptiness that is never empty. OFF: approval reads only the window and the twins.
-    "metrics.figure_gates": "AUGHOR_METRICS_FIGURE_GATES",
-    # Arc MC, MC-1/MC-2. ON: GET /metrics/coverage/{conn} answers the map — the industry's areas, the function areas no
-    # industry takes and the generic layer's — with every table and metric placed in its areas, each placement saying
-    # why, and the Metrics tab shows it. OFF: the door answers 404 and the tab shows nothing new.
-    "metrics.coverage_map": "AUGHOR_METRICS_COVERAGE_MAP",
-    # Arc MC, MC-3/MC-4. ON: a coverage run proposes, by code, the recipes bound to this connection's roles and the
-    # metrics the ontology's declared promises, stages and segments derive, each through the gates, into the catalogue
-    # grouped by area; a proposal that fails a gate is listed with why and is not adoptable. OFF: nothing is proposed.
-    "metrics.coverage_proposals": "AUGHOR_METRICS_COVERAGE_PROPOSALS",
-    # Arc MC, MC-5 (§6 item 55(c), the user's call: automatically when profiled). ON: when a connection is profiled, each
-    # area with data and knowledge-base patterns its metrics do not compute yet gets ONE model call, handed those patterns
-    # and the area's own tables, to write the ones its data supports; each proposal cites its pattern and goes through the
-    # gates. The coverage view says the calls made. OFF: no call is made.
-    "metrics.coverage_writer": "AUGHOR_METRICS_COVERAGE_WRITER",
-    # Arc MC, MC-6. ON: a measure the explorer's findings keep computing with no metric reading it is proposed in its
-    # area, by code. OFF: it is not.
-    "metrics.blind_spot_proposals": "AUGHOR_METRICS_BLIND_SPOT_PROPOSALS",
-    # Arc MC, MC-6 (§6 item 55(f)). ON: the Briefing measures up to a workspace's cap of headline metrics — 24 unless the
-    # workspace sets its own — read by area as the map lists them. OFF: it measures 12, the income statement first.
-    "briefing.metric_cap": "AUGHOR_BRIEFING_METRIC_CAP",
+    # "metrics.figure_gates" (AUGHOR_METRICS_FIGURE_GATES) — Arc MC-0, a metric's figures checked at approval — was
+    # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env
+    # var is ignored.
+    # "metrics.coverage_map" (AUGHOR_METRICS_COVERAGE_MAP) — Arc MC-1/MC-2, the areas of the business and what each
+    # measures — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "metrics.coverage_proposals" (AUGHOR_METRICS_COVERAGE_PROPOSALS) — Arc MC-3/MC-4, recipes and the ontology's
+    # derivations proposed by code — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
+    # path is deleted. An operator's env var is ignored.
+    # "metrics.coverage_writer" (AUGHOR_METRICS_COVERAGE_WRITER) — Arc MC-5, one model call per uncovered area when a
+    # connection is profiled — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is
+    # deleted. An operator's env var is ignored.
+    # "metrics.blind_spot_proposals" (AUGHOR_METRICS_BLIND_SPOT_PROPOSALS) — Arc MC-6, a measure the explorer keeps
+    # computing proposed in its area — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
+    # path is deleted. An operator's env var is ignored.
+    # "briefing.metric_cap" (AUGHOR_BRIEFING_METRIC_CAP) — Arc MC-6, the Briefing measuring up to 24 metrics (or the
+    # workspace's `briefing_metric_cap`) by area — was made unconditional 2026-10-28: part of the platform (ROADMAP
+    # §3.65); its off path is deleted. An operator's env var is ignored.
     # "plan.program" (AUGHOR_PLAN_PROGRAM) was DELETED 2026-08-01 (flag endgame, verdict
     # sheet Wave 1): a SECOND answer path (typed program executor) with a standing
     # adopt-or-kill question. One brain, one answer path — the benchmarking arc measured
@@ -780,62 +777,6 @@ FLAG_META = {
                        "removed, and marks what you declined. Upgrading proposes only what is new or changed. Off: a "
                        "binding keeps whatever version the caller sends, and there is no upgrade.",
     },
-    "metrics.figure_gates": {
-        "label": "Check a metric's figures before it is approved",
-        "summary": "Approval refuses a metric that reads one value every month or sits outside its recipe's range. "
-                   "It also refuses one whose roles are bound to the wrong columns.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads six months at approval"}],
-        "description": "The figures are read over the last six months of the metric's own data, so a source that "
-                       "stopped is still checked. A check that cannot read its figures says so and does not refuse. "
-                       "Off: approval checks only the dates and the twins.",
-    },
-    "metrics.coverage_map": {
-        "label": "Show which areas of the business have metrics",
-        "summary": "The Metrics tab shows the areas a business like this one is read by. Each shows its data, its "
-                   "metrics and what the knowledge base would measure.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads approved figures, at most hourly"}],
-        "description": "Each table and each metric is placed in an area, and each placement says why. An area the "
-                       "knowledge base has no pattern for is said as such. Off: the coverage view is not shown.",
-    },
-    "metrics.coverage_proposals": {
-        "label": "Propose metrics for areas that have none",
-        "summary": "Proposes the pack's recipes bound to this connection and the metrics the ontology's promises, "
-                   "stages and segments derive. Every proposal is checked before you see it.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads each proposal's figures once"},
-                  {"kind": "private", "text": "Nothing is approved for you"}],
-        "description": "Proposals are listed by area beside the explorer's. One that fails a check says why and cannot "
-                       "be adopted until it is fixed. Off: only the explorer and the pack propose, as before.",
-    },
-    "metrics.coverage_writer": {
-        "label": "Write metrics from the knowledge base on profiling",
-        "summary": "When a connection is profiled, each area with data gets one model call. It writes the "
-                   "knowledge-base patterns the area's tables support and its metrics do not compute yet.",
-        "facts": [{"kind": "model", "text": "1 call per open area"},
-                  {"kind": "warehouse", "text": "Reads each proposal's figures once"},
-                  {"kind": "private", "text": "Nothing is approved for you"}],
-        "description": "Each proposal names the pattern it came from, or says none did. One that reads a table outside "
-                       "its area, or cites a pattern it does not compute, is refused with why. The Metrics tab says "
-                       "how many calls were made and when. Off: no call is made.",
-    },
-    "metrics.blind_spot_proposals": {
-        "label": "Propose the measures the explorer keeps computing",
-        "summary": "A measure the explorer's findings keep computing, with no metric reading it, is proposed in its "
-                   "area.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads each proposal's figures once"}],
-        "description": "Three findings computing the same column are enough. The proposal sums or averages it, says "
-                       "which, and goes through the same checks. Off: blind spots stay questions only.",
-    },
-    "briefing.metric_cap": {
-        "label": "Measure up to 24 Briefing metrics, by area",
-        "summary": "The Briefing measures up to 24 approved metrics, or the number a workspace sets. They read by area, "
-                   "the income statement first.",
-        "facts": [{"kind": "warehouse", "text": "Three queries per metric per Briefing"}],
-        "description": "A metric past the cap is still named, with the cap that cut it. Off: the Briefing measures 12.",
-    },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
         "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
@@ -869,15 +810,6 @@ FLAG_META = {
                        "refused, with why. Scheduled checks still count every object. Off: only object "
                        "pages, dashboards and outside programs apply them.",
     },
-    "briefing.ranges": {
-        "label": "Briefings for any date range",
-        "summary": "One date-range control replaces the Day, Week, Month and Year switch. "
-                   "Headline figures come from approved metrics.",
-        "facts": [{"kind": "warehouse", "text": "Queries your warehouse"}],
-        "description": "Each figure says whether it is final, still settling, or to date. Each metric's "
-                       "date column is set by rule, and a person can correct it in the metric editor. "
-                       "Off: the Briefing keeps its switch.",
-    },
     "analyst.conclude": {
         "label": "Agent answers end with their own structure",
         "summary": "The agent closes an answer with a headline, the answer and the results it cites. "
@@ -886,16 +818,6 @@ FLAG_META = {
         "description": "A result the answer does not cite stays behind Sources. A headline over one line, "
                        "or an answer carrying a table, is sent back once to be rewritten. Off: the answer's "
                        "first sentence is its headline and every result is drawn.",
-    },
-    "briefing.by_period": {
-        "label": "Briefings by day, week, month and year",
-        "summary": "Adds a Briefing for the last complete day, week, month or year. "
-                   "A subscription can send it on that schedule.",
-        "facts": [{"kind": "model", "text": "Model writes the narrative"},
-                  {"kind": "schedule", "text": "Monthly or yearly sends"}],
-        "description": "Each headline metric is compared with the period before. The Briefing also "
-                       "lists the alerts and findings from that period. Off: only the standing "
-                       "Briefing exists, and a period Briefing is refused with the reason.",
     },
     "ask.converse": {
         "label": "Answer through a conversation with tools",
@@ -997,19 +919,11 @@ ALWAYS_ON: dict[str, str] = {
     "arrivals.google_comments": "Works once its setup exists (your Google OAuth client); setting it up is the choice.",
     "ask.converse": "It is how chat answers today; off falls back to an older fixed script.",
     "automations.objects_admitted": "It is offered; the automation's owner chooses it.",
-    "briefing.by_period": "It is the Briefing as you use it; it sends only to subscribers.",
-    "briefing.metric_cap": "How LuxExperience's Briefing reads today; the number is already a workspace setting.",
-    "briefing.ranges": "How the Briefing reads today.",
     "chat.buttons_reach_agent": "The same path as above.",
     "federation.planner": "Kept for questions across connections: the planner is reached through its own door; it no longer takes fresh chat questions on its own.",
     "grounding.full_schema_first": "Kept on its record: in two test runs the SQL writer seeing every table of a small schema never wrote a worse query, and twice answered where the shorter schema could not.",
     "hub.failure_rate": "Free; it says 'no runs', never 0%.",
     "knowledge.hybrid_documents": "Works once its setup exists (the vector store running); setting it up is the choice.",
-    "metrics.blind_spot_proposals": "Proposals only.",
-    "metrics.coverage_map": "Free; it reads approved figures at most hourly.",
-    "metrics.coverage_proposals": "Proposals only; nothing is approved without a person.",
-    "metrics.coverage_writer": "It runs once per profiling — 11 calls on LuxExperience — says how many on the Metrics tab, and only proposes.",
-    "metrics.figure_gates": "It stops a wrong metric reaching the Briefing — the 10-26 'never happens again'.",
     "obs.log_search": "Free; who may use it is a permission, not a switch.",
     "packs.installed_versions": "Free, and it never re-offers what you declined.",
     "record.decision_loop": "No model calls; live since 10-24.",

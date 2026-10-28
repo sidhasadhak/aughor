@@ -330,16 +330,13 @@ def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
 def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: Optional[str],
                 workspace_id: Optional[str]):
     """BR-9 — the range a card run asks for, resolved as the Briefing resolves its own; None
-    when none is asked; refused (404) with the flag off, (422) when it cannot be read."""
+    when none is asked; refused (422) when it cannot be read."""
     from datetime import date as _date
 
     from aughor.briefing import ranges
-    from aughor.kernel.flags import flag_enabled
 
     if not (preset or start or end):
         return None
-    if not flag_enabled("briefing.ranges"):
-        raise HTTPException(status_code=404, detail="a card for a date range needs the 'briefing.ranges' flag")
     try:
         first = _date.fromisoformat(start) if start else None
         last = _date.fromisoformat(end) if end else None

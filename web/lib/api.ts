@@ -1222,18 +1222,16 @@ export interface MetricCoverage {
   areas: CoverageArea[]; unplaced_tables: string[]; said: string[];
   counts: { areas: number; with_data: number; covered: number; uncovered: number; unchecked: number; patterns: number;
             open_patterns?: number; writable?: number };
-  proposals: CoverageProposal[]; run: CoverageRun | null; flags: Record<string, boolean>;
+  proposals: CoverageProposal[]; run: CoverageRun | null;
 }
 
-/** The coverage view, or null while `metrics.coverage_map` is off (the door answers 404). ``figures`` reads the
- *  approved metrics' figures not read within the hour. */
-export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage | null> {
+/** The coverage view. ``figures`` reads the approved metrics' figures not read within the hour. */
+export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage> {
   const q = new URLSearchParams();
   if (schema) q.set("schema", schema);
   if (figures) q.set("figures", "true");
   const qs = q.toString();
   const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}${qs ? `?${qs}` : ""}`);
-  if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "The coverage could not be read"));
@@ -3148,7 +3146,6 @@ export interface PersonDashboard {
   cockpit: DashboardVersion;
   cards: DashboardCard[];
   range: DashboardRange;
-  ranges_on: boolean;
   history: DashboardVersion[];
   /** The symbol a money figure is written with, as the Briefing resolves it. */
   currency_symbol?: string;
@@ -3462,7 +3459,6 @@ export interface SharedDashboard {
   cockpit: DashboardVersion;
   cards: DashboardCard[];
   range: DashboardRange;
-  ranges_on: boolean;
   currency_symbol?: string;
   images?: Record<string, DashboardImageStamp>;
   published_by: string;
@@ -7396,7 +7392,7 @@ export interface BriefSubscription {
   id: string;
   conn_id: string;
   name: string;
-  /** "month" | "year" exist only with the `briefing.by_period` flag on (idea 3). */
+  /** "month" | "year" send the Briefing written for the period (idea 3). */
   period: "week" | "day" | "month" | "year";
   send_cron: string;
   /** What it sends: the alert summary (absent = "alert_summary", every row saved before idea 3) or
@@ -7800,7 +7796,7 @@ export interface BriefingPeriodBlock {
   unmeasured: { name: string; reason: string }[];
 }
 
-/** Arc BR-3 — a Briefing for any range (`briefing.ranges`). "standing" is the view of
+/** Arc BR-3 — a Briefing for any range. "standing" is the view of
  *  everything the platform knows; the presets resolve on the server against the connection's
  *  settling lag; "custom" carries its first and last day (inclusive, ISO). */
 export type RangePreset =
@@ -7844,7 +7840,7 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Arc MC — the area of the map it reads on, while the Briefing reads by area (`briefing.metric_cap`). */
+  /** Arc MC — the area of the map it reads on; the Briefing reads by area. */
   area?: { id: string; name: string } | null;
   /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
    *  the range; `ownFigures` reads it as not measured, as the server now says it. */
@@ -8290,23 +8286,15 @@ export async function generateBriefingNarrative(
   refresh = false,
   schema?: string,
   workspaceId?: string,
-  period?: BriefingPeriod,
 ): Promise<BriefingNarrativeResponse> {
   const q = new URLSearchParams();
   if (refresh) q.set("refresh", "true");
   if (schema) q.set("schema", schema);
   if (workspaceId) q.set("workspace_id", workspaceId);
-  if (period && period !== "history") q.set("period", period);
   const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
-  if (!res.ok) {
-    // A period brief the install has switched off says so; the reason is the server's words.
-    const detail = period && period !== "history"
-      ? await res.json().then((b) => (typeof b?.detail === "string" ? b.detail : null)).catch(() => null)
-      : null;
-    throw new Error(detail ?? "Failed to generate briefing narrative");
-  }
+  if (!res.ok) throw new Error("Failed to generate briefing narrative");
   return res.json();
 }
 

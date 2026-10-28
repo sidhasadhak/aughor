@@ -827,36 +827,16 @@ def _record_moves(conn_id: str, schema: str | None, moves: list) -> None:
             tolerate(_e, "metric-move: its dossier could not be recorded", counter="brief.metric_move.dossier")
 
 
-def _refuse_unless_period_allowed(period: str) -> None:
-    """A period brief the install has off (404) or a period that does not exist (422) is
-    refused FIRST — before the refresh re-validation runs a single live query for it."""
-    from aughor.automations.temporal import PERIODS
-    from aughor.knowledge import period_brief
-
-    why = period_brief.refusal(period)
-    if why:
-        raise HTTPException(status_code=404 if period in PERIODS else 422, detail=why)
-
-
 def _range_spec_or_refuse(conn_id: str, period: str | None, preset: str | None, start: str | None,
                           end: str | None, workspace_id: str | None, schema: str | None = None):
-    """The range a request asks for, or None when it asks for none (or for a period while
-    ``briefing.ranges`` is off, which §3.27's path answers). A range asked for while the flag
-    is off is refused (404), and a range that cannot be read is refused with why (422) —
-    before any query runs."""
+    """The range a request asks for — a named ``period`` read as its preset — or None when it
+    asks for none (the standing Briefing). A range that cannot be read is refused with why
+    (422) — before any query runs."""
     from datetime import date as _date
 
     from aughor.briefing import ranges
-    from aughor.kernel.flags import flag_enabled
 
     wants_range = bool(preset or start or end)
-    on = flag_enabled("briefing.ranges")
-    if not on:
-        if wants_range:
-            raise HTTPException(status_code=404, detail=(
-                "briefings for any date range are off on this install — they need the "
-                "'briefing.ranges' flag"))
-        return None
     if not wants_range:
         if not period or period == "history":
             return None
@@ -878,7 +858,7 @@ def _range_spec_or_refuse(conn_id: str, period: str | None, preset: str | None, 
 
 def _range_briefing(conn_id: str, spec, *, schema: str | None, requested_schema: str | None,
                     refresh: bool, workspace_id: str | None, by_domain: dict) -> dict:
-    """Arc BR-3 — the Briefing for one range (`briefing.ranges`)."""
+    """Arc BR-3 — the Briefing for one range."""
     from aughor.briefing import ranges
 
     scope_key = f"{conn_id}:{requested_schema}" if requested_schema else conn_id
@@ -902,7 +882,7 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
     """BR-7, joined to BR-9: every explorer finding of this scope re-asked for the range — its own
     SQL over the range and the previous range, cut on the main date of the first table it reads —
     ranked by the size of the change; the ones that cannot be re-asked listed apart with why.
-    No model call. Refused like the range Briefing when `briefing.ranges` is off."""
+    No model call."""
     import time as _t
 
     from aughor.briefing.reask import reask_findings
@@ -1019,11 +999,7 @@ def read_edition_covers(conn_id: str, schema: str | None = None, workspace_id: s
     landed. No narrative is written and no model is called; the figures are measured now (a POST, as the
     measures door is: it runs warehouse queries)."""
     from aughor.briefing import ranges
-    from aughor.kernel.flags import flag_enabled
 
-    if not flag_enabled("briefing.ranges"):
-        raise HTTPException(status_code=404, detail=(
-            "briefings for any date range are off on this install — they need the 'briefing.ranges' flag"))
     return ranges.edition_covers(conn_id, schema=schema, workspace_id=workspace_id,
                                  profile=_load_business_profile(conn_id, schema))
 
@@ -1061,24 +1037,6 @@ def read_expected_next(conn_id: str, schema: str | None = None, workspace_id: st
                                   workspace_id=workspace_id, schema=schema)
 
 
-def _period_briefing(conn_id: str, period: str, *, schema: str | None,
-                     requested_schema: str | None, refresh: bool,
-                     workspace_id: str | None, by_domain: dict) -> dict:
-    """Idea 3 — the Briefing for ONE period (`knowledge.period_brief`). Same scope as the
-    standing brief — ``by_domain`` is the scope's findings exactly as that path read, filtered
-    and cleaned them — different evidence: the headline metrics measured for the window, and
-    only the alerts and findings recorded inside it. Refused, with the reason, while off."""
-    from aughor.knowledge import period_brief
-
-    _refuse_unless_period_allowed(period)
-    scope_key = f"{conn_id}:{requested_schema}" if requested_schema else conn_id
-    result = period_brief.build_period_briefing(
-        conn_id, period, scope_key=scope_key, domain_data=by_domain,
-        profile=_load_business_profile(conn_id, schema), workspace_id=workspace_id,
-        col_types=_connection_col_types(conn_id), force_refresh=refresh)
-    return {**result, "available": bool(result.get("narrative")), "scope_key": scope_key}
-
-
 @router.post("/exploration/{conn_id}/briefing")
 def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None,
                       workspace_id: str | None = None, period: str | None = None,
@@ -1086,10 +1044,9 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     """Generate (or return cached) an LLM synthesis narrative for the connection.
 
     ``period`` = ``day`` | ``week`` | ``month`` | ``year`` asks for the Briefing written for
-    that period (idea 3, flag ``briefing.by_period``); absent or ``history`` is the standing
-    Briefing, exactly as before. With ``briefing.ranges`` on (Arc BR-3), ``preset`` (or
-    ``start`` and ``end``, both inclusive ISO days) asks for the Briefing of any range, and a
-    named ``period`` is read as its preset."""
+    that period, read as its preset (idea 3); absent or ``history`` is the standing Briefing.
+    ``preset`` (or ``start`` and ``end``, both inclusive ISO days) asks for the Briefing of any
+    range (Arc BR-3)."""
     spec = _range_spec_or_refuse(conn_id, period, preset, start, end, workspace_id, schema)
     # ⚠ The REQUESTED schema owns `scope_key` (stamped below): it is the client's proof
     # that a narrative belongs to the scope it is about to paint it under. Canonicalization
@@ -1105,8 +1062,6 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     # stored content, then emptied itself one fetch later.
     from aughor.routers._shared import canonical_schema
     schema = canonical_schema(conn_id, schema)
-    if period and period != "history" and spec is None:
-        _refuse_unless_period_allowed(period)
     # A schema turned off has no Briefing: none is re-validated, measured or written from what was found before.
     off = briefing_off_for(conn_id, requested_schema)
     if off:
@@ -1150,14 +1105,9 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     _normalize_insight_numbers(by_domain)
     if spec is not None:
         # Arc BR-3: the Briefing of a range, measured from the approved metrics — before the
-        # "no findings" return, like a period brief
+        # "no findings" return: it measures its metrics even when the scope has no stored findings
         return {**_range_briefing(conn_id, spec, schema=schema, requested_schema=requested_schema,
                                   refresh=refresh, workspace_id=workspace_id, by_domain=by_domain), **told}
-    if period and period != "history":
-        # before the "no findings" return: a period brief measures its metrics even when the
-        # scope has no stored findings at all
-        return {**_period_briefing(conn_id, period, schema=schema, requested_schema=requested_schema,
-                                   refresh=refresh, workspace_id=workspace_id, by_domain=by_domain), **told}
     if not by_domain:
         return {
             "narrative": "",

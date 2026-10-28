@@ -608,9 +608,9 @@ function PublishPanel({ connectionId, dashboardId, publishedTo, draft = false, r
 /** A dashboard someone else published to a group the person is in or a role they hold: read as it
  *  stands, for the reader's own period, with no door that changes it — and a door to start a
  *  dashboard of their own from it. */
-function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, chosenRange, onRange, rangesOn, onStarted }: {
+function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, chosenRange, onRange, onStarted }: {
   connectionId: string; schema?: string; owner: string; dashboardId: string;
-  range: BriefingRange | null; chosenRange: RangeChoice; onRange: (c: RangeChoice) => void; rangesOn: boolean | null;
+  range: BriefingRange | null; chosenRange: RangeChoice; onRange: (c: RangeChoice) => void;
   onStarted: (dashboardId: string) => void;
 }) {
   const [data, setData] = useState<SharedDashboard | null>(null);
@@ -666,9 +666,7 @@ function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, 
   return (
     <div data-testid="dashboard-shared" data-owner={owner} data-dashboard={dashboardId}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-        {data.ranges_on && rangesOn && (
-          <PeriodPicker value={chosenRange} onChange={onRange} showing={data.range.status === "standing" ? null : data.range} />
-        )}
+        <PeriodPicker value={chosenRange} onChange={onRange} showing={data.range.status === "standing" ? null : data.range} />
         <span className="aug-fs-sm" data-testid="dashboard-shared-by" style={{ color: "var(--t2)" }}>
           An App by {personName(data.published_by)}, for {data.published_to.map(t => t.name).join(", ")} · version {data.cockpit.version} · read-only
         </span>
@@ -706,13 +704,10 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
 }) {
-  // The period the cards are read for: the person's pick, else the latest complete month where
-  // ranges are on — a dashboard is watched month by month, as the mock showed it — else as written.
-  // Nothing is read until the flag is known: a first read "as written" would roll every card's
-  // standing value for a view nobody asked for.
-  const [rangesOn, setRangesOn] = useState<boolean | null>(null);
+  // The period the cards are read for: the person's pick, else the latest complete month — a
+  // dashboard is watched month by month, as the mock showed it.
   const [picked, setChosenRange] = useState<RangeChoice | null>(null);
-  const chosenRange: RangeChoice = picked ?? (rangesOn ? { preset: "previous_month" } : { preset: "standing" });
+  const chosenRange: RangeChoice = picked ?? { preset: "previous_month" };
   const range: BriefingRange | null = chosenRange.preset === "standing" ? null : chosenRange;
   const [list, setList] = useState<DashboardList | null>(null);
   const [chosen, setChosen] = useState("");
@@ -792,8 +787,8 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   useEffect(() => {
     let alive = true;
     getSystemFlags().then(f => {
-      if (alive) { setRangesOn(!!f["briefing.ranges"]?.value); setLimitsOn(!!f["ontology.security"]?.value); }
-    }).catch(() => { if (alive) setRangesOn(false); });
+      if (alive) setLimitsOn(!!f["ontology.security"]?.value);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -820,7 +815,6 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   // The chosen dashboard, read for the page's range, each card it places run through the guards.
   useEffect(() => {
     if (!chosen || chosen === METRICS_DASHBOARD || chosen.startsWith("shared:")) { setData(null); return; }
-    if (rangesOn === null) return;
     let cancelled = false;
     setReading(true);
     (async () => {
@@ -858,7 +852,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-  }, [connectionId, chosen, rangeKey, tick, rangesOn]);
+  }, [connectionId, chosen, rangeKey, tick]);
 
   const write = useCallback(async (act: () => Promise<DashboardKept>, done: (k: DashboardKept) => string) => {
     setBusy(true); setRefusal(null);
@@ -1348,22 +1342,20 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
 
       {chosen === METRICS_DASHBOARD ? (
         <>
-          <MetricsDashboard connectionId={connectionId} schema={schema} rangesOn={rangesOn}
+          <MetricsDashboard connectionId={connectionId} schema={schema}
             value={chosenRange} onChange={setChosenRange} />
           {live.length === 0 && <div style={{ marginTop: 14 }}>{noneYetLine}</div>}
         </>
       ) : chosen.startsWith("shared:") ? (
         <SharedDashboardView connectionId={connectionId} schema={schema}
           owner={chosen.slice("shared:".length, chosen.lastIndexOf("/"))} dashboardId={chosen.slice(chosen.lastIndexOf("/") + 1)}
-          range={range} chosenRange={chosenRange} onRange={setChosenRange} rangesOn={rangesOn}
+          range={range} chosenRange={chosenRange} onRange={setChosenRange}
           onStarted={id => { choose(id); reload(); }} />
       ) : live.length === 0 ? noneYet : drawn && data ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-            {data.ranges_on && (
-              <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
-                showing={data.range.status === "standing" || reading ? null : data.range} />
-            )}
+            <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
+              showing={data.range.status === "standing" || reading ? null : data.range} />
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => {
                 // a resize kept since the page was read is not in its history yet: read it again once
