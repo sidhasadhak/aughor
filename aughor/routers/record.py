@@ -297,11 +297,13 @@ def get_record_decision(decision_id: str) -> dict:
     # what replaced the claim it stood on, when its ground moved and nobody has answered yet
     moved = C.get(d.reopened_by) if d.reopened_by else None
     view["reopened_by_claim"] = moved.model_dump() if moved is not None else None
-    # the decision's address for mail, inbound only — or why it has none (the user's call, 2026-10-27)
+    # the decision's address for mail, inbound only — or what the install has not set (the user's call, 2026-10-27)
     from aughor.record import email_door as E
-    view["email"] = {"address": E.address_for(d.id), "note": E.address_note()}
+    view["email"] = {"address": E.address_for(d.id), "note": E.missing()}
+    # the Google files read onto it, and what is missing before one can be — the install's client or the reader's grant
+    from aughor.org.context import current_user_id
     from aughor.record import google_comments as G
-    view["google"] = {"on": G.door_on(), "files": list(d.extra.get("google_files") or [])}
+    view["google"] = {"files": list(d.extra.get("google_files") or []), "missing": G.missing(current_user_id() or "")}
     return view
 
 
@@ -466,12 +468,10 @@ class GoogleFileRequest(BaseModel):
 @router.post("/record/decisions/{decision_id}/google-file")
 def read_google_file_onto_decision(decision_id: str, req: GoogleFileRequest, principal=Depends(get_principal)) -> dict:
     """Read the comments of ONE Google file a person names onto a decision, as later evidence, through that person's
-    own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 404 while
-    ``arrivals.google_comments`` is off."""
+    own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 409, saying which, while
+    the install has no Google OAuth client or the person has no grant that may read comments."""
     from aughor.org.context import current_user_id
     from aughor.record import google_comments as G
-    if not G.door_on():
-        raise HTTPException(status_code=404, detail="Not Found")
     d = D.get_decision(decision_id)
     if d is None or not _visible(d.connection_id):
         raise HTTPException(status_code=404, detail="No such decision")

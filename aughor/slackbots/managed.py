@@ -1,20 +1,24 @@
-"""The API owns the Slack supervisor process (Arc AO-2b, flag ``slack.managed_supervisor``).
+"""The API owns the Slack supervisor process (Arc AO-2b).
 
 Measured 2026-10-03: nothing started the supervisor (``start.sh`` does not), nothing
-watched it, and the bot card read "enabled" on a machine where it was not running. Behind
-the flag the API spawns it, watches it, and restarts it with a backoff; the status route
-and the bot card say which of those is true right now.
+watched it, and the bot card read "enabled" on a machine where it was not running. The
+API spawns it, watches it, and restarts it with a backoff; the status route and the bot
+card say which of those is true right now.
 
 **The spike (§6 item 38(d)) — spawn-and-watch, not in-process Socket Mode.** Decided by
 reading, not by a day: the bot's whole answer path is TypeScript — the Chat SDK's
 streaming, the chart PNG via resvg, the thread grammar (``bots/slack/src``). An
 in-process Python Socket Mode client would be a second implementation of all of it,
 drifting from the first. Spawning the one implementation keeps one bot; watching it is
-what the flag adds.
+what the API adds.
 
-Off by default and byte-identical when off: ``start()`` returns ``"off"`` and spawns
-nothing. The child gets its own key (a second row in the key store, never the operator's)
-so a managed supervisor cannot be darkened by a person's "Regenerate".
+On when its setup exists (ROADMAP §3.65, 2026-10-28): the API runs it wherever it runs
+its clocks, once bots/slack, its packages and Node.js are there. Until then nothing is
+tried — the state is ``waiting`` and ``waiting_on`` says, in one sentence, what is missing
+and how to add it; a process that runs no clocks (serverless, schedulers disabled) says
+so too, and that a person starts it by hand there. The child gets its own key (a second
+row in the key store, never the operator's) so a managed supervisor cannot be darkened by
+a person's "Regenerate".
 """
 from __future__ import annotations
 
@@ -30,8 +34,6 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-FLAG = "slack.managed_supervisor"
-
 #: Restart backoff, seconds, by consecutive failure; the last value repeats.
 BACKOFF_S = (5, 15, 60, 180)
 #: After this many exits inside an hour the host stops restarting and says so — a child
@@ -45,11 +47,14 @@ def supervisor_dir(root: Optional[Path] = None) -> Path:
     return base / "bots" / "slack"
 
 
+#: How a person starts the supervisor where the API does not run it.
+BY_HAND = "cd bots/slack && npm run dev"
+
+
 @dataclass
 class Status:
-    flag: bool = False
     managed: bool = False
-    state: str = "off"          # off · starting · running · restarting · stopped · failed
+    state: str = "off"          # off · waiting · starting · running · restarting · stopped · failed
     pid: Optional[int] = None
     started_at: str = ""
     restarts: int = 0
@@ -59,6 +64,9 @@ class Status:
     cwd: str = ""
     #: What would stop a start before it is tried — said, so the fix is named.
     preconditions: list[str] = field(default_factory=list)
+    #: One sentence while the API does not run the supervisor (``waiting`` or ``off``): what is missing and where
+    #: it is added. "" once it runs.
+    waiting_on: str = ""
     #: Where the child's own stdout/stderr land (appended across restarts). The first
     #: receipt (2026-10-03) found them on /dev/null while the cap message said "check the
     #: supervisor's own log" — there was none to check.
@@ -76,13 +84,12 @@ class ManagedSupervisor:
     """One child process, one watcher thread. ``spawn`` is injectable for tests."""
 
     def __init__(self, *, api_url: str, runtime_key: str, cwd: Optional[Path] = None,
-                 spawn=None, flag_enabled=None, log_path: Optional[Path] = None):
+                 spawn=None, log_path: Optional[Path] = None):
         self._api_url = api_url
         self._runtime_key = runtime_key
         self._cwd = cwd or supervisor_dir()
         self._log_path = log_path
         self._spawn = spawn or self._real_spawn
-        self._flag_enabled = flag_enabled or _flag_on
         self._proc: Any = None
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
@@ -97,7 +104,7 @@ class ManagedSupervisor:
             problems.append(f"no supervisor at {self._cwd} — the repo's bots/slack is missing")
         if not (self._cwd / "node_modules").is_dir():
             problems.append("bots/slack/node_modules is missing — run `npm install` in "
-                            "bots/slack (the installer does this when the flag is on)")
+                            "bots/slack, or run the installer again")
         if not self._npx():
             problems.append("no `npx` on PATH — install Node.js 20+")
         if not self._runtime_key:
@@ -143,21 +150,15 @@ class ManagedSupervisor:
 
     # ── lifecycle ────────────────────────────────────────────────────────────────
     def start(self) -> str:
-        """Start the child and the watcher. Returns the resulting state."""
+        """Start the child and the watcher. Returns the resulting state — ``waiting``, with what
+        is missing said, when its setup does not exist yet."""
         with self._lock:
-            self._status.flag = bool(self._flag_enabled(FLAG))
-            if not self._status.flag:
-                self._status.state = "off"
-                return "off"
             self._status.managed = True
-            self._status.preconditions = self.preconditions()
             self._status.command = self.command()
             self._status.cwd = str(self._cwd)
             self._status.log_path = str(self.log_path())
-            if self._status.preconditions:
-                self._status.state = "failed"
-                self._status.last_error = "; ".join(self._status.preconditions)
-                return "failed"
+            if self._wait_on_setup():
+                return "waiting"
             self._launch()
             if self._thread is None:
                 self._stop.clear()
@@ -165,6 +166,20 @@ class ManagedSupervisor:
                                                 daemon=True)
                 self._thread.start()
             return self._status.state
+
+    def _wait_on_setup(self) -> bool:
+        """Whether something the supervisor needs is missing — then nothing is tried, and the
+        status says what and how to add it. Called with the lock held."""
+        self._status.preconditions = self.preconditions()
+        if not self._status.preconditions:
+            self._status.waiting_on = ""
+            return False
+        self._status.state = "waiting"
+        self._status.pid = None
+        self._status.last_error = ""
+        self._status.waiting_on = (f"Not started: {'; '.join(self._status.preconditions)}. "
+                                   "Press Restart once that is done.")
+        return True
 
     def _launch(self) -> None:
         try:
@@ -219,13 +234,13 @@ class ManagedSupervisor:
             self._terminate()
             self._exits = []
             self._status.restarts += 1
-            if self._status.flag:
-                self._status.preconditions = self.preconditions()
-                if self._status.preconditions:
-                    self._status.state = "failed"
-                    self._status.last_error = "; ".join(self._status.preconditions)
-                else:
-                    self._launch()
+            if not self._wait_on_setup():
+                self._launch()
+                if self._thread is None:
+                    self._stop.clear()
+                    self._thread = threading.Thread(target=self._watch, name="slack-supervisor-host",
+                                                    daemon=True)
+                    self._thread.start()
             return self.status()
 
     def _terminate(self) -> None:
@@ -257,11 +272,6 @@ class ManagedSupervisor:
         return s
 
 
-def _flag_on(name: str) -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(name)
-
-
 _HOST: Optional[ManagedSupervisor] = None
 
 
@@ -270,12 +280,9 @@ def host() -> Optional[ManagedSupervisor]:
 
 
 def start_managed_supervisor(*, api_url: str) -> Status:
-    """Called by the API's lifespan. With the flag off this issues nothing, spawns nothing
-    and returns ``state="off"`` — the byte-identical path."""
+    """Called by the API's lifespan wherever it runs its clocks: issues the child's key and
+    starts it — or, when its setup is missing, waits and says what is missing."""
     global _HOST
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(FLAG):
-        return Status()
     from aughor.slackbots import store
     key = store.issue_managed_key()
     _HOST = ManagedSupervisor(api_url=api_url, runtime_key=key)
@@ -290,16 +297,24 @@ def stop_managed_supervisor() -> None:
         _HOST = None
 
 
+def not_run_here() -> str:
+    """Why this API process runs no supervisor, and how a person starts one — the sentence the
+    status carries while no host was started."""
+    if os.environ.get("VERCEL"):
+        why = "this deployment keeps no process running between requests"
+    elif (os.environ.get("AUGHOR_DISABLE_SCHEDULERS") or "").strip().lower() not in ("", "0", "false", "no"):
+        why = "this API process runs no clocks (AUGHOR_DISABLE_SCHEDULERS)"
+    else:
+        why = "the API could not start it when it booted — its log says why; restarting the API tries again"
+    return f"The API does not run the Slack bot here: {why}. Start it by hand: {BY_HAND}"
+
+
 def managed_status() -> dict[str, Any]:
     """The host's state plus the freshest heartbeat any supervisor sent: a running pid is
     the process; the beat is whether it is LISTENING — and on a fresh install, with no
     bot card yet to read liveness from, this is the only place that says so."""
     if _HOST is None:
-        s = Status(flag=_flag_on(FLAG))
-        if s.flag:
-            s.state = "stopped"
-            s.last_error = "the flag is on but the host was not started — restart the API"
-        d = s.to_dict()
+        d = Status(waiting_on=not_run_here()).to_dict()
     else:
         d = _HOST.status().to_dict()
     try:

@@ -6331,13 +6331,16 @@ export async function createSlackApp(body: {
   return res.json();
 }
 
-/** AO-2b — what the API knows about the supervisor it runs (flag `slack.managed_supervisor`). */
+/** AO-2b — what the API knows about the supervisor it runs. `off` is a process that does not run it (serverless, no
+ *  clocks); `waiting` is one whose setup is missing — `waiting_on` says, in a sentence, what and how to add it. */
 export interface ManagedSupervisorStatus {
-  flag: boolean; managed: boolean;
-  state: "off" | "starting" | "running" | "restarting" | "stopped" | "failed";
+  managed: boolean;
+  state: "off" | "waiting" | "starting" | "running" | "restarting" | "stopped" | "failed";
   pid: number | null; started_at: string; restarts: number;
   last_exit_code: number | null; last_error: string;
   command: string[]; cwd: string; preconditions: string[];
+  /** "" once it runs; otherwise what is missing and where it is added. */
+  waiting_on: string;
   /** AO-2b receipt — where the child's own output lands, and the freshest heartbeat any
    *  supervisor sent (a running pid that never beat is not listening). */
   log_path: string;

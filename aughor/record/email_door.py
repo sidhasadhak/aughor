@@ -4,7 +4,9 @@ platform never sends a mail).
 
 Each decision has an address, ``decision+<id>@<the install's inbound domain>``. A mail provider the organisation sets
 up posts each mail sent there to ``POST /doors/email`` with the install's inbound secret; nothing else reaches this
-door, and no mailbox, inbox or thread is ever read — invited capture, never a crawl. Through a note's customs (the
+door, and no mailbox, inbox or thread is ever read — invited capture, never a crawl. Until the install sets both its
+inbound domain and its secret, no address is shown — an address that could receive nothing is never offered — and the
+decision and the door say which is missing (`missing`). Through a note's customs (the
 quoted history dropped, capped, control-stripped, PII redacted), a mail is one of three things, decided by code from
 its first line and its sender:
 
@@ -30,7 +32,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-FLAG = "arrivals.email"
 DOMAIN_ENV = "AUGHOR_INBOUND_EMAIL_DOMAIN"
 SECRET_ENV = "AUGHOR_INBOUND_EMAIL_SECRET"
 #: The words a mail may carry into the Record, after its quoted history is dropped.
@@ -60,34 +61,43 @@ class InboundMail(BaseModel):
     dkim: str = ""               # the provider's verdict on the sender: pass · fail · none · "" (not said)
 
 
-def door_on() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled(FLAG)
-
-
 def domain() -> str:
     return os.environ.get(DOMAIN_ENV, "").strip().lower()
 
 
+def _secret() -> str:
+    return os.environ.get(SECRET_ENV, "").strip()
+
+
+def _unset() -> str:
+    """What the install has not set for a mail to arrive, in words ("no inbound mail domain (…)"); "" when nothing."""
+    lacks = ([f"no inbound mail domain ({DOMAIN_ENV})"] if not domain() else []) + \
+            ([f"no inbound secret ({SECRET_ENV})"] if not _secret() else [])
+    return " and ".join(lacks)
+
+
+def missing() -> str:
+    """The sentence a decision shows where its address would be, while the install cannot receive a mail; ""
+    once it can."""
+    unset = _unset()
+    return f"No address yet: this install sets {unset}." if unset else ""
+
+
+def door_closed() -> str:
+    """The sentence the door answers with while the install cannot receive a mail; "" once it can."""
+    unset = _unset()
+    return f"This door takes no mail yet: this install sets {unset}." if unset else ""
+
+
 def address_for(decision_id: str) -> str:
-    """The decision's address, or "" when the door is off or no inbound domain is set."""
-    return f"decision+{decision_id}@{domain()}" if (door_on() and domain() and decision_id) else ""
-
-
-def address_note() -> str:
-    if not door_on():
-        return "email is off on this install"
-    if not domain():
-        return f"email is on, but no inbound domain is set ({DOMAIN_ENV})"
-    if not os.environ.get(SECRET_ENV, "").strip():
-        return f"email is on, but no inbound secret is set ({SECRET_ENV}), so nothing can arrive"
-    return ""
+    """The decision's address, or "" while the install sets no inbound domain or no secret (`missing` says which)."""
+    return f"decision+{decision_id}@{domain()}" if (decision_id and not _unset()) else ""
 
 
 def secret_ok(given: str) -> bool:
     """The provider's credential against the install's inbound secret, in constant time. No secret set → nothing
     is accepted: a door with no lock is closed, not open."""
-    want = os.environ.get(SECRET_ENV, "").strip()
+    want = _secret()
     return bool(want) and hmac.compare_digest(str(given or "").strip(), want)
 
 
@@ -152,7 +162,7 @@ def receive(mail: InboundMail) -> dict:
     """One mail to a decision's address: an approval, a dissent, or evidence — said which, and why."""
     want = domain()
     if not want:
-        raise MailRefused(503, f"no inbound domain is set ({DOMAIN_ENV})")
+        raise MailRefused(503, door_closed())
     found = [(m.group(1).lower(), m.group(2).lower()) for to in mail.to for m in [_ADDRESS.search(to or "")] if m]
     ids = [i for i, d in found if d == want]
     if not ids:

@@ -5257,10 +5257,10 @@ export interface paths {
         /**
          * Search Documents Endpoint
          * @description Search the corpus the caller may read (`search_documents`): with ``connection_id`` in the
-         *     body, another connection's schema docs are left out, as they are for a question. FA-1 (flag
-         *     ``knowledge.hybrid_documents``): when the embedder is down and the store is up, the hits are the
-         *     passages matched by their words, each carrying ``matched_by: "words"`` and the sentence ``said``;
-         *     503 only when the store cannot be read either.
+         *     body, another connection's schema docs are left out, as they are for a question. FA-1: when the
+         *     embedder is down and the store is up, the hits are the passages matched by their words, each
+         *     carrying ``matched_by: "words"`` and the sentence ``said``; 503 only when the store cannot be
+         *     read either, naming where the store is set.
          */
         post: operations["search_documents_endpoint_documents_search_post"];
         delete?: never;
@@ -15420,8 +15420,8 @@ export interface paths {
         /**
          * Read Google File Onto Decision
          * @description Read the comments of ONE Google file a person names onto a decision, as later evidence, through that person's
-         *     own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 404 while
-         *     ``arrivals.google_comments`` is off.
+         *     own Google grant (the decision-framework study §3.2). Never lists or reads any other file. 409, saying which, while
+         *     the install has no Google OAuth client or the person has no grant that may read comments.
          */
         post: operations["read_google_file_onto_decision_record_decisions__decision_id__google_file_post"];
         delete?: never;
@@ -17394,8 +17394,9 @@ export interface paths {
         };
         /**
          * Managed Supervisor Status
-         * @description What the API knows about the supervisor it runs (flag `slack.managed_supervisor`):
-         *     off, running (pid), restarting, stopped or failed — with the reason named.
+         * @description What the API knows about the supervisor it runs: off (not run by this process),
+         *     waiting (on its setup), running (pid), restarting, stopped or failed — with the reason
+         *     named, and `waiting_on` saying what is missing while it does not run.
          */
         get: operations["managed_supervisor_status_slack_bots_supervisor_get"];
         put?: never;

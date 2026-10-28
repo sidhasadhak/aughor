@@ -1,8 +1,9 @@
 """Decisions by email, inbound only (the decision-framework study §3.2; the user's call of 2026-10-27;
 `aughor/record/email_door.py`, `POST /doors/email`).
 
-What these hold: the door does not exist while `arrivals.email` is off; it takes nothing without the install's inbound
-secret, and nothing at all when no secret is set; a mail to a decision's address is an approval only from a named
+What these hold: until the install sets its inbound domain and its secret, a decision shows no address and says which
+is missing, and the door answers 503 saying the same — never an address that could receive nothing; the door takes
+nothing without the install's inbound secret; a mail to a decision's address is an approval only from a named
 approver whose sender the provider verified, a dissent when it says so, and evidence otherwise — kept as a said claim
 warranted by the conversation (a hash of the words, the sender's own words, the quoted history dropped, PII redacted)
 and added to the decision as LATER evidence; an approval that cannot be verified, or from someone not named, is kept as
@@ -16,7 +17,6 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.kernel.flags import flag_overrides
 from aughor.record import byproducts as B
 from aughor.record import claims as C
 from aughor.record import decisions as D
@@ -31,8 +31,6 @@ SECRET = "s3cret-inbound"
 def door(monkeypatch):
     monkeypatch.setenv(E.DOMAIN_ENV, DOMAIN)
     monkeypatch.setenv(E.SECRET_ENV, SECRET)
-    with flag_overrides({E.FLAG: True}):
-        yield
 
 
 @pytest.fixture
@@ -57,13 +55,32 @@ def _post(client, payload, secret=SECRET):
     return client.post("/doors/email", json=payload, headers={"X-Aughor-Inbound-Secret": secret} if secret else {})
 
 
-def test_off_the_door_does_not_exist_and_a_decision_has_no_address(client, monkeypatch):
-    monkeypatch.setenv(E.DOMAIN_ENV, DOMAIN)
-    monkeypatch.setenv(E.SECRET_ENV, SECRET)
-    with flag_overrides({E.FLAG: False}):
-        d = _decision()
-        assert _post(client, _mail(d, "ana@corp.example", "approve")).status_code == 404
-        assert E.address_for(d.id) == "" and E.address_note() == "email is off on this install"
+@pytest.mark.parametrize("domain, secret, said", [
+    ("", "", "this install sets no inbound mail domain (AUGHOR_INBOUND_EMAIL_DOMAIN) and no inbound secret "
+             "(AUGHOR_INBOUND_EMAIL_SECRET)."),
+    ("", SECRET, "this install sets no inbound mail domain (AUGHOR_INBOUND_EMAIL_DOMAIN)."),
+    (DOMAIN, "", "this install sets no inbound secret (AUGHOR_INBOUND_EMAIL_SECRET)."),
+])
+def test_without_its_setup_a_decision_has_no_address_and_it_and_the_door_say_what_is_missing(
+        client, monkeypatch, domain, secret, said):
+    """A domain with no secret used to show an address that could receive nothing, its note out of sight."""
+    from aughor.routers import record as R
+    monkeypatch.setenv(E.DOMAIN_ENV, domain)
+    monkeypatch.setenv(E.SECRET_ENV, secret)
+    monkeypatch.setattr(R, "_visible", lambda conn_id: True)
+    d = _decision()
+    assert E.address_for(d.id) == ""
+    assert R.get_record_decision(d.id)["email"] == {"address": "", "note": f"No address yet: {said}"}
+    got = _post(client, _mail(d, "ana@corp.example", "approve"), secret=secret)
+    assert got.status_code == 503 and got.json()["detail"] == f"This door takes no mail yet: {said}"
+    assert "approvals" not in D.latest_decision(d.source).extra
+
+
+def test_set_up_a_decision_shows_its_address_and_no_note(door, monkeypatch):
+    from aughor.routers import record as R
+    monkeypatch.setattr(R, "_visible", lambda conn_id: True)
+    d = _decision()
+    assert R.get_record_decision(d.id)["email"] == {"address": f"decision+{d.id}@{DOMAIN}", "note": ""}
 
 
 def test_nothing_arrives_without_the_inbound_secret(door, client, monkeypatch):
@@ -74,7 +91,8 @@ def test_nothing_arrives_without_the_inbound_secret(door, client, monkeypatch):
     ok = client.post("/doors/email", json=_mail(d, "ana@corp.example", "approve"), headers={"Authorization": f"Basic {basic}"})
     assert ok.status_code == 200, ok.text
     monkeypatch.setenv(E.SECRET_ENV, "")
-    assert _post(client, _mail(d, "ana@corp.example", "approve"), secret="").status_code == 401   # no lock: closed
+    closed = _post(client, _mail(d, "ana@corp.example", "approve"), secret="")
+    assert closed.status_code == 503 and "no inbound secret" in closed.json()["detail"]   # no lock: closed, and said
 
 
 def test_a_named_verified_approver_approves_by_email(door, client):

@@ -91,8 +91,10 @@ FLAG_ENV = {
     # kill 8 of the 2027 study (ROADMAP §4.9; §6 item 39(b)). Parked 2026-09-11 on a measured
     # regression (1/14 and 3/12 against raw 14/14 and 12/12) and never reopened; the compiler
     # behind the object pages and `/objects/query` stays. An operator's env var is ignored.
-    # AO-2b (2026-10-03): the API spawns, watches and restarts the Slack supervisor.
-    "slack.managed_supervisor": "AUGHOR_SLACK_MANAGED_SUPERVISOR",
+    # "slack.managed_supervisor" (AUGHOR_SLACK_MANAGED_SUPERVISOR) — Arc AO-2b, the API spawns, watches and restarts the
+    # Slack supervisor — was made unconditional 2026-10-28 — on when its setup exists (ROADMAP §3.65): wherever the API
+    # runs its clocks it runs the supervisor once bots/slack's packages and Node.js are there, and until then the status
+    # route and Integrations → Slack say what is missing. Its off path is deleted. An operator's env var is ignored.
     # AO-6 (2026-10-03): the agents' testing centre — drafted questions, the nightly run.
     # "agents.testing_centre" (AUGHOR_AGENTS_TESTING_CENTRE) left 2026-10-28 for the organisation setting `scheduled_model_work` (ROADMAP §3.65,
     # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_AGENTS_TESTING_CENTRE only while the setting is unset.
@@ -189,10 +191,10 @@ FLAG_ENV = {
     # "objects.find" (AUGHOR_OBJECTS_FIND) — Arc FA-1, an object found by its name across entities — was made
     # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
     # is ignored.
-    # Arc FA, FA-1. ON: when the embedder cannot embed a question and the vector store is up, the documents are ranked
-    # by their words (BM25) instead, each hit marked matched by words, and every caller says so. OFF: a failed embed
-    # makes the document search unavailable, as before.
-    "knowledge.hybrid_documents": "AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS",
+    # "knowledge.hybrid_documents" (AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS) — Arc FA-1, the documents ranked by their words
+    # while the embedder is down — was made unconditional 2026-10-28 — on when its setup exists (ROADMAP §3.65): it
+    # needs the vector store up, and a search that cannot read the store either says which store did not answer and
+    # where it is set. Its off path is deleted. An operator's env var is ignored.
     # "canvas.ask_about_chosen" (AUGHOR_CANVAS_ASK_ABOUT_CHOSEN) — Arc FA-2, asking the Data Canvas about what a
     # dashboard's reader chose — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
     # path is deleted. An operator's env var is ignored.
@@ -251,14 +253,15 @@ FLAG_ENV = {
     # "record.decision_loop" (AUGHOR_RECORD_DECISION_LOOP) — PENDING 57, D-1 to D-3, a decision booked in full where it is
     # made and reviewed on its date against what would have happened anyway — was made unconditional 2026-10-28: part of
     # the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
-    # The decision-framework study §3.2 (the user's call, 2026-10-27: email reopened for ARRIVALS only). ON: each
-    # decision has an address on the install's inbound domain; a mail a provider posts to `POST /doors/email` with the
-    # inbound secret becomes an approval (a named approver, verified), a dissent, or evidence. OFF: the door answers 404
-    # and a decision shows no address. The platform never sends a mail either way.
-    "arrivals.email": "AUGHOR_ARRIVALS_EMAIL",
-    # The decision-framework study §3.2 (the user's call, 2026-10-27). ON: a person names one Google file on a decision
-    # and its comments are read onto it as later evidence through their own Google grant. OFF: the door answers 404.
-    "arrivals.google_comments": "AUGHOR_ARRIVALS_GOOGLE_COMMENTS",
+    # "arrivals.email" (AUGHOR_ARRIVALS_EMAIL) — the decision-framework study §3.2, each decision's inbound address and
+    # `POST /doors/email` — was made unconditional 2026-10-28 — on when its setup exists (ROADMAP §3.65): a decision
+    # shows its address only once the install sets AUGHOR_INBOUND_EMAIL_DOMAIN and AUGHOR_INBOUND_EMAIL_SECRET, and
+    # until then the decision and the door say which is missing. Its off path is deleted. An operator's env var is
+    # ignored. The platform never sends a mail.
+    # "arrivals.google_comments" (AUGHOR_ARRIVALS_GOOGLE_COMMENTS) — the decision-framework study §3.2, one named Google
+    # file's comments read onto a decision — was made unconditional 2026-10-28 — on when its setup exists (ROADMAP
+    # §3.65): it reads through the install's Google OAuth client and the person's Drive-comments grant, and a decision
+    # says which is missing where the file would be named. Its off path is deleted. An operator's env var is ignored.
     # "actions.run_attribution" (AUGHOR_ACTIONS_RUN_ATTRIBUTION) — Arc TC-2, every edit and action naming the run it was
     # made through, and an object's changes door — was made unconditional 2026-10-28: part of the platform (ROADMAP
     # §3.65); its off path is deleted. An operator's env var is ignored.
@@ -517,38 +520,6 @@ FLAG_DEFAULT: dict = {
 # that history lives in the comments and dispositions above and below, where engineers read
 # it. tests/unit/test_flag_copy.py holds the line (house style, PLATFORM text-density pilot).
 FLAG_META = {
-    "slack.managed_supervisor": {
-        "label": "Start the Slack bot automatically",
-        "summary": "Aughor starts the Slack bot when it boots and restarts it if it stops. "
-                   "No terminal needed.",
-        "facts": [{"kind": "needs", "text": "Needs Node.js"},
-                  {"kind": "free", "text": "No model calls"}],
-        "description": "Integrations → Slack shows whether the bot is running, with a Restart button. "
-                       "The installer adds what the bot needs when this is on. Off: start the bot by "
-                       "hand from a terminal.",
-    },
-    "arrivals.google_comments": {
-        "label": "Comments on a Google file, read onto a decision",
-        "summary": "A person names one Sheet, Slides deck or Doc on a decision, and its comments are kept there as "
-                   "evidence.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Reads only the file named"},
-                  {"kind": "route", "text": "Needs the Google Drive comments card"}],
-        "description": "Each comment is kept in its author's name, with the cell, slide or text it points at. "
-                       "Reading the file again adds only what is new. No other file is listed or read. Off: the "
-                       "door is closed.",
-    },
-    "arrivals.email": {
-        "label": "Decisions by email, inbound only",
-        "summary": "Each decision has an address. A mail to it is kept as evidence, a named approver's approval, or "
-                   "a dissent.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Never sends a mail"},
-                  {"kind": "route", "text": "Needs an inbound domain and secret"}],
-        "description": "A mail provider posts each mail sent to a decision's address. An approval counts only from an "
-                       "approver the decision names, with the sender verified; anything else is kept as evidence and "
-                       "says why. Nothing reads a mailbox. Off: decisions have no address.",
-    },
     "monitors.recovery": {
         "label": "Alerts that close when a metric recovers",
         "summary": "The first check back within its limit after an alert closes that alert. A check also says "
@@ -615,17 +586,6 @@ FLAG_META = {
         "description": "A read can stop at the connection's limit of rows, and then it says there are more. A row "
                        "policy or a masked property is named. Outside programs read the same field, described in "
                        "their contract. Off: a cut read can look complete.",
-    },
-    "knowledge.hybrid_documents": {
-        "label": "Search documents by words when meaning is down",
-        "summary": "When the embedding model is unavailable, the documents are still searched by their words. "
-                   "Each result says it matched by words only.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "needs", "text": "Needs the vector store up"}],
-        "description": "A document search embeds the question to match by meaning. When that fails and the store "
-                       "holding the documents answers, each passage you may read is ranked by the words it shares "
-                       "with the question. Answers and the chat say the match was by words. Off: the search says "
-                       "it could not run.",
     },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
@@ -722,14 +682,14 @@ CAPABILITY_TRIGGER: dict = {
 #: Part of the platform (the user, 2026-10-28: "not having any feature flags at all.. most of it comes as a
 #: default feature like always on and cannot be turned off" — ROADMAP §3.65). On whatever a saved override says,
 #: and not offered as a switch: Settings does not list them and the flags door refuses a change. Until its off
-#: path is deleted (stage 2, area by area), an operator's env var set to an explicit falsy value still turns one
-#: off — the suite runs them that way — and a run-scoped override (tests, eval grids) still wins.
-ALWAYS_ON: dict[str, str] = {
-    "arrivals.email": "Works once its setup exists (a mail domain and its secret); setting it up is the choice.",
-    "arrivals.google_comments": "Works once its setup exists (your Google OAuth client); setting it up is the choice.",
-    "knowledge.hybrid_documents": "Works once its setup exists (the vector store running); setting it up is the choice.",
-    "slack.managed_supervisor": "Works once its setup exists (Slack configured, and Node.js); setting it up is the choice.",
-}
+#: path is deleted, an operator's env var set to an explicit falsy value still turns one off, and a run-scoped
+#: override (tests, eval grids) still wins.
+#: EMPTY since 2026-10-28: every entry was made unconditional with its off path deleted (stage 2, area by area;
+#: tombstones in FLAG_ENV), the set-up four — arrivals.email, arrivals.google_comments, knowledge.hybrid_documents and
+#: slack.managed_supervisor — last, each now saying what is missing where its setup does not exist. The set stays
+#: declared, like INTENTIONALLY_OFF: `flag_disposition` and the flag readers still consult it, and the suite holds its
+#: mechanism with a flag registered for the test (`test_flags_into_settings.py`).
+ALWAYS_ON: dict[str, str] = {}
 
 #: Deliberately OFF, forever or until the named condition — the only category that
 #: should stay a raw manual toggle.

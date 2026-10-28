@@ -16,23 +16,36 @@ from aughor.orgsettings import allows as A
 from aughor.orgsettings.store import load_org_settings, save_org_settings
 
 
-def test_an_always_on_flag_is_on_whatever_a_saved_override_says(monkeypatch):
-    monkeypatch.delenv("AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS", raising=False)
-    F.Ledger.default().kv_put(F._STORE, "knowledge.hybrid_documents", False)   # a row saved before 2026-10-28
-    try:
-        assert F.flag_enabled("knowledge.hybrid_documents") is True
-        assert F.flag_state("knowledge.hybrid_documents") == "on"
-        row = F.list_flags()["knowledge.hybrid_documents"]
-        assert row["value"] is True and row["override"] is None and row["disposition"] == "always_on"
-    finally:
-        F.Ledger.default().kv_put(F._STORE, "knowledge.hybrid_documents", None)
+#: The ALWAYS_ON mechanism, held with a flag registered for the test: every product entry has left the set (the
+#: set-up four last, 2026-10-28), so no product flag is left to prove it with.
+ALWAYS = "_synthetic.always_on"
+ALWAYS_VAR = "AUGHOR_SYNTHETIC_ALWAYS_ON"
 
 
-def test_an_always_on_flag_refuses_a_change_by_name():
-    with pytest.raises(F.AlwaysOn, match="knowledge.hybrid_documents is part of the platform now"):
-        F.set_flag("knowledge.hybrid_documents", False)
+@pytest.fixture
+def always_on(monkeypatch):
+    monkeypatch.setitem(F.FLAG_ENV, ALWAYS, ALWAYS_VAR)
+    monkeypatch.setitem(F.FLAG_META, ALWAYS, {"label": "Synthetic always-on flag",
+                                              "description": "Test-only flag registered by a fixture."})
+    monkeypatch.setitem(F.ALWAYS_ON, ALWAYS, "test-only: an exemplar for the always-on mechanism")
+    monkeypatch.delenv(ALWAYS_VAR, raising=False)
+    yield ALWAYS
+    F.Ledger.default().kv_put(F._STORE, ALWAYS, None)
+
+
+def test_an_always_on_flag_is_on_whatever_a_saved_override_says(always_on):
+    F.Ledger.default().kv_put(F._STORE, always_on, False)   # a row saved before the flag joined the set
+    assert F.flag_enabled(always_on) is True
+    assert F.flag_state(always_on) == "on"
+    row = F.list_flags()[always_on]
+    assert row["value"] is True and row["override"] is None and row["disposition"] == "always_on"
+
+
+def test_an_always_on_flag_refuses_a_change_by_name(always_on):
+    with pytest.raises(F.AlwaysOn, match=f"{always_on} is part of the platform now"):
+        F.set_flag(always_on, False)
     with pytest.raises(F.AlwaysOn):
-        F.clear_flag("knowledge.hybrid_documents")
+        F.clear_flag(always_on)
 
 
 @pytest.fixture(scope="module")
@@ -41,19 +54,19 @@ def client():
     return TestClient(app)
 
 
-def test_the_flags_door_refuses_an_always_on_flag_and_still_switches_one_that_is_not(client):
-    r = client.put("/system/flags/knowledge.hybrid_documents", json={"state": "off"})
+def test_the_flags_door_refuses_an_always_on_flag_and_still_switches_one_that_is_not(client, always_on):
+    r = client.put(f"/system/flags/{always_on}", json={"state": "off"})
     assert r.status_code == 409 and "part of the platform now" in r.text
     r = client.put("/system/flags/monitors.recovery", json={"state": "on"})
     assert r.status_code == 200 and r.json()["value"] is True
     client.put("/system/flags/monitors.recovery", json={"state": "auto"})
 
 
-def test_until_its_off_path_is_deleted_an_explicit_falsy_variable_still_turns_one_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS", "0")
-    assert F.flag_enabled("knowledge.hybrid_documents") is False
-    monkeypatch.delenv("AUGHOR_KNOWLEDGE_HYBRID_DOCUMENTS")
-    assert F.flag_enabled("knowledge.hybrid_documents") is True
+def test_until_its_off_path_is_deleted_an_explicit_falsy_variable_still_turns_one_off(always_on, monkeypatch):
+    monkeypatch.setenv(ALWAYS_VAR, "0")
+    assert F.flag_enabled(always_on) is False
+    monkeypatch.delenv(ALWAYS_VAR)
+    assert F.flag_enabled(always_on) is True
 
 
 #: Stage 2 (ROADMAP §3.65): flags made unconditional — their off paths deleted, gone from the registry.
@@ -78,6 +91,8 @@ UNCONDITIONAL = {
     # the operations area, 2026-10-28
     "record.decision_loop", "actions.outbox", "actions.run_attribution", "automations.objects_admitted",
     "hub.failure_rate", "obs.log_search", "packs.installed_versions", "state.backups",
+    # the set-up four, 2026-10-28 — each on when its setup exists, and saying what is missing where it does not
+    "arrivals.email", "arrivals.google_comments", "knowledge.hybrid_documents", "slack.managed_supervisor",
 }
 
 

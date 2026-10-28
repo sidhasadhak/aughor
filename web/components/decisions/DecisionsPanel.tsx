@@ -624,7 +624,8 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
               {d.email.address}</span>
           : <span style={{ color: "var(--t3)" }}>{d.email?.note || "no address"}</span>}
       </Fact>
-      {d.google?.on && <GoogleFileFact decisionId={d.id} files={d.google.files} onRead={next => onMoved(next)} />}
+      {d.google && <GoogleFileFact decisionId={d.id} files={d.google.files} missing={d.google.missing}
+        onRead={next => onMoved(next)} />}
     </>
   );
   return (
@@ -796,8 +797,11 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
   );
 }
 
-/** Name one Google file on a decision and its comments are read onto it as later evidence (study §3.2). */
-function GoogleFileFact({ decisionId, files, onRead }: { decisionId: string; files: string[]; onRead: (id: string) => void }) {
+/** Name one Google file on a decision and its comments are read onto it as later evidence (study §3.2). While the
+ *  install's Google client or the reader's grant is missing, it says which in place of the field — never a field that
+ *  cannot read. */
+export function GoogleFileFact({ decisionId, files, missing, onRead }:
+  { decisionId: string; files: string[]; missing: string; onRead: (id: string) => void }) {
   const [link, setLink] = useState("");
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
@@ -815,9 +819,15 @@ function GoogleFileFact({ decisionId, files, onRead }: { decisionId: string; fil
     <Fact label="From Google">
       <div data-testid="google-file" style={{ display: "grid", gap: 6 }}>
         {files.length > 0 && <span style={{ color: "var(--t3)" }}>{`${countNoun(files.length, "file")} read here`}</span>}
-        <Input aria-label="A Google file's link" value={link} onChange={e => setLink(e.target.value)}
-          placeholder="a Sheets, Slides or Docs link" />
-        <Button size="xs" variant="secondary" disabled={busy || !link.trim()} onClick={() => void read()}>Read its comments</Button>
+        {missing ? (
+          <span data-testid="google-file-missing" style={{ color: "var(--t3)" }}>{missing}</span>
+        ) : (
+          <>
+            <Input aria-label="A Google file's link" value={link} onChange={e => setLink(e.target.value)}
+              placeholder="a Sheets, Slides or Docs link" />
+            <Button size="xs" variant="secondary" disabled={busy || !link.trim()} onClick={() => void read()}>Read its comments</Button>
+          </>
+        )}
         {said && <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>{said}</span>}
       </div>
     </Fact>

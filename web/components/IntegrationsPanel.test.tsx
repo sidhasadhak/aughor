@@ -55,8 +55,8 @@ it("opens on the figures, asks about the half-set-up provider, and keeps the cli
   api.listUserAgents.mockResolvedValue([{ id: "ua_1", name: "The Look Analyst", connection_id: "c1" }]);
   api.getConnections.mockResolvedValue([{ id: "c1", name: "theLook" }]);
   api.getManagedSupervisor.mockResolvedValue({
-    flag: true, managed: true, state: "running", pid: 1, started_at: "2026-10-12T22:49:16Z", restarts: 0, last_exit_code: null,
-    last_error: "", command: [], cwd: "", preconditions: [], log_path: "",
+    managed: true, state: "running", pid: 1, started_at: "2026-10-12T22:49:16Z", restarts: 0, last_exit_code: null,
+    last_error: "", command: [], cwd: "", preconditions: [], waiting_on: "", log_path: "",
     heartbeat: { supervisor_id: "s", since: "2026-10-12T22:49:18Z", last_seen_at: new Date().toISOString(), running: 1, failed: 0, fresh: true },
   });
   api.getSupervisorKeyStatus.mockResolvedValue({ issued: true, issued_at: "", previous_valid_until: "", grace_s: 600 });
@@ -102,8 +102,9 @@ it("a stored client id the provider will refuse is said, and Connect is held unt
   api.getSlackBots.mockResolvedValue([]);
   api.listUserAgents.mockResolvedValue([]);
   api.getConnections.mockResolvedValue([]);
-  api.getManagedSupervisor.mockResolvedValue({ flag: false, managed: false, state: "stopped", pid: null, started_at: "",
-    restarts: 0, last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: [], log_path: "", heartbeat: null });
+  api.getManagedSupervisor.mockResolvedValue({ managed: false, state: "stopped", pid: null, started_at: "",
+    restarts: 0, last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: [], waiting_on: "", log_path: "",
+    heartbeat: null });
   api.getSupervisorKeyStatus.mockResolvedValue({ issued: false, issued_at: "", previous_valid_until: "", grace_s: 600 });
   api.listMcpServers.mockResolvedValue({ servers: [] });
   render(<Theme><IntegrationsPanel /></Theme>);
@@ -122,11 +123,48 @@ it("a card the provider did not grant on the last connect is named, so a sign-in
   api.getSlackBots.mockResolvedValue([]);
   api.listUserAgents.mockResolvedValue([]);
   api.getConnections.mockResolvedValue([]);
-  api.getManagedSupervisor.mockResolvedValue({ flag: false, managed: false, state: "stopped", pid: null, started_at: "",
-    restarts: 0, last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: [], log_path: "", heartbeat: null });
+  api.getManagedSupervisor.mockResolvedValue({ managed: false, state: "stopped", pid: null, started_at: "",
+    restarts: 0, last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: [], waiting_on: "", log_path: "",
+    heartbeat: null });
   api.getSupervisorKeyStatus.mockResolvedValue({ issued: false, issued_at: "", previous_valid_until: "", grace_s: 600 });
   api.listMcpServers.mockResolvedValue({ servers: [] });
   render(<Theme><IntegrationsPanel /></Theme>);
   const line = await screen.findByTestId("integration-withheld-google");
   expect(line.textContent).toContain("Google did not grant Google Drive comments on the last connect");
+});
+
+const WAITING = "Not started: no `npx` on PATH — install Node.js 20+. Press Restart once that is done.";
+const waitingSupervisor = () => ({ managed: true, state: "waiting", pid: null, started_at: "", restarts: 0,
+  last_exit_code: null, last_error: "", command: [], cwd: "", preconditions: ["no `npx` on PATH — install Node.js 20+"],
+  waiting_on: WAITING, log_path: "", heartbeat: null });
+
+it("a supervisor waiting on its setup says what is missing, and is no outage while no bot needs it", async () => {
+  api.getIntegrationsCatalog.mockResolvedValue({ providers: [GOOGLE, SLACK], redirect_uri: "" });
+  api.getSlackBots.mockResolvedValue([]);
+  api.listUserAgents.mockResolvedValue([]);
+  api.getConnections.mockResolvedValue([]);
+  api.getManagedSupervisor.mockResolvedValue(waitingSupervisor());
+  api.getSupervisorKeyStatus.mockResolvedValue({ issued: false, issued_at: "", previous_valid_until: "", grace_s: 600 });
+  api.listMcpServers.mockResolvedValue({ servers: [] });
+  render(<Theme><IntegrationsPanel /></Theme>);
+  expect(await screen.findByTestId("fig-supervisor-value")).toHaveTextContent("Waiting on setup");
+  expect(screen.getByTestId("slack-supervisor").textContent).toContain(WAITING);
+  expect(within(screen.getByTestId("integration-needs")).queryByTestId("needs-supervisor")).toBeNull();
+});
+
+it("with a bot to answer, a supervisor waiting on its setup is said once under Needs you, with Restart", async () => {
+  api.getIntegrationsCatalog.mockResolvedValue({ providers: [SLACK], redirect_uri: "" });
+  api.getSlackBots.mockResolvedValue([{ ...BOT, listening: null }]);
+  api.listUserAgents.mockResolvedValue([{ id: "ua_1", name: "The Look Analyst", connection_id: "c1" }]);
+  api.getConnections.mockResolvedValue([{ id: "c1", name: "theLook" }]);
+  api.getManagedSupervisor.mockResolvedValue(waitingSupervisor());
+  api.getSupervisorKeyStatus.mockResolvedValue({ issued: true, issued_at: "", previous_valid_until: "", grace_s: 600 });
+  api.listMcpServers.mockResolvedValue({ servers: [] });
+  render(<Theme><IntegrationsPanel /></Theme>);
+  const row = await screen.findByTestId("needs-supervisor");
+  expect(row.textContent).toContain("The Slack supervisor is waiting on its setup — no bot is answering");
+  expect(row.textContent).toContain(WAITING);
+  expect(within(row).getByRole("button", { name: "Restart" })).toBeTruthy();
+  // said once: the bot it leaves unanswered does not say it again
+  expect(within(screen.getByTestId("integration-needs")).queryByTestId("needs-bot")).toBeNull();
 });

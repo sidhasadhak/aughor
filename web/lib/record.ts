@@ -282,10 +282,11 @@ export interface DecisionDetail extends Decision {
   outcome_record: Outcome | null;
   /** What replaced the claim it stood on, while the decision is reopened and unanswered. */
   reopened_by_claim: Claim | null;
-  /** Its address for mail, inbound only — "" with a note saying why when it has none. */
+  /** Its address for mail, inbound only — "" with a note saying what the install has not set when it has none. */
   email?: { address: string; note: string };
-  /** Whether a Google file's comments may be read onto it, and the files read so far. */
-  google?: { on: boolean; files: string[] };
+  /** The Google files read onto it so far, and what is missing before one can be ("" once nothing is): the install's
+   *  Google OAuth client, or the reader's grant on the Google Drive comments card. */
+  google?: { files: string[]; missing: string };
 }
 
 export interface ExpectationIn {

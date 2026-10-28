@@ -436,14 +436,13 @@ def search_documents(query: str, top_k: int = 4, *,
     Raises `DocumentSearchUnavailable` when the search itself fails; `[]` means the indexed
     documents were searched and nothing matched, or that none are indexed.
 
-    Arc FA, FA-1 (flag ``knowledge.hybrid_documents``): when the question cannot be embedded and
-    the store answers, the same scoped passages are ranked by their words instead
-    (`_search_by_words`), each hit marked ``matched_by: "words"`` with the sentence a reader is told
-    (``said``) — and a hit the embedder matched is marked ``"meaning"``. Off, hits carry neither
-    key and a failed embed raises, as before.
+    Arc FA, FA-1: when the question cannot be embedded and the store answers, the same scoped
+    passages are ranked by their words instead (`_search_by_words`), each hit marked
+    ``matched_by: "words"`` with the sentence a reader is told (``said``) — and a hit the embedder
+    matched is marked ``"meaning"``. It needs the vector store up: when the store cannot be read
+    either, the refusal names both failures and where the store is set (`store_where`).
     """
     try:
-        hybrid = _hybrid_documents()
         from aughor.security.authz import tenant_scope
         from aughor.semantic.embedder import embed_one
         from aughor.semantic.vector_store import search
@@ -455,11 +454,14 @@ def search_documents(query: str, top_k: int = 4, *,
         try:
             vector = embed_one(query)
         except Exception as embed_exc:
-            if not hybrid:
-                raise
             return _search_by_words(query, top_k, registry, connection_id=connection_id,
                                     org_id=tenant_scope(), cause=embed_exc)
-        hits = search(DOCS_COLLECTION, vector, top_k=max(top_k * 4, 16))
+        try:
+            hits = search(DOCS_COLLECTION, vector, top_k=max(top_k * 4, 16))
+        except Exception as exc:
+            raise DocumentSearchUnavailable(
+                f"the document store could not be read ({type(exc).__name__}: {_first_line(exc)}); the store is "
+                f"{store_where()}") from exc
         org_id = tenant_scope()
         results = []
         for h in hits:
@@ -469,7 +471,7 @@ def search_documents(query: str, top_k: int = 4, *,
                 continue
             if len(results) >= top_k:
                 break
-            results.append({**_hit(p, h["score"]), **({"matched_by": "meaning"} if hybrid else {})})
+            results.append({**_hit(p, h["score"]), "matched_by": "meaning"})
         return results
     except DocumentSearchUnavailable:
         raise
@@ -502,9 +504,19 @@ MATCHED_BY_WORDS = "matched by words only — the embedder is unavailable"
 WORDS_POOL = 20_000
 
 
-def _hybrid_documents() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("knowledge.hybrid_documents")
+def store_where() -> str:
+    """Where this process's vector store is set, in words — what a search that could not read it names, so the fix
+    is in the sentence (`semantic/vector_store.py` chooses the backend)."""
+    from aughor.semantic import vector_store as vs
+    if os.getenv(vs.QDRANT_URL_ENV):
+        return f"the Qdrant server at {vs.QDRANT_URL_ENV}"
+    backend = vs.backend()
+    if backend == "pgvector":
+        return "pgvector, in the database at AUGHOR_DB_URL"
+    if backend == "qdrant":
+        return (f"the embedded index at {vs.QDRANT_PATH_ENV} (default: the state directory's qdrant), which one "
+                "process holds at a time")
+    return f"not installed here — add qdrant-client, or set {vs.QDRANT_URL_ENV} or a Postgres AUGHOR_DB_URL"
 
 
 def matched_by_words(hits: list[dict]) -> str:
@@ -525,7 +537,7 @@ def _search_by_words(query: str, top_k: int, registry: dict, *, connection_id: O
     except Exception as exc:
         raise DocumentSearchUnavailable(
             f"the embedder failed ({type(cause).__name__}: {_first_line(cause)}) and the document store could not be "
-            f"read ({type(exc).__name__}: {_first_line(exc)})") from exc
+            f"read ({type(exc).__name__}: {_first_line(exc)}); the store is {store_where()}") from exc
     pool = []
     for point in points:
         p = point.get("payload") or {}
