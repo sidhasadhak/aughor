@@ -1,4 +1,4 @@
-"""Columns a model writes (Arc SH, SH-5; flag ``sheets.model_columns``).
+"""Columns a model writes (Arc SH, SH-5).
 
 A model fills one column of a sheet, row by row, from the columns of each row a person names — the semantic operators'
 way (`semops/operators.py`): 25 rows a call, at most 200 rows a fill, on the cheap ``fast`` model — and only the rows

@@ -1,16 +1,16 @@
 """Spreadsheets — the sheets people make, edit, combine and chat with (Arc SH, ROADMAP §3.64).
 
-Each wave behind its own flag, off by default; off, its routes answer 404 and nothing is written:
+Part of the platform (ROADMAP §3.65), each wave's routes always served:
 
-- ``sheets.core`` (SH-1): the home (the sheets, and the Workspace files to start one from), making a sheet from a
-  file, from nothing or from a query's rows, reading its rows a page at a time with their totals, CSV, the oracle,
-  removing it;
-- ``sheets.grid`` (SH-2): setting cells, adding and removing rows and columns, views, the history, undo and redo, a
-  cell's story, a row as a record with its comments;
-- ``sheets.chat`` (SH-4) and ``sheets.combine`` (SH-7) add their own routes below;
-- ``sheets.sharing`` (SH-8): who a sheet is shared with, read and changed. Every route here asks the sheet's sharing
-  what the person may do first (`_sheet`) — read, change, or (its maker) reshare and remove — whatever the flag says,
-  so a sheet shared with chosen people is refused to anyone else with a 403 that says it exists and who to ask.
+- SH-1: the home (the sheets, and the Workspace files to start one from), making a sheet from a file, from nothing or
+  from a query's rows, reading its rows a page at a time with their totals, CSV, the oracle, removing it;
+- SH-2: setting cells, adding and removing rows and columns, views, the history, undo and redo, a cell's story, a row
+  as a record with its comments;
+- SH-3 (views), SH-4 (the chat), SH-5 (model columns), SH-6 (a dashboard from a sheet) and SH-7 (combining) add their
+  own routes below;
+- SH-8: who a sheet is shared with, read and changed. Every route here asks the sheet's sharing what the person may
+  do first (`_sheet`) — read, change, or (its maker) reshare and remove — so a sheet shared with chosen people is
+  refused to anyone else with a 403 that says it exists and who to ask.
 
 No route here calls a model but the chat's. Every write is recorded under the person the request acts for — never a
 name a client sends — and a refusal is an HTTP error carrying its sentence, never a 200 with nothing done.
@@ -27,20 +27,13 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/sheets", tags=["sheets"])
 
 
-def _on(flag: str = "sheets.core") -> None:
-    from aughor import sheets
-    if not sheets.on(flag):
-        raise HTTPException(status_code=404, detail=f"this needs the '{flag}' flag"
-                            + ("" if flag == "sheets.core" else " (and 'sheets.core')"))
-
-
 def _who(request: Request) -> str:
     from aughor.security.authz import acting_person, get_principal
     return acting_person(get_principal(request))
 
 
-#: The access ladder's words for what a route asks of a sheet (SH-8): reading it, changing it, and — with
-#: ``sheets.sharing`` on — what only its maker does, changing who it is shared with and removing it.
+#: The access ladder's words for what a route asks of a sheet (SH-8): reading it, changing it, and what only its maker
+#: does — changing who it is shared with and removing it.
 VIEW, EDIT, OWN = "view", "edit", "own"
 
 
@@ -69,14 +62,12 @@ def _refused(exc: Exception) -> HTTPException:
 
 
 def _summary(sheet, reader: str = "") -> dict:
-    """A sheet as its home lists it. With ``sheets.sharing`` on — or for a sheet already shared with chosen people —
-    it also says what the reader may do (``access``) and how many people and groups it is shared with; a sheet not
-    shared with the reader is listed by its name and maker only, everything else ``None``, and says so."""
-    from aughor import sheets
+    """A sheet as its home lists it, with what the reader may do (``access``) and how many people and groups it is
+    shared with; a sheet not shared with the reader is listed by its name and maker only, everything else ``None``,
+    and says so."""
     from aughor.sheets import projection, sharing
-    told = sheet.sharing == "chosen" or sheets.on(sheets.SHARING)
-    got = sharing.level_of(sheet, reader) if told else None
-    if got is not None and not got.level:
+    got = sharing.level_of(sheet, reader)
+    if not got.level:
         return {"id": sheet.id, "name": sheet.name, "table": sheet.table, "rows": None, "columns": None,
                 "came_from": None, "source": None, "last_change": None, "created_by": sheet.created_by,
                 "created_at": sheet.created_at, "version": sheet.version, "shared_with": sheet.sharing,
@@ -91,9 +82,8 @@ def _summary(sheet, reader: str = "") -> dict:
     out = {"id": sheet.id, "name": sheet.name, "table": sheet.table, "rows": projection.count(sheet),
            "columns": len(sheet.columns), "came_from": came, "source": src.model_dump(),
            "last_change": sheet.change.model_dump(), "created_by": sheet.created_by, "created_at": sheet.created_at,
-           "version": sheet.version, "shared_with": "workspace"}
-    if got is not None:
-        out.update({"shared_with": sheet.sharing, "shares": len(sheet.shared_with), "access": got.level})
+           "version": sheet.version, "shared_with": sheet.sharing, "shares": len(sheet.shared_with),
+           "access": got.level}
     return out
 
 
@@ -115,7 +105,6 @@ def _definition(sheet, reader: str) -> dict:
 def list_sheets(request: Request) -> dict:
     """The organisation's sheets, newest change first, and the Workspace files a sheet can be made from — with who is
     asking, so a change of theirs reads as theirs."""
-    _on()
     from aughor.sheets import files, model
     sheets = sorted(model.list_sheets(), key=lambda s: s.change.at or s.created_at, reverse=True)
     me = _who(request)
@@ -142,7 +131,6 @@ def _described(token: str, name: str, size: int) -> dict:
 def stage_file(file: UploadFile = File(...)) -> dict:
     """A file a person brought, read as written: per tab (an Excel workbook has several), its rows, and per column the
     kinds every value fits. Nothing is made until the person creates the sheet."""
-    _on()
     import shutil
     from aughor.routers.connections import stage_upload
     from aughor.sheets import files
@@ -163,7 +151,6 @@ class UploadedFile(BaseModel):
 @router.post("/files/uploaded")
 def stage_uploaded(req: UploadedFile) -> dict:
     """A file already uploaded to the Workspace, read as written — copied, so the Workspace's own file stays as it was."""
-    _on()
     from aughor.sheets import files
     path = files.upload_path(req.schema_name, req.file)
     if path is None:
@@ -196,7 +183,6 @@ class CreateRequest(BaseModel):
 @router.post("")
 def create(req: CreateRequest, request: Request) -> dict:
     """Make a sheet — or, from an Excel workbook, one sheet per tab, each named."""
-    _on()
     from aughor.sheets import files, service
     who = _who(request)
     made = []
@@ -225,17 +211,14 @@ def create(req: CreateRequest, request: Request) -> dict:
 
 @router.get("/{sheet_id}")
 def read(sheet_id: str, request: Request) -> dict:
-    _on()
     return _definition(_sheet(sheet_id, request, VIEW), _who(request))
 
 
 @router.delete("/{sheet_id}")
 def remove(sheet_id: str, request: Request) -> dict:
     """Remove a sheet: its tombstone first, then its table, its values and their history, and its files."""
-    _on()
-    from aughor import sheets
     from aughor.sheets import service
-    sheet = _sheet(sheet_id, request, OWN if sheets.on(sheets.SHARING) else EDIT)
+    sheet = _sheet(sheet_id, request, OWN)
     service.remove(sheet, by=_who(request))
     return {"removed": sheet.id, "name": sheet.name}
 
@@ -279,10 +262,8 @@ def _versions(sheet, on_page: set[int]) -> dict[str, dict[str, int]]:
 def rows(sheet_id: str, request: Request, view: str = "", filter: str = "", sort: str = "", search: str = "",
          group: str = "", offset: int = 0, limit: int = 200) -> dict:
     """One page of a view of a sheet — its rows, how many the view holds, its totals over those rows, its groups when
-    grouped — and, for the cells on the page people have set, who set them, when, and at which version; with
-    ``sheets.views`` on, the rules marking each row on it."""
-    _on()
-    from aughor import sheets
+    grouped — and, for the cells on the page people have set, who set them, when, and at which version; and the rules
+    marking each row on it."""
     from aughor.sheets import projection
     from aughor.sheets import views as _views
     sheet = _sheet(sheet_id, request, VIEW)
@@ -297,14 +278,12 @@ def rows(sheet_id: str, request: Request, view: str = "", filter: str = "", sort
     page["versions"] = _versions(sheet, on_page)
     page["columns"] = [c.id for c in sheet.columns]
     page["source_rows"] = sheet.source.rows
-    if sheets.on(sheets.VIEWS):
-        page["marks"] = _views.marks(sheet, on_page)
+    page["marks"] = _views.marks(sheet, on_page)
     return page
 
 
 @router.get("/{sheet_id}/csv")
 def csv(sheet_id: str, request: Request, view: str = "", filter: str = "", sort: str = "", search: str = "") -> Response:
-    _on()
     from aughor.sheets import projection
     sheet = _sheet(sheet_id, request, VIEW)
     args = _view_args(sheet, view, filter, sort, search, _who(request))
@@ -317,7 +296,6 @@ def csv(sheet_id: str, request: Request, view: str = "", filter: str = "", sort:
 @router.get("/{sheet_id}/check")
 def check(sheet_id: str, request: Request) -> dict:
     """The oracle: the sheet's table as it stands against a fresh rebuild from its source and its changes."""
-    _on()
     from aughor.sheets import projection
     return projection.check(_sheet(sheet_id, request, VIEW))
 
@@ -331,7 +309,6 @@ class CellsRequest(BaseModel):
 
 @router.patch("/{sheet_id}/cells")
 def set_cells(sheet_id: str, req: CellsRequest, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     try:
         return service.set_cells(_sheet(sheet_id, request, EDIT), req.cells, by=_who(request))
@@ -345,7 +322,6 @@ class RowRequest(BaseModel):
 
 @router.post("/{sheet_id}/rows")
 def add_row(sheet_id: str, req: RowRequest, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     try:
         return service.add_row(_sheet(sheet_id, request, EDIT), req.values, by=_who(request))
@@ -359,7 +335,6 @@ class RemoveRowsRequest(BaseModel):
 
 @router.post("/{sheet_id}/rows/remove")
 def remove_rows(sheet_id: str, req: RemoveRowsRequest, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     try:
         return service.remove_rows(_sheet(sheet_id, request, EDIT), req.rows, by=_who(request))
@@ -371,16 +346,13 @@ class ColumnRequest(BaseModel):
     name: str
     kind: str = "text"
     description: str = ""
-    #: SH-5 — a column a model writes: ``{instruction, reads: [column ids]}`` (needs ``sheets.model_columns``)
+    #: SH-5 — a column a model writes: ``{instruction, reads: [column ids]}``
     model: Optional[dict[str, Any]] = None
 
 
 @router.post("/{sheet_id}/columns")
 def add_column(sheet_id: str, req: ColumnRequest, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
-    if req.model is not None:
-        _on("sheets.model_columns")
     sheet = _sheet(sheet_id, request, EDIT)
     try:
         if req.model is not None:
@@ -413,7 +385,6 @@ def _fill_args(sheet, req: FillRequest, request: Request) -> dict:
 def fill_preview(sheet_id: str, column_id: str, req: FillRequest, request: Request) -> dict:
     """What filling the column for the view's rows would do, before it runs: the rows it takes (at most 200), the model
     calls (25 rows a call), and what they cost — or that the model's price is not set. No model is called."""
-    _on("sheets.model_columns")
     from aughor.sheets import model_columns, projection, service
     sheet = _sheet(sheet_id, request, EDIT)
     args = _fill_args(sheet, req, request)
@@ -428,7 +399,6 @@ def fill_preview(sheet_id: str, column_id: str, req: FillRequest, request: Reque
 def fill_column(sheet_id: str, column_id: str, req: FillRequest, request: Request) -> dict:
     """Fill the column for the view's rows not filled yet — at most 200, 25 a call — as one change kept under the
     person signed in, said as written by a model. This route calls a model."""
-    _on("sheets.model_columns")
     from aughor.sheets import model_columns, projection, service
     sheet = _sheet(sheet_id, request, EDIT)
     args = _fill_args(sheet, req, request)
@@ -450,7 +420,6 @@ class ColumnUpdate(BaseModel):
 
 @router.patch("/{sheet_id}/columns/{column_id}")
 def update_column(sheet_id: str, column_id: str, req: ColumnUpdate, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -464,7 +433,6 @@ def update_column(sheet_id: str, column_id: str, req: ColumnUpdate, request: Req
 
 @router.delete("/{sheet_id}/columns/{column_id}")
 def remove_column(sheet_id: str, column_id: str, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -479,7 +447,6 @@ class RenameRequest(BaseModel):
 
 @router.patch("/{sheet_id}")
 def rename(sheet_id: str, req: RenameRequest, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     return _definition(service.rename(_sheet(sheet_id, request, EDIT), req.name, by=_who(request)), _who(request))
 
@@ -490,18 +457,12 @@ class ViewRequest(BaseModel):
 
 @router.put("/{sheet_id}/views")
 def save_view(sheet_id: str, req: ViewRequest, request: Request) -> dict:
-    """Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet. With
-    ``sheets.views`` (SH-3) a view may also be grouped with its totals, a board or a calendar, and kept to its maker."""
-    _on("sheets.grid")
-    from aughor import sheets
+    """Keep a view — a filter, a sort, hidden columns — shared with everyone who reads the sheet; or (SH-3) grouped
+    with its totals, a board or a calendar, or kept to its maker."""
     from aughor.sheets import projection, service
     from aughor.sheets.model import View
     try:
         view = View(**req.view)
-        if not sheets.on(sheets.VIEWS) and (view.kind != "grid" or view.group or view.date or view.card
-                                            or not view.shared):
-            raise HTTPException(status_code=404, detail="a grouped, board, calendar or unshared view needs the "
-                                "'sheets.views' flag")
         return _definition(service.save_view(_sheet(sheet_id, request, EDIT), view, by=_who(request)), _who(request))
     except (service.Refused, projection.FilterRefused, ValueError) as exc:
         raise _refused(exc) from None
@@ -509,7 +470,6 @@ def save_view(sheet_id: str, req: ViewRequest, request: Request) -> dict:
 
 @router.delete("/{sheet_id}/views/{view_id}")
 def remove_view(sheet_id: str, view_id: str, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -521,7 +481,6 @@ def remove_view(sheet_id: str, view_id: str, request: Request) -> dict:
 @router.get("/{sheet_id}/changes")
 def changes(sheet_id: str, request: Request) -> dict:
     """Every change to the sheet, newest first — and what undo and redo would take back for the person asking."""
-    _on("sheets.grid")
     from aughor.sheets import service
     sheet = _sheet(sheet_id, request, VIEW)
     done, undone = service.stacks(sheet, _who(request))
@@ -535,7 +494,6 @@ def changes(sheet_id: str, request: Request) -> dict:
 def undo(sheet_id: str, request: Request, removing: bool = False) -> dict:
     """Take back the person's latest change, whole. ``removing`` is said only to undo the change that made the sheet —
     which removes it."""
-    _on("sheets.grid")
     from aughor.sheets import service
     try:
         out = service.undo(_sheet(sheet_id, request, EDIT), by=_who(request), removing=removing)
@@ -546,7 +504,6 @@ def undo(sheet_id: str, request: Request, removing: bool = False) -> dict:
 
 @router.post("/{sheet_id}/redo")
 def redo(sheet_id: str, request: Request) -> dict:
-    _on("sheets.grid")
     from aughor.sheets import service
     try:
         out = service.redo(_sheet(sheet_id, request, EDIT), by=_who(request))
@@ -558,7 +515,6 @@ def redo(sheet_id: str, request: Request) -> dict:
 @router.get("/{sheet_id}/cells/{row}/{column_id}")
 def cell(sheet_id: str, row: int, column_id: str, request: Request) -> dict:
     """A cell's story: where its value came from, and every change to it since."""
-    _on()
     from aughor.sheets import service
     try:
         return service.cell_history(_sheet(sheet_id, request, VIEW), row, column_id)
@@ -568,12 +524,10 @@ def cell(sheet_id: str, row: int, column_id: str, request: Request) -> dict:
 
 @router.get("/{sheet_id}/records/{row}")
 def record(sheet_id: str, row: int, request: Request) -> dict:
-    """A row as a record: every field and where it came from, its linked rows, its history, its comments — and, with
-    ``sheets.views`` on, the rules that mark it."""
-    _on()
-    from aughor import sheets
+    """A row as a record: every field and where it came from, its linked rows, its history, its comments, and the
+    rules that mark it."""
     from aughor.sheets import record as _record
-    got = _record.record(_sheet(sheet_id, request, VIEW), row, marked_by_rules=sheets.on(sheets.VIEWS))
+    got = _record.record(_sheet(sheet_id, request, VIEW), row)
     if got is None:
         raise HTTPException(status_code=404, detail="No such row")
     return got
@@ -586,7 +540,6 @@ class CommentRequest(BaseModel):
 @router.post("/{sheet_id}/records/{row}/comments")
 def comment(sheet_id: str, row: int, req: CommentRequest, request: Request) -> dict:
     """A comment on a row — a said claim in the Record, in the name of the person signed in."""
-    _on("sheets.grid")
     from aughor.sheets import record as _record
     from aughor.sheets import service
     try:
@@ -600,24 +553,21 @@ def comment(sheet_id: str, row: int, req: CommentRequest, request: Request) -> d
 @router.get("/{sheet_id}/groups")
 def groups(sheet_id: str, request: Request, group: str, view: str = "", filter: str = "", sort: str = "",
            search: str = "", per_group: int = 3) -> dict:
-    """The view's rows grouped by a column, the largest group first, each with its first rows — and, with
-    ``sheets.views`` on, each group's totals over its own rows."""
-    _on()
-    from aughor import sheets
+    """The view's rows grouped by a column, the largest group first, each with its first rows and its totals over its
+    own rows."""
     from aughor.sheets import projection
     from aughor.sheets import views as _views
     sheet = _sheet(sheet_id, request, VIEW)
     args = _view_args(sheet, view, filter, sort, search, _who(request))
     try:
         out = _views.groups(sheet, conditions=args["conditions"], search=args["search"], sort=args["sort"],
-                            group=group, per_group=per_group, with_totals=sheets.on(sheets.VIEWS))
+                            group=group, per_group=per_group)
     except (projection.FilterRefused, _views.ViewRefused) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     on_page = {int(r[0]) for g in out["groups"] for r in g["shown"]}
     out["changed"] = _changed(sheet, on_page)
     out["versions"] = _versions(sheet, on_page)
-    if sheets.on(sheets.VIEWS):
-        out["marks"] = _views.marks(sheet, on_page)
+    out["marks"] = _views.marks(sheet, on_page)
     return out
 
 
@@ -626,7 +576,6 @@ def board(sheet_id: str, request: Request, column: str, view: str = "", filter: 
           search: str = "", per_lane: int = 20) -> dict:
     """The view's rows as a board: a lane per value of a choice or yes/no column, each with its rows and first cards;
     the values the view's filter leaves out, listed with their rows."""
-    _on("sheets.views")
     from aughor.sheets import projection
     from aughor.sheets import views as _views
     sheet = _sheet(sheet_id, request, VIEW)
@@ -647,7 +596,6 @@ def board(sheet_id: str, request: Request, column: str, view: str = "", filter: 
 def calendar(sheet_id: str, request: Request, column: str, month: str = "", view: str = "", filter: str = "",
              search: str = "") -> dict:
     """The view's rows placed by a date column, a month at a time; the rows with no date are counted."""
-    _on("sheets.views")
     from aughor.sheets import projection
     from aughor.sheets import views as _views
     sheet = _sheet(sheet_id, request, VIEW)
@@ -665,7 +613,6 @@ class RuleRequest(BaseModel):
 @router.put("/{sheet_id}/rules")
 def save_rule(sheet_id: str, req: RuleRequest, request: Request) -> dict:
     """Keep a rule that marks the rows meeting its conditions — counted as a view with those conditions counts."""
-    _on("sheets.views")
     from aughor.sheets import service
     from aughor.sheets.model import Rule
     sheet = _sheet(sheet_id, request, EDIT)
@@ -677,7 +624,6 @@ def save_rule(sheet_id: str, req: RuleRequest, request: Request) -> dict:
 
 @router.delete("/{sheet_id}/rules/{rule_id}")
 def remove_rule(sheet_id: str, rule_id: str, request: Request) -> dict:
-    _on("sheets.views")
     from aughor.sheets import service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -692,7 +638,6 @@ def remove_rule(sheet_id: str, rule_id: str, request: Request) -> dict:
 def dashboard_proposal(sheet_id: str, request: Request, view: str = "") -> dict:
     """The cards a dashboard made from this sheet — or from the view on screen — is offered, each run once on the sheet
     as it stands. Nothing is kept here: the cards and the dashboard are kept through the dashboards' own doors."""
-    _on("sheets.everywhere")
     from aughor.sheets import dashboard, projection
     sheet = _sheet(sheet_id, request, VIEW)
     chosen = next((v for v in sheet.views_for(_who(request)) if v.id == view), None) if view else None
@@ -708,7 +653,6 @@ def dashboard_proposal(sheet_id: str, request: Request, view: str = "") -> dict:
 def read_sharing(sheet_id: str, request: Request) -> dict:
     """Who a sheet is shared with — everyone in the workspace, or each person and group chosen with what they may do —
     what the person asking may do, whether they may change it, and the people and groups they may choose from."""
-    _on("sheets.sharing")
     from aughor.sheets import sharing
     return sharing.described(_sheet(sheet_id, request, VIEW), _who(request))
 
@@ -724,7 +668,6 @@ class SharingRequest(BaseModel):
 def change_sharing(sheet_id: str, req: SharingRequest, request: Request) -> dict:
     """Share a sheet with everyone in the workspace or with the people and groups chosen, kept as a version of its
     definition. Only its maker may."""
-    _on("sheets.sharing")
     from aughor.sheets import service, sharing
     sheet = _sheet(sheet_id, request, OWN)
     try:
@@ -746,7 +689,6 @@ class LinkRequest(BaseModel):
 @router.post("/{sheet_id}/links/preview")
 def link_preview(sheet_id: str, req: LinkRequest, request: Request) -> dict:
     """What a link would find — every match and every miss counted — before anything is kept."""
-    _on("sheets.combine")
     from aughor.sheets import combine, service
     try:
         return combine.link_preview(_sheet(sheet_id, request, EDIT), req.column, req.other, req.other_column)
@@ -756,7 +698,6 @@ def link_preview(sheet_id: str, req: LinkRequest, request: Request) -> dict:
 
 @router.post("/{sheet_id}/links")
 def link_keep(sheet_id: str, req: LinkRequest, request: Request) -> dict:
-    _on("sheets.combine")
     from aughor.sheets import combine, service
     try:
         return _definition(combine.link_keep(_sheet(sheet_id, request, EDIT), req.column, req.other, req.other_column,
@@ -776,7 +717,6 @@ class TotalRequest(BaseModel):
 
 @router.post("/{sheet_id}/totals/preview")
 def total_preview(sheet_id: str, req: TotalRequest, request: Request) -> dict:
-    _on("sheets.combine")
     from aughor.sheets import combine, service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -787,7 +727,6 @@ def total_preview(sheet_id: str, req: TotalRequest, request: Request) -> dict:
 
 @router.post("/{sheet_id}/totals")
 def total_keep(sheet_id: str, req: TotalRequest, request: Request) -> dict:
-    _on("sheets.combine")
     from aughor.sheets import combine, service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -807,7 +746,6 @@ class MergeRequest(BaseModel):
 @router.post("/{sheet_id}/merge/preview")
 def merge_preview(sheet_id: str, req: MergeRequest, request: Request) -> dict:
     """A newer file against the sheet: every row it adds and every cell it changes, before it is applied."""
-    _on("sheets.combine")
     from aughor.sheets import combine, service
     try:
         return combine.merge_preview(_sheet(sheet_id, request, EDIT), req.token, req.key, req.tab)
@@ -817,7 +755,6 @@ def merge_preview(sheet_id: str, req: MergeRequest, request: Request) -> dict:
 
 @router.post("/{sheet_id}/merge")
 def merge_apply(sheet_id: str, req: MergeRequest, request: Request) -> dict:
-    _on("sheets.combine")
     from aughor.sheets import combine, service
     sheet = _sheet(sheet_id, request, EDIT)
     try:
@@ -833,7 +770,6 @@ def merge_apply(sheet_id: str, req: MergeRequest, request: Request) -> dict:
 def grounding(sheet_id: str, request: Request, view: str = "") -> dict:
     """What the chat beside the sheet is handed: the table, its columns, and the view on screen as the grid's own filter
     and count. The panel shows it, so a person can see what an answer was grounded in."""
-    _on("sheets.chat")
     from aughor.sheets import chat
     sheet = _sheet(sheet_id, request, VIEW)
     return chat.explain_sheet(f"{sheet.id}:{view}" if view else sheet.id)
@@ -847,7 +783,6 @@ class ProposeRequest(BaseModel):
 def propose(sheet_id: str, req: ProposeRequest, request: Request) -> dict:
     """A change asked for in words, proposed by the model as ONE proposal — every change in it checked and counted.
     This route calls a model. Nothing changes until the person applies it."""
-    _on("sheets.chat")
     from aughor.sheets import chat
     return chat.propose(_sheet(sheet_id, request, EDIT), req.words, by=_who(request))
 
@@ -862,7 +797,6 @@ class ProposeNewRequest(BaseModel):
 def propose_new(req: ProposeNewRequest, request: Request) -> dict:
     """A file dropped into the chat, as one proposal for a sheet. This route calls a model when the install's model can
     call tools; otherwise the proposal holds the file's own reading — its name and kinds — and nothing more."""
-    _on("sheets.chat")
     from aughor.sheets import chat, imports
     try:
         return chat.propose_new_sheet(req.token, req.words, by=_who(request), upload=req.upload or None)
@@ -872,7 +806,6 @@ def propose_new(req: ProposeNewRequest, request: Request) -> dict:
 
 @router.get("/proposals/{proposal_id}")
 def read_proposal(proposal_id: str, request: Request) -> dict:
-    _on("sheets.chat")
     from aughor.sheets import chat
     p = chat.proposal(proposal_id)
     if p is None:
@@ -891,7 +824,6 @@ class ApplyRequest(BaseModel):
 def apply_proposal(proposal_id: str, req: ApplyRequest, request: Request) -> dict:
     """Apply a proposal, all of it or the changes picked, as one change recorded as proposed by the assistant and
     applied by the person signed in."""
-    _on("sheets.chat")
     from aughor.sheets import chat, service
     p = chat.proposal(proposal_id)
     if p is not None and p.get("sheet") and not p.get("new_sheet"):

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Make a dashboard from a sheet (Arc SH, SH-6 — its first piece; flag `sheets.everywhere`, mockup screen 3's button).
+ * Make a dashboard from a sheet (Arc SH, SH-6 — its first piece; mockup screen 3's button).
  *
  * The server offers what the sheet holds — how many rows, each money column's sum, the rows per value of its choice
  * columns, the rows by month of its first date, a table of the rows — each a query card on the Sheets connection, run

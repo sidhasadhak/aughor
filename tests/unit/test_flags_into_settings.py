@@ -17,21 +17,21 @@ from aughor.orgsettings.store import load_org_settings, save_org_settings
 
 
 def test_an_always_on_flag_is_on_whatever_a_saved_override_says(monkeypatch):
-    monkeypatch.delenv("AUGHOR_SHEETS_CORE", raising=False)
-    F.Ledger.default().kv_put(F._STORE, "sheets.core", False)   # a row an operator saved before 2026-10-28
+    monkeypatch.delenv("AUGHOR_STATE_BACKUPS", raising=False)
+    F.Ledger.default().kv_put(F._STORE, "state.backups", False)   # a row an operator saved before 2026-10-28
     try:
-        assert F.flag_enabled("sheets.core") is True and F.flag_state("sheets.core") == "on"
-        row = F.list_flags()["sheets.core"]
+        assert F.flag_enabled("state.backups") is True and F.flag_state("state.backups") == "on"
+        row = F.list_flags()["state.backups"]
         assert row["value"] is True and row["override"] is None and row["disposition"] == "always_on"
     finally:
-        F.Ledger.default().kv_put(F._STORE, "sheets.core", None)
+        F.Ledger.default().kv_put(F._STORE, "state.backups", None)
 
 
 def test_an_always_on_flag_refuses_a_change_by_name():
-    with pytest.raises(F.AlwaysOn, match="sheets.core is part of the platform now"):
-        F.set_flag("sheets.core", False)
+    with pytest.raises(F.AlwaysOn, match="state.backups is part of the platform now"):
+        F.set_flag("state.backups", False)
     with pytest.raises(F.AlwaysOn):
-        F.clear_flag("sheets.core")
+        F.clear_flag("state.backups")
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,7 @@ def client():
 
 
 def test_the_flags_door_refuses_an_always_on_flag_and_still_switches_one_that_is_not(client):
-    r = client.put("/system/flags/sheets.core", json={"state": "off"})
+    r = client.put("/system/flags/state.backups", json={"state": "off"})
     assert r.status_code == 409 and "part of the platform now" in r.text
     r = client.put("/system/flags/monitors.recovery", json={"state": "on"})
     assert r.status_code == 200 and r.json()["value"] is True
@@ -49,10 +49,10 @@ def test_the_flags_door_refuses_an_always_on_flag_and_still_switches_one_that_is
 
 
 def test_until_its_off_path_is_deleted_an_explicit_falsy_variable_still_turns_one_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_SHEETS_CORE", "0")
-    assert F.flag_enabled("sheets.core") is False
-    monkeypatch.delenv("AUGHOR_SHEETS_CORE")
-    assert F.flag_enabled("sheets.core") is True
+    monkeypatch.setenv("AUGHOR_STATE_BACKUPS", "0")
+    assert F.flag_enabled("state.backups") is False
+    monkeypatch.delenv("AUGHOR_STATE_BACKUPS")
+    assert F.flag_enabled("state.backups") is True
 
 
 #: Stage 2 (ROADMAP §3.65): flags made unconditional — their off paths deleted, gone from the registry.
@@ -61,6 +61,9 @@ UNCONDITIONAL = {
     "dashboard.app_pieces", "dashboard.breakdowns", "dashboard.builder", "dashboard.composed", "dashboard.marks",
     "dashboard.queries", "dashboard.questions", "dashboard.shapes", "dashboard.variables", "dashboard.wiring",
     "ontology.dashboard_pieces", "ontology.object_dashboards", "packs.dashboard_templates", "canvas.ask_about_chosen",
+    # the sheets area, 2026-10-28
+    "sheets.core", "sheets.grid", "sheets.views", "sheets.combine", "sheets.everywhere", "sheets.chat",
+    "sheets.model_columns", "sheets.sharing",
 }
 
 

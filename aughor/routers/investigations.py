@@ -929,8 +929,7 @@ class AskFocus(BaseModel):
     own filters on it — or a segment the ontology names, with the conditions the piece reads it under. Both are read again server-side through the object door under the asker's row policy
     (`agent.ask_subject`).
 
-    Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>`` (it explains only with
-    ``sheets.chat`` on)."""
+    Arc SH, SH-4 — or the sheet a person asks beside, by ``<sheet id>`` or ``<sheet id>:<view id>``."""
     kind: Literal["departure", "automation", "metric", "objects", "set", "sheet"]
     id: str = Field(default="", max_length=200)
     objects: list[str] = Field(default_factory=list, max_length=50)

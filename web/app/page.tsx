@@ -27,7 +27,7 @@ import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
-import { getCanvases, getSystemFlags } from "@/lib/api";
+import { getCanvases } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -170,7 +170,7 @@ type NavTab =
   | "health"
   | "playbook"
   | "documents"        // the global document corpus — see the nav comment on why it is here
-  | "spreadsheets"     // Arc SH — the sheets people make, edit, combine and chat with (flag sheets.core)
+  | "spreadsheets"     // Arc SH — the sheets people make, edit, combine and chat with
   | "catalog"
   | "builder"           // legacy deep link — resolves to the Query workbench (SE-1)
   | "query"
@@ -334,7 +334,7 @@ const NAV_SECTIONS = [
       { id: "builder",  icon: "builder", label: "SQL Editor" },
       { id: "semantic", icon: "layers",  label: "Semantic Layer" },
       // Arc SH (2026-10-27, shown first in the ten-screen mockup and approved): the sheets people make, edit, combine
-      // and chat with — one row, the last the rail fits at 1440×900. Listed only with `sheets.core` on.
+      // and chat with — one row, the last the rail fits at 1440×900.
       { id: "spreadsheets", icon: "table", label: "Spreadsheets" },
     ],
   },
@@ -385,13 +385,6 @@ function Sidebar({
     if (id === "now" && counts && waitingOnAPerson(counts)) return { value: waitingOnAPerson(counts), waiting: true, noun: "waiting on a person" };
     return null;
   };
-  // Arc SH — the Spreadsheets row stands only while `sheets.core` is on: off, the rail is as it was.
-  const [sheetsOn, setSheetsOn] = useState(false);
-  useEffect(() => {
-    let live = true;
-    getSystemFlags().then(f => { if (live) setSheetsOn(!!f["sheets.core"]?.value); }).catch(() => undefined);
-    return () => { live = false; };
-  }, []);
   // Collapsed (the toggle at the head, or ⌘\), the rail is a column of icons: every row keeps its
   // aria-label, and a hover names it — after 600ms for the first label, then its neighbours at once.
   const [collapsed, toggleCollapsed] = useNavCollapsed();
@@ -467,7 +460,7 @@ function Sidebar({
                 </span>
               )}
             </div>
-            {section.items.filter(item => item.id !== "spreadsheets" || sheetsOn).map(renderItem)}
+            {section.items.map(renderItem)}
           </div>
         ))}
       </div>

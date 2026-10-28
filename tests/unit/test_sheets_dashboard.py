@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 
 ORDERS = """order_id,order_status,order_purchase_timestamp,price
 o1,delivered,2018-08-01 10:00:00,10.00
@@ -19,9 +18,6 @@ o5,delivered,2018-09-05 10:00:00,
 o6,shipped,2018-09-06 10:00:00,60.00
 """
 
-ON = {"sheets.core": True, "sheets.grid": True, "sheets.everywhere": True}
-
-
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
@@ -30,8 +26,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides(ON):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -99,7 +94,7 @@ def test_a_kept_card_follows_an_edit_to_the_sheet_on_its_next_read(env):
     assert read() == 165.0
 
 
-def test_off_no_dashboard_is_offered(env):
+def test_a_sheet_offers_a_dashboard_through_its_route(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -109,5 +104,3 @@ def test_off_no_dashboard_is_offered(env):
     app.include_router(sheets_router.router)
     client = TestClient(app)
     assert client.get(f"/sheets/{sheet.id}/dashboard").status_code == 200
-    with flag_overrides({"sheets.everywhere": False}):
-        assert client.get(f"/sheets/{sheet.id}/dashboard").status_code == 404

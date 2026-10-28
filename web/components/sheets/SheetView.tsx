@@ -6,9 +6,8 @@
  * and beside them the chat, the combining tools, a row's record or the history.
  *
  * A view's filter, sort, grouping and hidden columns are read from the view; changing them here is the person's own
- * until they keep them in the view. A change made here is said under the toolbar with Undo beside it. With
- * `sheets.views` (SH-3) a view can be a board or a calendar, grouped with its totals, or kept to its maker — and rules mark
- * rows.
+ * until they keep them in the view. A change made here is said under the toolbar with Undo beside it. A view can be a
+ * board or a calendar, grouped with its totals, or kept to its maker (SH-3) — and rules mark rows.
  */
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -22,7 +21,6 @@ import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type ColumnAction, type Ed
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
 import { SharePop } from "@/components/sheets/SheetSharing";
-import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
 import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { useRowBlocks } from "@/components/sheets/useRowBlocks";
 import { Button } from "@/components/ui/button";
@@ -108,14 +106,13 @@ function fromView(sheet: Sheet, viewId: string): Query {
   };
 }
 
-function sameAsView(sheet: Sheet, q: Query, views: boolean): boolean {
+function sameAsView(sheet: Sheet, q: Query): boolean {
   const v = sheet.views.find(x => x.id === q.view);
   if (!v) return false;
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   return same(v.filter, q.filter) && same(v.sort, q.sort) && v.search === q.search
     && same([...v.hidden].sort(), q.hidden.filter(h => !sheet.columns.find(c => c.id === h)?.hidden).sort())
-    // with views off a grouping is the reader's own for the visit, never part of what a view keeps
-    && (!views || (v.group === q.group && v.kind === q.kind && v.date === q.date && same(v.card, q.card)));
+    && v.group === q.group && v.kind === q.kind && v.date === q.date && same(v.card, q.card);
 }
 
 /** Whether the sheet's own column is narrower than its toolbar — measured on the element once it is there (the sheet
@@ -132,14 +129,14 @@ function useNarrow(): [boolean, (el: HTMLDivElement | null) => void] {
   return [narrow, setEl];
 }
 
-export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
-  sheetId: string; waves: SheetsWaves; onBack: () => void; onOpen: (id: string) => void;
+export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
+  sheetId: string; onBack: () => void; onOpen: (id: string) => void;
   onAsk?: (question: string) => void;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
-  // a sheet shared with the reader to read (SH-8) is open as though editing were off: nothing on it offers a change
+  // a sheet shared with the reader to read (SH-8) is open with nothing on it offering a change: no edit, no combining
   const reader = sheet?.access === "view";
-  const waves = useMemo(() => (reader ? { ...given, grid: false, combine: false } : given), [given, reader]);
+  const editable = !reader;
   const [failed, setFailed] = useState<string | null>(null);
   // the read was refused because the sheet was not shared with the reader (a 403): said, with the way back — not a
   // failure to retry (SH-8)
@@ -172,9 +169,9 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
   useEffect(() => { void readDefinition(); }, [readDefinition]);
 
   const readUndo = useCallback(() => {
-    if (!waves.grid) return;
+    if (!editable) return;
     readChanges(sheetId).then(h => setHistory({ can_undo: h.can_undo, can_redo: h.can_redo })).catch(() => setHistory(null));
-  }, [sheetId, waves.grid]);
+  }, [sheetId, editable]);
   useEffect(() => { readUndo(); }, [readUndo, tick]);
 
   const flat = !!query && query.kind === "grid" && !query.group;
@@ -281,7 +278,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
   if (!sheet || !query) return <Loading what="the sheet" />;
 
   const setQ = (q: Partial<Query>) => setQuery({ ...query, ...q });
-  const dirty = !sameAsView(sheet, query, waves.views);
+  const dirty = !sameAsView(sheet, query);
   const view = sheet.views.find(v => v.id === query.view);
   const all = Number(sheet.rows ?? 0);
   const counted = `${flat && rows.total !== null && rows.total !== all ? `${formatCount(rows.total)} of ` : ""}${formatCount(all)} rows · `
@@ -304,11 +301,11 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
     }).catch(e => setSaid({ text: e instanceof Error ? e.message : String(e), tone: "bad" }));
   };
 
-  /** What a view keeps of what is shown: its filter, sort, hidden columns — and with SH-3 its layout. */
+  /** What a view keeps of what is shown: its filter, sort, hidden columns and its layout (SH-3). */
   const kept = (): Partial<View> => ({
     filter: query.filter, sort: query.sort, search: query.search,
     hidden: query.hidden.filter(h => !sheet.columns.find(c => c.id === h)?.hidden),
-    ...(waves.views ? { kind: query.kind, group: query.group, date: query.date, card: query.card } : {}),
+    kind: query.kind, group: query.group, date: query.date, card: query.card,
   });
 
   const keepAsView = async (name: string, kind: ViewKind, column: string, shared: boolean) => {
@@ -388,13 +385,13 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
     }
   };
   // a sheet keeps one shared view; a view of someone else's own is never listed here
-  const canTakeOff = (v: View) => waves.grid && (!v.shared || sheet.views.filter(x => x.shared).length > 1);
+  const canTakeOff = (v: View) => editable && (!v.shared || sheet.views.filter(x => x.shared).length > 1);
 
   const updateThisView = () => view && run(() => saveView(sheet.id, { ...view, ...kept() }), `View ${view.name} changed`);
 
   const toolbar = (
     <>
-      {query.kind === "grid" && waves.grid && (
+      {query.kind === "grid" && editable && (
         <ToolButton narrow={narrow} icon="plus" label="Row" onClick={() => void run(async () => {
           const r = await addRow(sheet.id);
           setSaid({ text: `Row ${r.row} added`, tone: "ok", offer: "undo" });
@@ -426,10 +423,8 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
         <ToolButton expanded={pop === "card"} narrow={narrow} on={query.card.length > 0} onClick={() => setPop(pop === "card" ? "" : "card")}
           icon="eye" label={query.card.length ? `Card shows ${query.card.length}` : "Card shows"} />
       )}
-      {waves.views && (
-        <ToolButton expanded={pop === "rules"} narrow={narrow} on={sheet.rules.length > 0} onClick={() => setPop(pop === "rules" ? "" : "rules")}
-          icon="bookmark" label={sheet.rules.length ? `Rules · ${sheet.rules.length}` : "Rules"} />
-      )}
+      <ToolButton expanded={pop === "rules"} narrow={narrow} on={sheet.rules.length > 0} onClick={() => setPop(pop === "rules" ? "" : "rules")}
+        icon="bookmark" label={sheet.rules.length ? `Rules · ${sheet.rules.length}` : "Rules"} />
     </>
   );
 
@@ -450,7 +445,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
                 if (e.key === "Escape") setRenaming(null);
               }} onBlur={() => setRenaming(null)} />
           ) : (
-            <Button variant="ghost" size="sm" disabled={!waves.grid} title={waves.grid ? `Rename ${sheet.name}` : sheet.name}
+            <Button variant="ghost" size="sm" disabled={!editable} title={editable ? `Rename ${sheet.name}` : sheet.name}
               onClick={() => setRenaming(sheet.name)} style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px",
                 flex: "0 1 auto", minWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
               {sheet.name}
@@ -475,25 +470,21 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
           </span>
           <span style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6,
             position: "relative", flex: "0 1 auto" }}>
-            {waves.dashboard && (
-              <Button variant="outline" size="sm" onClick={() => setDashboard(true)}
-                title={view && (view.filter.length || view.search) ? `Cards that read the view ${view.name}` : "Cards that read the sheet"}>
-                <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
-              </Button>
-            )}
+            <Button variant="outline" size="sm" onClick={() => setDashboard(true)}
+              title={view && (view.filter.length || view.search) ? `Cards that read the view ${view.name}` : "Cards that read the sheet"}>
+              <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
+            </Button>
             <Button variant="outline" size="sm" aria-expanded={pop === "share"}
               title={narrow ? `Share · ${sharedWords(sheet)}` : undefined}
               onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : `Share · ${sharedWords(sheet)}`}</Button>
             {pop === "share" && <SharePop name={sheet.name} sheetId={sheet.id} views={sheet.views} me={sheet.me}
-              sharing={!!waves.sharing} onDone={() => setPop("")} onChanged={() => void readDefinition()} />}
-            {waves.combine && (
+              onDone={() => setPop("")} onChanged={() => void readDefinition()} />}
+            {editable && (
               <Button variant={panel === "combine" ? "secondary" : "outline"} size="sm"
                 onClick={() => setPanel(panel === "combine" ? "" : "combine")}><Icon name="link" /> Combine</Button>
             )}
-            {waves.chat && (
-              <Button variant={panel === "chat" ? "secondary" : "outline"} size="sm"
-                onClick={() => setPanel(panel === "chat" ? "" : "chat")}><Icon name="chat" /> Chat</Button>
-            )}
+            <Button variant={panel === "chat" ? "secondary" : "outline"} size="sm"
+              onClick={() => setPanel(panel === "chat" ? "" : "chat")}><Icon name="chat" /> Chat</Button>
           </span>
         </div>
 
@@ -527,27 +518,27 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
             );
           })}
           </span>
-          {waves.grid && (
+          {editable && (
             <span style={{ position: "relative", flex: "0 0 auto" }}>
               <Button variant="ghost" size="sm" aria-expanded={pop === "view"} onClick={() => setPop(pop === "view" ? "" : "view")}
                 style={{ ...MUTED, height: 34 }}>
                 <Icon name="plus" size={12} /> View
               </Button>
               {pop === "view" && (
-                <ViewPop sheet={sheet} views={waves.views} initial={view && !dirty ? `${view.name} 2` : "New view"}
+                <ViewPop sheet={sheet} initial={view && !dirty ? `${view.name} 2` : "New view"}
                   onClose={() => setPop("")}
                   onKeep={(name, kind, column, shared) => { setPop(""); void keepAsView(name, kind, column, shared); }} />
               )}
             </span>
           )}
           <span className="aug-fs-xs" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flex: "0 0 auto", ...MUTED }}>
-            {dirty && waves.grid ? (
+            {dirty && editable ? (
               <>
                 changed here, not kept
                 {view && <Button variant="outline" size="xs" onClick={() => void updateThisView()}>Keep in {view.name}</Button>}
                 <Button variant="ghost" size="xs" onClick={() => setQuery(fromView(sheet, query.view))}>Back to the view</Button>
               </>
-            ) : waves.views && view && (
+            ) : view && (
               <>
                 {view.shared ? "Shared view" : "Your own view — only you see it"}
                 {view.owner && view.owner === sheet.me && (
@@ -575,7 +566,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
               }} />
           </div>
           <span style={{ marginLeft: "auto", display: "flex", gap: 2, flex: "0 0 auto" }}>
-            {waves.grid && (
+            {editable && (
               <>
                 <Button variant="ghost" size="icon-sm" aria-label="Undo" title={history?.can_undo ? `Undo: ${history.can_undo}` : "Nothing to undo"}
                   disabled={!history?.can_undo} onClick={() => void run(() => undo(sheet.id), "Undone", "redo")}>
@@ -598,7 +589,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
             )}
           </span>
           {pop === "fields" && (
-            <FieldsPop sheet={sheet} hidden={hidden} editable={waves.grid} byModel={!!waves.modelColumns}
+            <FieldsPop sheet={sheet} hidden={hidden} editable={editable}
               onHidden={h => setQ({ hidden: h })}
               onClose={() => setPop("")} run={run} />
           )}
@@ -611,7 +602,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
             <SortPop sheet={sheet} sort={query.sort} onApply={s => { setQ({ sort: s }); setPop(""); }} onClose={() => setPop("")} />
           )}
           {pop === "group" && (
-            <ColumnPop label={`Group the rows by — the largest group first${waves.views ? ", each with its totals" : ""}`}
+            <ColumnPop label="Group the rows by — the largest group first, each with its totals"
               columns={sheet.columns} value={query.group} none="No grouping"
               onPick={g => { setQ({ group: g }); setPop(""); }} onClose={() => setPop("")} />
           )}
@@ -658,25 +649,25 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
           </div>
         )}
 
-        {query.kind === "board" && waves.views ? (
-          <SheetBoard sheet={sheet} query={viewQuery} column={query.group} card={query.card} editable={waves.grid}
+        {query.kind === "board" ? (
+          <SheetBoard sheet={sheet} query={viewQuery} column={query.group} card={query.card} editable={editable}
             tick={tick} onOpenRow={openRow} onMoved={words => void changed(words)} />
-        ) : query.kind === "calendar" && waves.views ? (
+        ) : query.kind === "calendar" ? (
           <SheetCalendar sheet={sheet} query={viewQuery} column={query.date} card={query.card} tick={tick} onOpenRow={openRow} />
         ) : query.group ? (
-          <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={waves.grid} tick={tick}
+          <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={editable} tick={tick}
             onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} widths={widths} onWidth={onWidth} frozen={frozen}
-            onColumnAction={onColumnAction} onMoveColumn={waves.grid ? moveColumn : undefined} />
+            onColumnAction={onColumnAction} onMoveColumn={editable ? moveColumn : undefined} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
-            <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
-              canFill={!!waves.modelColumns && waves.grid}
+            <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={editable}
+              canFill={editable}
               onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
               widths={widths} onWidth={onWidth} frozen={frozen} onColumnAction={onColumnAction}
-              onMoveColumn={waves.grid ? moveColumn : undefined}
-              onUndo={waves.grid ? () => history?.can_undo ? void run(() => undo(sheet.id), "Undone", "redo")
+              onMoveColumn={editable ? moveColumn : undefined}
+              onUndo={editable ? () => history?.can_undo ? void run(() => undo(sheet.id), "Undone", "redo")
                 : setSaid({ text: "Nothing to undo", tone: "ok" }) : undefined}
-              onRedo={waves.grid ? () => history?.can_redo ? void run(() => redo(sheet.id), "Redone")
+              onRedo={editable ? () => history?.can_redo ? void run(() => redo(sheet.id), "Redone")
                 : setSaid({ text: "Nothing to redo", tone: "ok" }) : undefined}
               footer={`${view ? view.name : "the sheet"}${query.sort.length
                 ? ` · sorted by ${query.sort.map(s => colName(s.column)).join(", ")}` : " · in the sheet's order"}`} />
@@ -684,7 +675,7 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
       </div>
 
       {dashboard && <SheetDashboard sheet={sheet} viewId={query.view} onClose={() => setDashboard(false)} />}
-      {panel === "chat" && waves.chat && (
+      {panel === "chat" && (
         <SheetChat sheet={sheet} viewId={query.view} viewRows={rows.total} onClose={() => setPanel("")}
           onApplied={() => void changed("Applied")} onOpenSheet={onOpen} onAsk={onAsk}
           onOpenView={name => { readSheet(sheet.id).then(s => {
@@ -693,14 +684,14 @@ export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
             if (v) setQuery(fromView(s, v.id));
           }); }} onShowRows={showRows} onKeepRows={keepRows} />
       )}
-      {panel === "combine" && waves.combine && (
+      {panel === "combine" && editable && (
         <SheetCombine sheet={sheet} onClose={() => setPanel("")} onChanged={words => void changed(words)} />
       )}
       {panel === "record" && recordRow !== null && (
-        <SheetRecordPanel sheet={sheet} row={recordRow} editable={waves.grid} onClose={() => setPanel("")}
+        <SheetRecordPanel sheet={sheet} row={recordRow} editable={editable} onClose={() => setPanel("")}
           onOpenSheet={onOpen} />
       )}
-      {panel === "history" && waves.grid && (
+      {panel === "history" && editable && (
         <SheetHistory sheet={sheet} tick={tick} onClose={() => setPanel("")}
           onUndo={() => void run(() => undo(sheet.id), "Undone", "redo")} />
       )}
@@ -781,9 +772,9 @@ function CardPop({ sheet, card, onApply, onClose }: {
   );
 }
 
-/** A new view: its name, how it lays its rows out, and — with SH-3 — whether everyone who reads the sheet sees it. */
-function ViewPop({ sheet, views, initial, onKeep, onClose }: {
-  sheet: Sheet; views: boolean; initial: string; onClose: () => void;
+/** A new view: its name, how it lays its rows out, and whether everyone who reads the sheet sees it (SH-3). */
+function ViewPop({ sheet, initial, onKeep, onClose }: {
+  sheet: Sheet; initial: string; onClose: () => void;
   onKeep: (name: string, kind: ViewKind, column: string, shared: boolean) => void;
 }) {
   const lanes = sheet.columns.filter(c => c.kind === "choice" || c.kind === "yesno");
@@ -795,8 +786,8 @@ function ViewPop({ sheet, views, initial, onKeep, onClose }: {
   const choices = kind === "board" ? lanes : kind === "calendar" ? dates : [];
   const picked = column || choices[0]?.id || "";
   const options = [{ value: "grid" as ViewKind, label: "Grid" },
-    ...(views && lanes.length ? [{ value: "board" as ViewKind, label: "Board" }] : []),
-    ...(views && dates.length ? [{ value: "calendar" as ViewKind, label: "Calendar" }] : [])];
+    ...(lanes.length ? [{ value: "board" as ViewKind, label: "Board" }] : []),
+    ...(dates.length ? [{ value: "calendar" as ViewKind, label: "Calendar" }] : [])];
   return (
     <Popover onClose={onClose} width={380}>
       <span className="aug-fs-xs" style={MUTED}>Keep what is shown — its filter, sort and hidden columns — as a view</span>
@@ -811,10 +802,8 @@ function ViewPop({ sheet, views, initial, onKeep, onClose }: {
           <SelectContent>{choices.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
         </Select>
       )}
-      {views && (
-        <Segmented label="Who sees it" value={shared ? "all" : "me"} onChange={v => setShared(v === "all")}
-          options={[{ value: "all", label: "Everyone who reads the sheet" }, { value: "me", label: "Only me" }]} />
-      )}
+      <Segmented label="Who sees it" value={shared ? "all" : "me"} onChange={v => setShared(v === "all")}
+        options={[{ value: "all", label: "Everyone who reads the sheet" }, { value: "me", label: "Only me" }]} />
       <Button size="xs" disabled={!name.trim() || (kind !== "grid" && !picked)} onClick={() => onKeep(name, kind, picked, shared)}
         style={{ alignSelf: "flex-start" }}>Keep the view</Button>
     </Popover>
@@ -873,11 +862,9 @@ function RulesPop({ sheet, run, onShow, onClose, editable = true }: {
   );
 }
 
-function FieldsPop({ sheet, hidden, editable, byModel = false, onHidden, onClose, run }: {
+function FieldsPop({ sheet, hidden, editable, onHidden, onClose, run }: {
   sheet: Sheet; hidden: Set<string>; editable: boolean; onHidden: (h: string[]) => void; onClose: () => void;
   run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>;
-  /** SH-5: a new column may be one a model writes. */
-  byModel?: boolean;
 }) {
   // a new column a model writes: what it writes for each row, and the row's columns it reads
   const [modelWrites, setModelWrites] = useState(false);
@@ -951,7 +938,7 @@ function FieldsPop({ sheet, hidden, editable, byModel = false, onHidden, onClose
             })}>Add</Button>
         </div>
       )}
-      {editable && byModel && (
+      {editable && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Checkbox checked={modelWrites} onChange={e => setModelWrites(e.target.checked)} aria-label="Written by a model" />

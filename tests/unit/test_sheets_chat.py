@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
-
 ORDERS = """order_id,order_status,order_purchase_timestamp,order_estimated_delivery_date,order_delivered_customer_date
 o1,delivered,2018-08-01 10:00:00,2018-08-20 00:00:00,2018-08-19 12:00:00
 o2,delivered,2018-08-02 10:00:00,2018-08-10 00:00:00,2018-08-15 09:30:00
@@ -29,8 +27,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides({"sheets.core": True, "sheets.grid": True, "sheets.chat": True, "sheets.combine": True}):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -172,7 +169,7 @@ def test_a_dropped_file_becomes_one_proposal_and_undo_removes_the_sheet_whole(en
     assert model.get(made["sheet"]) is None
 
 
-def test_off_the_chat_explains_nothing_and_answers_no_route(env):
+def test_the_explain_tool_explains_a_sheet_without_it_joining_the_rosters_kinds(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -180,13 +177,10 @@ def test_off_the_chat_explains_nothing_and_answers_no_route(env):
     from aughor.routers import sheets as sheets_router
     sheet = _orders(env)
     assert "sheet" not in KINDS                       # the explain tool a model calls reads as it did
-    with flag_overrides({"sheets.chat": False}):
-        assert explain_object("sheets", {"kind": "sheet", "id": sheet.id})["found"] is False
-        app = FastAPI()
-        app.include_router(sheets_router.router)
-        client = TestClient(app)
-        assert client.post(f"/sheets/{sheet.id}/propose", json={"words": "x"}).status_code == 404
-        assert client.get(f"/sheets/{sheet.id}/grounding").status_code == 404
+    assert explain_object("sheets", {"kind": "sheet", "id": sheet.id})["found"] is True
+    app = FastAPI()
+    app.include_router(sheets_router.router)
+    assert TestClient(app).get(f"/sheets/{sheet.id}/grounding").json()["found"] is True
 
 
 # ── a rule, proposed (SH-3's rules in SH-4's chat) ───────────────────────────────────────────────────────────────────
@@ -200,28 +194,25 @@ def test_a_proposed_rule_is_counted_as_the_grid_counts_and_applied_as_the_assist
                    _call(op="propose", changes=[{"type": "rule", "name": "Late and still open", "tone": "red",
                                                  "conditions": OPEN}]),
                    "Proposed."])
-    with flag_overrides({"sheets.views": True}):
-        out = chat.propose(sheet, "mark the ones that need following up", by="user:ana", provider=faux)
-        assert out["staged"], out
-        rule = out["proposal"]["changes"][0]
-        grid = projection.read_rows(sheet, conditions=[Condition(column=sheet.column(c["column"]).id, op=c["op"],
-                                                                 value=c["value"]) for c in OPEN])["total"]
-        assert rule["rows"] == grid == 2 and rule["said"] == "Rule Late and still open — marks 2 rows"
-        chat.apply(out["proposal"]["id"], None, by="user:ana")
-        now = model.get(sheet.id)
-        assert [(r.name, r.tone, r.made_by) for r in now.rules] == [("Late and still open", "red", "the assistant")]
-        assert now.change.origin == f"proposal:{out['proposal']['id']}"
-        assert views.rule_rows(now) == {now.rules[0].id: 2}
+    out = chat.propose(sheet, "mark the ones that need following up", by="user:ana", provider=faux)
+    assert out["staged"], out
+    rule = out["proposal"]["changes"][0]
+    grid = projection.read_rows(sheet, conditions=[Condition(column=sheet.column(c["column"]).id, op=c["op"],
+                                                             value=c["value"]) for c in OPEN])["total"]
+    assert rule["rows"] == grid == 2 and rule["said"] == "Rule Late and still open — marks 2 rows"
+    chat.apply(out["proposal"]["id"], None, by="user:ana")
+    now = model.get(sheet.id)
+    assert [(r.name, r.tone, r.made_by) for r in now.rules] == [("Late and still open", "red", "the assistant")]
+    assert now.change.origin == f"proposal:{out['proposal']['id']}"
+    assert views.rule_rows(now) == {now.rules[0].id: 2}
 
 
-def test_a_rule_is_not_proposed_while_rules_are_off(env, faux):
+def test_a_rule_in_a_colour_marks_do_not_have_is_not_proposed(env, faux):
     from aughor.sheets import chat, projection
     sheet = _orders(env)
     cur = projection.cursor()
     try:
-        with flag_overrides({"sheets.views": False}), pytest.raises(chat.ChangeRefused, match="rules are off"):
-            chat.check_change(sheet, {"type": "rule", "name": "Late", "conditions": OPEN}, cur)
-        with flag_overrides({"sheets.views": True}), pytest.raises(chat.ChangeRefused, match="not a mark's colour"):
+        with pytest.raises(chat.ChangeRefused, match="not a mark's colour"):
             chat.check_change(sheet, {"type": "rule", "name": "Late", "tone": "pink", "conditions": OPEN}, cur)
     finally:
         cur.close()
@@ -239,11 +230,10 @@ def test_a_dropped_file_can_come_with_a_rule_for_the_rows_that_need_attention(en
                        {"type": "rule", "name": "Low score", "conditions": [
                            {"column": "review_score", "op": "lte", "value": 2}]}]),
                    "Proposed."])
-    with flag_overrides({"sheets.views": True}):
-        p = chat.propose_new_sheet(token, "a sheet to follow up complaints", by="user:ana", provider=faux)["proposal"]
-        assert p["changes"][0]["rows"] == 2
-        made = model.get(chat.apply(p["id"], None, by="user:ana")["sheet"])
-        rule = made.rules[0]
-        # the condition names the made sheet's own column, not the draft's
-        assert rule.conditions[0].column == made.column("review_score").id
-        assert views.rule_rows(made) == {rule.id: 2}
+    p = chat.propose_new_sheet(token, "a sheet to follow up complaints", by="user:ana", provider=faux)["proposal"]
+    assert p["changes"][0]["rows"] == 2
+    made = model.get(chat.apply(p["id"], None, by="user:ana")["sheet"])
+    rule = made.rules[0]
+    # the condition names the made sheet's own column, not the draft's
+    assert rule.conditions[0].column == made.column("review_score").id
+    assert views.rule_rows(made) == {rule.id: 2}

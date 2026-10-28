@@ -94,7 +94,7 @@ export interface SheetSummary {
   version: number;
   /** "workspace" — everyone in it reads and edits — or, with SH-8, "chosen": only the people and groups chosen. */
   shared_with: string;
-  /** SH-8 — what the reader may do (said with `sheets.sharing` on, or for a sheet shared with chosen people). */
+  /** SH-8 — what the reader may do. */
   access?: SheetAccess;
   /** How many people and groups a sheet is shared with, when it is shared with chosen ones. */
   shares?: number;
@@ -188,7 +188,7 @@ export interface RowsPage {
   versions?: Versions;
   columns: string[];
   source_rows: number;
-  /** With `sheets.views`: row → the rules marking it. */
+  /** SH-3: row → the rules marking it. */
   marks?: Record<string, string[]>;
 }
 

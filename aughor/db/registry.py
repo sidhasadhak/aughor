@@ -39,18 +39,10 @@ POSTGRES_BUILTIN_ID = "mydb"
 SAMPLES_ID = "samples"
 WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
 AUGHOR_OPS_ID = "aughor_ops"  # Aughor-on-Aughor: the platform's own task_history/jobs/events
-#: Arc SH — the sheets people make, as one connection (`aughor/sheets/connection.py`); listed only with `sheets.core` on.
+#: Arc SH — the sheets people make, as one connection (`aughor/sheets/connection.py`).
 SHEETS_ID = "sheets"
 #: The builtin connections: their ids are the same on every install.
 _BUILTIN_IDS = frozenset({BUILTIN_ID, POSTGRES_BUILTIN_ID, SAMPLES_ID, WORKSPACE_ID, AUGHOR_OPS_ID, SHEETS_ID})
-
-
-def _sheets_on() -> bool:
-    try:
-        from aughor.sheets import on
-        return on()
-    except Exception:  # noqa: BLE001 — an unreadable flag is off
-        return False
 
 
 def _aughor_ops_available() -> bool:
@@ -207,8 +199,8 @@ def list_connections(org_id: str | None = None) -> list[dict]:
             "builtin": True,
         })
 
-    # Arc SH — the sheets people make in Spreadsheets, as one connection. Off, it is not listed at all.
-    if SHEETS_ID not in hidden and _sheets_on():
+    # Arc SH — the sheets people make in Spreadsheets, as one connection.
+    if SHEETS_ID not in hidden:
         rows.append({
             "id": SHEETS_ID,
             "name": "Sheets",
@@ -449,8 +441,6 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
     if conn_id == WORKSPACE_ID:
         return "local_upload", "local://"
     if conn_id == SHEETS_ID:
-        if not _sheets_on():
-            raise KeyError("the Sheets connection needs the 'sheets.core' flag")
         return "sheets", "sheets://"
     if conn_id == AUGHOR_OPS_ID:
         if not _aughor_ops_available():

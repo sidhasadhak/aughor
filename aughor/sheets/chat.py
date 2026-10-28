@@ -126,10 +126,7 @@ def how_to_answer(sheet: Sheet) -> list[str]:
 def explain_sheet(ref: str) -> dict:
     """The sheet on screen as the conversation is handed it (``ref`` is ``<sheet id>`` or ``<sheet id>:<view id>``):
     the table to query, its columns, and the view's filter as SQL with the grid's own count of its rows."""
-    from aughor import sheets
     sheet_id, _, view_id = (ref or "").partition(":")
-    if not sheets.on(sheets.CHAT):
-        return {"found": False, "kind": "sheet", "id": ref, "summary": "The chat beside a sheet is off."}
     sheet = model.get(sheet_id)
     if sheet is None:
         return {"found": False, "kind": "sheet", "id": ref, "summary": f"No sheet {sheet_id!r} is kept here."}
@@ -291,11 +288,8 @@ def check_change(sheet: Sheet, change: dict, cur) -> dict:
         return {"type": "column", "name": name, "kind": col_kind,
                 "description": str(change.get("description") or "")[:300],
                 "said": f"Column {name} — {kinds.LABELS[col_kind]}, empty, for people to fill"}
-    from aughor import sheets
     if kind == "rule":
         return _check_rule(sheet, change, name, cur)
-    if not sheets.on(sheets.COMBINE):
-        raise ChangeRefused("combining sheets is off here, so a link or a total cannot be proposed")
     from aughor.sheets import combine
     other = _named_sheet(str(change.get("other") or ""))
     if kind == "link":
@@ -330,10 +324,7 @@ def check_change(sheet: Sheet, change: dict, cur) -> dict:
 def _check_rule(sheet: Sheet, change: dict, name: str, cur) -> dict:
     """A rule (SH-3) — a name and conditions as a view's filter writes them — counted as the grid counts the rows it
     marks: a row its conditions cannot read (an empty date) is not marked."""
-    from aughor import sheets
     from aughor.sheets.views import TONES, ViewRefused, check_rule
-    if not sheets.on(sheets.VIEWS):
-        raise ChangeRefused("rules are off here, so no row can be marked; propose a view instead")
     conds = _conditions(sheet, change.get("conditions") or change.get("filter") or [])
     try:
         check_rule(sheet, conds)

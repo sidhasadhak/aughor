@@ -1,4 +1,4 @@
-"""Make a dashboard from a sheet (Arc SH, SH-6 — its first piece; flag ``sheets.everywhere``).
+"""Make a dashboard from a sheet (Arc SH, SH-6 — its first piece).
 
 The platform proposes the cards a sheet holds: how many rows it has, the sum of each money column, the rows per value
 of its choice columns, the rows over time by its first date, and a table of the rows. Each card is a query of the

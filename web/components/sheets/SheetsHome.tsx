@@ -11,7 +11,6 @@ import { Chip, Empty, Label, MUTED, NUM, ONE_LINE } from "@/components/clarity/k
 import { NewSheetDialog, type NewSheetStart } from "@/components/sheets/NewSheetDialog";
 import { NewSheetChat } from "@/components/sheets/SheetChat";
 import { SharePop } from "@/components/sheets/SheetSharing";
-import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -32,7 +31,7 @@ function size(bytes: number): string {
   return `${bytes} B`;
 }
 
-export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id: string) => void }) {
+export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
   // the sheets the reader may open, and apart from them the ones not shared with them — named, never read (SH-8)
   const [data, setData] = useState<{ sheets: SheetSummary[]; withheld: WithheldSheet[]; uploads: UploadedFile[];
     me: string } | null>(null);
@@ -65,14 +64,13 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
   if (!data) return <Loading what="the sheets" />;
 
   const rows = data.sheets.reduce((n, s) => n + (s.rows || 0), 0);
-  const tiles: { icon: IconName; title: string; detail: string; start: NewSheetStart | "chat"; off?: string }[] = [
+  const tiles: { icon: IconName; title: string; detail: string; start: NewSheetStart | "chat" }[] = [
     { icon: "table", title: "From a file", detail: "CSV, TSV, Parquet, JSON · an Excel workbook becomes one sheet per tab",
       start: { source: "file" } },
     { icon: "plus", title: "Blank", detail: "Name it, then add columns and rows", start: { source: "blank" } },
     { icon: "sql", title: "From a query or an answer", detail: "Keep the rows of a SQL result or a chat answer",
       start: { source: "rows" } },
-    { icon: "spark", title: "In the chat", detail: "Drop a file and say what it is for", start: "chat",
-      off: waves.chat ? undefined : "The chat beside a sheet is off on this install." },
+    { icon: "spark", title: "In the chat", detail: "Drop a file and say what it is for", start: "chat" },
   ];
   // the largest first — a workspace's own data before its odds and ends — each marked when a sheet was made from it
   const byFile = new Map<string, SheetSummary[]>();
@@ -89,9 +87,9 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
         <div style={BAR}>
           <span className="aug-fs-ui" style={{ fontWeight: 600, color: "var(--t1)" }}>Spreadsheets</span>
-          <Chip title={waves.sharing
-            ? "A sheet belongs to its workspace — everyone in it reads and edits it — until its maker shares it with chosen people."
-            : "A sheet belongs to its workspace: everyone in it reads and edits it."}>Workspace</Chip>
+          <Chip title="A sheet belongs to its workspace — everyone in it reads and edits it — until its maker shares it with chosen people.">
+            Workspace
+          </Chip>
           <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>
             {formatCount(data.sheets.length)} sheet{data.sheets.length === 1 ? "" : "s"} · {formatCount(rows)} rows
             {data.withheld.length ? ` · ${formatCount(data.withheld.length)} not shared with you` : ""}
@@ -107,7 +105,7 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
             <Label>Start a sheet</Label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
               {tiles.map(t => (
-                <Button key={t.start === "chat" ? "chat" : t.start.source} variant="ghost" disabled={!!t.off} title={t.off}
+                <Button key={t.start === "chat" ? "chat" : t.start.source} variant="ghost"
                   onClick={() => (t.start === "chat" ? setChatting(true) : setStart(t.start))}
                   style={{ display: "flex", alignItems: "flex-start", gap: 10, height: "auto", padding: "12px 14px",
                     textAlign: "left", whiteSpace: "normal", border: "1px solid var(--card-edge)",
@@ -115,7 +113,7 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
                   <span style={{ color: "var(--blue4)", paddingTop: 2 }}><Icon name={t.icon} size={16} /></span>
                   <span>
                     <span className="aug-fs-ui" style={{ display: "block", color: "var(--t1)", fontWeight: 600 }}>{t.title}</span>
-                    <span className="aug-fs-xs" style={{ ...MUTED, display: "block", marginTop: 2 }}>{t.off ?? t.detail}</span>
+                    <span className="aug-fs-xs" style={{ ...MUTED, display: "block", marginTop: 2 }}>{t.detail}</span>
                   </span>
                 </Button>
               ))}
@@ -164,7 +162,7 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
                           aria-expanded={sharing === s.id}>
                           <Chip>{sharedWords(s)}</Chip>
                         </Button>
-                        {sharing === s.id && <SharePop name={s.name} sheetId={s.id} me={data.me} sharing={!!waves.sharing}
+                        {sharing === s.id && <SharePop name={s.name} sheetId={s.id} me={data.me}
                           onDone={() => setSharing("")} onChanged={read} />}
                       </td>
                     </tr>

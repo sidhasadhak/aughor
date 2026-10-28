@@ -4,13 +4,11 @@ Live, asked "Which records do not have order delivered carrier date?", the chat 
 no count of the rows asked about, and one of its own query's seven groups left out (trace d77fd873). What is asserted
 here: ``show_rows`` counts exactly the rows the grid's own filter holds, says the filter as the grid's filter box does,
 refuses what the grid could not show with a sentence the model can repair from, and is offered only to a question
-summoned from a sheet while the chat beside a sheet is on — every other turn's tools are unchanged.
+summoned from a sheet — every other turn's tools are unchanged.
 """
 from __future__ import annotations
 
 import pytest
-
-from aughor.kernel.flags import flag_overrides
 
 ORDERS = """order_id,order_status,order_purchase_timestamp,order_estimated_delivery_date,order_delivered_customer_date
 o1,delivered,2018-08-01 10:00:00,2018-08-20 00:00:00,2018-08-19 12:00:00
@@ -30,8 +28,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides({"sheets.core": True, "sheets.grid": True, "sheets.chat": True, "sheets.views": True}):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 
@@ -109,7 +106,7 @@ def test_a_rule_is_named_by_its_name(env):
     assert out["filter_said"] == "marked Not delivered"
 
 
-def test_only_a_question_asked_beside_a_sheet_gets_the_tool_and_only_with_the_chat_on(env):
+def test_only_a_question_asked_beside_a_sheet_gets_the_tool(env):
     from aughor.agent.converse_tools import converse_tools
     from aughor.sheets.answer import sheet_tools
     sheet = _orders(env)
@@ -117,8 +114,6 @@ def test_only_a_question_asked_beside_a_sheet_gets_the_tool_and_only_with_the_ch
     beside = [t.name for t in converse_tools("sheets", sheet=sheet.id)]
     assert "show_rows" not in plain and beside == plain + ["show_rows"]
     assert sheet_tools("") == []
-    with flag_overrides({"sheets.chat": False}):
-        assert sheet_tools(sheet.id) == []
 
 
 def test_the_sheet_tells_the_conversation_how_to_answer_before_its_columns(env):
@@ -239,5 +234,3 @@ def test_the_sheets_own_counts_are_citable_by_the_answer(env, monkeypatch):
         Condition(column=sheet.column("order_status").id, op="is", value="delivered")]), by="user:ana")
     assert citable_counts(f"{sheet.id}:{sheet.views[-1].id}") == [[6], [3]]       # the view's own count too
     assert citable_counts("no-such-sheet") == []
-    with flag_overrides({"sheets.chat": False}):
-        assert citable_counts(sheet.id) == []

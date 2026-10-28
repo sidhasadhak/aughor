@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.flags import flag_overrides
 
 ORDERS = """order_id,customer_id,order_status,price
 o1,c1,delivered,10.00
@@ -36,8 +35,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     from aughor.sheets import projection
     projection.reset()
-    with flag_overrides({"sheets.core": True, "sheets.grid": True, "sheets.combine": True}):
-        yield tmp_path
+    yield tmp_path
     projection.reset()
 
 

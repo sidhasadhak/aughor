@@ -154,16 +154,17 @@ FLAG_ENV = {
     # dashboard is a draft, and an App's readers read the version last published until its owner publishes again.
     # OFF: readers read every version the moment it is kept, as before.
     "dashboard.app_versions": "AUGHOR_DASHBOARD_APP_VERSIONS",
-    # Arc SH (ROADMAP §3.64), 2026-10-27 — Sheets: tables people make, edit, combine and chat with. Each wave stands on
-    # `sheets.core`; with it off none answers and the Sheets connection is not listed.
-    "sheets.core": "AUGHOR_SHEETS_CORE",
-    "sheets.grid": "AUGHOR_SHEETS_GRID",
-    "sheets.chat": "AUGHOR_SHEETS_CHAT",
-    "sheets.combine": "AUGHOR_SHEETS_COMBINE",
-    "sheets.views": "AUGHOR_SHEETS_VIEWS",
-    "sheets.everywhere": "AUGHOR_SHEETS_EVERYWHERE",
-    "sheets.sharing": "AUGHOR_SHEETS_SHARING",
-    "sheets.model_columns": "AUGHOR_SHEETS_MODEL_COLUMNS",
+    # Arc SH (ROADMAP §3.64), 2026-10-27 — Sheets: tables people make, edit, combine and chat with. Its eight waves were
+    # made unconditional 2026-10-28 — part of the platform (ROADMAP §3.65); their off paths are deleted. An operator's
+    # env var is ignored:
+    # "sheets.core" (AUGHOR_SHEETS_CORE) — SH-1, the sheets, their home and the Sheets connection;
+    # "sheets.grid" (AUGHOR_SHEETS_GRID) — SH-2, editing a sheet in place;
+    # "sheets.chat" (AUGHOR_SHEETS_CHAT) — SH-4, the chat beside a sheet;
+    # "sheets.combine" (AUGHOR_SHEETS_COMBINE) — SH-7, links, totals and a newer file;
+    # "sheets.views" (AUGHOR_SHEETS_VIEWS) — SH-3, groups with totals, boards, calendars, rules, views kept to oneself;
+    # "sheets.everywhere" (AUGHOR_SHEETS_EVERYWHERE) — SH-6, a dashboard made from a sheet;
+    # "sheets.sharing" (AUGHOR_SHEETS_SHARING) — SH-8, a sheet shared with chosen people and groups;
+    # "sheets.model_columns" (AUGHOR_SHEETS_MODEL_COLUMNS) — SH-5, a column a model writes.
     # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
@@ -902,82 +903,6 @@ FLAG_META = {
                        "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
                        "as before.",
     },
-    "sheets.core": {
-        "label": "Spreadsheets: tables you make and keep",
-        "summary": "Make a sheet from a file, a query's rows or nothing. Aughor keeps it, and every chat and "
-                   "dashboard can read it.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Kept in Aughor, not your warehouse"}],
-        "description": "A sheet keeps the file it came from, and each value says which row of the file it was. "
-                       "Removing a sheet keeps a record that it was removed. Off: there is no Spreadsheets page "
-                       "and no Sheets connection.",
-    },
-    "sheets.grid": {
-        "label": "Edit sheets in place",
-        "summary": "Change a cell, add or remove rows and columns, and undo. Every change keeps who made it and "
-                   "when.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Nothing is deleted"}],
-        "description": "A value is checked against its column's kind before it is kept. A change made over someone "
-                       "else's is refused and names them. Off: sheets are read but not changed.",
-    },
-    "sheets.chat": {
-        "label": "Ask about a sheet, and have changes proposed",
-        "summary": "Ask a sheet questions beside it, or ask for a change. The assistant proposes; you apply what "
-                   "you want.",
-        "facts": [{"kind": "model", "text": "1 call per question or proposal"},
-                  {"kind": "private", "text": "Nothing changes until you apply it"}],
-        "description": "Answers are queries on the sheet, each with its receipt. A proposal is checked and counted "
-                       "before you see it, and each change applied says the assistant proposed it. Off: the panel "
-                       "beside a sheet is not shown.",
-    },
-    "sheets.combine": {
-        "label": "Combine sheets",
-        "summary": "Link a sheet to another by a key, total another sheet's rows, or add a newer file. Every miss "
-                   "is counted first.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Merges are previewed cell by cell"}],
-        "description": "A linked column follows the sheet it reads when that sheet changes. A newer file is "
-                       "matched on a key and applied as one change you can undo. Off: each sheet stands alone.",
-    },
-    "sheets.views": {
-        "label": "Boards, calendars and rules on sheets",
-        "summary": "Keep a sheet's rows as a grouped grid with totals, a board or a calendar. Mark rows with a rule "
-                   "you declare.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "A view can be yours alone"}],
-        "description": "Moving a card on a board is an edit, kept with who and when. A view you keep to yourself "
-                       "is seen by you only. Off: views are grids, shared with everyone.",
-    },
-    "sheets.everywhere": {
-        "label": "Dashboards made from sheets",
-        "summary": "Make a dashboard from a sheet or the view on screen. Each card is a query on the sheet, so it "
-                   "follows every edit.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Cards read the sheet live"}],
-        "description": "The cards offered are counted on the sheet first, and you keep the ones you tick. "
-                       "Off: a sheet has no Make a dashboard.",
-    },
-    "sheets.sharing": {
-        "label": "Share sheets with chosen people",
-        "summary": "Share a sheet with the people and groups you choose, each able to read it or to edit it. "
-                   "Its maker decides.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Others see its name, not rows"}],
-        "description": "A sheet not shared with you says so and who made it; its rows are refused everywhere, the "
-                       "SQL Editor and the chat included. Off: every sheet is the workspace's, and a sheet already "
-                       "shared with chosen people stays shared only with them.",
-    },
-    "sheets.model_columns": {
-        "label": "Columns a model writes, row by row",
-        "summary": "Add a column a model fills for the rows of a view you pick. You see the calls and their cost "
-                   "before it runs.",
-        "facts": [{"kind": "model", "text": "1 call per 25 rows"},
-                  {"kind": "private", "text": "Marked, never counted in figures"}],
-        "description": "A fill takes at most 200 rows, and is one change you can undo. The column says it was written "
-                       "by a model wherever it is shown, and no total, group, rule or dashboard card counts from it. "
-                       "Off: no column is written by a model.",
-    },
     "packs.installed_versions": {
         "label": "Record each pack's installed version",
         "summary": "Binding a pack records its version, who bound it and what it offered. A newer version shows "
@@ -1235,14 +1160,6 @@ ALWAYS_ON: dict[str, str] = {
     "packs.installed_versions": "Free, and it never re-offers what you declined.",
     "record.decision_loop": "No model calls; live since 10-24.",
     "semops.banded_cascade": "It spends less than switching it off would.",
-    "sheets.chat": "Model calls happen only when a person asks, and nothing changes until they apply it.",
-    "sheets.combine": "Each change is previewed and can be undone.",
-    "sheets.core": "The base of Sheets, live with four Olist sheets.",
-    "sheets.everywhere": "An offer from the sheet, nothing more.",
-    "sheets.grid": "A sheet you cannot edit is not a spreadsheet, and nothing is ever deleted.",
-    "sheets.model_columns": "It spends only when a person presses Fill after seeing the cost; the organisation's limit on spend is its Spend budget.",
-    "sheets.sharing": "The sheet's maker decides; without it every sheet is everyone's.",
-    "sheets.views": "It only changes how rows are shown.",
     "slack.managed_supervisor": "Works once its setup exists (Slack configured, and Node.js); setting it up is the choice.",
     "state.backups": "The safety net for everything else; it says so when the disk is too full.",
 }
