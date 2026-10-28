@@ -12742,6 +12742,25 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
   restarted with its twelve settings; :3000 restarted with `web/.next` cleared, as its cached stylesheet kept the old
   rules): measured on :3000 the same — 21 rows, 16 px to spare.
 
+- **Breakdowns and rule marks LIVE 2026-10-28** (the user: *"Lets do breakdowns and marks live"*): both flags on at
+  runtime. Receipt on theLook's *Orders by country* dashboard, drawn on :3000: 15 countries adding to the figures above
+  them (124,669 orders, $10.81M); choosing China narrowed both figures (42,399 · $3.68M), the objects table and the
+  legend (*Late dispatch — 4,599 of 42,399*, equal to the door's count) and kept every country, China ticked; letting
+  go put the whole back. The legend's 13,495 equals the segment's own count; on the table's third page order 15 alone
+  carries the mark, as the door lists. Seen on the way, not changed: while a choice is read again, one figure can show
+  the new value a moment before the other.
+
+### 3.65 · Flags into settings — always on, or an organisation's choice (DRAFTED 2026-10-28 as `docs/FLAGS_TO_SETTINGS_2026-10-28.md`, at the user's *"let's consider not having any feature flags at all… this is one of the critical things that we need to do"* · not adopted; four calls open — PENDING item 67)
+
+- **Measured:** 81 flags on the live install, 63 on; 44 set by a toggle, 13 by an environment variable, 24 by default;
+  120 reads in the code. The 2026-07-31 strategy cut 91 to about 22 decisions; the count regrew because `AGENTS.md`'s
+  flag invariant makes every arc ship behind flags that leave only on a separate receipt.
+- **Proposed:** 57 always on (all on live) · 10 always on after a live check · 4 on when their setup exists · 5 flags
+  become 4 organisation settings, admin-only, in `aughor/orgsettings` — data leaving the install, model work nobody
+  asked for, a governance posture · 5 experiments decided once. New work merges on, or stays on its branch; the receipt
+  moves before the merge.
+- **Calls:** the rule for new work; the four settings; the ten off today; the five experiments (study §8).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

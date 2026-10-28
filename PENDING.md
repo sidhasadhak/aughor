@@ -836,7 +836,11 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     `dashboard.marks`, both off (local, not pushed): Other summed or asked, never subtracted, and a foot that says when
     the groups do not add up; marks read through the door as `in_set`. Read live on theLook through the door (16
     countries adding to 124,732 orders; *late dispatch* 13,395, the segment's own count), not drawn live (ROADMAP §3.64).
-    Open: comments (later); turning either flag on.
+    Open: comments (later); ~~turning either flag on~~ — ✅ **both ON live 2026-10-28** (the user: *"Lets do breakdowns
+    and marks live"*), receipt on theLook's *Orders by country* dashboard: the breakdown's 15 countries add to the
+    figures above it (124,669 orders, $10.81M); choosing China narrows both figures (42,399 · $3.68M), the table and the
+    legend (*Late dispatch — 4,599 of 42,399*, the door's own count) while every country stays; the legend's 13,495 is
+    the segment's own count, and on the table's third page order 15 alone is marked, as the door lists (ROADMAP §3.64).
 
 65. [x] **A spreadsheet section people make and then chat with — Teable** (the user, 2026-10-26: *"Chuck grist.. check
     this: https://github.com/teableio/teable … all we need to do is push our chat experience there.. framework already
@@ -904,7 +908,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     The chat beside a sheet: a which-rows question gets the count of its whole and a card that opens the rows in the
     grid (`show_rows`), and the numbers check matches labels as words — **LIVE 2026-10-27** at `1a2af818`, three
     questions proven. Both of what stayed open fixed — **LIVE 2026-10-27** at `580e31f4` (one-step answers; the whole
-    header sorts). Open: a breakdown's chart can be titled "Daily …" when nothing is daily.
+    header sorts). ~~Open: a breakdown's chart can be titled "Daily …" when nothing is daily.~~ ✅ *Fixed
+    2026-10-28 (`d4c99a0c`): the title takes its date column from the charts' one classifier.*
     The answer beside a sheet is lean, no template under it — **LIVE 2026-10-27** at `8bdb1304`.
     A sort keeps the rows on screen until the sorted ones land (no flash); the headers show the sort symbol the user
     drew, reversed for lowest first — **LIVE 2026-10-27** at `00d5d17e`.
@@ -930,3 +935,13 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     SH-6 (the breakdown piece is built, off — item 64; the Briefing over sheets is not); a standing yes for new rows;
     ~~the rail row~~ — ✅ made to fit, mocked (`design-mockups/rail-fit.html`) and built 2026-10-28 at the user's word:
     every row in view at 1440×900, 16 px to spare (ROADMAP §3.64); **live** at `d6a8032e` the same day.
+
+67. [ ] **Flags into settings — always on, or an organisation's choice** (the user, 2026-10-28: *"let's consider not
+    having any feature flags at all.. most of it comes as a default feature like always on and cannot be turned off..
+    and some of them can be turned on off based on the requirements of the organisation and not the user mostly... this
+    is one of the critical things that we need to do"*) — **studied 2026-10-28**, nothing built:
+    `docs/FLAGS_TO_SETTINGS_2026-10-28.md`. Measured on live: 81 flags, 63 on, 120 reads in the code; the 2026-07-31
+    strategy had cut them to ~22 decisions and the count regrew because the flag invariant makes every arc ship behind
+    one. Proposed: 57 always on now (all on live) · 10 always on after a live check · 4 on when set up · 5 flags → 4
+    organisation settings (data leaving the install, model work nobody asked for, a governance posture) · 5 experiments
+    decided once. New work merges on, or stays on its branch. **Four calls are the user's (study §8).**
