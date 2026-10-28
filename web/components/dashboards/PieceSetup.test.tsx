@@ -208,8 +208,9 @@ describe("the pieces the picker adds (Arc AP-4)", () => {
     expect(offered("Called by")).not.toContain("revenue");                        // a number is said beside, never as a name
     expect(offered("Called by")).not.toContain("created_at");
     expect(offered("Beside it")[1]).toBe("revenue");                              // after "Nothing": money first
-    // the list's own "Marked by" — a category on each card — not the rule that marks its rows (`setup-marked`)
-    const markedBy = screen.getAllByLabelText("Marked by").find(el => !screen.getByTestId("setup-marked").contains(el))!;
+    // the list's own "Marked by" — a category on each card; the rule that marks its rows is "Mark rows in"
+    const markedBy = screen.getByLabelText("Marked by");
+    expect(screen.getByTestId("setup-marked")).toContainElement(screen.getByLabelText("Mark rows in"));
     expect(optionsOf(markedBy).map(o => o.value)).toEqual(["", "status", "gender", "num_of_item", "placed_by.country"]);   // the customer's too
     await choose(screen.getByLabelText("Called by"), "status");
     expect(onChange.mock.calls[0]).toEqual([expect.objectContaining({}), "an object list set up by hand"]);

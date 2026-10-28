@@ -269,9 +269,9 @@ function SectionPick({ spec, k, onChange }: { spec: DashboardSpec; k: string; on
 function MarkRow({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
   const marked = (p.marked ?? null) as { segment: string; tone: string; label?: string | null } | null;
   return (
-    <Row label="Marked by" testid="setup-marked"
+    <Row label="Mark rows in" testid="setup-marked"
       hint={marked ? "Rows it admits wear its colour; the legend says how many." : "A declared rule or segment whose rows are marked."}>
-      <Pick label="Marked by" value={marked?.segment ?? ""} none="Nothing"
+      <Pick label="Mark rows in" value={marked?.segment ?? ""} none="Nothing"
         options={keeping(ef.segments.map(s => ({ value: s, label: words(s) })), marked?.segment)}
         onPick={v => set({ marked: v ? { segment: v, tone: marked?.tone ?? "warn" } : null }, "a mark chosen by hand")} />
       {marked && (
