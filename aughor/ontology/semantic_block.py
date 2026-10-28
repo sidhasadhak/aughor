@@ -185,8 +185,7 @@ def render_semantic_layer(
                 f"  {label}.{cp.label} = {cp.formula_sql}{unit}"
             )
 
-    # Arc FA, FA-3 — what a person marked retiring among these entities' declarations, and what to use instead. [] while
-    # `ontology.retiring` is off, so the block is exactly what it was.
+    # Arc FA, FA-3 — what a person marked retiring among these entities' declarations, and what to use instead.
     from aughor.ontology.retiring import semantic_lines
     retiring_lines = semantic_lines(graph, wanted)
 

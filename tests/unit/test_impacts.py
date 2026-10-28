@@ -23,7 +23,7 @@ from aughor.ontology.impacts import (
     measure_impact,
     resolve_impact,
 )
-from aughor.ontology.overrides import OntologyOverride, apply_overrides, save_override
+from aughor.ontology.overrides import OntologyOverride, apply_overrides
 from tests.unit.test_object_bindings import ints
 from tests.unit.test_object_processes import FULFILMENT, db, declare, door, fresh_graph  # noqa: F401 — the warehouse
 
@@ -38,6 +38,7 @@ LATE_DELIVERY = "date_diff('day', o.shipped_at, o.delivered_at) > 5"
 @pytest.fixture
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     return fresh_graph()
 
 
@@ -136,7 +137,7 @@ def test_it_is_kept_in_the_tree_and_read_back_with_its_measurement_and_worded_as
     declare(graph, db, WINDOWS)
     fields = _resolved(graph, "fulfilment_days.dispatch", "fulfilment_days.delivery")
     measured = measure_impact(db, graph, "late_dispatch_late_delivery", fields)
-    save_override("impacts-t", "ecommerce", OntologyOverride(
+    OV.publish_override("impacts-t", "ecommerce", OntologyOverride(        # kept in the tree: the release's own door
         target_kind="impact", target_id="late_dispatch_late_delivery", fields=fields,
         binding={"impact": impact_entry(fields, measured)}))
     served, report = apply_overrides(graph, "impacts-t", "ecommerce")
@@ -281,8 +282,8 @@ def test_a_deadline_before_the_object_entered_the_process_is_flagged_with_its_co
 
 def test_moves_and_impacts_are_declared_counted_changed_and_withdrawn_over_http(door, client, monkeypatch):  # noqa: F811 — the door fixture, by name
     """The door's model once dropped `leaves` while every function carried it (#589): every new field is read back
-    through the door itself."""
-    from tests.unit.test_object_processes import PARAMS
+    through the door itself. Read as the ontology's editing screens read: each change waits in the draft (Arc OC-2)."""
+    from tests.unit.test_object_processes import DRAFT as PARAMS
     moves = [{"from": "placed", "to": "shipped"}, {"from": "shipped", "to": "delivered"}]
     made = client.post("/ontology/processes", params=PARAMS, json={**WINDOWS, "transitions": moves})
     assert made.status_code == 200, made.text
@@ -304,7 +305,6 @@ def test_moves_and_impacts_are_declared_counted_changed_and_withdrawn_over_http(
     assert client.post("/ontology/impacts", params=PARAMS, json=spec).status_code == 409
     listed = client.get("/ontology/processes", params=PARAMS).json()["impacts"]
     assert [i["id"] for i in listed] == ["late_dispatch_late_delivery"] and listed[0]["reading"]
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.history")
     refused = client.delete(f"/ontology/processes/{WINDOWS['id']}", params=PARAMS)
     assert refused.status_code == 409 and "impact 'Late dispatch late delivery'" in refused.text
     assert client.delete("/ontology/impacts/late_dispatch_late_delivery", params=PARAMS).status_code == 200

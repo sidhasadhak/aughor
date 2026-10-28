@@ -23,7 +23,8 @@ from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 from tests.unit.test_object_bindings import GRAPH, ints, payment_type, seed
 
 CONN = "entity-merge-t"
-PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
+#: Read as the ontology's editing screens read: a merge waits in the draft until a person publishes it (Arc OC-2).
+PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "draft"}
 MERGE = "/ontology/entities/merge"
 
 SAME_CUSTOMERS = """
@@ -68,6 +69,7 @@ def door(tmp_path, monkeypatch):
     from aughor.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", built_graph())
     path = tmp_path / "samples.duckdb"
@@ -92,7 +94,8 @@ def count(door, sql: str) -> int:
 
 
 def overrides() -> dict:
-    return {(ov.target_kind, ov.target_id): ov for ov in OV.load_overrides(CONN, "ecommerce")}
+    with OV.viewing("draft"):
+        return {(ov.target_kind, ov.target_id): ov for ov in OV.load_overrides(CONN, "ecommerce")}
 
 
 def merge(client, merge_ids: list[str], canonical_id: str, **extra):

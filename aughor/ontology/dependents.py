@@ -252,14 +252,10 @@ def refusal(kind: str, target_id: str, rows: list[dict]) -> str:
     from aughor.ontology.retiring import withdrawal_hint
     return (f"{kind} '{target_id}' is not withdrawn — {len(rows)} thing{'s' if len(rows) != 1 else ''} depend"
             f"{'' if len(rows) != 1 else 's'} on it: {named}{more}. Change or withdraw those first."
-            # Arc FA, FA-3 — while `ontology.retiring` is on, the way to take it out of use without breaking them
+            # Arc FA, FA-3 — the way to take it out of use without breaking them
             + withdrawal_hint(kind))
 
 
 def guard_withdrawal(graph: Optional[OntologyGraph], conn: str, kind: str, target_id: str) -> Any:
-    """Arc OC-1's door check: the dependents when `ontology.history` (or `ontology.release`, which keeps history) is on
-    and something depends, else []. Off, it reads nothing — a withdrawal behaves exactly as before."""
-    from aughor.ontology import history
-    if not history.enabled():
-        return []
+    """Arc OC-1's door check: the dependents when something depends, else []."""
     return dependents_of(graph, conn, kind, target_id)

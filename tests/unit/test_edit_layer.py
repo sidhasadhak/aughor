@@ -98,6 +98,7 @@ def test_moves_are_declared_on_an_edit_layer_property_only_and_the_history_reads
     assert bad.status_code == 400 and "between two different states it declares" in bad.json()["detail"]
     kept = client.put("/ontology/entities/Order/edit-states/review_status", params=params, json=body)
     assert kept.status_code == 200, kept.text
+    assert client.post("/ontology/release/publish", params=params).status_code == 200   # in force once published
     from aughor.ontology.overrides import apply_overrides
     served, _ = apply_overrides(graph, CONN, "ecommerce")
     assert served.entities["Order"].edit_states["review_status"].moves == [["", "flagged"], ["flagged", "reviewed"]]

@@ -16,10 +16,14 @@ from aughor.ontology.overrides import OntologyOverride, OverrideWriteFailed
 
 @pytest.fixture()
 def unwritable(tmp_path, monkeypatch):
-    """An overrides root that cannot hold a directory: a FILE sits where it should be."""
+    """An overrides root that cannot hold a directory: a FILE sits where it should be — and where its draft should be,
+    which is where a change waits until a person publishes it (Arc OC-2)."""
     root = tmp_path / "ontology_overrides"
     root.write_text("not a directory\n")
+    draft = tmp_path / "ontology_overrides_draft"
+    draft.write_text("not a directory\n")
     monkeypatch.setattr(OV, "_ROOT", root)
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", draft)
     return root
 
 

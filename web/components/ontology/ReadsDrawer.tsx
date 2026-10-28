@@ -4,7 +4,7 @@
  * Arc FA, FA-3 — every entity of the scope by its reads over the last thirty days, the least read first: the list a
  * person cleaning up the ontology reads before marking something retiring or withdrawing it (ROADMAP §3.60).
  *
- * One door (`GET /object-types/uses?window=30`, behind *What uses an entity*): each entity with how many audited
+ * One door (`GET /object-types/uses?window=30`): each entity with how many audited
  * statements named its tables, the day it was last read and how many people read it where the session log says who.
  * What is not counted says why — no table bound, or a log that could not be read — and is listed last, never as zero;
  * a table two entities are read from is said beside each, because a statement naming it counts for both.
@@ -45,11 +45,7 @@ export function ReadsDrawer({ connectionId, schema, onClose }: {
     setState(null);
     setSaid("");
     getEntitiesByReads(connectionId, schema, 30)
-      .then((next) => {
-        if (!live) return;
-        if (next.path === "by_reads") setState(next);
-        else setSaid(next.said);
-      })
+      .then((next) => { if (live) setState(next); })
       .catch((e: unknown) => { if (live) setSaid(errorText(e)); });
     return () => { live = false; };
   }, [connectionId, schema]);

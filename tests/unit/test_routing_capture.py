@@ -18,7 +18,9 @@ from aughor.ontology.overrides import (
     ROUTING_FIELD,
     OntologyOverride,
     find_override,
+    publish_override,
     save_override,
+    viewing,
 )
 from aughor.ontology.routing import routing_rules
 
@@ -30,6 +32,7 @@ SCHEMA = "main"
 def store(tmp_path, monkeypatch):
     from aughor.ontology import overrides as O
     monkeypatch.setattr(O, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(O, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     return tmp_path
 
 
@@ -47,8 +50,8 @@ def _proposal(table="v_fact_sales", scope="sales", bound=True):
 
 def test_a_proposal_is_never_enforced(store):
     """Pending guidance must not reach a prompt. Enforcement reads `use_instead`;
-    a proposal is in a different field, so this holds by construction."""
-    save_override(CONN, SCHEMA, _proposal())
+    a proposal is in a different field, so this holds by construction — even one in force."""
+    publish_override(CONN, SCHEMA, _proposal())
     assert routing_rules(CONN, SCHEMA) == []
 
 
@@ -60,8 +63,9 @@ def test_a_proposal_binds_at_capture_time(store):
 
 
 def test_accepting_moves_it_across_and_it_becomes_live(store):
-    """The one path from proposed to enforced."""
-    save_override(CONN, SCHEMA, _proposal(scope=""))
+    """The one path from proposed to enforced: accepted, it waits in the draft, and is live once published."""
+    from aughor.ontology import release as R
+    publish_override(CONN, SCHEMA, _proposal(scope=""))
     ov = find_override(CONN, SCHEMA, "entity", "orders")
     fields = dict(ov.fields)
     fields[ROUTING_FIELD] = {k: v for k, v in fields[PROPOSED_FIELD].items() if k != "evidence"}
@@ -71,6 +75,8 @@ def test_accepting_moves_it_across_and_it_becomes_live(store):
         OntologyOverride(target_kind="entity", target_id="orders", fields=fields),
         None, lambda sql: None)
     save_override(CONN, SCHEMA, accepted)
+    assert routing_rules(CONN, SCHEMA) == []                       # in the draft: not yet what readers read
+    R.publish(CONN, SCHEMA, by="person:ana")
 
     rules = routing_rules(CONN, SCHEMA)
     assert len(rules) == 1 and rules[0].preferred == "v_fact_sales"
@@ -102,8 +108,8 @@ def test_listing_shows_pending_proposals_with_their_verdict(client, store):
     _post(client, "/ontology/entities/orders/routing-proposal",
           params={"connection_id": CONN, "schema_name": SCHEMA},
           json={"table": "nope", "scope": "sales"})
-    r = client.get("/ontology/routing-proposals",
-                   params={"connection_id": CONN, "schema_name": SCHEMA})
+    r = client.get("/ontology/routing-proposals",                   # the editor reads the draft it waits in
+                   params={"connection_id": CONN, "schema_name": SCHEMA, "ontology_view": "draft"})
     assert r.status_code == 200, r.text
     props = r.json()["proposals"]
     assert len(props) == 1
@@ -133,12 +139,13 @@ def test_accepting_without_a_proposal_is_a_404(client, store):
 def test_proposing_does_not_wipe_an_existing_override(client, store):
     """`save_override` replaces the whole file, so capture must MERGE — otherwise
     volunteering a routing correction silently deletes the entity's description."""
-    save_override(CONN, SCHEMA, OntologyOverride(
+    publish_override(CONN, SCHEMA, OntologyOverride(
         target_kind="entity", target_id="orders",
         fields={"description": "the order line grain"}))
     _post(client, "/ontology/entities/orders/routing-proposal",
           params={"connection_id": CONN, "schema_name": SCHEMA},
           json={"table": "v_fact_sales"})
-    ov = find_override(CONN, SCHEMA, "entity", "orders")
+    with viewing("draft"):                                          # the proposal waits in the draft
+        ov = find_override(CONN, SCHEMA, "entity", "orders")
     assert ov.fields["description"] == "the order line grain"
     assert ov.fields[PROPOSED_FIELD]["table"] == "v_fact_sales"

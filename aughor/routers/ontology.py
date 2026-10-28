@@ -460,9 +460,8 @@ def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -
 # ── Read endpoints ─────────────────────────────────────────────────────────────
 
 def _refuse_if_depended(connection_id: str, effective: str, kind: str, target_id: str) -> None:
-    """Arc OC-1 — a withdrawal something depends on is refused with a 409 naming what (`ontology.history`; off, nothing
-    is read and the withdrawal goes ahead as before). One connection's scope: an organisation's ontology is read across
-    connections, and its dependents are not indexed yet."""
+    """Arc OC-1 — a withdrawal something depends on is refused with a 409 naming what. One connection's scope: an
+    organisation's ontology is read across connections, and its dependents are not indexed yet."""
     from aughor.ontology.dependents import guard_withdrawal, refusal
     rows = guard_withdrawal(_get_ontology_graph(connection_id, effective), connection_id, kind, target_id)
     if rows:
@@ -498,24 +497,22 @@ def get_declaration_history(
     as_of: Optional[str] = Query(default=None, description="an ISO date or moment — what the declaration said then; "
                                                            "a bare date reads the end of that day (UTC)"),
 ):
-    """Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal kept while `ontology.history`
-    is on, newest first, each with what changed and who made it; with ``as_of``, what it said at that moment — or
-    that what it said then is not known, never that nothing was declared."""
+    """Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal, newest first, each with what
+    changed and who made it; with ``as_of``, what it said at that moment — or that what it said then is not known,
+    never that nothing was declared. ``put_back`` (Arc FA, FA-3) says whether an earlier version can go back into the
+    draft here, and why not."""
     from aughor.ontology import history, put_back
     kind = _history_kind(kind)
     effective = _served_scope(connection_id, schema_name)
     out: dict = {"element": history.element_key(connection_id, effective, kind, target_id),
-                 "kept": history.enabled(),
-                 "versions": history.versions(connection_id, effective, kind, target_id, said=put_back.enabled())}
+                 "versions": history.versions(connection_id, effective, kind, target_id, said=True)}
     if as_of:
         try:
             out["as_of"] = {"at": as_of, **history.as_of(connection_id, effective, kind, target_id, as_of)}
         except ValueError:
             raise HTTPException(status_code=400, detail=f"'{as_of}' is not a date or a moment") from None
-    if put_back.enabled():
-        # Arc FA, FA-3 — whether an earlier version can go back into the draft here, and why not. Off: not said.
-        why = put_back.unavailable(connection_id)
-        out["put_back"] = {"enabled": not why, "said": why}
+    why = put_back.unavailable(connection_id)
+    out["put_back"] = {"enabled": not why, "said": why}
     return out
 
 
@@ -560,8 +557,8 @@ def put_back_declaration_version(
     """Arc FA, FA-3 — put an earlier version of one declaration back (ROADMAP §3.60). Its fields go through the normal
     save path into the DRAFT, counted again by the kind's own measurement first and classed like any change, so readers
     get it only when a person publishes. A withdrawn version puts back the fields it had; one that says what readers
-    read already takes the waiting change away. Refused with a sentence while `ontology.put_back` or releases are off
-    and for an organisation's ontology (409), for a version the history does not hold (404), and for one that no
+    read already takes the waiting change away. Refused with a sentence for an organisation's ontology (409), for a
+    version the history does not hold (404), and for one that no
     longer counts on this ontology (400) — nothing is written then. No model call."""
     from aughor import govern
     from aughor.ontology import put_back as PB
@@ -612,11 +609,11 @@ def _retiring_written(connection_id: str, effective: str, graph, kind: str, targ
     """What a mark door did: the mark as readers are told it, where it landed, and the change as the release classes it."""
     from aughor.ontology import release as R
     from aughor.ontology import retiring as RT
-    from aughor.ontology.overrides import drafts_enabled, find_override
+    from aughor.ontology.overrides import find_override
     current = find_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
     mark = RT.mark_of(current.fields if current is not None else None)
     change = next((c for c in R.changes(connection_id, effective) if c["kind"] == kind and c["target_id"] == target_id),
-                  None) if drafts_enabled() else None
+                  None)
     return {"kind": kind, "target_id": target_id,
             "retiring": RT.described(graph, kind, target_id, mark) if mark is not None else None,
             "landed": "draft" if change is not None else "published", "change": change}
@@ -631,12 +628,10 @@ def mark_declaration_retiring(
     """Arc FA, FA-3 — mark one declaration of any kind *retiring* (ROADMAP §3.60): it still serves, and every reader is
     told "retiring on <date> — use <successor> instead". The successor must be another element of the same kind on this
     ontology (400 otherwise, with the sentence; 404 for an element there is none of). Written through the normal save
-    path — with releases on it waits in the draft as a MEANING change. 409 while `ontology.retiring` is off."""
+    path — it waits in the draft as a MEANING change."""
     from aughor import govern
     from aughor.ontology import retiring as RT
     from aughor.ontology.overrides import OntologyOverride, find_override, save_override
-    if not RT.enabled():
-        raise HTTPException(status_code=409, detail="marking a declaration retiring is off on this install")
     kind = _history_kind(body.kind)
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     effective = _served_scope(connection_id, schema_name)
@@ -665,12 +660,10 @@ def unmark_declaration_retiring(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Arc FA, FA-3 — take a retiring mark off: the element is no longer said to be going. A MEANING change like the mark
-    itself; the element's other declarations are untouched. 404 when it carries no mark; 409 while the setting is off."""
+    itself; the element's other declarations are untouched. 404 when it carries no mark."""
     from aughor import govern
     from aughor.ontology import retiring as RT
     from aughor.ontology.overrides import delete_override, find_override, save_override
-    if not RT.enabled():
-        raise HTTPException(status_code=409, detail="marking a declaration retiring is off on this install")
     kind = _history_kind(kind)
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     effective = _served_scope(connection_id, schema_name)
@@ -694,8 +687,7 @@ def get_declaration_dependents(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Arc OC-1 — what depends on one declaration (ROADMAP §3.56): automations, processes, rules, actions, declared
-    links, parts and metrics, each with how. Read whether or not `ontology.history` is on; with it on, a withdrawal
-    of anything listed here is refused."""
+    links, parts and metrics, each with how. A withdrawal of anything listed here is refused."""
     from aughor.ontology.dependents import dependents_of
     kind = _history_kind(kind)
     effective = _served_scope(connection_id, schema_name)
@@ -713,13 +705,12 @@ def get_ontology_release(
 ):
     """Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
     each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
-    by field, and the automations, claims and dashboard cards it touches. While `ontology.release` is off the draft is
-    empty and says so: a declaration is published when it is saved."""
+    by field, and the automations, claims and dashboard cards it touches."""
     from aughor.ontology import release as R
     effective = _served_scope(connection_id, schema_name)
-    return {"enabled": R.enabled(), "connection_id": connection_id, "schema_name": effective,
+    return {"connection_id": connection_id, "schema_name": effective,
             "published": R.current(connection_id, effective), "releases": R.releases(connection_id, effective)[:50],
-            "draft": R.changes(connection_id, effective) if R.enabled() else []}
+            "draft": R.changes(connection_id, effective)}
 
 
 @router.post("/ontology/release/publish", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -817,7 +808,7 @@ def key_vocabulary_entry(body: _VocabularyKey, connection_id: str = BUILTIN_ID,
 def get_ontology_census(history_limit: int = Query(default=90, ge=0, le=400)):
     """Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of
     it, and what leans on it — counted now, from cached ontologies only, beside the daily readings the journal kept
-    (`ontology.census`, while that flag is on). Each Arc OC wave is judged against these numbers."""
+    (`ontology.census`). Each Arc OC wave is judged against these numbers."""
     from aughor.ontology.census import history, take_census
     return {"reading": take_census(), "history": history(limit=history_limit) if history_limit else []}
 
@@ -2686,7 +2677,7 @@ def frame_ontology_question(
     from aughor.semantic.object_query import keyed_metrics_for
     frame = frame_question(question[:2000], graph, synonyms=synonyms, hops=body.hops or DEFAULT_HOPS,
                            dialect=_frame_dialect(connection_id),
-                           metrics=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
+                           metrics=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3
     return {"connection_id": connection_id, "schema_name": graph.schema_name, "frame": frame.model_dump(mode="json")}
 
 
@@ -2794,8 +2785,8 @@ def change_declared_process(
 ):
     """Change a declared process (Arc OC-1) — a promise moved from two days to three, a stage added — through the same
     law as declaring it: every anchor resolved, the whole declaration counted before anything is written, 400 with the
-    reason when it cannot be. Until now a promise changed only by withdrawing the process and declaring it again; with
-    `ontology.history` on, each change is a version of the same element."""
+    reason when it cannot be. Until now a promise changed only by withdrawing the process and declaring it again; now
+    each change is a version of the same element."""
     if body.id != process_id:
         raise HTTPException(status_code=400, detail=f"the body names '{body.id}', the path '{process_id}' — "
                                                     "a process's id does not change; its name does")
@@ -4622,11 +4613,6 @@ class _OssieImport(BaseModel):
 
 
 def _ossie_plan(body: "_OssieImport", connection_id: str, schema_name: Optional[str]):
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.builder_doors"):
-        raise HTTPException(status_code=404, detail=(
-            "The doors for builders are off — an administrator turns them on in Settings → System → Feature flags "
-            "(ontology.builder_doors)."))
     from aughor.ontology import ossie
     try:
         model = ossie.model_from(body.model)

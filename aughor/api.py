@@ -399,7 +399,7 @@ class _OntologyViewMiddleware:
     ontology when the client asks (`X-Aughor-Ontology-View: draft`, or `?ontology_view=draft` — the ontology's own
     editing screens) and for every write to an `/ontology` door, which resolves against and reads back what it drafts;
     the PUBLISHED ontology for everything else — the agent, the Briefing, metrics, object pages. Pure ASGI for the
-    workspace middleware's reason. Inert while `ontology.release` is off: the view is never consulted."""
+    workspace middleware's reason."""
 
     def __init__(self, app):
         self.app = app
@@ -928,7 +928,7 @@ async def _ontology_refresh_loop() -> None:
         except Exception as exc:
             logger.warning("Ontology refresh loop error: %s", exc)
         try:
-            # Arc OC-0: one census reading a day into the journal, behind `ontology.census` (a no-op when off).
+            # Arc OC-0: one census reading a day into the journal.
             from aughor.ontology.census import record_if_due
             await asyncio.get_running_loop().run_in_executor(None, record_if_due)
         except Exception as exc:

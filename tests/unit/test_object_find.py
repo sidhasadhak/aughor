@@ -1,4 +1,4 @@
-"""Arc FA, FA-1 — an object is found by the name it goes by, across entities (ROADMAP §3.60), behind ``objects.find``.
+"""Arc FA, FA-1 — an object is found by the name it goes by, across entities (ROADMAP §3.60).
 
 Measured 2026-10-26: an object could be found only from inside its entity (the search box's ``contains`` reads one
 entity's title), so ⌘K could not find "Alice Brown" without being told she is a customer. ``POST /objects/find`` looks
@@ -23,23 +23,13 @@ def served(graph, monkeypatch):  # noqa: F811
     return graph
 
 
-@pytest.fixture
-def on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_OBJECTS_FIND", "1")
-
-
 def _find(client, q: str, **body):
     r = client.post("/objects/find", params=PARAMS, json={"q": q, **body})
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def test_off_the_door_answers_404(served, client):
-    r = client.post("/objects/find", params=PARAMS, json={"q": "alice"})
-    assert r.status_code == 404 and "off" in r.json()["detail"]
-
-
-def test_an_object_is_found_by_its_name_and_the_search_says_what_it_read(served, client, on):
+def test_an_object_is_found_by_its_name_and_the_search_says_what_it_read(served, client):
     out = _find(client, "alice smith")
     assert out["path"] == "found" and out["hits"]
     assert {h["type"] for h in out["hits"]} == {"customer"}
@@ -52,14 +42,14 @@ def test_an_object_is_found_by_its_name_and_the_search_says_what_it_read(served,
     assert all(why.startswith("named by its key") for why in skipped.values())
 
 
-def test_more_matches_than_shown_are_said_and_the_page_is_capped(served, client, on):
+def test_more_matches_than_shown_are_said_and_the_page_is_capped(served, client):
     out = _find(client, "lite", limit_per_entity=3)
     products = [h for h in out["hits"] if h["type"] == "product"]
     assert len(products) == 3 and all("lite" in h["title"].lower() for h in products)
     assert out["more"] == ["product"]
 
 
-def test_the_entities_past_the_cap_are_listed_with_why(served, client, on, monkeypatch):
+def test_the_entities_past_the_cap_are_listed_with_why(served, client, monkeypatch):
     monkeypatch.setattr(F, "MAX_ENTITIES", 1)
     out = _find(client, "an")
     assert out["searched"] == 1 and out["said"] == "searched 1 of 5 entities"
@@ -72,7 +62,7 @@ def test_a_search_out_of_time_says_which_it_did_not_reach(graph, db):  # noqa: F
     assert sum(s["why"].startswith("past the time") for s in found["skipped"]) == 2
 
 
-def test_too_few_letters_is_refused_with_why(served, client, on):
+def test_too_few_letters_is_refused_with_why(served, client):
     out = _find(client, "a")
     assert out["path"] == "refused" and "at least 2 characters" in out["refused"]
 
@@ -97,7 +87,7 @@ def _customers(out) -> list[str]:
     return [h["key"] for h in out["hits"] if h["type"] == "customer"]
 
 
-def test_a_row_policy_narrows_what_a_reader_finds_and_says_so(policed, client, on, monkeypatch, db):  # noqa: F811
+def test_a_row_policy_narrows_what_a_reader_finds_and_says_so(policed, client, monkeypatch, db):  # noqa: F811
     # The seeded shop: every customer in DE is a Young, and every Davis lives elsewhere.
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
     young = _find(client, "young")
@@ -112,7 +102,7 @@ def test_a_row_policy_narrows_what_a_reader_finds_and_says_so(policed, client, o
     assert _customers(_find(client, "davis"))
 
 
-def test_a_masked_name_is_not_searched_and_says_why(policed, client, on, monkeypatch):
+def test_a_masked_name_is_not_searched_and_says_why(policed, client, monkeypatch):
     policed.entities["Customer"].sensitive = {"full_name": Sensitivity(level="confidential", visible_to=["finance"])}
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
     out = _find(client, "alice")
@@ -124,7 +114,7 @@ def test_a_masked_name_is_not_searched_and_says_why(policed, client, on, monkeyp
     assert [h for h in _find(client, "alice")["hits"] if h["type"] == "customer"]
 
 
-def test_with_completeness_on_the_answer_says_withheld_as_the_object_doors_do(policed, client, on, monkeypatch):
+def test_with_completeness_on_the_answer_says_withheld_as_the_object_doors_do(policed, client, monkeypatch):
     monkeypatch.setenv("AUGHOR_OBJECTS_COMPLETENESS", "1")
     monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
     said = _find(client, "davis")["completeness"]

@@ -156,8 +156,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     return () => { live = false; };
   }, [objectType, connectionId, schema, version]);
 
-  // ROADMAP §6 item 53 — what else depends on the type, from its own door. Nothing while the setting is off, or when
-  // the door cannot be read: the Overview then shows exactly what it showed before the door existed.
+  // ROADMAP §6 item 53 — what else depends on the type, from its own door. Nothing when the door refuses or cannot be
+  // read: the Overview then shows what it shows without it.
   const [uses, setUses] = useState<ObjectTypeUses | null>(null);
   useEffect(() => {
     let live = true;
@@ -213,7 +213,7 @@ function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenP
   onDesignProcess?: (entity: string) => void;
   onDesignAction?: (entity: string) => void;
   sources?: Record<string, string>;
-  /** ROADMAP §6 item 53 — what else depends on the type; null while the setting is off or the door is unread. */
+  /** ROADMAP §6 item 53 — what else depends on the type; null while the door is unread. */
   uses?: ObjectTypeUses | null;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
@@ -2045,8 +2045,7 @@ function WithdrawnSection({ detail, connectionId, schema, onChanged }: {
 const VERSION_TAG: Record<string, string> = { declared: "aug-tag-blue", drafted: "aug-tag-violet", withdrawn: "aug-tag-gray" };
 
 /** Arc OC-1, Arc FA (FA-3) — one declaration, version by version, newest first: when each took effect, who made it,
- *  where it came from, its note and what it changed. While putting back is on, an earlier version goes back into the
- *  draft from its row — counted again and classed like any change, so readers get it only when a person publishes; why
+ *  where it came from, its note and what it changed. An earlier version goes back into the draft from its row — counted again and classed like any change, so readers get it only when a person publishes; why
  *  it cannot go back here is said instead of a button. */
 function VersionsSection({ kind, targetId, name, stamp, connectionId, schema, onChanged }: {
   kind: string;
@@ -2088,12 +2087,11 @@ function VersionsSection({ kind, targetId, name, stamp, connectionId, schema, on
       setBusy(null);
     }
   };
-  // Shown while putting back is on — the history door then says whether a version can go back here. Off, the tab is
-  // what it was: where the type comes from and what was withdrawn.
-  if (error || !history?.put_back) return null;
+  // The history door says whether a version can go back here.
+  if (error || !history) return null;
   const offer = history.put_back;
   return (
-    <Section title="Versions" aside={history.kept ? "every save and withdrawal, newest first" : "not kept on this install"}>
+    <Section title="Versions" aside="every save and withdrawal, newest first">
       {history.versions.length === 0 ? (
         <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
           Nobody has declared anything on {name} yet — what the builder read is all there is.
@@ -2153,8 +2151,8 @@ function VersionsSection({ kind, targetId, name, stamp, connectionId, schema, on
 
 /** Arc FA, FA-3 — an entity marked retiring: still served, and every reader is told what replaces it and when ("retiring
  *  on Tue 1 Dec 2026 — use Customer instead"; after the day, "past its retiring date"). While editing, the door to mark
- *  it — another entity, a day, a note — or to take the mark off; with releases on either waits in the draft as a change
- *  of meaning. Nothing renders while marking retiring is off: the detail then carries no `retiring` at all. */
+ *  it — another entity, a day, a note — or to take the mark off; either waits in the draft as a change of meaning. A
+ *  mark that could not be read says so (`retiring_said`) instead. */
 function RetiringLine({ detail, types, connectionId, schema, onOpen, onChanged, readOnly }: {
   detail: ObjectTypeDetail;
   types: TypeMapRow[];

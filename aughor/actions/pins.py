@@ -6,7 +6,7 @@ run. Each proposal now carries the pin of the action it proposes, and each execu
 proposal whose action changed since is refused on accept, with what changed, and is proposed again.
 
 A pin is the action's content hash — the one comparison that cannot drift — with the declaration's history version
-when its history is kept (`ontology.history`) and the release in force, for a reader.
+when its history holds one and the release in force, for a reader.
 """
 from __future__ import annotations
 
@@ -22,10 +22,9 @@ def action_pin(action: Any, connection_id: str, schema_name: str = "") -> dict:
     schema = schema_name or "default"
     try:
         from aughor.ontology import history
-        if history.enabled():
-            kept = history.versions(connection_id, schema, "action", action.id)
-            if kept and kept[0].get("version") is not None:
-                pin["version"] = kept[0]["version"]
+        kept = history.versions(connection_id, schema, "action", action.id)
+        if kept and kept[0].get("version") is not None:
+            pin["version"] = kept[0]["version"]
     except Exception as exc:  # noqa: BLE001 — the hash is the pin; the version is for a reader
         from aughor.kernel.errors import tolerate
         tolerate(exc, "an action's pin could not read its declaration's version", counter="pins.version")

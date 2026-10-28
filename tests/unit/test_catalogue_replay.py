@@ -87,7 +87,6 @@ def test_one_change_that_moved_a_definition_and_was_classed_safe_is_a_miss(monke
 def test_the_census_journals_the_replay_with_each_reading(monkeypatch):
     from aughor.ontology import census
     _keep("rule", "completed", ("published", RULE), ("published", {**RULE, "values": ["Complete", "Shipped"]}))
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.census")
     monkeypatch.setattr(census, "take_census", lambda: {"totals": {}, "scopes": [], "not_built": [], "leaned_on": {},
                                                         "keyed": {}, "replay": census._replay()})
     assert census.record_if_due() is not None

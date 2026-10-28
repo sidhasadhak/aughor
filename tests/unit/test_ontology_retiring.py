@@ -4,7 +4,7 @@ The user's word, 2026-10-26: "retiring on <date> — use <successor> instead". H
 MEANING change, classed before a kind's own rules; the successor must exist and be of the same kind, refused with a
 sentence otherwise; the agent's semantic block, the entity's detail and its objects' pages say it; after the date it
 still serves and says "past its retiring date"; a refused withdrawal suggests it; a built segment marked retiring is
-served exactly as it was built. Off, the door refuses, and the classifier, the block and every page are as before.
+served exactly as it was built. A mark is written like any change, so it waits in the draft until published.
 
 Hermetic: the overrides tree, its draft layer and the ledger are per test; the door flow reads the seeded samples
 warehouse's graph, as the release suite does.
@@ -21,7 +21,7 @@ from aughor.ontology import compatibility as COMPAT
 from aughor.ontology import overrides as OV
 from aughor.ontology import retiring as RT
 from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, apply_overrides, find_override, save_override, viewing
+from aughor.ontology.overrides import OntologyOverride, apply_overrides, find_override, viewing
 from aughor.ontology.semantic_block import render_semantic_layer
 from tests.unit.test_object_bindings import GRAPH
 from tests.unit.test_object_processes import FULFILMENT, PARAMS, door  # noqa: F401 — `door` is a fixture
@@ -39,11 +39,6 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
     monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
     monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
-
-
-def _flags(monkeypatch, *on: str) -> None:
-    names = set(on)
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in names)
 
 
 @pytest.fixture
@@ -96,13 +91,10 @@ def test_the_sentence_and_after_the_day_it_still_serves_and_says_so():
         "past its retiring date, 2999-12-01 — use Customer instead"
 
 
-def test_the_semantic_block_says_it_and_off_is_exactly_what_it_was(graph, monkeypatch):
-    _flags(monkeypatch)
+def test_the_semantic_block_says_it(graph, monkeypatch):
     before = render_semantic_layer(graph, ["orders"])
-    save_override("retiring-t", "ecommerce", OntologyOverride(target_kind="entity", target_id="Order",
-                                                              fields={"retiring": MARK}))
-    assert render_semantic_layer(graph, ["orders"]) == before                  # off: nothing reads the mark
-    _flags(monkeypatch, "ontology.retiring")
+    OV.publish_override("retiring-t", "ecommerce", OntologyOverride(target_kind="entity", target_id="Order",
+                                                                    fields={"retiring": MARK}))   # published
     block = render_semantic_layer(graph, ["orders"])
     assert block.startswith(before) and "RETIRING" in block
     assert '"Order" (entity) is retiring on 2999-12-01 — use "Customer" instead (merged into customers)' in block
@@ -110,9 +102,8 @@ def test_the_semantic_block_says_it_and_off_is_exactly_what_it_was(graph, monkey
 
 
 def test_a_built_segment_marked_retiring_is_served_exactly_as_built(graph, monkeypatch):
-    _flags(monkeypatch, "ontology.retiring")
     plain, _ = apply_overrides(copy.deepcopy(graph), "retiring-t", "ecommerce")
-    save_override("retiring-t", "ecommerce", OntologyOverride(
+    OV.publish_override("retiring-t", "ecommerce", OntologyOverride(
         target_kind="object_set", target_id="Order::active_orders",
         fields={"retiring": {**MARK, "successor": "Order::delivered_orders"}}))
     marked, report = apply_overrides(copy.deepcopy(graph), "retiring-t", "ecommerce")
@@ -123,12 +114,9 @@ def test_a_built_segment_marked_retiring_is_served_exactly_as_built(graph, monke
     assert f'"{old}" (segment) is retiring on 2999-12-01 — use "{new}" instead' in render_semantic_layer(marked, ["orders"])
 
 
-def test_a_refused_withdrawal_suggests_retiring_only_while_on(monkeypatch):
+def test_a_refused_withdrawal_suggests_retiring(monkeypatch):
     from aughor.ontology.dependents import refusal
     rows = [{"consumer": "automation", "id": "a", "name": "Watch", "how": "reads its promise"}]
-    _flags(monkeypatch)
-    assert "retiring" not in refusal("process", "order_fulfilment", rows)
-    _flags(monkeypatch, "ontology.retiring")
     said = refusal("process", "order_fulfilment", rows)
     assert said.startswith("process 'order_fulfilment' is not withdrawn — 1 thing depends on it")
     assert "Or mark the process retiring — name its successor and a day" in said
@@ -151,7 +139,6 @@ def test_the_successor_must_exist_and_be_of_the_same_kind(graph):
 # ── through the doors ──────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_through_the_door_a_mark_waits_in_the_draft_as_a_meaning_change_and_pages_say_it(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release", "ontology.retiring")
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     body = {"kind": "entity", "target_id": "Review", **MARK}
     put = client.put("/ontology/retiring", params=PARAMS, json=body)
@@ -180,7 +167,7 @@ def test_through_the_door_a_mark_waits_in_the_draft_as_a_meaning_change_and_page
 
 
 def test_a_mark_merges_into_a_declaration_and_keeps_its_counts(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.retiring")                                  # releases off: served when saved
+    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
     other = {**copy.deepcopy(FULFILMENT), "id": "order_fulfilment_v2"}
     for stage in other["stages"]:
@@ -188,24 +175,16 @@ def test_a_mark_merges_into_a_declaration_and_keeps_its_counts(door, client, mon
             stage["promise"]["name"] += "_v2"                                  # its derived names are its own
     second = client.post("/ontology/processes", params=PARAMS, json=other)
     assert second.status_code == 200, second.text
+    assert client.post("/ontology/release/publish", params=PARAMS).status_code == 200
     with viewing("published"):
         before = find_override(PARAMS["connection_id"], "ecommerce", "process", "order_fulfilment")
     put = client.put("/ontology/retiring", params=PARAMS, json={"kind": "process", "target_id": "order_fulfilment",
                                                                "successor": "order_fulfilment_v2", "on": "2999-01-01"})
     assert put.status_code == 200, put.text
-    assert put.json()["landed"] == "published"
-    after = find_override(PARAMS["connection_id"], "ecommerce", "process", "order_fulfilment")
+    assert put.json()["landed"] == "draft"
+    with viewing("draft"):
+        after = find_override(PARAMS["connection_id"], "ecommerce", "process", "order_fulfilment")
     assert after.binding == before.binding and after.fields["stages"] == before.fields["stages"]
     assert after.fields["retiring"] == {"successor": "order_fulfilment_v2", "on": "2999-01-01"}
     processes = client.get("/ontology/processes", params=PARAMS).json()["processes"]
     assert {p["id"] for p in processes} >= {"order_fulfilment", "order_fulfilment_v2"}   # it still serves
-
-
-def test_off_the_door_refuses_and_pages_are_as_before(door, client, monkeypatch):  # noqa: F811
-    _flags(monkeypatch, "ontology.release")
-    put = client.put("/ontology/retiring", params=PARAMS, json={"kind": "entity", "target_id": "Review", **MARK})
-    assert put.status_code == 409 and "off on this install" in put.json()["detail"]
-    save_override(PARAMS["connection_id"], "ecommerce", OntologyOverride(target_kind="entity", target_id="Review",
-                                                                        fields={"retiring": MARK}))
-    detail = client.get("/object-types/review", params={**PARAMS, "ontology_view": "draft"}).json()
-    assert "retiring" not in detail and "retiring_said" not in detail

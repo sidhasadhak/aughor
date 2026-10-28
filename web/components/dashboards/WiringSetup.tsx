@@ -25,7 +25,6 @@ import { dropWire, freshWireName, putSet, putValue, renameValue, type DashboardS
 import { lineOf, setTitles, wireWords } from "@/lib/dashboards/names";
 import { choicesOf, doorConditions, isRefused, readSet, readersOf, segmentId, segmentRule } from "@/lib/dashboards/sets";
 import { typedValue, valueFits, valueWords } from "@/lib/dashboards/values";
-import { useFlagOn } from "@/lib/flagOn";
 import { formatCount, formatSeconds } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
@@ -463,13 +462,8 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema }:
   );
 }
 
-export const SEGMENTS_FLAG = "ontology.set_segments";
-
-/** Arc FA-4 — while `ontology.set_segments` is on: the set as its chain, a count at each step, and the door that keeps
- *  it as a segment of the ontology. Off, nothing — the setup is as it was. */
+/** Arc FA-4 — the set as its chain, a count at each step, and the door that keeps it as a segment of the ontology. */
 function SetSegments({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
-  const on = useFlagOn(SEGMENTS_FLAG);
-  if (!on) return null;
   return (
     <>
       <SetChain spec={spec} name={name} connectionId={connectionId} schema={schema} />
@@ -532,7 +526,6 @@ const conditionKey = (c: Record<string, unknown>) => JSON.stringify(Object.keys(
  *  says why, in a sentence; one already kept says under which name. The set itself stays as it is. */
 function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSpec; name: string; connectionId: string; schema?: string }) {
   const rule = segmentRule(spec, name);
-  const releaseOn = useFlagOn("ontology.release");
   const [declared, setDeclared] = useState<{ id: string; admitted: number | null } | null>(null);
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
@@ -568,7 +561,7 @@ function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSp
         </span>
         {declared && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            {releaseOn ? "In the draft: readers get it when the ontology is published." : "Served now, to every reader of this connection."}
+            In the draft: readers get it when the ontology is published.
           </span>
         )}
       </Row>
@@ -585,7 +578,7 @@ function KeepAsSegment({ spec, name, connectionId, schema }: { spec: DashboardSp
   };
   return (
     <Row label="Keep as a segment" testid="set-segment"
-      hint={`Declares ${id} in the ontology as yours, counted first${releaseOn ? "; readers get it when the ontology is published" : ""}. The set stays as it is.`}>
+      hint={`Declares ${id} in the ontology as yours, counted first; readers get it when the ontology is published. The set stays as it is.`}>
       <span>
         <Button size="xs" variant="secondary" data-testid="set-segment-keep" disabled={busy} onClick={keep}>
           {busy ? "Keeping…" : "Keep as a segment"}

@@ -4,8 +4,6 @@
 entity's objects and each declared action's parameters, and the same as TypeScript declarations, stamped with the
 release they came from. `/objects/v1` lists objects and proposes declared actions. A proposal is staged in the Actions
 inbox for a person and never runs from here — the doors read and propose; approving stays a person's (decision (d)).
-Behind `ontology.builder_doors`, on by default since its graduation on 2026-10-10 (§3.56); with it off every door says
-so (404), and nothing else changes.
 
 The shapes here are the version: a field is added, never renamed or removed, while the prefix is `v1`.
 """
@@ -29,17 +27,6 @@ router = APIRouter(tags=["builders"], dependencies=[Depends(connection_owner_gua
                                                     Depends(acting_agent_from_request),     # Arc OC-7
                                                     Depends(object_door_from_request)])     # Arc ED, ED-1
 
-FLAG = "ontology.builder_doors"
-
-
-def _on() -> None:
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled(FLAG):
-        raise HTTPException(status_code=404, detail=(
-            "The doors for builders are off — an administrator turns them on in Settings → System → Feature flags "
-            f"({FLAG})."))
-
-
 def _scope(connection_id: str, schema_name: Optional[str]):
     """The published graph a scope serves and the release it is — the contract is always the published one."""
     from aughor.ontology.release import current_id
@@ -55,7 +42,6 @@ def get_ontology_contract(request: Request, connection_id: str = BUILTIN_ID,
                           schema_name: Optional[str] = Query(default=None)):
     """The published ontology as a contract: a JSON Schema per entity (its properties, key and the segments a listing
     may name) and per declared action (what a proposal carries), stamped with the release they came from."""
-    _on()
     from aughor.ontology.builder_doors import ontology_contract
     from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
@@ -68,7 +54,6 @@ def get_ontology_typescript(request: Request, connection_id: str = BUILTIN_ID,
                             schema_name: Optional[str] = Query(default=None)):
     """The same contract as TypeScript declarations — an interface per entity, a union of its segments, a params
     interface per declared action and the release. Declarations only: nothing in them runs."""
-    _on()
     from aughor.ontology.builder_doors import ontology_contract, typescript
     from aughor.rbac.principal_grant import grant_for, narrow_contract
     graph, release = _scope(connection_id, schema_name)
@@ -79,7 +64,6 @@ def get_ontology_typescript(request: Request, connection_id: str = BUILTIN_ID,
 @router.get("/ontology/v1/actions/{action_id}/schema")
 def get_action_schema(action_id: str, connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
     """One declared action's proposal schema."""
-    _on()
     from aughor.ontology.builder_doors import action_schema
     graph, release = _scope(connection_id, schema_name)
     action = next((a for a in graph.declared_actions() if a.id == action_id), None)
@@ -93,7 +77,6 @@ def post_objects_v1_list(listing: ObjectListing, connection_id: str = BUILTIN_ID
                          schema_name: Optional[str] = Query(default=None)):
     """One page of objects — the dashboard's listing door, with the release it was read under. An entity, or a segment
     of it (late, overdue, a rule's objects), the columns asked for, at most 200 a page."""
-    _on()
     from aughor.routers.objects import post_object_listing
     _graph, release = _scope(connection_id, schema_name)
     page = post_object_listing(listing, connection_id=connection_id, schema_name=schema_name, execute=True)
@@ -118,7 +101,6 @@ def propose_declared_action(action_id: str, body: ProposalBody, request: Request
                             schema_name: Optional[str] = Query(default=None)):
     """Propose a declared action: checked against its schema and its own criteria, then staged in the Actions inbox
     for a person, with the action's version pinned (Arc OC-6). Never runs here — `status` is `awaiting_approval`."""
-    _on()
     from aughor.ontology.builder_doors import action_schema, validate_params
     graph, release = _scope(connection_id, schema_name)
     if body.release and release and body.release != release:

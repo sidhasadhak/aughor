@@ -32,7 +32,9 @@ from aughor.ontology.models import OntologyGraph
 from tests.unit.test_object_bindings import GRAPH, ints, seed
 
 CONN = "explorer-door-t"
-PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
+#: Every read here is the ontology's editing screens': an explorer's proposals — and a person's confirmations of them — wait
+#: in the draft until a person publishes (Arc OC-2, §6 item 50(f)), so they are read in the draft view.
+PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "draft"}
 PROVENANCE = "model:faux-coder@2"
 
 CATEGORY_SQL = "SELECT DISTINCT category FROM products"
@@ -101,6 +103,7 @@ CATEGORY, BUYER = entity_key(sql=CATEGORY_SQL, primary_key="category"), entity_k
 @pytest.fixture(autouse=True)
 def _isolated_trees(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(DR, "_ROOT", tmp_path / "ontology_drafts")
 
 
@@ -129,7 +132,7 @@ def explore(client) -> dict:
 
 
 def tree() -> dict[str, str]:
-    root = OV._ROOT
+    root = OV._DRAFT_ROOT                                              # where the explorer's proposals wait
     return {str(p.relative_to(root)): p.read_text() for p in sorted(root.rglob("*.yaml"))} if root.exists() else {}
 
 
@@ -170,7 +173,7 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
     assert "OrderItem stays a type of its own until a person confirms this part" in outcome[LINES]["note"]
 
     # the declarations carry who said them, on the overrides tree the platform reads
-    saved = yaml.safe_load((OV._ROOT / CONN / "ecommerce" / "entity" / "Order.yaml").read_text())
+    saved = yaml.safe_load((OV._DRAFT_ROOT / CONN / "ecommerce" / "entity" / "Order.yaml").read_text())
     assert {n: (e["origin"], e["provenance"]) for n, e in saved["binding"]["bindings"]["entries"].items()} == {
         n: ("model", PROVENANCE) for n in ("lines", "payment", "refunds", "events")}
     category = client.get("/object-types/category", params=PARAMS).json()
@@ -222,7 +225,8 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
         conn.close()
     assert (fulfilled["path"], int(fulfilled["rows"][0][0])) == ("compiled", kept)
     from aughor.routers.ontology import served_ontology_graph
-    catalogue = source_catalogue(served_ontology_graph(CONN, "ecommerce"))   # the next run reads what this one declared
+    with OV.viewing("draft"):                                          # the next run reads what this one declared
+        catalogue = source_catalogue(served_ontology_graph(CONN, "ecommerce"))
     assert "process order_fulfilment on Order: placed → shipped → delivered (proposed by a model" in catalogue
     assert "rule fulfilled_orders on Order (condition, proposed by a model" in catalogue
 

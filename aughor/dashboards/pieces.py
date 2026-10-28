@@ -403,8 +403,6 @@ def pin_for(connection_id: str, before: dict, spec: Any, *, repin: bool = False)
     if not pieces_of(spec):
         return ""
     from aughor.ontology import release
-    if not release.enabled():
-        return ""
     prior = str((before or {}).get("ontology_release") or "")
     if repin or not prior or _named_set((before or {}).get("spec")) != _named_set(spec):
         return release.current_id_for_connection(connection_id)
@@ -419,9 +417,9 @@ def _number(release_id: str) -> Optional[int]:
 def since(connection_id: str, spec: Any, pinned: str, *, graph: Optional[Any] = None) -> Optional[dict]:
     """What a reader is owed before a dashboard's pieces are read: the release it was composed against, the one in force,
     and every change published between them that touches an element its pieces read — with the class it was published
-    as. None when the spec holds no piece, or releases are off (the read says nothing new)."""
+    as. None when the spec holds no piece (the read says nothing new)."""
     from aughor.ontology import release
-    if not pieces_of(spec) or not release.enabled():
+    if not pieces_of(spec):
         return None
     schema = release.connection_scope(connection_id)
     rows = release.releases(connection_id, schema)

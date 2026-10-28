@@ -160,6 +160,7 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "pack": "core-ecomm
 @pytest.fixture(autouse=True)
 def _isolated_trees(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(DR, "_ROOT", tmp_path / "ontology_drafts")
 
 
@@ -224,7 +225,6 @@ def test_a_pack_run_on_the_scope_does_not_stop_the_business_explorer(monkeypatch
     import aughor.ontology.store as ontology_store
     import aughor.routers.ontology as ontology
     from aughor.routers import _shared
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT", "1")
     calls = []
     monkeypatch.setattr(ontology, "explore_ontology",
                         lambda connection_id, schema_name=None: calls.append(connection_id) or {"run": {"id": "r"}})

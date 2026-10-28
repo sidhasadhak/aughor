@@ -44,9 +44,9 @@ def _always_on_vars() -> list[str]:
     return [found["FLAG_ENV"][n] for n in found["ALWAYS_ON"]]
 
 
-#: These six were already default-on (FLAG_DEFAULT) and the suite ran them on; they stay on here.
+#: These were already default-on (FLAG_DEFAULT) and the suite ran them on; they stay on here.
 _RAN_ON = {"AUGHOR_ASK_CONVERSE", "AUGHOR_SEMOPS_BANDED_CASCADE", "AUGHOR_BRIEFING_BY_PERIOD", "AUGHOR_ANSWERS_RECHECK",
-           "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT", "AUGHOR_CHAT_BUTTONS_REACH_AGENT"}
+           "AUGHOR_CHAT_BUTTONS_REACH_AGENT"}
 for _always_var in _always_on_vars():
     if _always_var not in _RAN_ON:
         os.environ.setdefault(_always_var, "0")
@@ -270,7 +270,7 @@ os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "on
 # …and its shipped seed layer (data/shipped/ontology_overrides), left ABSENT: no test reads a shipped override either,
 # and one that tests the layering names its own.
 os.environ["AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_seed")
-# Arc OC-2 — the draft layer above the instance tree (data/ontology_overrides_draft), written while `ontology.release` is on.
+# Arc OC-2 — the draft layer above the instance tree (data/ontology_overrides_draft), where every ontology change waits.
 os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DRAFT_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_draft")
 os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
 # …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).

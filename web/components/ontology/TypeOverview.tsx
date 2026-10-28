@@ -286,7 +286,7 @@ function UsesRow({ word, children }: { word: string; children: React.ReactNode }
   );
 }
 
-/** ROADMAP §6 item 53 — what else depends on an entity, from one door behind `ontology.entity_usage`: the dashboards
+/** ROADMAP §6 item 53 — what else depends on an entity, from one door: the dashboards
  *  whose pieces read it, its dependents by kind, each saying how on hover, and how many audited statements named its
  *  tables in each of the last twelve months — a row per month, the count beside its bar. What could not be read says
  *  so in the same place. */

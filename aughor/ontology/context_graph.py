@@ -23,7 +23,7 @@ Wave-C node/edge type system (T3.1):
   nodes: table · metric · glossary_term · domain · finding · brief · declaration
   edges: joins_on · defines · derived_from · grounded_in · resolves
 
-``declaration`` (Arc FA, FA-1, behind ``graph.declarations``) is a published segment, computed property, process, rule,
+``declaration`` (Arc FA, FA-1) is a published segment, computed property, process, rule,
 impact, action or link — a person's or a pack's statement, read from the release consumers read, never a draft — with
 a ``defines`` edge to the table node of each entity it is about.
 """
@@ -375,8 +375,7 @@ def project_graph(
     source (each source is folded in best-effort so one empty store can't block the
     build). ``findings`` is a list of normalized finding dicts (see
     :func:`aughor.ontology.context_graph_findings.load_findings`); ``declarations`` the
-    published declarations (`context_graph_build.declaration_rows`), None while
-    ``graph.declarations`` is off.
+    published declarations (`context_graph_build.declaration_rows`), None for none.
     """
     cg = ContextGraph(
         org_id=org_id,

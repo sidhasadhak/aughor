@@ -128,12 +128,13 @@ FLAG_ENV = {
     "analyst.conclude": "AUGHOR_ANALYST_CONCLUDE",
     # "dashboard.composed" (AUGHOR_DASHBOARD_COMPOSED) — Arc CT-4's dashboards — was made unconditional 2026-10-28:
     # part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
-    # Arc OC-0 (ROADMAP §3.56). ON: once a day the ontology census — what every built scope declares, what the
-    # data verified of it, and what leans on it — is journaled as `ontology.census`, so a later wave reads its
-    # before and after from the journal. OFF: nothing is read or written; GET /ontology/census still reads live.
-    "ontology.census": "AUGHOR_ONTOLOGY_CENSUS",
+    # "ontology.census" (AUGHOR_ONTOLOGY_CENSUS) — Arc OC-0, the daily ontology census journaled — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
     "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
-    "ontology.builder_doors": "AUGHOR_ONTOLOGY_BUILDER_DOORS",
+    # "ontology.builder_doors" (AUGHOR_ONTOLOGY_BUILDER_DOORS) — Arc OC-8, the contract and doors for outside programs —
+    # was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
+    # env var is ignored.
     "ontology.security": "AUGHOR_ONTOLOGY_SECURITY",
     # Arc ED, ED-1 (ROADMAP §3.58). ON (with ontology.security): a connection's door applies the released ontology's row
     # policies and sensitive properties to every statement a request runs — narrowed to the reader's objects, a masked
@@ -180,15 +181,12 @@ FLAG_ENV = {
     # and never calling a chat model; each read is journaled as `agent.grounding_read` without the content. OFF: both
     # doors answer 404, the tool is not listed, and the Doors tab and every other door read as before.
     "agents.grounding_read": "AUGHOR_AGENTS_GROUNDING_READ",
-    # Arc FA, FA-1 (ROADMAP §3.60). ON: the published declarations — segments, computed properties, processes, rules,
-    # impacts, actions and links — become `declaration` nodes of the connection graph, so the graph search, the read-back
-    # and the knowledge door find them, withheld wherever their entity's tables are; publishing a release rebuilds the
-    # graph. OFF: the graph is projected without them, byte-identical, and a publish leaves it as it was.
-    "graph.declarations": "AUGHOR_GRAPH_DECLARATIONS",
-    # Arc FA, FA-1. ON: POST /objects/find looks for an object by its title across the served entities, capped and
-    # saying how many entities it searched and why it skipped each other one; ⌘K shows what it found. OFF: the door
-    # answers 404 and ⌘K searches exactly what it did.
-    "objects.find": "AUGHOR_OBJECTS_FIND",
+    # "graph.declarations" (AUGHOR_GRAPH_DECLARATIONS) — Arc FA-1, the published declarations as nodes of the
+    # connection graph — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is
+    # deleted. An operator's env var is ignored.
+    # "objects.find" (AUGHOR_OBJECTS_FIND) — Arc FA-1, an object found by its name across entities — was made
+    # unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var
+    # is ignored.
     # Arc FA, FA-1. ON: when the embedder cannot embed a question and the vector store is up, the documents are ranked
     # by their words (BM25) instead, each hit marked matched by words, and every caller says so. OFF: a failed embed
     # makes the document search unavailable, as before.
@@ -196,45 +194,33 @@ FLAG_ENV = {
     # "canvas.ask_about_chosen" (AUGHOR_CANVAS_ASK_ABOUT_CHOSEN) — Arc FA-2, asking the Data Canvas about what a
     # dashboard's reader chose — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
     # path is deleted. An operator's env var is ignored.
-    # Arc FA, FA-4 (ROADMAP §3.60). ON: the builder shows each set as its chain with a count at each step, and a set of
-    # fixed conditions can be kept as a segment — declared by the person as a condition rule, in the draft; a rule's
-    # condition may count the last days. OFF: the builder shows each set's one count, and a rule refuses `in_last`.
-    "ontology.set_segments": "AUGHOR_ONTOLOGY_SET_SEGMENTS",
-    # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
-    # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
-    # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
-    "ontology.history": "AUGHOR_ONTOLOGY_HISTORY",
-    # Arc OC-2 (ROADMAP §3.56). ON: a change to the ontology waits in a draft and reaches the agent, the Briefing,
-    # metrics and automations only when a person publishes it as a release; claims pin the release they were computed
-    # under, and a release that changes a definition's meaning restates them. OFF: a declaration is served the
-    # moment it is saved, exactly as before.
-    "ontology.release": "AUGHOR_ONTOLOGY_RELEASE",
-    # Arc OC-3 (ROADMAP §3.56). ON: an approved metric a person keyed to an entity is read by the object door as its
-    # whole statement over any set of that entity's objects, and the question frame may resolve to it. OFF: the
-    # object door and the frame read exactly as before; the key is still kept and counted.
-    "ontology.keyed_metrics": "AUGHOR_ONTOLOGY_KEYED_METRICS",
+    # "ontology.set_segments" (AUGHOR_ONTOLOGY_SET_SEGMENTS) — Arc FA-4, a dashboard set kept as a segment and a rule
+    # that counts the last days — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
+    # path is deleted. An operator's env var is ignored.
+    # "ontology.history" (AUGHOR_ONTOLOGY_HISTORY) — Arc OC-1, every declaration's versions and a withdrawal refused
+    # where something depends on it — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off
+    # path is deleted. An operator's env var is ignored.
+    # "ontology.release" (AUGHOR_ONTOLOGY_RELEASE) — Arc OC-2, a change waiting in a draft until a person publishes
+    # it — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "ontology.keyed_metrics" (AUGHOR_ONTOLOGY_KEYED_METRICS) — Arc OC-3, an approved metric keyed to its entity read
+    # as its whole statement — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is
+    # deleted. An operator's env var is ignored.
     # "ontology.dashboard_pieces" (AUGHOR_ONTOLOGY_DASHBOARD_PIECES) — Arc OC-4, dashboard pieces bound to the
     # ontology — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted.
     # An operator's env var is ignored.
     # "ontology.object_dashboards" (AUGHOR_ONTOLOGY_OBJECT_DASHBOARDS) — a dashboard started from an object — was
     # made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
     # env var is ignored.
-    # ROADMAP §6 item 53 (2026-10-25, the look study): what an entity is used by, on its own page. ON: the entity
-    # panel's Overview reads one door that composes the dependents index (Arc OC-1), every dashboard whose pieces read
-    # the entity, and how many audited statements named its tables in each of the last twelve months. OFF: the door
-    # says it is off and the panel shows what it showed — metrics and actions.
-    "ontology.entity_usage": "AUGHOR_ONTOLOGY_ENTITY_USAGE",
-    # Arc FA, FA-3 (ROADMAP §3.60). ON: a person may put an earlier version of a declaration back — its fields go
-    # through the normal save path into the DRAFT, measured again by the kind's own counts and classed like any change,
-    # so it reaches readers only when published; refused while releases are off and for an organisation's ontology.
-    # OFF: the put-back door refuses, and the history door answers exactly as before.
-    "ontology.put_back": "AUGHOR_ONTOLOGY_PUT_BACK",
-    # Arc FA, FA-3 (ROADMAP §3.60; the user, 2026-10-26: the status word is *retiring*). ON: any declaration may be
-    # marked retiring — a successor of its own kind, a date and a note — released as a MEANING change; the semantic
-    # block, the entity panel and the object page say "retiring on <date> — use <successor> instead" (after the date,
-    # "past its retiring date"; it still serves), and a withdrawal refused for what depends on it suggests retiring.
-    # OFF: the door refuses, and nothing reads or says the mark.
-    "ontology.retiring": "AUGHOR_ONTOLOGY_RETIRING",
+    # "ontology.entity_usage" (AUGHOR_ONTOLOGY_ENTITY_USAGE) — ROADMAP §6 item 53, what an entity is used by, on its
+    # own page — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "ontology.put_back" (AUGHOR_ONTOLOGY_PUT_BACK) — Arc FA-3, an earlier version of a declaration put back into the
+    # draft — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
+    # "ontology.retiring" (AUGHOR_ONTOLOGY_RETIRING) — Arc FA-3, a declaration marked retiring with a successor and a
+    # day — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
     # "dashboard.builder" (AUGHOR_DASHBOARD_BUILDER) — Arc AP-1, a dashboard built in place — was made unconditional
     # 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's env var is ignored.
     # "dashboard.wiring" (AUGHOR_DASHBOARD_WIRING) — Arc AP-2 and AP-3, a dashboard's sets, choices and action
@@ -330,7 +316,9 @@ FLAG_ENV = {
     # call): the export door refuses and says so; GET /ledger/v1/aggregates still reads it locally.
     # "aggregates.share" (AUGHOR_AGGREGATES_SHARE) left 2026-10-28 for the organisation setting `share_aggregates` (ROADMAP §3.65,
     # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_AGGREGATES_SHARE only while the setting is unset.
-    "ontology.explore_on_connect": "AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT",
+    # "ontology.explore_on_connect" (AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT) — business terms proposed for a new
+    # connection — was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An
+    # operator's env var is ignored.
     "chat.buttons_reach_agent": "AUGHOR_CHAT_BUTTONS_REACH_AGENT",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
     # strategy §4G): the always-challenge tier was superseded by the materiality-gated
@@ -570,16 +558,6 @@ FLAG_META = {
         "description": "Quick runs the agent at quick depth and Agent runs it at deep depth. Off: the "
                        "two buttons use the older direct paths.",
     },
-    "ontology.explore_on_connect": {
-        "label": "Propose business terms for a new connection",
-        "summary": "When you add a connection, Aughor proposes its entities, links, processes "
-                   "and rules. Nothing is used until a person confirms it.",
-        "facts": [{"kind": "model", "text": "1 model call per connection"}],
-        "description": "This is the same as Explore on the Ontology tab. Each proposal is checked "
-                       "against the data first. A connection already explored is skipped, so a restart "
-                       "costs nothing. Off: a new connection gets no business terms until someone "
-                       "presses Explore.",
-    },
     "answers.recheck": {
         "label": "Tell people when their answer changes",
         "summary": "Aughor re-runs the answers from the last 14 days. If a number changes "
@@ -590,16 +568,6 @@ FLAG_META = {
         "description": "The notice gives the old number, the new one, and the reason: rows that "
                        "arrived late, or a restatement. A Slack reply passes the same checks as any "
                        "other message. Off: nothing is run again or sent.",
-    },
-    "ontology.entity_usage": {
-        "label": "What uses an entity",
-        "summary": "An entity's page lists the dashboards, automations, processes and rules that use it. "
-                   "It also counts the queries that read its tables, by month.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Reads the query log only"}],
-        "description": "Each use says how it depends, so you know what a change would touch. The monthly count "
-                       "comes from the platform's own log of statements run, never from your warehouse. "
-                       "Off: the page lists its metrics and actions, as before.",
     },
     "arrivals.google_comments": {
         "label": "Comments on a Google file, read onto a decision",
@@ -711,45 +679,6 @@ FLAG_META = {
                        "kind of run. The newest lines come first, a page at a time. It says how old the oldest line "
                        "searched is, since the log may keep fewer days. Off: a run's lines are read one run at a time.",
     },
-    "ontology.keyed_metrics": {
-        "label": "Compute approved metrics for any segment",
-        "summary": "Link a metric to the entity it measures. Then its approved definition is used "
-                   "for any segment of that entity.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "route", "text": "Changes what answers compute"}],
-        "description": "Link a metric in the Semantic Layer. A segment, a rule, or a filter through a "
-                       "link then reads the approved definition. Off: a metric is computed only as "
-                       "written.",
-    },
-    "ontology.release": {
-        "label": "Publish ontology changes as releases",
-        "summary": "Ontology changes wait in a draft until a person publishes them. Until then, "
-                   "everything keeps reading the last release.",
-        "facts": [{"kind": "free", "text": "No model calls"}],
-        "description": "Each change is rated: breaks something, changes a meaning, worth a look, or safe. "
-                       "It lists the automations, claims and cards it touches. A change that would "
-                       "break something is refused. When a meaning changes, claims made under the old "
-                       "one say so. Off: a change applies as soon as it is saved.",
-    },
-    "ontology.history": {
-        "label": "Keep ontology history",
-        "summary": "Keeps every version of each entity, link, process, rule and action, with who "
-                   "changed it and when. Blocks a removal that something depends on.",
-        "facts": [{"kind": "free", "text": "No model calls"}],
-        "description": "You can read what a promise said on any past day. A refused removal names each "
-                       "automation, process, rule or action that depends on it. Off: a change replaces "
-                       "the old version, and nothing is refused.",
-    },
-    "ontology.census": {
-        "label": "Count the ontology once a day",
-        "summary": "Records what every ontology declares, what the data confirmed, and what "
-                   "depends on it.",
-        "facts": [{"kind": "schedule", "text": "Daily"},
-                  {"kind": "free", "text": "No model calls or queries"}],
-        "description": "It counts entities, links, processes, promises, rules, segments and actions, and "
-                       "the automations and claims that use them. It reads saved ontologies only. Off: "
-                       "nothing is recorded, and a count is still available on request.",
-    },
     "actions.outbox": {
         "label": "Send action calls through an outbox",
         "summary": "Calls a declared action makes to other systems are queued and retried by a worker. "
@@ -761,17 +690,6 @@ FLAG_META = {
                        "undeliverable call waits under Actions → Sends for a person. An action may also "
                        "require one call to succeed before its edits are written. Off: calls go out once, "
                        "inline, as before.",
-    },
-    "ontology.builder_doors": {
-        "label": "Let outside programs read the ontology",
-        "summary": "Outside programs can read your objects and their types, and propose an action for "
-                   "a person to approve. Nothing runs from outside.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "route", "text": "Also offered over MCP"}],
-        "description": "Programs read a versioned contract: a schema per object and per declared action, "
-                       "also as TypeScript types. They can list objects or a segment. A proposed action "
-                       "waits for a person and never runs from there. Off: an outside program is told "
-                       "these doors are off.",
     },
     "ontology.security": {
         "label": "Limit who sees which objects and properties",
@@ -829,29 +747,6 @@ FLAG_META = {
                        "A piece that is missing says why. It says whether the embedding model was called, which can "
                        "cost at a hosted provider. Off: the read is closed and the agent's other doors are unchanged.",
     },
-    "graph.declarations": {
-        "label": "Search what the ontology declares",
-        "summary": "Published segments, processes, rules, impacts, actions and links can be found by search. "
-                   "Answers see them beside the tables they are about.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Withheld with their tables"}],
-        "description": "Each published declaration is added to the connection's graph with its name, its "
-                       "description and its entity. Only what a release published is read, never a draft. A "
-                       "declaration over a table you may not see is withheld with it, and counted. Publishing "
-                       "rebuilds the graph. Off: search finds tables, metrics, terms and findings only.",
-    },
-    "objects.find": {
-        "label": "Find an object by its name",
-        "summary": "The command bar finds an object by the name it goes by, whatever its entity. It says how many "
-                   "entities it searched.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Queries the warehouse as you type"},
-                  {"kind": "private", "text": "Reads only what you may see"}],
-        "description": "Each entity whose objects are named by a text property is searched for the words typed, a "
-                       "few objects each and up to twelve entities. An entity it did not search is listed with why: "
-                       "no name to match, a masked name, or the cap. Row policies apply. Off: the command bar finds "
-                       "pages, runs and tables only.",
-    },
     "knowledge.hybrid_documents": {
         "label": "Search documents by words when meaning is down",
         "summary": "When the embedding model is unavailable, the documents are still searched by their words. "
@@ -862,35 +757,6 @@ FLAG_META = {
                        "holding the documents answers, each passage you may read is ranked by the words it shares "
                        "with the question. Answers and the chat say the match was by words. Off: the search says "
                        "it could not run.",
-    },
-    "ontology.set_segments": {
-        "label": "Keep a dashboard set as a segment",
-        "summary": "A set of fixed conditions can be declared as a segment of the ontology, in the draft. The builder "
-                   "counts each step of a set.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Counts each step shown"}],
-        "description": "Keeping it declares a condition rule in your name, counted before it is written. Readers get "
-                       "it when the ontology is published. A set that reads a reader's value, a chosen object or a "
-                       "count cannot be kept, and says why. Off: the builder shows each set's one count.",
-    },
-    "ontology.put_back": {
-        "label": "Put an earlier ontology version back",
-        "summary": "Any earlier version of an entity, link, process, rule or action can go back into the draft. "
-                   "Readers get it only once it is published.",
-        "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "warehouse", "text": "Counts it again on your warehouse"}],
-        "description": "The version is counted again before it lands, and the draft rates the change like any other. "
-                       "It needs releases on, so nothing is served before a person publishes. Off: earlier "
-                       "versions can be read but not put back.",
-    },
-    "ontology.retiring": {
-        "label": "Mark an ontology element as retiring",
-        "summary": "Mark an entity, segment, process or rule as retiring on a date, with what to use instead. "
-                   "It keeps working meanwhile.",
-        "facts": [{"kind": "free", "text": "No model calls"}],
-        "description": "The agent and the entity's page say what replaces it and when. It is published as a change of "
-                       "meaning, so claims made under it say so. After the date it still works, and says it is past "
-                       "its retiring date. Off: nothing is marked retiring.",
     },
     "ontology.impacts_only": {
         "label": "Read what bears on what from impacts only",
@@ -1119,7 +985,7 @@ CAPABILITY_TRIGGER: dict = {
 #: default feature like always on and cannot be turned off" — ROADMAP §3.65). On whatever a saved override says,
 #: and not offered as a switch: Settings does not list them and the flags door refuses a change. Until its off
 #: path is deleted (stage 2, area by area), an operator's env var set to an explicit falsy value still turns one
-#: off — the suite runs Arc OC's five that way — and a run-scoped override (tests, eval grids) still wins.
+#: off — the suite runs them that way — and a run-scoped override (tests, eval grids) still wins.
 ALWAYS_ON: dict[str, str] = {
     "actions.outbox": "Off sends once with no retry — less safe.",
     "actions.run_attribution": "Free, and it is the audit trail.",
@@ -1136,7 +1002,6 @@ ALWAYS_ON: dict[str, str] = {
     "briefing.ranges": "How the Briefing reads today.",
     "chat.buttons_reach_agent": "The same path as above.",
     "federation.planner": "Kept for questions across connections: the planner is reached through its own door; it no longer takes fresh chat questions on its own.",
-    "graph.declarations": "Free, and it withholds what you may not see.",
     "grounding.full_schema_first": "Kept on its record: in two test runs the SQL writer seeing every table of a small schema never wrote a worse query, and twice answered where the shorter schema could not.",
     "hub.failure_rate": "Free; it says 'no runs', never 0%.",
     "knowledge.hybrid_documents": "Works once its setup exists (the vector store running); setting it up is the choice.",
@@ -1145,18 +1010,7 @@ ALWAYS_ON: dict[str, str] = {
     "metrics.coverage_proposals": "Proposals only; nothing is approved without a person.",
     "metrics.coverage_writer": "It runs once per profiling — 11 calls on LuxExperience — says how many on the Metrics tab, and only proposes.",
     "metrics.figure_gates": "It stops a wrong metric reaching the Briefing — the 10-26 'never happens again'.",
-    "objects.find": "Row policies apply; it reads only what you may see.",
     "obs.log_search": "Free; who may use it is a permission, not a switch.",
-    "ontology.builder_doors": "Nothing runs from outside, and a program needs its own key.",
-    "ontology.census": "Free — no model calls, no warehouse queries.",
-    "ontology.entity_usage": "Free and read-only.",
-    "ontology.explore_on_connect": "One model call per new connection, skipped if already explored — part of what connecting means.",
-    "ontology.history": "Off loses history and allows a removal that breaks things — against the rule that nothing is deleted, only superseded.",
-    "ontology.keyed_metrics": "Figures stay true to the approved definition; on live already.",
-    "ontology.put_back": "An undo for the ontology, still published like any change.",
-    "ontology.release": "It is the safety net for every reader; off applies a change the moment it is saved.",
-    "ontology.retiring": "It applies only when someone marks one.",
-    "ontology.set_segments": "Only when someone keeps one, and it is published like any change.",
     "packs.installed_versions": "Free, and it never re-offers what you declined.",
     "record.decision_loop": "No model calls; live since 10-24.",
     "semops.banded_cascade": "It spends less than switching it off would.",

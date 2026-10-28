@@ -42,6 +42,7 @@ def _graph() -> OntologyGraph:
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(REC, "_ROOT", tmp_path / "recs")
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "overrides_draft")
 
 
 def test_detector_precision():
@@ -101,7 +102,8 @@ def test_accept_creates_bound_override():
     res = REC.accept("c", "s", "metric__orderitem__line_total", g, explain=lambda _sql: None)
     assert res is not None and res["bound"] is True
 
-    ovs = OV.load_overrides("c", "s")
+    with OV.viewing("draft"):                          # accepted: a change, waiting in the draft until published
+        ovs = OV.load_overrides("c", "s")
     assert len(ovs) == 1
     ov = ovs[0]
     assert ov.target_kind == "metric"

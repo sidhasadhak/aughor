@@ -2,7 +2,7 @@
 
 Before: an approved metric is a whole statement and the object compiler re-anchors only flat expressions, so it
 refused one — "revenue for delivered orders" could be computed by the agent's own SQL, never by the approved
-definition. Behind `ontology.keyed_metrics`, a metric a person keyed to an entity is read as its whole statement, with
+definition. Now a metric a person keyed to an entity is read as its whole statement, with
 every read of the entity's table restricted to the objects the query selected; each figure here equals a query
 written by hand over the seeded samples warehouse. A breakdown, a ratio over it, a metric keyed to another entity, one
 that does not read the entity's table and an expression-only one are each refused with why.
@@ -110,15 +110,12 @@ def test_without_keyed_metrics_the_door_reads_as_before(graph):
         compile_object_query({"object_type": "order_item", "measures": [{"metric": "line_revenue"}]}, graph)
 
 
-def test_the_flag_decides_which_metrics_the_door_is_handed(monkeypatch, tmp_path):
+def test_the_door_is_handed_the_approved_keyed_metrics_only(monkeypatch, tmp_path):
     from aughor.semantic import metrics as M
     monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
     M.save_metric(LINE_REVENUE)
     M.save_metric(LINE_REVENUE.model_copy(update={"name": "draft_revenue", "status": "draft"}))
     M.save_metric(LINE_REVENUE.model_copy(update={"name": "unkeyed", "entity": None}))
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
-    assert keyed_metrics_for("keyed-t") == []
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.keyed_metrics")
     assert [m.name for m in keyed_metrics_for("keyed-t")] == ["line_revenue"]     # approved and keyed only
 
 

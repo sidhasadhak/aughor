@@ -113,7 +113,8 @@ def test_a_link_answers_to_its_business_verb_name_beside_its_mechanical_one(db, 
 
 def test_the_declared_actions_that_take_a_type_are_listed_with_their_object_parameters(graph, tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
-    OV.save_override("samples", "ecommerce", OV.OntologyOverride(target_kind="action", target_id="flag_order", fields={
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
+    OV.publish_override("samples", "ecommerce", OV.OntologyOverride(target_kind="action", target_id="flag_order", fields={
         "kind": "annotate", "risk": "low", "object_type": "Order",
         "params": [{"name": "order", "kind": "object", "object_type": "Order"}, {"name": "reason"}],
         "edits": [{"object": "order", "property": "review_flag", "value": "true", "note": "{reason}"}]}))

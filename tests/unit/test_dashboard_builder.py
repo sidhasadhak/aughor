@@ -78,7 +78,6 @@ def test_a_model_may_resize_a_piece_on_the_grid_and_may_not_change_what_it_reads
 
 def test_resizing_a_piece_on_the_grid_keeps_the_release_it_is_pinned_to(monkeypatch):
     from aughor.ontology import release
-    monkeypatch.setattr(release, "enabled", lambda: True)
     monkeypatch.setattr(release, "current_id_for_connection", lambda conn: "rel@9")
     before = {"spec": _table_spec(w=8, h=8), "ontology_release": "rel@3"}
     assert pieces.pin_for("c1", before, _table_spec(w=12, h=14)) == "rel@3"        # arrangement reads nothing new

@@ -140,8 +140,9 @@ def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, cli
     ok = client.put("/ontology/entities/Order/sensitive/total_amount", params=params,
                     json={"level": "pii", "visible_to": ["finance"]})
     assert ok.status_code == 200 and ok.json()["sensitive"]["visible_to"] == ["finance"]
-    from aughor.ontology.overrides import apply_overrides
-    served, _ = apply_overrides(graph, CONN, "ecommerce")
+    from aughor.ontology.overrides import apply_overrides, viewing
+    with viewing("draft"):                                                 # declared: waiting in the draft
+        served, _ = apply_overrides(graph, CONN, "ecommerce")
     assert served.entities["Order"].row_policies[0].group == "eu"
     assert served.entities["Order"].sensitive["total_amount"].level == "pii"
     assert client.delete("/ontology/entities/Order/sensitive/total_amount", params=params).status_code == 200
@@ -210,6 +211,7 @@ def test_a_board_counts_the_readers_own_objects_and_the_kept_measurement_counts_
     _as(monkeypatch, "ana")
     declared = client.post("/ontology/processes", params=PROCESS_PARAMS, json=FULFILMENT)   # declared BY a restricted reader
     assert declared.status_code == 200, declared.text
+    assert client.post("/ontology/release/publish", params=PROCESS_PARAMS).status_code == 200   # what readers read
     kept = find_override(PROCESS_PARAMS["connection_id"], "ecommerce", "process", "order_fulfilment").binding["process"]["measured"]
     assert kept["objects"] == every                                       # the platform's measurement: every order
     board = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}

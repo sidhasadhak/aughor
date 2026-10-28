@@ -29,6 +29,7 @@ DISPATCH = "What percentage of order lines broke the dispatch promise?"
 def served(tmp_path, monkeypatch):
     """Olist's declared business ontology — its order-to-delivery process and rules, measured — served for one scope."""
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     graph = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_olist_business_ontology.json").read_text()))
     ST.save_ontology(CONN, "ecommerce", "fp", graph.model_copy(update={"connection_id": CONN, "schema_name": "ecommerce"}))

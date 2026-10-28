@@ -35,6 +35,7 @@ def db(tmp_path_factory):
 @pytest.fixture
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [])
     return OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
 
@@ -108,8 +109,8 @@ def test_notes_on_the_row_and_actions_that_take_the_object_arrive_pre_filled(db,
                                   "risk": "low", "params": [{"name": "order_id"}, {"name": "reason"}]},
         "refund_orders": {"kind": "side_effect", "params": [{"name": "amount_eur", "data_type": "NUMERIC"}]},
     }.items():
-        OV.save_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="action", target_id=action_id,
-                                                                fields=fields))
+        OV.publish_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="action", target_id=action_id,
+                                                                   fields=fields))       # in force
     OV.apply_overrides(graph, CONN, "ecommerce")
     order = get_object(graph, db, "order", "O000123")
     related = object_context(graph, db, CONN, "ecommerce", order)

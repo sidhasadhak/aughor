@@ -21,7 +21,8 @@ from aughor.ontology.models import OntologyGraph
 REPO = Path(__file__).resolve().parents[2]
 GRAPH = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 CONN = "object-types-door-t"
-PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
+#: Read as the ontology's editing screens read: a declaration waits in the draft until a person publishes it (Arc OC-2).
+PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "draft"}
 
 
 @pytest.fixture
@@ -32,6 +33,7 @@ def warehouse(tmp_path, monkeypatch):
     from aughor.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
     path = tmp_path / "samples.duckdb"

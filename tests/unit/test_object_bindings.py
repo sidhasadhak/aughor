@@ -103,6 +103,7 @@ def graph():
 @pytest.fixture(autouse=True)
 def _isolated_overrides(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 def bind(graph: OntologyGraph, db, entity_id: str, name: str, spec: dict, *, count: bool = True) -> OntologyEntity:
@@ -532,7 +533,7 @@ def test_the_overlay_rebuilds_a_bound_binding_from_its_entry_twice_alike_and_nev
     built, _ = declared_bindings(order, {"payments": entry["spec"]}, {"entries": {"payments": entry}}, graph)
     counted = measure_binding(db, order, built[0])
     entry["measured"] = {"spec": entry["spec"], **counted.counts()}
-    OV.save_override("c", "ecommerce", OV.OntologyOverride(
+    OV.publish_override("c", "ecommerce", OV.OntologyOverride(           # in force: the release's own door
         target_kind="entity", target_id="Order", fields={"description": "an order", "bindings": {"payments": entry["spec"]}},
         binding={"bindings": binding_block({"payments": entry})}))
 
@@ -548,7 +549,7 @@ def test_the_overlay_rebuilds_a_bound_binding_from_its_entry_twice_alike_and_nev
 
     ov = OV.find_override("c", "ecommerce", "entity", "Order")
     ov.fields["bindings"]["payments"]["key"] = "payment_id"                       # edited by hand after the bind
-    OV.save_override("c", "ecommerce", ov)
+    OV.publish_override("c", "ecommerce", ov)
     stale = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     OV.apply_overrides(stale, "c", "ecommerce")
     assert stale.entities["Order"].bindings == [] and stale.entities["Order"].description == "an order"
@@ -567,7 +568,8 @@ def test_an_exported_tree_carries_each_bindings_spec_and_reimports_as_no_change(
 # ── the doors, over HTTP ────────────────────────────────────────────────────────────────────
 
 CONN = "object-bindings-door-t"
-PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
+#: Read as the ontology's editing screens read: a declaration waits in the draft until a person publishes it (Arc OC-2).
+PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "draft"}
 
 
 @pytest.fixture

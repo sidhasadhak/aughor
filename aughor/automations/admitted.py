@@ -130,7 +130,7 @@ def as_owner(owner: Owner) -> Iterator[None]:
 # ── what the trigger reads ─────────────────────────────────────────────────────────────────────────────────────────
 
 def _graph_for(conn_id: str, cond: Condition):
-    """The served ontology — the graph `GET /ontology` returns, a release once releases are on. A read, never a build."""
+    """The served ontology — the graph `GET /ontology` returns, the published release. A read, never a build."""
     from aughor.routers.ontology import served_ontology_graph
     return served_ontology_graph(conn_id, str(cond.config.get("schema_name", "") or "") or None)
 

@@ -30,16 +30,11 @@ KINDS = ("value_set", "condition")
 _MAX_VALUES = 1000
 _MAX_CONDITIONS = 10
 _MAX_SCOPES = 20
-_OPS = ("=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between", "is_null", "not_null", "exists", "not_exists")
-#: Arc FA-4 — with `ontology.set_segments` on, a condition may also keep the objects whose moment falls in the last N
-#: days, today included: a dashboard's set kept as a segment ("placed in the last 14 days"). The object door resolves
-#: the window where the rule is read, so the segment moves with the days as the set did.
-_SET_OPS = ("in_last",)
-
-
-def _ops() -> tuple[str, ...]:
-    from aughor.kernel.flags import flag_enabled
-    return _OPS + _SET_OPS if flag_enabled("ontology.set_segments") else _OPS
+#: …and `in_last` (Arc FA-4): a condition may keep the objects whose moment falls in the last N days, today included —
+#: a dashboard's set kept as a segment ("placed in the last 14 days"). The object door resolves the window where the
+#: rule is read, so the segment moves with the days as the set did.
+_OPS = ("=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between", "is_null", "not_null", "exists", "not_exists",
+        "in_last")
 
 
 def rule_spec_problem(spec: Any) -> str:
@@ -76,7 +71,7 @@ def rule_spec_problem(spec: Any) -> str:
     conditions = spec.get("conditions")
     if not isinstance(conditions, list) or not 1 <= len(conditions) <= _MAX_CONDITIONS:
         return f"a condition rule lists from 1 to {_MAX_CONDITIONS} filters in `conditions`, all of which hold"
-    ops = _ops()
+    ops = _OPS
     for c in conditions:
         if not isinstance(c, dict) or not PATH_PATTERN.match(str(c.get("path") or "")):
             return "each condition is a filter with a property `path`, an `op` and its value"

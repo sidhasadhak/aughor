@@ -1,7 +1,6 @@
-"""ROADMAP §6 item 53 — what an entity is used by, on its own page, behind `ontology.entity_usage`.
+"""ROADMAP §6 item 53 — what an entity is used by, on its own page.
 
-Held here: off, the door says it is off and the type's detail is byte-for-byte what it was; on, the door
-composes the dependents index and the dashboards door with the arguments they expect, and counts the audited
+Held here: the door composes the dependents index and the dashboards door with the arguments they expect, and counts the audited
 statements that named the entity's tables month by month — a whole-word match, so a read of `customers_archive`
 is not a read of `customers`, while `shop.customers` is; a table-less type counts nothing and says so.
 """
@@ -32,20 +31,13 @@ def router(graph, monkeypatch):
     return R
 
 
-def _on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.entity_usage")
-
-
-def test_off_the_door_says_so_and_the_detail_is_what_it_was(router):
-    assert router.get_object_type_uses("customer", CONN, schema_name=None) == {
-        "path": "off", "said": "What uses an entity is not shown: the setting is off."}
+def test_the_types_detail_carries_none_of_what_uses_it(router):
     detail = router.get_object_type("customer", CONN, schema_name=None, domain=None)
     assert detail["path"] == "object_type"
     assert not {"uses", "dependents", "dashboards", "reads"} & set(detail)
 
 
-def test_on_it_composes_the_two_doors_with_the_entity_and_counts_its_tables_by_month(router, graph, monkeypatch):
-    _on(monkeypatch)
+def test_it_composes_the_two_doors_with_the_entity_and_counts_its_tables_by_month(router, graph, monkeypatch):
     seen: dict = {}
     monkeypatch.setattr("aughor.ontology.dependents.dependents_of",
                         lambda g, conn, kind, target, **kw: seen.setdefault("dependents", (conn, kind, target)) and [
@@ -89,6 +81,5 @@ def test_a_type_with_no_bound_table_counts_nothing_and_says_so(graph, monkeypatc
 
 
 def test_an_unknown_type_is_refused_as_the_detail_refuses_it(router, monkeypatch):
-    _on(monkeypatch)
     out = router.get_object_type_uses("unicorn", CONN, schema_name=None)
     assert out["path"] == "refused" and out["connection_id"] == CONN

@@ -48,13 +48,15 @@ _ACTION_FIELDS = {
 
 
 def _save_action(target_id: str, fields: dict) -> None:
-    OV.save_override("c", "s", OV.OntologyOverride(
+    """A declared action in force — written by the release's own door, as a published declaration is."""
+    OV.publish_override("c", "s", OV.OntologyOverride(
         target_kind="action", target_id=target_id, fields=fields))
 
 
 @pytest.fixture(autouse=True)
 def _isolated_root(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
 
 
 @pytest.fixture

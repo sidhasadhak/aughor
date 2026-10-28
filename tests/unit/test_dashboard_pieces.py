@@ -236,10 +236,6 @@ def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, mon
 
 # ── the release a dashboard was composed against ───────────────────────────────────────────────
 
-def _both_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.release")
-
-
 def _release(conn: str, *changes: tuple[str, str, str, str]) -> str:
     """Record the scope's next release, with what it changed: ``(kind, id, change, class)``."""
     from aughor.kernel import lifecycle
@@ -261,7 +257,6 @@ def test_a_version_holding_pieces_is_pinned_resizing_keeps_the_pin_and_repointin
     plain = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
-    _both_on(monkeypatch)
 
     def keep(s, **kw):
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False, **kw)
@@ -284,7 +279,6 @@ def test_a_version_holding_pieces_is_pinned_resizing_keeps_the_pin_and_repointin
 
 
 def test_the_read_names_every_change_since_the_pin_that_touches_a_piece_and_no_other(monkeypatch):
-    _both_on(monkeypatch)
     conn = f"since{uuid.uuid4().hex[:6]}"
     pinned = _release(conn)
     _release(conn, ("process", "order_fulfilment", "changed", "MEANING"), ("process", "returns", "added", "SAFE"))

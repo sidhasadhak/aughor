@@ -331,7 +331,7 @@ export interface ObjectTypeDetail {
   expressions?: TypeExpression[];
   /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */
   withdrawn?: { bindings: string[]; links: { relationship: string; from_entity: string; to_entity: string }[] };
-  /** Arc FA, FA-3 — present only while marking retiring is on: the type's mark, or null when it carries none. */
+  /** Arc FA, FA-3 — the type's mark, or null when it carries none; absent when it could not be read (`retiring_said`). */
   retiring?: RetiringMark | null;
   /** Said when whether it is retiring could not be read. */
   retiring_said?: string;
@@ -472,7 +472,7 @@ export function scopeDomain(connectionId: string): string | null {
 
 /** Arc OC-2 — every door this file calls belongs to the ontology's editing screens, so each asks for the DRAFT: the
  *  published ontology with the changes waiting to be published laid over it. The agent, the Briefing and every other
- *  reader get the published ontology. The server ignores the view while releases are off. */
+ *  reader get the published ontology. */
 function scope(connectionId: string, schemaName?: string, extra: Record<string, string> = {}): string {
   const q = new URLSearchParams({ connection_id: connectionId, ontology_view: "draft", ...extra });
   const domain = scopeDomain(connectionId);
@@ -510,7 +510,7 @@ export async function getTypeMap(connectionId: string, schemaName?: string): Pro
 
 /** ROADMAP §6 item 53 — what a type is used by, from its own door: its dependents, each with how it depends; the
  *  dashboards whose pieces read it; and how many audited statements named its tables in each of the last twelve
- *  months. `path: "off"` while the setting is off; `refused` as the detail refuses. */
+ *  months. `refused` as the detail refuses. */
 export interface ObjectTypeUses {
   path: "uses";
   connection_id: string;
@@ -568,11 +568,10 @@ export interface EntitiesByReads {
   said?: string;
 }
 
-/** Arc FA, FA-3 — every entity ranked by its reads over the last `days` days, the least read first. `path: "off"`
- *  while what uses an entity is not shown. */
+/** Arc FA, FA-3 — every entity ranked by its reads over the last `days` days, the least read first. */
 export async function getEntitiesByReads(
   connectionId: string, schemaName?: string, days = 30,
-): Promise<EntitiesByReads | { path: "off"; said: string }> {
+): Promise<EntitiesByReads> {
   const res = await fetch(`${getApiBase()}/object-types/uses?${scope(connectionId, schemaName, { window: String(days) })}`);
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
@@ -589,7 +588,7 @@ export interface RetiringMark {
   said: string;
 }
 
-/** Mark one declaration retiring. It waits in the draft while releases are on, as a change of meaning. */
+/** Mark one declaration retiring. It waits in the draft as a change of meaning. */
 export async function markRetiring(
   connectionId: string,
   mark: { kind: string; target_id: string; successor: string; on: string; note?: string },
@@ -622,16 +621,15 @@ export interface DeclarationVersion {
   fields: Record<string, unknown>;
   source: string;
   changes: string[];
-  /** Arc FA, FA-3 — the declaration's own note ("put back from version 2"), while putting back is on. */
+  /** Arc FA, FA-3 — the declaration's own note ("put back from version 2"). */
   declaration_note?: string;
 }
 
 export interface DeclarationHistory {
   element: string;
-  kept: boolean;
   versions: DeclarationVersion[];
-  /** Arc FA, FA-3 — present while putting back is on: whether a version can go back into the draft here, and why not. */
-  put_back?: { enabled: boolean; said: string };
+  /** Arc FA, FA-3 — whether a version can go back into the draft here, and why not. */
+  put_back: { enabled: boolean; said: string };
 }
 
 export async function getDeclarationHistory(
@@ -656,7 +654,7 @@ export async function putBackVersion(
 
 export async function getObjectTypeUses(
   objectType: string, connectionId: string, schemaName?: string,
-): Promise<ObjectTypeUses | { path: "off"; said: string } | TypeRefusal> {
+): Promise<ObjectTypeUses | TypeRefusal> {
   const res = await fetch(
     `${getApiBase()}/object-types/${encodeURIComponent(objectType)}/uses?${scope(connectionId, schemaName)}`);
   if (!res.ok) throw new Error(await detailOf(res));
@@ -1538,7 +1536,6 @@ export interface ReleaseRow {
 }
 
 export interface ReleaseState {
-  enabled: boolean;
   connection_id: string;
   schema_name: string;
   published: ReleaseRow | null;

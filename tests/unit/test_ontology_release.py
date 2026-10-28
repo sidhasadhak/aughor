@@ -3,10 +3,10 @@
 
 Before: a declaration was served the moment its door wrote it — an explorer's proposal reached the agent before anyone
 confirmed it, and moving a promise from five days to seven silently changed what every claim computed under it meant.
-Behind `ontology.release`: the store routes a write by what it says (a verdict stays where it was measured, a change
-waits in the draft); the draft reads as a diff classed by the compatibility catalogue, with what each change touches;
-publishing is refused while a change would break something or a model's proposal is unconfirmed; and a release that
-changes a meaning restates the claims computed under the old one. Off, a declaration is served when saved.
+Now the store routes a write by what it says (a verdict stays where it was measured, a change waits in the draft);
+the draft reads as a diff classed by the compatibility catalogue, with what each change touches; publishing is refused
+while a change would break something or a model's proposal is unconfirmed; and a release that changes a meaning
+restates the claims computed under the old one.
 
 Hermetic: the overrides tree, its draft layer and the ledger are per test; the door flow measures on the seeded samples
 warehouse, as the process suite does.
@@ -38,8 +38,9 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
 
 
-def _releases(monkeypatch, on: bool) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: on and name == "ontology.release")
+def _in_force(ov: OntologyOverride) -> None:
+    """A declaration in force before the scope's first change waited — written by the release's own door."""
+    OV.publish_override(CONN, SCHEMA, ov)
 
 
 def _rule(values: list[str], **fields) -> OntologyOverride:
@@ -58,23 +59,10 @@ def _drafted(kind: str, target_id: str):
         return find_override(CONN, SCHEMA, kind, target_id)
 
 
-# ── off: served when saved ─────────────────────────────────────────────────────────────────────
-
-def test_off_a_declaration_is_served_when_saved(monkeypatch):
-    _releases(monkeypatch, False)
-    with viewing("draft"):                                  # the view is never consulted while releases are off
-        save_override(CONN, SCHEMA, _rule(["DE", "AT"]))
-    assert _published("rule", "dach") is not None
-    assert not OV._DRAFT_ROOT.exists()
-    assert R.current(CONN, SCHEMA) is None
-
-
-# ── on: the store routes a write by what it says ──────────────────────────────────────────────
+# ── the store routes a write by what it says ──────────────────────────────────────────────
 
 def test_a_change_waits_in_the_draft_and_the_first_release_is_what_was_in_force(monkeypatch):
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"]))        # published before releases were turned on
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))           # in force before the scope's first change waited
     save_override(CONN, SCHEMA, _rule(["DE", "AT", "CH"]))
     assert _published("rule", "dach").fields["values"] == ["DE", "AT"]          # consumers still read the old
     assert _drafted("rule", "dach").fields["values"] == ["DE", "AT", "CH"]      # the editing screens read the new
@@ -83,9 +71,7 @@ def test_a_change_waits_in_the_draft_and_the_first_release_is_what_was_in_force(
 
 
 def test_a_verdict_written_back_stays_where_it_was_measured(monkeypatch):
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"]))
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))
     measured = _published("rule", "dach")
     measured.binding = {"rule": {"bound": True, "admitted": 812}}
     save_override(CONN, SCHEMA, measured)                    # the published rule, counted again
@@ -100,9 +86,7 @@ def test_a_verdict_written_back_stays_where_it_was_measured(monkeypatch):
 
 
 def test_a_withdrawal_waits_in_the_draft_as_a_marker(monkeypatch):
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"]))
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))
     assert delete_override(CONN, SCHEMA, "rule", "dach")
     assert _published("rule", "dach") is not None and _drafted("rule", "dach") is None
     ((kind, target_id, drafted, withdrawn),) = OV.draft_entries(CONN, SCHEMA)
@@ -112,9 +96,7 @@ def test_a_withdrawal_waits_in_the_draft_as_a_marker(monkeypatch):
 
 
 def test_a_change_put_back_as_published_leaves_the_draft_and_a_background_count_never_does(monkeypatch):
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"]))
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))
     with viewing("draft"):
         save_override(CONN, SCHEMA, _rule(["DE"]))
     with viewing("published"):                               # the hourly measure pass counts the published rule
@@ -134,9 +116,7 @@ def test_a_change_put_back_as_published_leaves_the_draft_and_a_background_count_
 def test_a_draft_copy_that_says_what_is_published_is_no_change(monkeypatch):
     # e.g. a shipped seed update that now says what the draft said: nothing waits to be published
     import yaml
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"]))
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))
     copy_path = OV._path(CONN, SCHEMA, "rule", "dach", OV._DRAFT_ROOT)
     copy_path.parent.mkdir(parents=True)
     copy_path.write_text(yaml.safe_dump(_rule(["DE", "AT"]).model_dump()))
@@ -145,9 +125,7 @@ def test_a_draft_copy_that_says_what_is_published_is_no_change(monkeypatch):
 
 def test_what_a_declaration_said_on_a_day_is_what_was_published_never_a_draft(monkeypatch):
     from aughor.ontology import history as H
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"], ))
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))
     save_override(CONN, SCHEMA, _rule(["DE", "AT", "CH"]))  # drafted, never in force
     states = [v["state"] for v in H.versions(CONN, SCHEMA, "rule", "dach")]
     assert states == ["drafted", "declared"]
@@ -169,9 +147,7 @@ def _book(text: str, *, metric: str = "", object_set: str = "") -> str:
 
 def test_a_meaning_change_names_what_it_touches_and_publishing_restates_it(monkeypatch):
     from aughor.record.claims import latest
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, _rule(["DE", "AT"]))
-    _releases(monkeypatch, True)
+    _in_force(_rule(["DE", "AT"]))
     touched = _book("DACH revenue was 1,744 on 1 October", object_set="dach")
     untouched = _book("total revenue was 9,000 on 1 October", metric="revenue")
     save_override(CONN, SCHEMA, _rule(["DE", "AT", "CH"]))
@@ -192,10 +168,8 @@ def test_a_meaning_change_names_what_it_touches_and_publishing_restates_it(monke
 
 def test_publishing_is_refused_while_a_change_would_break_something(monkeypatch):
     from aughor.automations.models import Automation, Condition, Effect
-    _releases(monkeypatch, False)
-    save_override(CONN, SCHEMA, OntologyOverride(target_kind="process", target_id="order_fulfilment",
-                                                 fields={"declared": True, **copy.deepcopy(FULFILMENT)}))
-    _releases(monkeypatch, True)
+    _in_force(OntologyOverride(target_kind="process", target_id="order_fulfilment",
+                               fields={"declared": True, **copy.deepcopy(FULFILMENT)}))
     watch = Automation(name="Delivery watch", conn_id=CONN,
                        conditions=[Condition(kind="promise_breached", config={"process": "order_fulfilment"})],
                        effects=[Effect(kind="investigate", config={"question": "why"})])
@@ -221,7 +195,6 @@ def _fulfilment_graph():
 
 
 def test_a_models_proposal_is_published_only_once_a_person_confirms_it(monkeypatch):
-    _releases(monkeypatch, True)
     save_override(CONN, SCHEMA, _rule(["DE", "AT"], origin="model", provenance="model:x@1"))
     (row,) = R.changes(CONN, SCHEMA)
     assert row["class"] == "ERR" and "no person has confirmed it" in row["reasons"][0]["why"]
@@ -233,14 +206,10 @@ def test_a_models_proposal_is_published_only_once_a_person_confirms_it(monkeypat
 
 def test_a_claim_names_the_release_it_was_computed_under(monkeypatch):
     from aughor.record.claims import latest
-    _releases(monkeypatch, True)
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": SCHEMA})
     save_override(CONN, SCHEMA, _rule(["DE"]))               # the scope's first change: release 1 is recorded
     pinned = latest(_book("pinned revenue was 1 on 1 October", metric="revenue"))
     assert pinned.definition_version == f"{CONN}/{SCHEMA}@1"
-    _releases(monkeypatch, False)
-    off_key = _book("unpinned revenue was 1 on 1 October", metric="revenue")
-    assert latest(off_key).definition_version == ""
 
 
 # ── the catalogue ─────────────────────────────────────────────────────────────────────────────
@@ -303,7 +272,6 @@ def test_a_draft_that_does_not_bind_cannot_be_published():
 
 def test_through_the_doors_consumers_read_the_published_release(door, client, monkeypatch):  # noqa: F811
     from aughor.record.claims import latest
-    _releases(monkeypatch, True)
     monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     conn = PARAMS["connection_id"]
     draft = {**PARAMS, "ontology_view": "draft"}
@@ -312,7 +280,7 @@ def test_through_the_doors_consumers_read_the_published_release(door, client, mo
     assert [p["id"] for p in client.get("/ontology/processes", params=draft).json()["processes"]] == \
         ["order_fulfilment"]                                                                     # the editor: the draft
     state = client.get("/ontology/release", params=PARAMS).json()
-    assert state["enabled"] and state["published"]["number"] == 1
+    assert state["published"]["number"] == 1
     assert [(c["target_id"], c["change"], c["class"]) for c in state["draft"]] == [("order_fulfilment", "added", "SAFE")]
     assert client.post("/ontology/release/publish", params=PARAMS).json()["number"] == 2
     assert [p["id"] for p in client.get("/ontology/processes", params=PARAMS).json()["processes"]] == \

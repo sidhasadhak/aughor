@@ -119,7 +119,7 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
     tables = [n for n in nodes if n.kind == "table"]
     findings = [n for n in nodes if n.kind == "finding"]
     terms = [n for n in nodes if n.kind == "glossary_term"]
-    declarations = [n for n in nodes if n.kind == "declaration"]     # FA-1; none while graph.declarations is off
+    declarations = [n for n in nodes if n.kind == "declaration"]     # FA-1
     joins = [e for e in edges if e.kind == "joins_on"]
     resolves = [e for e in edges if e.kind == "resolves"]
 

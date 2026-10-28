@@ -1816,7 +1816,7 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
   const q = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
     : `connection_id=${encodeURIComponent(connectionId)}`;
-  // Arc OC-2 — read by the ontology's own screens, so it asks for the draft (ignored while releases are off).
+  // Arc OC-2 — read by the ontology's own screens, so it asks for the draft.
   const res = await fetch(`${getApiBase()}/ontology?${q}&ontology_view=draft`);
   if (!res.ok) {
     const built = (res.headers.get("X-Ontology-Schemas") ?? "").split(",").filter(Boolean);

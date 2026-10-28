@@ -76,7 +76,8 @@ describe("OntologyPanel — the bar", () => {
     const tools = await screen.findByTestId("ontology-tools");
     fireEvent.keyDown(tools, { key: "Enter" });
     const items = await screen.findAllByRole("menuitem");
-    expect(items.map((i) => i.textContent)).toEqual(["Find duplicates", "Human edits", "Proposals", "Learned skills", "Settings"]);
+    expect(items.map((i) => i.textContent)).toEqual(["Find duplicates", "Human edits", "Proposals", "Learned skills",
+                                                     "Reads by entity", "Settings"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Proposals" }));
     expect(await screen.findByTestId("ontology-proposals-drawer")).toBeInTheDocument();
     fireEvent.keyDown(screen.getByTestId("ontology-tools"), { key: "Enter" });
@@ -93,12 +94,9 @@ describe("OntologyPanel — the bar", () => {
     await waitFor(() => expect(screen.queryByTestId("ontology-facts")).toBeNull());
   });
 
-  it("lists the entities by their reads, the least read first, only while what uses an entity is shown", async () => {
-    const api = await import("@/lib/api");
-    vi.mocked(api.getSystemFlags).mockResolvedValue({ "ontology.entity_usage": { value: true } } as never);
+  it("lists the entities by their reads, the least read first", async () => {
     render(<OntologyPanel connectionId="c1" schema="thelook" />);
     const tools = await screen.findByTestId("ontology-tools");
-    await waitFor(() => expect(api.getSystemFlags).toHaveBeenCalled());
     fireEvent.keyDown(tools, { key: "Enter" });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Reads by entity" }));
     const rows = await screen.findAllByTestId("ontology-reads-row");
@@ -108,6 +106,5 @@ describe("OntologyPanel — the bar", () => {
     expect(rows[1]).toHaveTextContent("last read Fri 23 Oct · 3 readers · 12 with no reader recorded");
     expect(rows[1]).toHaveTextContent("Shared table: a statement naming orders counts for Order line too.");
     expect(rows[2]).toHaveTextContent("No table is bound to it, so nothing is counted.");
-    vi.mocked(api.getSystemFlags).mockResolvedValue({});
   });
 });

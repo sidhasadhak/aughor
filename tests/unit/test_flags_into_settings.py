@@ -64,6 +64,10 @@ UNCONDITIONAL = {
     # the sheets area, 2026-10-28
     "sheets.core", "sheets.grid", "sheets.views", "sheets.combine", "sheets.everywhere", "sheets.chat",
     "sheets.model_columns", "sheets.sharing",
+    # the ontology area, 2026-10-28
+    "ontology.history", "ontology.release", "ontology.put_back", "ontology.retiring", "ontology.census",
+    "ontology.entity_usage", "ontology.builder_doors", "ontology.set_segments", "ontology.keyed_metrics",
+    "ontology.explore_on_connect", "graph.declarations", "objects.find",
 }
 
 

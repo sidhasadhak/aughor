@@ -1,11 +1,10 @@
-"""Arc FA, FA-1 — the ontology's declarations can be searched (ROADMAP §3.60), behind ``graph.declarations``.
+"""Arc FA, FA-1 — the ontology's declarations can be searched (ROADMAP §3.60).
 
 Measured 2026-10-26: the connection graph's node kinds held no declaration — a published process, rule or segment was
 found by no search, the read-back never named one, and an outside agent asking the knowledge door could not reach
-them. With the flag on, each published declaration is a ``declaration`` node with a ``defines`` edge to the table node
-of its entity: found by its own words, read back beside its entity, withheld wherever its entity's tables are, read
-from the release consumers read (never a draft), and rebuilt the moment a person publishes. Off, the graph is
-projected exactly as before and a publish leaves it alone.
+them. Now each published declaration is a ``declaration`` node with a ``defines`` edge to the table node of its
+entity: found by its own words, read back beside its entity, withheld wherever its entity's tables are, read from the
+release consumers read (never a draft), and rebuilt the moment a person publishes.
 
 Hermetic: the overrides tree, its draft layer and the ledger are per test; the ontology is the samples shop's measured
 graph, overlaid with what each test declares.
@@ -49,10 +48,9 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", served)
 
 
-def _flags(monkeypatch, *names: str) -> None:
-    """The flags named on, the others off — `ontology.release` is on by default since OC graduated, so it is said."""
-    for name, env in (("graph.declarations", "AUGHOR_GRAPH_DECLARATIONS"), ("ontology.release", "AUGHOR_ONTOLOGY_RELEASE")):
-        monkeypatch.setenv(env, "1" if name in names else "0")
+def _in_force(ov: OntologyOverride) -> None:
+    """A published declaration — the release's own door into the tree."""
+    OV.publish_override(CONN, SCHEMA, ov)
 
 
 def _rule(values=("DE", "AT", "CH"), **fields) -> OntologyOverride:
@@ -63,13 +61,13 @@ def _rule(values=("DE", "AT", "CH"), **fields) -> OntologyOverride:
 
 
 def _declare_the_shop() -> None:
-    save_override(CONN, SCHEMA, _rule())
-    save_override(CONN, SCHEMA, OntologyOverride(
+    _in_force(_rule())
+    _in_force(OntologyOverride(
         target_kind="object_set", target_id="Order::active_orders", edited_by="person:ana",
         fields={"description": "orders still on their way to the customer"}))
-    save_override(CONN, SCHEMA, OntologyOverride(
+    _in_force(OntologyOverride(
         target_kind="link", target_id="Customer_RELATES_TO_Order", fields={"name": "customer_places_order"}))
-    save_override(CONN, SCHEMA, OntologyOverride(target_kind="action", target_id="flag_order", fields={
+    _in_force(OntologyOverride(target_kind="action", target_id="flag_order", fields={
         "display_name": "Flag order for review", "kind": "annotate", "risk": "low", "object_type": "order",
         "description": "mark an order a person should look at"}))
 
@@ -83,44 +81,29 @@ def _declarations(cg) -> dict:
     return {n.id: n for n in cg.nodes.values() if n.kind == "declaration"}
 
 
-# ── off: the graph is projected as before ─────────────────────────────────────────────────────
-
 def _without_dates(items: dict) -> dict:
     """Nodes or edges as they read, less the build's own clock (a fact the sources leave undated takes it)."""
     return {k: {**v.model_dump(exclude={"provenance"}), "provenance": v.provenance.model_dump(exclude={"observed_at"})}
             for k, v in items.items()}
 
 
-def test_off_no_declaration_is_read_and_the_graph_is_byte_identical(monkeypatch):
+def test_the_declarations_add_their_own_nodes_and_edges_and_change_nothing_else(monkeypatch):
     from aughor.ontology import context_graph_build as B
-    _flags(monkeypatch)
     _declare_the_shop()
-    projected = B.project_graph
-    seen: list = []
-    monkeypatch.setattr(B, "project_graph", lambda *a, **k: (seen.append(k.get("declarations")), projected(*a, **k))[1])
-    monkeypatch.setattr(B, "load_declarations", lambda *a, **k: pytest.fail("read while graph.declarations is off"))
-    off = _build()
-    assert seen == [None] and not _declarations(off) and "declaration" not in off.counts()
-
-
-def test_on_the_declarations_add_their_own_nodes_and_edges_and_change_nothing_else(monkeypatch):
-    _flags(monkeypatch)
-    _declare_the_shop()
-    off = _build()
-    _flags(monkeypatch, "graph.declarations")
     on = _build()
+    monkeypatch.setattr(B, "load_declarations", lambda *a, **k: [])
+    without = _build()
     kept = {k: n for k, n in on.nodes.items() if n.kind != "declaration"}
     edges = {k: e for k, e in on.edges.items() if not e.from_id.startswith("declaration:")}
     assert len(kept) < len(on.nodes) and len(edges) < len(on.edges)
-    assert _without_dates(kept) == _without_dates(off.nodes)
-    assert _without_dates(edges) == _without_dates(off.edges)
+    assert _without_dates(kept) == _without_dates(without.nodes)
+    assert _without_dates(edges) == _without_dates(without.edges)
 
 
-# ── on: each published declaration is a node about its entity ─────────────────────────────────
+# ── each published declaration is a node about its entity ─────────────────────────────────
 
 def test_each_published_declaration_is_a_node_with_an_edge_to_its_entity(monkeypatch):
     from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
-    _flags(monkeypatch, "graph.declarations")
     _declare_the_shop()
     cg = _build()
     found = _declarations(cg)
@@ -142,15 +125,13 @@ def test_each_published_declaration_is_a_node_with_an_edge_to_its_entity(monkeyp
 
 
 def test_a_models_unconfirmed_proposal_is_not_a_declaration(monkeypatch):
-    _flags(monkeypatch, "graph.declarations")
-    save_override(CONN, SCHEMA, _rule(origin="model"))
+    _in_force(_rule(origin="model"))
     assert not _declarations(_build())
 
 
 def test_the_graph_search_finds_a_declaration_by_its_own_words(monkeypatch):
     from aughor.ontology import context_graph_search as S
     monkeypatch.setattr(S, "_vector_search", lambda *a, **k: [])
-    _flags(monkeypatch, "graph.declarations")
     _declare_the_shop()
     cg = _build()
     hits = [n.id for n, _ in S.search_graph(cg, "German-speaking markets DACH", top_k=3)]
@@ -162,9 +143,7 @@ def test_the_graph_search_finds_a_declaration_by_its_own_words(monkeypatch):
 # ── never a draft; a publish rebuilds the graph ───────────────────────────────────────────────
 
 def test_a_change_waiting_in_the_draft_is_not_read_even_by_a_door_that_reads_the_draft(monkeypatch):
-    _flags(monkeypatch)
-    save_override(CONN, SCHEMA, _rule(values=("DE", "AT")))                 # published before releases
-    _flags(monkeypatch, "graph.declarations", "ontology.release")
+    _in_force(_rule(values=("DE", "AT")))                                    # in force before the first change
     save_override(CONN, SCHEMA, _rule(values=("DE", "AT", "CH"), display_name="DACH+"))   # waits in the draft
     with viewing("draft"):                                                   # a POST to /ontology reads the draft
         rule = _declarations(_build())["declaration:rule:dach"]
@@ -173,9 +152,7 @@ def test_a_change_waiting_in_the_draft_is_not_read_even_by_a_door_that_reads_the
 
 
 def test_publishing_rebuilds_the_graph_from_the_release_it_made(monkeypatch):
-    _flags(monkeypatch)
-    save_override(CONN, SCHEMA, _rule(values=("DE", "AT")))
-    _flags(monkeypatch, "graph.declarations", "ontology.release")
+    _in_force(_rule(values=("DE", "AT")))
     save_override(CONN, SCHEMA, _rule(values=("DE", "AT", "CH")))
     calls: list = []
 
@@ -193,20 +170,8 @@ def test_publishing_rebuilds_the_graph_from_the_release_it_made(monkeypatch):
     assert rule.data["detail"] == "country in DE, AT, CH" and "release=declarations-t/ecommerce@2" in rule.provenance.note
 
 
-def test_off_a_publish_leaves_the_graph_alone(monkeypatch):
-    _flags(monkeypatch)
-    save_override(CONN, SCHEMA, _rule(values=("DE", "AT")))
-    _flags(monkeypatch, "ontology.release")
-    save_override(CONN, SCHEMA, _rule(values=("DE", "AT", "CH")))
-    monkeypatch.setattr("aughor.ontology.graph_freshness.refresh_context_graph",
-                        lambda *a, **k: pytest.fail("rebuilt while graph.declarations is off"))
-    assert "graph" not in R.publish(CONN, SCHEMA, by="person:ana")
-
-
 def test_a_graph_that_could_not_rebuild_says_why_and_the_publish_stands(monkeypatch):
-    _flags(monkeypatch)
-    save_override(CONN, SCHEMA, _rule(values=("DE", "AT")))
-    _flags(monkeypatch, "graph.declarations", "ontology.release")
+    _in_force(_rule(values=("DE", "AT")))
     save_override(CONN, SCHEMA, _rule(values=("DE",)))
     monkeypatch.setattr("aughor.ontology.graph_freshness.refresh_context_graph", lambda *a, **k: None)
     made = R.publish(CONN, SCHEMA, by="person:ana")
@@ -226,7 +191,6 @@ def _block(monkeypatch, table: str) -> None:
 
 def test_a_declaration_over_a_withheld_table_is_withheld_at_the_knowledge_door_and_counted(monkeypatch):
     from aughor.mcp import knowledge_tools as KT
-    _flags(monkeypatch, "graph.declarations")
     _declare_the_shop()
     cg = _build()
     _block(monkeypatch, "customers")
@@ -245,7 +209,6 @@ def test_the_read_back_names_the_declarations_and_withholds_one_over_a_withheld_
     from aughor.ontology import context_graph_store as store
     from aughor.ontology.context_graph_readback import build_graph_prior
     monkeypatch.setattr(S, "_vector_search", lambda *a, **k: [])
-    _flags(monkeypatch, "graph.declarations")
     _declare_the_shop()
     store.save_graph(_build())
     prior = build_graph_prior("which customers are in DACH and which orders are active", CONN, org_id="default")
@@ -255,18 +218,6 @@ def test_the_read_back_names_the_declarations_and_withholds_one_over_a_withheld_
     _block(monkeypatch, "customers")
     held = build_graph_prior("which customers are in DACH and which orders are active", CONN, org_id="default")
     assert "DACH" not in held.section and "withheld by data governance" in held.section
-
-
-def test_off_the_read_back_reads_as_before(monkeypatch):
-    from aughor.ontology import context_graph_search as S
-    from aughor.ontology import context_graph_store as store
-    from aughor.ontology.context_graph_readback import build_graph_prior
-    monkeypatch.setattr(S, "_vector_search", lambda *a, **k: [])
-    _flags(monkeypatch)
-    _declare_the_shop()
-    store.save_graph(_build())
-    assert "Declared on these entities" not in build_graph_prior(
-        "which customers are in DACH and which orders are active", CONN, org_id="default").section
 
 
 # ── the pack an agent reads offline ───────────────────────────────────────────────────────────

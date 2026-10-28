@@ -2,7 +2,7 @@
 
 A declaration lived in one YAML file: a save replaced it and a withdrawal deleted it (`overrides._write`, `_unlink`).
 So once someone moved a promise from two days to three, "what did *late* mean on 1 October" had no answer, and
-AGENTS.md's *supersede, do not delete* was not true of the ontology. Behind `ontology.history` every save and every
+AGENTS.md's *supersede, do not delete* was not true of the ontology. Now every save and every
 withdrawal is also a version on the platform's one versioning substrate (`aughor/kernel/lifecycle.py`, on the
 ledger's supersede-not-delete artifacts), under the element's stable id:
 
@@ -34,12 +34,6 @@ KIND = "ontology_declaration"
 BASELINE_NOTE = "on the tree before its history was kept — in force since its last edit"
 
 
-def enabled() -> bool:
-    """On with `ontology.history` — and with `ontology.release`, which pins the versions this keeps."""
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ontology.history") or flag_enabled("ontology.release")
-
-
 def element_key(conn: str, schema: str, kind: str, target_id: str) -> str:
     """The element's stable id: its scope, its kind and its target id."""
     return f"ontology:{conn}/{schema or 'default'}/{kind}/{target_id}"
@@ -69,9 +63,7 @@ def _baseline(conn: str, key: str, prior: Any) -> None:
 
 def on_save(conn: str, schema: str, prior: Any, ov: Any, *, drafted: bool = False) -> None:
     """Record a save that landed. ``prior`` is the published declaration as it stood before the write, or None;
-    ``drafted`` when the save waits in the draft (Arc OC-2) — a version that was never in force. Off: nothing."""
-    if not enabled():
-        return
+    ``drafted`` when the save waits in the draft (Arc OC-2) — a version that was never in force."""
     from aughor.kernel import lifecycle
     key = element_key(conn, schema, ov.target_kind, ov.target_id)
     latest = _latest(key)
@@ -85,8 +77,8 @@ def on_save(conn: str, schema: str, prior: Any, ov: Any, *, drafted: bool = Fals
 
 
 def on_withdraw(conn: str, schema: str, prior: Any) -> None:
-    """Record a withdrawal that landed, with what the declaration said when it went. Off, or nothing was there: nothing."""
-    if not enabled() or prior is None:
+    """Record a withdrawal that landed, with what the declaration said when it went. Nothing was there: nothing."""
+    if prior is None:
         return
     from aughor.kernel import lifecycle
     key = element_key(conn, schema, prior.target_kind, prior.target_id)

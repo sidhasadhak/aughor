@@ -130,8 +130,8 @@ def test_the_ontology_and_object_doors_answer_only_the_org_that_owns_the_connect
         mine = registry.add_connection("orgA-onto", "duckdb", "data/aughor.duckdb")
     with using_org("orgB"):
         theirs = registry.add_connection("orgB-onto", "duckdb", "data/aughor.duckdb")
-    OV.save_override(mine, "main", OV.OntologyOverride(target_kind="entity", target_id="Order",
-                                                       fields={"description": "orgA's words"}))
+    OV.publish_override(mine, "main", OV.OntologyOverride(target_kind="entity", target_id="Order",   # in force
+                                                          fields={"description": "orgA's words"}))
     a, b = {"X-Aughor-Org": "orgA"}, {"X-Aughor-Org": "orgB"}
     scope = {"connection_id": mine, "schema_name": "main"}
     try:
@@ -158,7 +158,7 @@ def test_the_ontology_and_object_doors_answer_only_the_org_that_owns_the_connect
         assert client.get("/object-types", params={"domain": "default", "connection_id": "domain:default"},
                           headers=b).status_code == 200
     finally:
-        OV.delete_override(mine, "main", "entity", "Order")
+        OV.publish_withdrawal(mine, "main", "entity", "Order")
         registry.delete_connection(mine)
         registry.delete_connection(theirs)
 

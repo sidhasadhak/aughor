@@ -41,8 +41,8 @@ def _move(to: str) -> dict:
 def cases(graph):  # noqa: F811
     assert entity_spec_problem(CASE) == ""
     fields = entity_fields(CASE)
-    OV.save_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="entity", target_id="Case", fields=fields,
-                                                            binding={"backing": {"bound": True, "primary_key": "id"}}))
+    OV.publish_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="entity", target_id="Case", fields=fields,
+                                                               binding={"backing": {"bound": True, "primary_key": "id"}}))
     OV.apply_overrides(graph, CONN, "ecommerce")
     # Every declaration goes through the doors' own checks — the body each door reads and the problem it refuses with.
     # A first draft set these on the graph directly, and the doors refused all four live on theLook (2026-10-10).

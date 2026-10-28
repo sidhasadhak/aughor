@@ -2619,11 +2619,7 @@ def compile_object_listing(listing: ObjectListing | dict, graph: Optional[Ontolo
 
 
 def keyed_metrics_for(connection_id: str, schema_name: Optional[str] = None) -> list:
-    """Arc OC-3 — the approved metrics a person keyed to an entity, on this connection and dataset, while
-    `ontology.keyed_metrics` is on; [] otherwise, so the compiler reads exactly as before."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.keyed_metrics"):
-        return []
+    """Arc OC-3 — the approved metrics a person keyed to an entity, on this connection and dataset."""
     from aughor.semantic.metrics import list_metrics
     return [m for m in list_metrics(connection_id=connection_id, schema_name=schema_name)
             if m.entity and m.status == "approved"]

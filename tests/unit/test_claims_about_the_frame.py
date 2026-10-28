@@ -2,7 +2,7 @@
 
 Before: every one of the Record's 192 live claims was about a connection — an answer about late dispatch or completed
 orders included — so a release that changed the dispatch promise could not tell which numbers it changed the meaning
-of. While `ontology.release` is on, a deep analysis whose question was framed books its observation and findings about
+of. Now a deep analysis whose question was framed books its observation and findings about
 the frame's subject: the segment a promise or rule derives, or the entity a lag or a keyed metric starts from, with
 the rule set the number was computed over and the metric. A frame that defines nothing leaves the claim as it was.
 """
@@ -67,25 +67,16 @@ def _book(about: dict) -> str:
     return out["observation"]
 
 
-def test_on_the_claim_is_about_the_frames_subject(ledger, monkeypatch):
+def test_the_claim_is_about_the_frames_subject(ledger, monkeypatch):
     from aughor.record.claims import get
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.release")
     claim = get(_book({"kind": "segment", "key": "completed_orders"}))
     assert (claim.about.kind, claim.about.key, claim.statement.object_set) == ("segment", "completed_orders",
                                                                               "completed_orders")
 
 
-def test_off_the_claim_is_about_its_connection_as_before(ledger, monkeypatch):
-    from aughor.record.claims import get
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
-    claim = get(_book({"kind": "segment", "key": "completed_orders"}))
-    assert (claim.about.kind, claim.about.key, claim.statement.object_set) == ("connection", "c", "")
-
-
 def test_a_claim_about_a_segment_is_one_a_release_touches(ledger, monkeypatch):
     # The point of the subject: OC-2's restatement finds this claim when the rule that derives the segment changes.
     from aughor.ontology.release import _touches
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.release")
     monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
     cid = _book({"kind": "segment", "key": "completed_orders"})
     assert [c["id"] for c in _touches("c", {"completed_orders"}, [])["claims"]] == [cid]

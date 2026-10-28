@@ -459,8 +459,7 @@ async def list_objects(
 ) -> dict:
     """Arc OC-8 — one page of a business entity's objects, or of a segment of them (late, overdue, a rule's
     objects), read through the published ontology: the key, the properties asked for, the total the set holds and
-    the release it was read under. Each object is named `<object_type>:<key>` — the form a propose tool takes. Off
-    unless an administrator turned on the doors for builders."""
+    the release it was read under. Each object is named `<object_type>:<key>` — the form a propose tool takes."""
     body = {"entity": entity, "segment": segment or "", "columns": list(columns or []), "limit": limit,
             "offset": offset}
     return await _client.list_objects(connection, body, schema=schema)

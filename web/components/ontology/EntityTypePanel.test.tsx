@@ -40,8 +40,8 @@ const shown: { detail?: ObjectTypeDetail; uses?: ObjectTypeUses } = {};
 // The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
 const words = vi.hoisted(() => ({ vocabulary: [] as unknown[] }));
 const keyVocabularyEntry = vi.fn(async (..._args: unknown[]) => undefined);
-/** Arc FA, FA-3 — the declaration's history the History tab reads (no `put_back` unless a test serves one: off). */
-const history = vi.hoisted(() => ({ served: { element: "e", kept: true, versions: [] as unknown[] } as Record<string, unknown> }));
+/** Arc FA, FA-3 — the declaration's history the History tab reads. */
+const history = vi.hoisted(() => ({ served: { element: "e", versions: [] as unknown[], put_back: { enabled: true, said: "" } } as Record<string, unknown> }));
 const putBackVersion = vi.fn(async (..._args: unknown[]) => ({
   landed: "draft", said: "Version 2 of entity 'products' waits in the draft, classed MEANING — readers get it when a "
     + "person publishes the draft.", change: null, warnings: [] }));
@@ -58,7 +58,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getObjectType: async () => shown.detail ?? detail,
-  getObjectTypeUses: async () => shown.uses ?? { path: "off" as const, said: "off" },
+  getObjectTypeUses: async () => shown.uses ?? { path: "refused" as const, refused: "not served here", available: [],
+                                                  connection_id: "c1", schema_name: "s" },
   addBinding: (...a: unknown[]) => addBinding(...a),
   nameLink: (...a: unknown[]) => nameLink(...a),
   declareLink: (...a: unknown[]) => declareLink(...a),
@@ -937,13 +938,13 @@ describe("Arc FA, FA-3 — put back and retiring", () => {
       by: "", note: "", declaration_note: "", fields: {}, source: "explorer", changes: [] },
   ];
   afterEach(() => {
-    history.served = { element: "e", kept: true, versions: [] };
+    history.served = { element: "e", versions: [], put_back: { enabled: true, said: "" } };
     shown.detail = undefined;
   });
 
-  it("lists the versions and puts an earlier one back into the draft, behind Edit, while putting back is on", async () => {
+  it("lists the versions and puts an earlier one back into the draft, behind Edit", async () => {
     putBackVersion.mockClear();
-    history.served = { element: "e", kept: true, versions, put_back: { enabled: true, said: "" } };
+    history.served = { element: "e", versions, put_back: { enabled: true, said: "" } };
     const onChanged = vi.fn();
     render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
       onOpen={() => {}} onChanged={onChanged} />);
@@ -963,12 +964,12 @@ describe("Arc FA, FA-3 — put back and retiring", () => {
   });
 
   it("says why a version cannot go back here, instead of a button", async () => {
-    history.served = { element: "e", kept: true, versions,
-                       put_back: { enabled: false, said: "putting an earlier version back needs releases on" } };
+    history.served = { element: "e", versions,
+                       put_back: { enabled: false, said: "an organisation's ontology is outside releases" } };
     panel();
     await editIn("History");
     expect(await screen.findByTestId("entity-version-why-not"))
-      .toHaveTextContent("An earlier version cannot be put back here: putting an earlier version back needs releases on.");
+      .toHaveTextContent("An earlier version cannot be put back here: an organisation's ontology is outside releases.");
     expect(screen.queryByTestId("entity-version-put-back")).toBeNull();
   });
 
@@ -1026,7 +1027,7 @@ describe("Arc FA, FA-3 — put back and retiring", () => {
     }
   });
 
-  it("marks a type retiring with another type and a day, behind Edit — and shows nothing while marking is off", async () => {
+  it("marks a type retiring with another type and a day, behind Edit", async () => {
     markRetiring.mockClear();
     shown.detail = { ...detail, retiring: null };
     panel();
@@ -1041,11 +1042,5 @@ describe("Arc FA, FA-3 — put back and retiring", () => {
     fireEvent.click(screen.getByTestId("entity-retiring-save"));
     await waitFor(() => expect(markRetiring).toHaveBeenCalledWith("c1",
       { kind: "entity", target_id: "products", successor: "Brand", on: "2026-12-01", note: "merged into brands" }, "s"));
-    cleanup();
-    shown.detail = undefined;                                                 // off: the detail carries no `retiring`
-    panel();
-    await screen.findByTestId("entity-overview");
-    fireEvent.click(screen.getByTestId("entity-edit"));
-    expect(screen.queryByTestId("entity-retiring")).toBeNull();
   });
 });

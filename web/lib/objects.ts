@@ -196,7 +196,7 @@ export interface ObjectPage {
   timeseries?: ObjectTimeseries[];
   /** Arc OC-6 — held by the platform: no warehouse row, every property set by a declared action. */
   platform?: boolean;
-  /** Arc FA, FA-3 — present only while marking retiring is on: its entity's mark, or null when it carries none. */
+  /** Arc FA, FA-3 — its entity's mark, or null when it carries none; absent when it could not be read. */
   retiring?: RetiringMark | null;
   related: ObjectRelated;
 }
@@ -413,7 +413,7 @@ export async function getObjectTitles(
   return res.json();
 }
 
-/** Arc FA, FA-1 (flag `objects.find`) — one object whose name holds the words typed. `type` is the entity's api name,
+/** Arc FA, FA-1 — one object whose name holds the words typed. `type` is the entity's api name,
  *  what an object page's address takes. */
 export interface ObjectFindHit {
   type: string;
@@ -442,14 +442,13 @@ export interface ObjectFindAnswer {
   masked: string[];
 }
 
-/** Find objects by the name they go by, across entities. A 404 means the flag is off — the caller shows nothing. */
+/** Find objects by the name they go by, across entities. */
 export async function findObjects(
   q: string, connectionId?: string, schemaName?: string, signal?: AbortSignal,
-): Promise<ObjectFindAnswer | ObjectRefusal | null> {
+): Promise<ObjectFindAnswer | ObjectRefusal> {
   const res = await fetch(`${getApiBase()}/objects/find${scope(connectionId, schemaName)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q }), signal,
   });
-  if (res.status === 404) return null;
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
 }

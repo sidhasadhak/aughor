@@ -169,7 +169,7 @@ def book_from_receipt(*, kind: str, natural_key: str, receipt_id: Optional[str],
     if not receipt_id:
         return out
     extra = payload_extra or {}
-    # Arc OC-3 — the subject the run's frame gave it (`framing.frame_about`), while `ontology.release` is on
+    # Arc OC-3 — the subject the run's frame gave it (`framing.frame_about`)
     about = _frame_subject(extra)
     out["observation"] = book_answer_observation(
         kind=kind, natural_key=natural_key, receipt_id=receipt_id, connection_id=connection_id,
@@ -193,13 +193,11 @@ def book_from_receipt(*, kind: str, natural_key: str, receipt_id: Optional[str],
 
 
 def _frame_subject(extra: dict) -> Optional[dict]:
-    """The `about` a receipt's caller derived from its run's frame, honoured only while `ontology.release` is on — off,
-    every claim is about its connection exactly as before."""
+    """The `about` a receipt's caller derived from its run's frame, or None when it derived none."""
     about = extra.get("about")
     if not isinstance(about, dict) or not about:
         return None
-    from aughor.kernel.flags import flag_enabled
-    return about if flag_enabled("ontology.release") else None
+    return about
 
 
 # ── from the daily re-check ───────────────────────────────────────────────────────────────

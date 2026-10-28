@@ -187,7 +187,6 @@ def test_a_principal_reads_the_contract_its_grant_names(client, held, graph, mon
     """The builders' contract door, on the samples ontology: the entities and declared actions the grant names, and a
     count of what it left out."""
     from tests.unit.test_object_actions import CONN
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", "1")
     monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     _, headers = _mint(client, areas=["objects:read"], entities=["Order"])
     whole = client.get("/ontology/v1/contract", params={"connection_id": CONN})

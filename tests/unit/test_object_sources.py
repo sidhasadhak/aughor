@@ -124,6 +124,7 @@ def sources(tmp_path_factory):
 def _isolated(tmp_path, monkeypatch, sources):
     """Every test declares into its own tree; each half has the builder's catalogue its columns borrow roles from."""
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     catalogue = json.loads(CATALOGUE.read_text())
     for name in ("whole", "shop", "crm"):

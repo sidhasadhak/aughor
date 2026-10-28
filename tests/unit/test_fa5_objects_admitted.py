@@ -67,6 +67,7 @@ def pending(path) -> set[str]:
 @pytest.fixture
 def graph(warehouse, tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     g = fresh_graph()
     db = _open(warehouse)
     try:

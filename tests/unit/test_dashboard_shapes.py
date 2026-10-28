@@ -166,11 +166,12 @@ def test_the_route_says_each_objects_best_fit(monkeypatch):
 
 
 def test_an_action_needing_an_object_of_another_type_is_left_out_nothing_on_the_page_holds_one(tmp_path, monkeypatch):
-    """Declared through the overrides tree, as a person's declaration is."""
+    """Declared through the overrides tree, as a person's declaration is once published."""
     from aughor.ontology import overrides as OV
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     g = _promised()
-    OV.save_override("shapes-t", "ecommerce", OV.OntologyOverride(target_kind="action", target_id="tell_customer", fields={
+    OV.publish_override("shapes-t", "ecommerce", OV.OntologyOverride(target_kind="action", target_id="tell_customer", fields={
         "display_name": "Tell the customer", "kind": "annotate", "risk": "low", "object_type": "order",
         "params": [{"name": "order", "kind": "object", "object_type": "order"},
                    {"name": "customer", "kind": "object", "object_type": "customer"}],

@@ -1,10 +1,13 @@
 """Arc OC-1 — every declaration keeps its history, and a withdrawal something depends on is refused (ROADMAP §3.56).
 
 Before: a save replaced the declaration's YAML file and a withdrawal deleted it, so what a promise said last week
-had no answer, and `DELETE /ontology/entities/{id}` removed a type an automation watched. Behind `ontology.history`
-each save and withdrawal is a version on the lifecycle substrate under the element's stable id, a measurement written
-back is not a version, a declaration older than its history starts from its last edit — never "not declared" — and
-the withdrawal doors answer 409 naming what depends. Off, the store reads and writes exactly as before.
+had no answer, and `DELETE /ontology/entities/{id}` removed a type an automation watched. Now each save and withdrawal
+is a version on the lifecycle substrate under the element's stable id, a measurement written back is not a version, a
+declaration older than its history starts from its last edit — never "not declared" — and the withdrawal doors answer
+409 naming what depends.
+
+A change waits in the draft until a person publishes it (Arc OC-2), so what was in force is written here through the
+release's own doors (`publish_override`, `publish_withdrawal`).
 
 Hermetic: the overrides tree and the ledger are per test; the dependents run on the samples graph the process
 suite measures (`evals/ablation_samples_ecommerce_ontology_measured.json`).
@@ -20,7 +23,7 @@ from aughor.ontology import dependents as DEP
 from aughor.ontology import history as H
 from aughor.ontology import overrides as OV
 from aughor.ontology.models import KineticAction, Undo
-from aughor.ontology.overrides import OntologyOverride, delete_override, find_override, save_override
+from aughor.ontology.overrides import OntologyOverride, find_override, save_override
 from aughor.ontology.processes import process_fields, process_from_fields
 from tests.unit.test_object_processes import FULFILMENT, fresh_graph
 
@@ -32,13 +35,19 @@ def _isolated(tmp_path, monkeypatch):
     from aughor.kernel.ledger import Ledger
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_SEED_ROOT", tmp_path / "seed")
+    monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
     monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")     # the gate is on by default since 2026-10-04
 
 
-def _flag(monkeypatch, on: bool) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: on and name == "ontology.history")
+def _in_force(ov: OntologyOverride) -> None:
+    """A declaration put in force — the release's own door into the tree."""
+    OV.publish_override(CONN, SCHEMA, ov)
+
+
+def _withdrawn(kind: str, target_id: str) -> bool:
+    return OV.publish_withdrawal(CONN, SCHEMA, kind, target_id)  # type: ignore[arg-type]
 
 
 @pytest.fixture
@@ -65,27 +74,15 @@ def _key() -> str:
     return H.element_key(CONN, SCHEMA, "process", "dispatch")
 
 
-# ── off: byte-identical ───────────────────────────────────────────────────────────────────────
-
-def test_off_the_store_reads_and_keeps_nothing(monkeypatch):
-    _flag(monkeypatch, False)
-    monkeypatch.setattr(OV, "find_override", lambda *a, **k: pytest.fail("the store read a prior with the flag off"))
-    save_override(CONN, SCHEMA, _dispatch(2))
-    save_override(CONN, SCHEMA, _dispatch(3))
-    assert delete_override(CONN, SCHEMA, "process", "dispatch")
-    assert lifecycle.history(H.KIND, _key()) == []
-
-
-# ── on: every save and withdrawal kept ────────────────────────────────────────────────────────
+# ── every save and withdrawal kept ────────────────────────────────────────────────────────
 
 def test_a_promise_declared_changed_twice_and_withdrawn_reads_back_four_versions(monkeypatch, clock):
     from aughor.org.context import reset_actor, set_actor
-    _flag(monkeypatch, True)
     token = set_actor("person:ana")
     try:
         for days in (2, 3, 4):
-            save_override(CONN, SCHEMA, _dispatch(days))
-        assert delete_override(CONN, SCHEMA, "process", "dispatch")
+            _in_force(_dispatch(days))
+        assert _withdrawn("process", "dispatch")
     finally:
         reset_actor(token)
     rows = H.versions(CONN, SCHEMA, "process", "dispatch")
@@ -98,8 +95,7 @@ def test_a_promise_declared_changed_twice_and_withdrawn_reads_back_four_versions
 
 
 def test_a_verdict_written_back_is_not_a_version(monkeypatch):
-    _flag(monkeypatch, True)
-    save_override(CONN, SCHEMA, _dispatch(2))
+    _in_force(_dispatch(2))
     measured = find_override(CONN, SCHEMA, "process", "dispatch")
     measured.binding = {"process": {"bound": True, "objects": 124_987}}
     save_override(CONN, SCHEMA, measured)
@@ -107,10 +103,9 @@ def test_a_verdict_written_back_is_not_a_version(monkeypatch):
 
 
 def test_as_of_answers_what_late_meant_on_a_past_day(monkeypatch, clock):
-    _flag(monkeypatch, True)
-    save_override(CONN, SCHEMA, _dispatch(2))                       # 20 Sep
-    save_override(CONN, SCHEMA, _dispatch(3))                       # 5 Oct
-    delete_override(CONN, SCHEMA, "process", "dispatch")            # 12 Oct
+    _in_force(_dispatch(2))                                         # 20 Sep
+    _in_force(_dispatch(3))                                         # 5 Oct
+    _withdrawn("process", "dispatch")                               # 12 Oct
     on_1_october = H.as_of(CONN, SCHEMA, "process", "dispatch", "2026-10-01")
     assert on_1_october["known"] and on_1_october["state"] == "declared" and _days(on_1_october["fields"]) == 2
     assert _days(H.as_of(CONN, SCHEMA, "process", "dispatch", "2026-10-05")["fields"]) == 3   # the day it changed
@@ -123,13 +118,14 @@ def test_as_of_answers_what_late_meant_on_a_past_day(monkeypatch, clock):
 
 
 def test_a_declaration_older_than_its_history_starts_from_its_last_edit(monkeypatch, clock):
-    _flag(monkeypatch, False)
-    save_override(CONN, SCHEMA, _dispatch(2, edited_at="2026-09-01T08:00:00+00:00"))
-    _flag(monkeypatch, True)
+    import yaml
+    on_tree = OV._path(CONN, SCHEMA, "process", "dispatch")             # written before any history was kept
+    on_tree.parent.mkdir(parents=True)
+    on_tree.write_text(yaml.safe_dump(_dispatch(2, edited_at="2026-09-01T08:00:00+00:00").model_dump()))
     (only,) = H.versions(CONN, SCHEMA, "process", "dispatch")        # unchanged since: one unrecorded version
     assert only["version"] is None and only["note"] == H.BASELINE_NOTE
     assert _days(H.as_of(CONN, SCHEMA, "process", "dispatch", "2026-09-15")["fields"]) == 2
-    save_override(CONN, SCHEMA, _dispatch(3))
+    _in_force(_dispatch(3))
     rows = H.versions(CONN, SCHEMA, "process", "dispatch")
     assert [(r["version"], r["note"]) for r in rows] == [(2, ""), (1, H.BASELINE_NOTE)]
     assert rows[1]["in_force_from"] == "2026-09-01T08:00:00+00:00"
@@ -138,14 +134,13 @@ def test_a_declaration_older_than_its_history_starts_from_its_last_edit(monkeypa
 
 
 def test_a_history_that_cannot_be_kept_never_undoes_the_declaration(monkeypatch):
-    _flag(monkeypatch, True)
     said = []
 
     def broken(*a, **k):
         raise OSError("disk full")
     monkeypatch.setattr(lifecycle, "record", broken)
     monkeypatch.setattr("aughor.kernel.errors.tolerate", lambda exc, reason, **k: said.append(reason))
-    save_override(CONN, SCHEMA, _dispatch(2))
+    _in_force(_dispatch(2))
     assert find_override(CONN, SCHEMA, "process", "dispatch") is not None
     assert said and "could not be kept" in said[0]
 
@@ -154,8 +149,7 @@ def test_the_generic_lifecycle_doors_read_a_declaration_and_refuse_to_write_one(
     from fastapi.testclient import TestClient
 
     from aughor.api import app
-    _flag(monkeypatch, True)
-    save_override(CONN, SCHEMA, _dispatch(2))
+    _in_force(_dispatch(2))
     client = TestClient(app)
     assert client.get("/lifecycle/ontology_declaration/history", params={"natural_key": _key()}).status_code == 200
     for door in ("publish", "revert"):
@@ -235,16 +229,15 @@ def served(graph, monkeypatch):
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda conn, schema=None: graph)
     monkeypatch.setattr(ONT, "_resolve_schema", lambda conn, schema=None: SCHEMA)
     monkeypatch.setattr(DEP, "_automations", lambda conn: [_watch()])
-    save_override(CONN, SCHEMA, OntologyOverride(target_kind="process", target_id="order_fulfilment",
-                                                 fields={"declared": True, **process_fields(FULFILMENT)}))
+    _in_force(OntologyOverride(target_kind="process", target_id="order_fulfilment",
+                               fields={"declared": True, **process_fields(FULFILMENT)}))
     from fastapi.testclient import TestClient
 
     from aughor.api import app
     return TestClient(app)
 
 
-def test_on_withdrawing_a_process_an_automation_watches_is_refused_naming_it(served, monkeypatch):
-    _flag(monkeypatch, True)
+def test_withdrawing_a_process_an_automation_watches_is_refused_naming_it(served, monkeypatch):
     r = served.delete("/ontology/processes/order_fulfilment", params={"connection_id": CONN})
     assert r.status_code == 409 and "Dispatch promise watch" in r.json()["detail"]
     assert find_override(CONN, SCHEMA, "process", "order_fulfilment") is not None
@@ -253,20 +246,13 @@ def test_on_withdrawing_a_process_an_automation_watches_is_refused_naming_it(ser
     assert [d["name"] for d in deps["dependents"]] == ["Dispatch promise watch"]
 
 
-def test_off_the_same_withdrawal_goes_ahead_as_before(served, monkeypatch):
-    _flag(monkeypatch, False)
-    r = served.delete("/ontology/processes/order_fulfilment", params={"connection_id": CONN})
-    assert r.status_code == 200 and r.json()["removed"] is True
-
-
 def test_the_history_door_reads_versions_and_a_past_day(served, monkeypatch):
-    _flag(monkeypatch, True)
     moments = itertools.chain(["2026-10-02T09:00:00+00:00"], itertools.repeat("2026-10-09T09:00:00+00:00"))
     monkeypatch.setattr(lifecycle, "_now", lambda: next(moments))
-    save_override(CONN, SCHEMA, _dispatch(2))
+    _in_force(_dispatch(2))
     body = served.get("/ontology/history", params={"connection_id": CONN, "kind": "process", "target_id": "dispatch",
                                                    "as_of": "2026-10-03"}).json()
-    assert body["kept"] is True and body["element"] == _key()
+    assert body["element"] == _key()
     assert body["as_of"]["state"] == "declared" and _days(body["as_of"]["fields"]) == 2
     bad = served.get("/ontology/history", params={"connection_id": CONN, "kind": "process", "target_id": "dispatch",
                                                   "as_of": "soon"})

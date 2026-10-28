@@ -72,24 +72,19 @@ _SEED_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR",
 _HIDDEN = ".hidden"
 #: Arc OC-2 — the DRAFT layer (ROADMAP §3.56): changes a person, the explorer or a pack made that are not published yet,
 #: `data/ontology_overrides_draft/{conn}/{schema}/{kind}/{id}.yaml`. Its own root, like the seed's, so nothing that walks
-#: the instance tree reads a draft as served. Only while `ontology.release` is on; a staged withdrawal is a
-#: `<file>.withdrawn` marker holding what it withdraws. Publishing (`ontology.release.publish`) moves it into the tree.
+#: the instance tree reads a draft as served. A staged withdrawal is a `<file>.withdrawn` marker holding what it
+#: withdraws. Publishing (`ontology.release.publish`) moves it into the tree.
 _DRAFT_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_OVERRIDES_DRAFT_DIR",
                               Path(__file__).parent.parent.parent / "data" / "ontology_overrides_draft")
 _WITHDRAWN = ".withdrawn"
 #: Which declarations a read sees: `published` (what every consumer reads) or `draft` (the published ones with the draft
-#: laid over them — the ontology's own editing screens and doors). Ignored while `ontology.release` is off.
+#: laid over them — the ontology's own editing screens and doors).
 _VIEW: "contextvars.ContextVar[str]" = contextvars.ContextVar("aughor_ontology_view", default="published")
 
 
-def drafts_enabled() -> bool:
-    from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ontology.release")
-
-
 def draft_view() -> bool:
-    """Whether reads in this context see the draft — only while `ontology.release` is on."""
-    return _VIEW.get() == "draft" and drafts_enabled()
+    """Whether reads in this context see the draft."""
+    return _VIEW.get() == "draft"
 
 
 def set_view(view: str) -> "contextvars.Token[str]":
@@ -391,11 +386,7 @@ class OverrideWriteFailed(RuntimeError):
 
 
 def _prior(conn: str, schema: str, kind: TargetKind, target_id: str) -> Optional[OntologyOverride]:
-    """Arc OC-1 — the PUBLISHED declaration as it stands before a write, for its history; None without reading anything
-    when `ontology.history` is off, so the store is byte-identical then."""
-    from aughor.ontology import history
-    if not history.enabled():
-        return None
+    """Arc OC-1 — the PUBLISHED declaration as it stands before a write, for its history."""
     with viewing("published"):
         return find_override(conn, schema, kind, target_id)
 
@@ -423,9 +414,8 @@ def _route(conn: str, schema: str, ov: OntologyOverride) -> tuple[bool, bool]:
     the draft says is a verdict on the draft; one that says what is published is a verdict on the published — or, made
     from the editing screens (the draft view) while the draft holds a change to it, that change put back as it was
     published, which clears it from the draft; anything else is a change, and a change waits for a person to publish
-    it — the explorer's proposals included (§6 item 50(f)). An organisation's ontology is outside releases for now, and
-    so is everything while `ontology.release` is off."""
-    if not drafts_enabled() or organisation_scope(conn):
+    it — the explorer's proposals included (§6 item 50(f)). An organisation's ontology is outside releases for now."""
+    if organisation_scope(conn):
         return False, False
     content = declaration_content(ov)
     drafted, withdrawn = _drafted(conn, schema, ov.target_kind, ov.target_id)
@@ -450,7 +440,7 @@ def _keep(record: Callable[[], None], kind: str, target_id: str) -> None:
 
 
 def _write(conn: str, schema: str, ov: OntologyOverride, *, publish: bool = False) -> None:
-    """Write one declaration: into the draft when it is a change and releases are on (`_route`), else into the tree.
+    """Write one declaration: into the draft when it is a change (`_route`), else into the tree.
     ``publish`` is the release's own door: straight into the tree."""
     _refuse_seed_root()
     drafted, put_back = (False, False) if publish else _route(conn, schema, ov)
@@ -507,10 +497,10 @@ def _stage_withdrawal(conn: str, schema: str, kind: TargetKind, target_id: str) 
 
 
 def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str, *, publish: bool = False) -> bool:
-    """Withdraw one declaration. True if one was visible. A shipped one is hidden, never deleted. With releases on, the
-    withdrawal waits in the draft; ``publish`` is the release's own door."""
+    """Withdraw one declaration. True if one was visible. A shipped one is hidden, never deleted. The withdrawal waits in
+    the draft; ``publish`` is the release's own door, and an organisation's ontology is outside releases for now."""
     _refuse_seed_root()
-    if not publish and drafts_enabled() and not organisation_scope(conn):
+    if not publish and not organisation_scope(conn):
         return _stage_withdrawal(conn, schema, kind, target_id)
     prior = _prior(conn, schema, kind, target_id)
     try:
@@ -825,7 +815,7 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
 
 def _marks_only(ov: OntologyOverride) -> bool:
     """Arc FA, FA-3 — a declaration that holds a retiring mark and nothing else: a built element marked retiring. The
-    mark is read by `ontology.retiring`, never applied, so the element is served exactly as it was built."""
+    mark is read by `ontology/retiring.py`, never applied, so the element is served exactly as it was built."""
     return set(ov.fields) == {"retiring"}
 
 
