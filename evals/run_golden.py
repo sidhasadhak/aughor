@@ -207,9 +207,9 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     linked_tables: list[str] = []
     try:
         from aughor.tools.data_catalog import build_data_catalog
-        from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
+        from aughor.tools.schema import fk_neighbor_expand, parse_schema_tables, temporal_dimension_tables
         from aughor.tools.schema_linker import rank_tables_for_context
-        linked_tables = list(_parse_schema_tables(schema).keys())
+        linked_tables = list(parse_schema_tables(schema).keys())
         if linked_tables:
             # Mirrors the /chat and deep paths exactly (routers/investigations.py): pin the
             # date/time dimension, rank + cap, then FK-complete. The harness has to build
@@ -365,7 +365,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     _fanout_fix_hint = ""
     try:
         from aughor.sql.fanout import detect_fanout, defan
-        from aughor.tools.schema import _parse_schema_tables as _pst
+        from aughor.tools.schema import parse_schema_tables as _pst
         _ff = detect_fanout(final_sql, _pst(full_schema), dialect=db.dialect)
         if _ff:
             _rw = defan(final_sql, _ff, dialect=db.dialect)
