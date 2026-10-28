@@ -4503,9 +4503,8 @@ async def _stream_investigation(
             # classifier downgrade the run to a 'direct' lookup (live incident: "Where are we
             # losing money?" ran as 3 flat queries with a fake 'direct' hypothesis, zero
             # decomposition). /ask now passes its route verdict through here — normally
-            # "investigate", or "explore" when the deterministic wide-question detector fires
-            # under explore.route_wide (R9) — reaching the already-built explore wave with no
-            # graph change (route_question honors requested_mode ∈ {investigate, explore}).
+            # "investigate", or "explore" when a person or a starter asks for the landscape wave
+            # (route_question honors requested_mode ∈ {investigate, explore}).
             "requested_mode": requested_mode,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "answer_report": None, "_ada_intake": None, "_intake_failed": None,
@@ -5258,34 +5257,6 @@ async def _job_streamed_body(
         yield item
 
 
-def _investigate_requested_mode(req: "InvestigateRequest") -> str:
-    """The deep mode a ``/investigate`` turn runs — ``"investigate"``, or ``"explore"``
-    when the deterministic wide detector fires under ``explore.route_wide``.
-
-    This door pins DEEP on purpose (the recorded incident: the LLM classifier downgraded
-    "Where are we losing money?" to three flat queries) — but the pin is about depth, not
-    about which deep body. A genuinely broad landscape question ("characterize / profile /
-    how does X vary across …") is served by the multi-cut explore wave, which is deep in
-    exactly the way the pin promises. Without this check the wave was UNREACHABLE from
-    chat entirely (found live 2026-08-29): the Agent chip routes here — never ``/ask``'s
-    auto path — so R9's wide→explore branch in ``ask_router`` had no caller from the UI.
-
-    Same discipline as R9: the wide check is pure and runs first, so a normal question
-    never touches the flag store; no model in the routing path; a causal "why" stays a
-    single investigation (``is_wide_question`` yields to it). A seeded turn — a finding
-    drill, seed SQL, an escalation — keeps the pin: its origin anchors ONE question, not
-    a landscape.
-    """
-    if req.escalate or req.insight_id or req.seed_sql or req.seed_context:
-        return "investigate"
-    from aughor.agent.ask_router import is_wide_question
-    from aughor.agent.complexity import assess_complexity
-    if not is_wide_question(req.question, assess_complexity(req.question or "")):
-        return "investigate"
-    from aughor.kernel.flags import flag_enabled
-    return "explore" if flag_enabled("explore.route_wide") else "investigate"
-
-
 @router.post("/investigate", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 async def investigate(req: InvestigateRequest, request: Request):
     conn_id = _resolve_conn(req)
@@ -5296,7 +5267,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             schema_scope=req.schema_name, seed_sql=req.seed_sql, seed_context=req.seed_context,
             insight_id=req.insight_id, deep=req.escalate, history=req.history,
             allow_clarify=req.allow_clarify, session_id=req.session_id,
-            requested_mode=_investigate_requested_mode(req),
+            requested_mode="investigate",   # the explicit deep surface; R9's wide→explore route left 2026-10-28
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -5755,9 +5726,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             schema_scope=req.schema_name, seed_sql=req.seed_sql,
             seed_context=req.seed_context, insight_id=req.insight_id, deep=req.escalate,
             history=req.history,  # follow-up composition on the deep path (parity with quick)
-            # R9 — carry the route verdict's mode so a wide question reaches the explore wave.
-            # Normally "investigate"; "explore" only when the deterministic wide detector fired
-            # under explore.route_wide. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
+            # R9 — carry the route verdict's mode: "investigate", or "explore" when a person or a starter asked for the
+            # landscape wave. (depth=="deep" ⇒ mode ∈ {investigate, explore}.)
             requested_mode=route.mode,
             allow_clarify=req.allow_clarify,
             purpose=req.purpose,  # R10 — starter provenance on the job row + run record
@@ -5887,8 +5857,7 @@ def build_ask_stream(req: "AskRequest", request: "Request | None") -> AsyncGener
         canvas_id=req.canvas_id or "", schema=req.schema_name or "",
         purpose=req.purpose or "", agent_id=req.agent_id or "",
         # what the focus says, and only that: SP-15's `{kind, id}` as it always was; FA-2's subject without its empty fields
-        focus=req.focus.model_dump(exclude_defaults=True) if getattr(req, "focus", None) else None,
-        prior_turn=_prior_turn_text(req.history))
+        focus=req.focus.model_dump(exclude_defaults=True) if getattr(req, "focus", None) else None)
     # ambient session + asker → trace attribution (RC-4: the asker is why LF-2's
     # user field was empty on every headless door — nobody was setting it)
     stream = _stream_with_session(req.session_id, stream, req.principal_ref or "")
@@ -6116,7 +6085,6 @@ async def stream_with_session_log(
     stream: AsyncGenerator[str, None], *, question: str, conn_id: str,
     door: str = "ask", depth: str = "", canvas_id: str = "", schema: str = "",
     purpose: str = "", agent_id: str = "", focus: Optional[dict] = None,
-    prior_turn: str = "",
 ) -> AsyncGenerator[str, None]:
     """Record the run in the session log (flag ``obs.session_log``).
 
@@ -6215,88 +6183,6 @@ async def stream_with_session_log(
                          **({"receipt_id": receipt_id} if receipt_id else {}),
                          **({"error": failed} if failed else {})},
             )
-            # CP-1 — the treatment shadow, AFTER the answer and after its own final
-            # record. The classification is a model call, so it runs where it cannot
-            # delay a word the user is waiting for — and, since 2026-09-28, where it
-            # cannot stop the server either: see `_shadow_when_settled`. `shadow` is a
-            # no-op unless `judgment.shadow_treatment` is on, which is the operator's
-            # spending switch and is off by default. It swallows everything, so a dead
-            # judge or a dead ledger cannot turn a delivered answer into a failed request.
-            #
-            # `ran` is the depth the door was asked for, else whether the deep path minted
-            # an investigation. What the turn DID — how many queries, which body — is read
-            # from this run's own trace when the shadow writes its row
-            # (`treatment.observed_for_trace`): it was counted here off `columns` frames
-            # until 2026-10-04, a frame the sniff list above never named, so the count was
-            # 0 on every row and CP-2 scored two levers against a constant.
-            _shadow_when_settled(question, ran=(depth or ("deep" if inv_id else "quick")),
-                                 conn_id=conn_id, prior_turn=prior_turn,
-                                 observed={"ok": failed is None,
-                                           "investigation": bool(inv_id)})
-
-
-def _prior_turn_text(history: list) -> str:
-    """The previous turn as the treatment shadow reads it: what was asked and the answer's
-    headline. Two levers (`from_last_result`, `follow_up`) are questions ABOUT the previous
-    turn; judged without it they answered "no" on every row, with full confidence."""
-    if not history:
-        return ""
-    prior = history[-1]
-    asked = str(getattr(prior, "question", "") or "").strip()
-    said = str(getattr(prior, "headline", "") or "").strip()
-    return "\n".join(p for p in (asked[:400], said[:400]) if p)
-
-
-#: The name of the thread a treatment shadow runs on — so a reader of a process sample, or a
-#: test, can find it.
-SHADOW_THREAD = "treatment-shadow"
-
-
-def _shadow_when_settled(question: str, *, ran: str, conn_id: str, observed: dict,
-                         prior_turn: str = "") -> None:
-    """CP-1's treatment shadow, on a thread of its own — never on the event loop.
-
-    It was called here directly, from the ``finally`` of an async generator, which runs ON the
-    event loop. The shadow is a model call. While it waited on its model the server served
-    nothing at all: measured on a live install on 2026-09-28, twice in one hour, for 3m45s and
-    for 8 minutes, when the provider began a reply and stalled. Health checks timed out and six
-    automations failed every tick of the heartbeat. A sample of the process found its main
-    thread in a socket read, beneath an async generator.
-
-    The comment above the call had said it "runs where it cannot delay a word the user is
-    waiting for". That was true of THIS user's answer, which had already streamed, and false of
-    every other request the server had.
-
-    The thread is `_remember_answer`'s pattern, two functions up, for the same reason: slow
-    work after the answer, which nothing waits on. It carries the request's context, so the
-    row the shadow writes is filed under the run's trace, organisation and asker exactly as it
-    was. It is a daemon: a shadow still waiting on its model when the server stops is lost,
-    which is what "a shadow never costs a turn" already promised of every other failure.
-
-    The flag is read HERE, on the loop, as it always was (``shadow`` read it first thing), so
-    with the flag off — the default — no thread is started and nothing is different.
-    """
-    import contextvars
-    import threading
-
-    from aughor.judgment import treatment
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled(treatment.SHADOW_FLAG):
-            return
-        ctx = contextvars.copy_context()
-        threading.Thread(
-            target=ctx.run,
-            # Looked up when it runs, not when it is scheduled: `treatment.shadow` is what a
-            # test replaces, and what a reload would.
-            args=(lambda: treatment.shadow(question, ran=ran, conn_id=conn_id,
-                                           observed=observed, prior_turn=prior_turn),),
-            daemon=True, name=SHADOW_THREAD,
-        ).start()
-    except Exception as exc:  # noqa: BLE001 — a shadow never costs a turn, nor its scheduling
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "the treatment shadow could not be scheduled; the turn is unaffected",
-                 counter="judgment.shadow_schedule", conn_id=conn_id or None)
 
 
 async def _stream_with_session(session_id: str, stream: AsyncGenerator[str, None],

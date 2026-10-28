@@ -541,6 +541,8 @@ SYNTHETIC_DEFAULT_ON = "_synthetic.default_on"
 SYNTHETIC_DEFAULT_ON_VAR = "AUGHOR_SYNTHETIC_DEFAULT_ON"
 SYNTHETIC_DEFAULT_OFF = "_synthetic.default_off"
 SYNTHETIC_DEFAULT_OFF_VAR = "AUGHOR_SYNTHETIC_DEFAULT_OFF"
+SYNTHETIC_OTHER_OFF = "_synthetic.other_off"
+SYNTHETIC_OTHER_OFF_VAR = "AUGHOR_SYNTHETIC_OTHER_OFF"
 
 
 def _register_synthetic(monkeypatch, name: str, var: str, default: bool) -> str:
@@ -570,6 +572,22 @@ def synthetic_default_on(monkeypatch):
     yield name
     # Safe against the real store: conftest points AUGHOR_SYSTEM_DB at a tempdir.
     _flags.clear_flag(name)
+
+
+@pytest.fixture
+def synthetic_flags(monkeypatch):
+    """Two registered DEFAULT-OFF experiment flags that exist only inside the requesting test — the exemplars the flag
+    machinery's own tests need (run-scoped overrides, the eval grid's flag axis) now that no product flag is a switch
+    (ROADMAP §3.65, 2026-10-28)."""
+    from aughor.kernel import flags as _flags
+
+    names = (_register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_OFF, SYNTHETIC_DEFAULT_OFF_VAR, default=False),
+             _register_synthetic(monkeypatch, SYNTHETIC_OTHER_OFF, SYNTHETIC_OTHER_OFF_VAR, default=False))
+    for name in names:
+        monkeypatch.setitem(_flags.EXPERIMENT, name, "test-only: an exemplar for the flag machinery")
+    yield names
+    for name in names:
+        _flags.clear_flag(name)
 
 
 @pytest.fixture

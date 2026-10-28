@@ -27,11 +27,11 @@ from aughor.evals.runner import run_experiment, run_suite
 from aughor.evals.targets import reference_checker, reference_target
 from aughor.kernel.flags import clear_flag
 
-FLAG = "explore.route_wide"   # a registered, default-off flag — one of the last two (Wave 5 hardwired closed_loop)
+FLAG = "_synthetic.default_off"   # a synthetic default-off flag (tests/conftest.py `synthetic_flags`) — no product flag is a switch since 2026-10-28
 
 
 @pytest.fixture(autouse=True)
-def _isolated(tmp_path, monkeypatch):
+def _isolated(tmp_path, monkeypatch, synthetic_flags):
     monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
     monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")

@@ -29,13 +29,12 @@ from aughor.kernel.flags import (
 # `deep_analysis.premise_check` left this list 2026-08-04 (Wave 3), and
 # `deep_analysis.causal_drill` left 2026-08-06 (Wave 5 hardwired it). `explore.route_wide` and
 # `federation.planner` left 2026-10-28 with the flags-into-settings decision (ROADMAP §3.65): the first deleted,
-# the second always on. Two flags still a switch until their live check are the exemplars now — when the last
-# graduates, this machinery and these tests go with it.
-WS4B_FLAGS = ["monitors.recovery", "automations.versions"]
+# the second always on. No product flag is a switch since, so a synthetic pair (tests/conftest.py) plays the part.
+WS4B_FLAGS = ["_synthetic.default_off", "_synthetic.other_off"]
 
 
 @pytest.fixture(autouse=True)
-def _no_override_leak():
+def _no_override_leak(synthetic_flags):
     yield
     for name in WS4B_FLAGS:
         clear_flag(name)
@@ -58,21 +57,21 @@ def test_the_auto_tier_is_dissolved_and_stays_dissolved(monkeypatch):
     assert "capabilities.auto" not in FLAG_ENV
 
     # …and with the tier empty, an unregistered-default flag is plainly off, never "auto".
-    monkeypatch.delenv("AUGHOR_MONITORS_RECOVERY", raising=False)
-    assert flag_enabled("monitors.recovery") is False
-    assert flag_state("monitors.recovery") == "off"
+    monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+    assert flag_enabled("_synthetic.default_off") is False
+    assert flag_state("_synthetic.default_off") == "off"
 
 
 def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
     # `semops.champion_validate` is the exemplar (its predecessors `ai_sql` and
     # `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame).
-    monkeypatch.delenv("AUGHOR_MONITORS_RECOVERY", raising=False)
-    assert flag_enabled("monitors.recovery") is False
-    monkeypatch.setenv("AUGHOR_MONITORS_RECOVERY", "1")
-    assert flag_enabled("monitors.recovery") is True
-    monkeypatch.setenv("AUGHOR_MONITORS_RECOVERY", "garbage")
-    assert flag_enabled("monitors.recovery") is False
+    monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+    assert flag_enabled("_synthetic.default_off") is False
+    monkeypatch.setenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", "1")
+    assert flag_enabled("_synthetic.default_off") is True
+    monkeypatch.setenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", "garbage")
+    assert flag_enabled("_synthetic.default_off") is False
 
 
 def test_specialist_packs_left_the_registry_for_good():
@@ -114,15 +113,15 @@ def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
 
 
 def test_runtime_override_wins_both_directions(monkeypatch):
-    monkeypatch.delenv("AUGHOR_AUTOMATIONS_VERSIONS", raising=False)
-    assert flag_enabled("automations.versions") is False
-    set_flag("automations.versions", True)
-    assert flag_enabled("automations.versions") is True  # override beats unset env
-    monkeypatch.setenv("AUGHOR_AUTOMATIONS_VERSIONS", "1")
-    set_flag("automations.versions", False)
-    assert flag_enabled("automations.versions") is False  # override beats truthy env
-    clear_flag("automations.versions")
-    assert flag_enabled("automations.versions") is True  # env decides again
+    monkeypatch.delenv("AUGHOR_SYNTHETIC_OTHER_OFF", raising=False)
+    assert flag_enabled("_synthetic.other_off") is False
+    set_flag("_synthetic.other_off", True)
+    assert flag_enabled("_synthetic.other_off") is True  # override beats unset env
+    monkeypatch.setenv("AUGHOR_SYNTHETIC_OTHER_OFF", "1")
+    set_flag("_synthetic.other_off", False)
+    assert flag_enabled("_synthetic.other_off") is False  # override beats truthy env
+    clear_flag("_synthetic.other_off")
+    assert flag_enabled("_synthetic.other_off") is True  # env decides again
 
 
 def test_list_flags_reflects_default_on(monkeypatch, synthetic_default_on):

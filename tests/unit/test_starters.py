@@ -37,7 +37,7 @@ def test_payload_speaks_the_chip_contract():
 
 def test_explore_starters_phrase_wide_by_construction():
     """The template and R9's router must agree: even a client that drops the
-    `mode` field gets the explore wave via is_wide_question + explore.route_wide."""
+    `mode` field gets the explore wave by its own declared path (R9's automatic route left 2026-10-28)."""
     from aughor.agent.ask_router import is_wide_question
     from aughor.agent.complexity import assess_complexity
     for s in STARTERS:

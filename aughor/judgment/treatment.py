@@ -24,9 +24,9 @@ as context and the QUESTIONS are only about the ask itself.
 tokens rather than question count, so nine levers cost about what one does. Adding a lever
 speculatively is cheap; a round trip per lever would not be.
 
-**And it runs after the answer, never in front of it.** `shadow` is called once a turn has
-settled, so a shadow experiment cannot add latency to a real answer or fail one. That is
-also why it swallows everything: an experiment that can break a turn is not an experiment.
+**The shadow that wrote a row after every settled turn was stopped on 2026-10-28** (the flags-into-settings decision,
+ROADMAP §3.65: it spent a model call on every question for a record nobody yet read). The rows it wrote stay readable
+(`shadow_corpus`, `/obs`), and the levers stay for a one-off measurement when PENDING item 4 is taken up.
 """
 from __future__ import annotations
 
@@ -37,16 +37,9 @@ from aughor.judgment.seam import Answer, Choice, Noul, Score, judge
 
 logger = logging.getLogger(__name__)
 
-#: The event this wave writes. `/obs/route-mix` already folds `session_events` into the
-#: quick/deep picture; the shadow rows land in the same substrate so the comparison is one
-#: query over one table rather than a second store to reconcile.
+#: The event the shadow wrote until 2026-10-28, in `session_events` beside `/obs/route-mix`'s picture — what
+#: `shadow_corpus` reads back.
 TREATMENT_SHADOW = "treatment_shadow"
-
-#: The flag. OFF by default and it must stay that way until someone decides to spend: a
-#: classification is a MODEL CALL per settled turn, so switching this on starts spending on
-#: every ask. That is the whole point of the wave — the corpus cannot be backfilled — but it
-#: is the operator's money and therefore the operator's switch.
-SHADOW_FLAG = "judgment.shadow_treatment"
 
 
 # ── the levers ───────────────────────────────────────────────────────────────────────────
@@ -221,51 +214,6 @@ def as_row(answers: Mapping[str, Answer]) -> dict:
     return row
 
 
-def shadow(question: str, *, ran: str, prior_turn: str = "", conn_id: str = "",
-           observed: Optional[Mapping[str, Any]] = None,
-           provider=None, answers: Optional[Mapping[str, Answer]] = None) -> Optional[dict]:
-    """Record what this ask WOULD have been routed to, beside what actually ran.
-
-    Returns the row it wrote, or None when it wrote nothing — off, or the emit is disabled.
-    Call it once a turn has SETTLED: the classification is a model call, and putting one in
-    front of a user's answer to collect data for a future wave would be paying for the
-    experiment in the one currency the experiment is meant to save.
-
-    ``observed`` is what the turn ACTUALLY did — the run's own facts, written into the same
-    row as the prediction. It is here rather than in the analysis because it cannot be
-    recovered afterwards: `grids` is counted off frames as they stream past and nothing
-    persists that count. Two levers become self-labelling because of it (`steps_implied` has
-    a real number to be wrong against, `from_last_result` a real "did any query run"), which
-    is the difference between a corpus that can be calibrated and one that can only be
-    described. See `judgment/calibration.py` for which levers that does and does not reach.
-
-    Everything is swallowed. A shadow experiment that can fail a turn is not a shadow
-    experiment, and the corpus is worth exactly nothing if collecting it breaks answers.
-    """
-    try:
-        from aughor.kernel.flags import flag_enabled
-        if not flag_enabled(SHADOW_FLAG):
-            return None
-        got = answers if answers is not None else classify(
-            question, prior_turn=prior_turn, provider=provider)
-        row = as_row(got)
-        row["ran"] = ran
-        from aughor import telemetry
-        seen = {**observed_for_trace(telemetry.current_trace_id() or ""), **(observed or {})}
-        for k, v in seen.items():
-            row[f"observed_{k}"] = v
-        # The comparison this corpus exists for, computed once at write time so the falsifier
-        # ("the shadow agrees with what ran on essentially every ask, so there is no decision
-        # here to take") is one fold over one column rather than a join per read.
-        row["agreed"] = agreed(row)
-        from aughor.obs.session_log import emit
-        emit(TREATMENT_SHADOW, name="treatment_shadow", conn_id=conn_id or None, payload=row)
-        return row
-    except Exception as exc:  # noqa: BLE001 — see the docstring; a shadow never costs a turn
-        logger.debug("treatment shadow skipped: %s", exc)
-        return None
-
-
 def served_tier(row: Mapping[str, Any]) -> Optional[str]:
     """The tier that served the turn: heavy for the analyst or a deep investigation, light for
     the fast path and the conversation. None when the row does not say which body ran."""
@@ -306,6 +254,6 @@ def shadow_corpus(*, limit: int = 5000, org_id: Optional[str] = None) -> list[di
     return out
 
 
-__all__ = ["LEVERS", "SHADOW_FLAG", "TIER_FOR", "TREATMENT_SHADOW", "agreed", "as_row",
-           "classify", "observed_for_trace", "served_tier", "shadow", "shadow_corpus",
+__all__ = ["LEVERS", "TIER_FOR", "TREATMENT_SHADOW", "agreed", "as_row",
+           "classify", "observed_for_trace", "served_tier", "shadow_corpus",
            "state_for"]

@@ -103,7 +103,10 @@ FLAG_ENV = {
     # with 409, naming both revisions, when the caller sends the `expected_rev` it read and the agent has moved since.
     # OFF: a receipt names the agent by id and name, a turn carries no stamp, and `expected_rev` is ignored, as before.
     "agents.revision_on_answers": "AUGHOR_AGENTS_REVISION_ON_ANSWERS",
-    "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
+    # "explore.route_wide" (AUGHOR_EXPLORE_ROUTE_WIDE) was DELETED 2026-10-28: the automatic route of a broad question
+    # to the explore wave, off and never measured (no broad question in the reference suite) — the flags-into-settings
+    # decision (ROADMAP §3.65). A survey is read for depth like any question; the wave stays reachable by its declared
+    # path. An operator's env var is ignored.
     # "framing.choice_confidence" (AUGHOR_FRAMING_CHOICE_CONFIDENCE) was DELETED 2026-10-04 —
     # kill 6 of the 2027 study (ROADMAP §4.9): its grid was blocked on a corpus that never
     # existed, and CP-2's receipt (a model right 61% of the time at a stated confidence of
@@ -112,7 +115,9 @@ FLAG_ENV = {
     "semops.banded_cascade": "AUGHOR_SEMOPS_BANDED_CASCADE",
     # "semops.jev_cheap_tier" (AUGHOR_SEMOPS_JEV_CHEAP_TIER) left 2026-10-28 for the organisation setting `outside_row_model` (ROADMAP §3.65,
     # `aughor/orgsettings/allows.py`): an admin's choice, read from AUGHOR_SEMOPS_JEV_CHEAP_TIER only while the setting is unset.
-    "judgment.shadow_treatment": "AUGHOR_JUDGMENT_SHADOW_TREATMENT",
+    # "judgment.shadow_treatment" (AUGHOR_JUDGMENT_SHADOW_TREATMENT) was DELETED 2026-10-28: the treatment shadow, a
+    # model call after every settled turn for a record nobody yet read — stopped with the flags-into-settings decision
+    # (ROADMAP §3.65). Its rows stay readable (`treatment.shadow_corpus`). An operator's env var is ignored.
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
     "briefing.ranges": "AUGHOR_BRIEFING_RANGES",
@@ -1277,16 +1282,6 @@ FLAG_META = {
         "description": "In a deep analysis, the model picks the next cut after it reads the last one. "
                        "Off: a fixed script answers, as it did before.",
     },
-    "explore.route_wide": {
-        "label": "Answer broad questions as a survey",
-        "summary": "A broad question, like how sales vary across the business, gets many cuts at once. "
-                   "A why question still gets a deep analysis.",
-        "facts": [{"kind": "free", "text": "No model call to decide"},
-                  {"kind": "route", "text": "Changes routing"}],
-        "description": "A fixed rule, not a model, decides which questions are broad. It applies to the "
-                       "Agent button and to automatic routing. Off: every such question gets one deep "
-                       "analysis.",
-    },
     "federation.planner": {
         "label": "Answer questions across two connections",
         "summary": "Answers a question that needs data from two connections. A model plans one "
@@ -1305,14 +1300,6 @@ FLAG_META = {
         "description": "This applies to filters over text columns, like reviews or tickets. A row still "
                        "unsure after the strong model is kept and marked for a person. Off: a sample "
                        "decides, and one disagreement re-runs every row on the strong model.",
-    },
-    "judgment.shadow_treatment": {
-        "label": "Record how much work each question needed",
-        "summary": "After each question, a model notes the smallest answer that would have "
-                   "done, from a lookup to a deep analysis. It changes nothing that runs.",
-        "facts": [{"kind": "model", "text": "1 model call per question"}],
-        "description": "The record sits beside what actually ran, so the two can be compared later. "
-                       "It is for measurement only. Off: nothing is recorded and no call is made.",
     },
     "grounding.full_schema_first": {
         "label": "Show the SQL writer every table",
@@ -1492,22 +1479,6 @@ EXPERIMENT: dict = {
     # question was answered by measurement — fewer champion calls AND, after the seam slim,
     # fewer total tokens, at higher accuracy. Receipt on the FLAG_DEFAULT entry.
     # "semops.jev_cheap_tier" left this set 2026-10-28 for the organisation setting `outside_row_model` (see its FLAG_ENV
-    # tombstone); "govern.justifications" and "aggregates.share" left for theirs the same day.
-    # CP-1 (ROADMAP §3.22). ON classifies every SETTLED ask through the judgment seam and
-    # writes the treatment it WOULD have chosen beside what actually ran, as a
-    # `treatment_shadow` session event. It routes NOTHING — CP-3 is the first wave in which
-    # a treatment changes what runs, and only after CP-2 has weighed these probabilities on
-    # the battery. OFF by default and deliberately so: a classification is a MODEL CALL per
-    # settled turn, so this spends on every ask from the moment it is switched on. The
-    # corpus cannot be backfilled, which is the argument FOR switching it on early; it is
-    # the operator's money, which is why it is not on already.
-    "judgment.shadow_treatment": "does a typed judgement pick a different treatment from "
-                                 "the one the model's tool choice picked? Measured 2026-09-23: "
-                                 "`deep_analysis` was chosen 0 times in 60 tool uses, so the "
-                                 "interactive quick/deep split is not being made at all. "
-                                 "Falsifier: if the shadow treatment agrees with what ran on "
-                                 "essentially every ask, there is no decision here to take — "
-                                 "record that in §3.22 and stop the arc's second movement.",
     # "framing.choice_confidence" left this set 2026-10-04: DELETED (see the FLAG_ENV
     # tombstone) — its own exit clause was "delete if the number is flat", and CP-2 measured
     # the flatness on the one corpus that exists.
@@ -1522,14 +1493,6 @@ EXPERIMENT: dict = {
     # ineligible-turn fallback every converse turn still rides — so this is
     # FLAG_DEFAULT, not deletion.
     # "ask.query_objects" left this set 2026-10-04: DELETED with its tool (see the FLAG_ENV
-    # tombstone) — "deleting the flag and the tool is the other exit", and the user took it.
-    "explore.route_wide": "do landscape questions answer better through the explore wave? "
-                          "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
-                          "is_wide_question fires on 0/102 of the reference suite "
-                          "(9c1e13e458ff) — the deterministic detector, run corpus-wide at "
-                          "zero LLM cost, so a grid there measures a no-op on every case "
-                          "(the exact L3 mistake Guard 1 exists to refuse). Author a "
-                          "landscape-question suite first, then grid the fired subset",
     # "explorer.synthesis_incremental" left this set 2026-08-01: DELETED outright (see
     # the FLAG_ENV tombstone) — its question was settled by the chat-UI liveliness work.
     # "deep_analysis.evidence_stubs" left this set 2026-08-01: DELETED outright (see

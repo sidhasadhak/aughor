@@ -451,10 +451,8 @@ def test_depth_follows_the_shape_under_auto():
               (ASKED[0], CHECKS[0], "Why did revenue drop in August?")]
     assert all(_routed_by_code(r) for r in routes)
     assert [r.depth for r in routes] == ["quick", "quick", "deep"]
-    r = decide_ask_route("Profile our product catalog", classifier=_no_model, route_wide=True)
-    assert _routed_by_code(r) and (r.depth, r.mode, r.shape) == ("deep", "explore", "survey")
-    # The wave off: a survey is read for depth like any question before it was named.
-    off = decide_ask_route("Profile our product catalog", classifier=_no_model, route_wide=False)
+    # A survey is read for depth like any question (R9's automatic wave route left 2026-10-28, ROADMAP §3.65).
+    off = decide_ask_route("Profile our product catalog", classifier=_no_model)
     assert _routed_by_code(off) and (off.depth, off.shape) == ("quick", "survey")
     # An under-specified read-ask is the borderline: the classifier is asked, and a failing one
     # leaves the turn deep rather than shallow.
