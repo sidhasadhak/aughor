@@ -21,7 +21,7 @@ import { SheetDashboard } from "@/components/sheets/SheetDashboard";
 import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type ColumnAction, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
 import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
-import { SharePop } from "@/components/sheets/SheetsHome";
+import { SharePop } from "@/components/sheets/SheetSharing";
 import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
 import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { useRowBlocks } from "@/components/sheets/useRowBlocks";
@@ -35,10 +35,12 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import type { SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
-  KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, filterWords, opWords, opsFor, readChanges,
-  readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, showValue,
-  undo,
-  updateColumn, type Condition, type Kind, type RowsQuery, type RuleTone, type Sheet, type SheetColumn, type SheetView as View,
+  KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, fillColumn, fillPreview, filterWords, isStale,
+  opWords, opsFor, readChanges,
+  readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, sharedWords,
+  showValue, undo, who,
+  updateColumn, type Condition, type FillPlan, type FillResult, type Kind, type RowsQuery, type RuleTone, type Sheet,
+  type SheetColumn, type SheetView as View,
   type ViewKind,
 } from "@/lib/sheets";
 
@@ -83,7 +85,7 @@ function keepFrozen(sheetId: string, n: number) {
 const KIND_OF_VIEW: Record<ViewKind | "grouped", IconName> = { grid: "table", grouped: "list", board: "column", calendar: "date" };
 
 type Panel = "" | "chat" | "combine" | "record" | "history";
-type Pop = "" | "fields" | "filter" | "sort" | "group" | "share" | "view" | "rules" | "lanes" | "card" | "by";
+type Pop = "" | "fields" | "filter" | "sort" | "group" | "share" | "view" | "rules" | "lanes" | "card" | "by" | "fill";
 
 interface Query {
   view: string;
@@ -130,12 +132,18 @@ function useNarrow(): [boolean, (el: HTMLDivElement | null) => void] {
   return [narrow, setEl];
 }
 
-export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
+export function SheetView({ sheetId, waves: given, onBack, onOpen, onAsk }: {
   sheetId: string; waves: SheetsWaves; onBack: () => void; onOpen: (id: string) => void;
   onAsk?: (question: string) => void;
 }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  // a sheet shared with the reader to read (SH-8) is open as though editing were off: nothing on it offers a change
+  const reader = sheet?.access === "view";
+  const waves = useMemo(() => (reader ? { ...given, grid: false, combine: false } : given), [given, reader]);
   const [failed, setFailed] = useState<string | null>(null);
+  // the read was refused because the sheet was not shared with the reader (a 403): said, with the way back — not a
+  // failure to retry (SH-8)
+  const [closed, setClosed] = useState(false);
   const [query, setQuery] = useState<Query | null>(null);
   // nothing opens beside the sheet until the person opens it — the chat too (the user, 2026-10-27: "Chat window shall
   // remain collapsed by default")
@@ -155,7 +163,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
     setFailed(null);
     setQuery(q => q ?? fromView(s, s.views[0]?.id ?? ""));
     return s;
-  }).catch(e => { setFailed(e instanceof Error ? e.message : String(e)); return null; }), [sheetId]);
+  }).catch(e => {
+    setFailed(e instanceof Error ? e.message : String(e));
+    setClosed((e as { status?: number } | null)?.status === 403);
+    return null;
+  }), [sheetId]);
 
   useEffect(() => { void readDefinition(); }, [readDefinition]);
 
@@ -198,6 +210,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       setSaid({ text: words, tone: "ok", offer: "undo" });
       return { ok: true };
     } catch (e) {
+      // changed by someone after this page read it: read it again, so the grid shows what they set (SH-8)
+      if (isStale(e)) setTick(t => t + 1);
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }, [sheet]);
@@ -210,6 +224,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
   useEffect(() => { setFrozen(readFrozen(sheetId)); }, [sheetId]);
   const freeze = useCallback((n: number) => { setFrozen(n); keepFrozen(sheetId, n); }, [sheetId]);
   const [filterFor, setFilterFor] = useState("");
+  // the column a model writes being filled, from its header's menu (SH-5)
+  const [fillFor, setFillFor] = useState("");
 
   // Cmd or Ctrl+F: the sheet's own search — the browser's find sees only the rows on screen, never the rest of the view
   const rootRef = useRef<HTMLDivElement>(null);
@@ -244,12 +260,23 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
       setSaid({ text: `${c.name} of row ${row} changed`, tone: "ok", offer: "undo" });
       return { ok: true };
     } catch (e) {
+      if (isStale(e)) setTick(t => t + 1);
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }, [sheet]);
 
   const hidden = useMemo(() => new Set(query?.hidden ?? []), [query]);
 
+  if (failed && closed) {
+    return (
+      <div style={{ padding: "24px 22px", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
+        <span className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--t1)" }}>
+          <Icon name="lock" size={14} /> {failed}
+        </span>
+        <Button variant="outline" size="sm" onClick={onBack}>Back to Spreadsheets</Button>
+      </div>
+    );
+  }
   if (failed) return <ReadFailed what="the sheet" error={failed} onRetry={() => void readDefinition()} />;
   if (!sheet || !query) return <Loading what="the sheet" />;
 
@@ -345,6 +372,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
     else if (action === "freeze") freeze(sheet.columns.filter(c => !hidden.has(c.id)).findIndex(c => c.id === column) + 1);
     else if (action === "unfreeze") freeze(0);
     else if (action === "width") onWidth(column, null);
+    else if (action === "fill") { setFillFor(column); setPop("fill"); }
   };
 
   /** A header dragged to a new place: the sheet's column order, for everyone — one change, undone whole. */
@@ -439,6 +467,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           </span>
           <span className="aug-fs-xs" title={counted} style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", flex: "0 4 auto", minWidth: 0,
             overflow: "hidden", textOverflow: "ellipsis" }}>{counted}</span>
+          {reader && (
+            <Chip title={`${who(sheet.created_by, sheet.me)} shared it with you to read: nothing on it can be changed from here`}>
+              Can read
+            </Chip>
+          )}
           </span>
           <span style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6,
             position: "relative", flex: "0 1 auto" }}>
@@ -448,10 +481,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
                 <Icon name="canvas" /> {narrow ? "Dashboard" : "Make a dashboard"}
               </Button>
             )}
-            <Button variant="outline" size="sm" aria-expanded={pop === "share"} title={narrow ? "Share · the workspace" : undefined}
-              onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : "Share · Workspace"}</Button>
+            <Button variant="outline" size="sm" aria-expanded={pop === "share"}
+              title={narrow ? `Share · ${sharedWords(sheet)}` : undefined}
+              onClick={() => setPop(pop === "share" ? "" : "share")}>{narrow ? "Share" : `Share · ${sharedWords(sheet)}`}</Button>
             {pop === "share" && <SharePop name={sheet.name} sheetId={sheet.id} views={sheet.views} me={sheet.me}
-              onDone={() => setPop("")} />}
+              sharing={!!waves.sharing} onDone={() => setPop("")} onChanged={() => void readDefinition()} />}
             {waves.combine && (
               <Button variant={panel === "combine" ? "secondary" : "outline"} size="sm"
                 onClick={() => setPanel(panel === "combine" ? "" : "combine")}><Icon name="link" /> Combine</Button>
@@ -564,7 +598,8 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
             )}
           </span>
           {pop === "fields" && (
-            <FieldsPop sheet={sheet} hidden={hidden} editable={waves.grid} onHidden={h => setQ({ hidden: h })}
+            <FieldsPop sheet={sheet} hidden={hidden} editable={waves.grid} byModel={!!waves.modelColumns}
+              onHidden={h => setQ({ hidden: h })}
               onClose={() => setPop("")} run={run} />
           )}
           {pop === "filter" && (
@@ -593,8 +628,11 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
           {pop === "card" && (
             <CardPop sheet={sheet} card={query.card} onApply={c => setQ({ card: c })} onClose={() => setPop("")} />
           )}
+          {pop === "fill" && fillFor && (
+            <FillPop sheet={sheet} column={fillFor} query={query} run={run} onClose={() => setPop("")} />
+          )}
           {pop === "rules" && (
-            <RulesPop sheet={sheet} run={run} onClose={() => setPop("")}
+            <RulesPop sheet={sheet} run={run} onClose={() => setPop("")} editable={!reader}
               onShow={id => { setQ({ filter: [{ column: "", op: "marked", value: id }] }); setPop(""); }} />
           )}
         </div>
@@ -632,6 +670,7 @@ export function SheetView({ sheetId, waves, onBack, onOpen, onAsk }: {
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
             <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={waves.grid}
+              canFill={!!waves.modelColumns && waves.grid}
               onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
               widths={widths} onWidth={onWidth} frozen={frozen} onColumnAction={onColumnAction}
               onMoveColumn={waves.grid ? moveColumn : undefined}
@@ -783,9 +822,11 @@ function ViewPop({ sheet, views, initial, onKeep, onClose }: {
 }
 
 /** The rules: each with the rows it marks, shown on its own or taken off; and a new one, made of conditions. */
-function RulesPop({ sheet, run, onShow, onClose }: {
+function RulesPop({ sheet, run, onShow, onClose, editable = true }: {
   sheet: Sheet; run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>; onShow: (id: string) => void;
   onClose: () => void;
+  /** false for a reader (SH-8): the rules are shown and their rows found, never kept or taken off */
+  editable?: boolean;
 }) {
   const [name, setName] = useState("");
   const [tone, setTone] = useState<RuleTone>("amber");
@@ -803,12 +844,14 @@ function RulesPop({ sheet, run, onShow, onClose }: {
             title={filterWords(r.conditions, sheet.columns)}>{filterWords(r.conditions, sheet.columns)}</span>
           <span className="aug-fs-xs" style={NUM}>{formatCount(sheet.rule_rows?.[r.id] ?? 0)} rows</span>
           <Button variant="ghost" size="xs" onClick={() => onShow(r.id)}>Show these</Button>
-          <Button variant="ghost" size="xs" onClick={() => void run(() => removeRule(sheet.id, r.id), `Rule ${r.name} taken off`)}>
-            Take off
-          </Button>
+          {editable && (
+            <Button variant="ghost" size="xs" onClick={() => void run(() => removeRule(sheet.id, r.id), `Rule ${r.name} taken off`)}>
+              Take off
+            </Button>
+          )}
         </div>
       ))}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
+      {editable && <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
         <div style={{ display: "flex", gap: 6 }}>
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="A new rule — e.g. Late and still open"
             aria-label="The rule's name" style={{ flex: 1 }} />
@@ -825,15 +868,22 @@ function RulesPop({ sheet, run, onShow, onClose }: {
             .then(ok => { if (ok) { setName(""); setRows([{ column: sheet.columns[0]?.id ?? "", op: "is", value: "" }]); } })}>
           Keep the rule
         </Button>
-      </div>
+      </div>}
     </Popover>
   );
 }
 
-function FieldsPop({ sheet, hidden, editable, onHidden, onClose, run }: {
+function FieldsPop({ sheet, hidden, editable, byModel = false, onHidden, onClose, run }: {
   sheet: Sheet; hidden: Set<string>; editable: boolean; onHidden: (h: string[]) => void; onClose: () => void;
   run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>;
+  /** SH-5: a new column may be one a model writes. */
+  byModel?: boolean;
 }) {
+  // a new column a model writes: what it writes for each row, and the row's columns it reads
+  const [modelWrites, setModelWrites] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [reads, setReads] = useState<string[]>([]);
+  const readable = sheet.columns.filter(c => c.role === "stored" && !c.model_writes && c.kind !== "link");
   const [editing, setEditing] = useState<string>("");
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
@@ -885,15 +935,96 @@ function FieldsPop({ sheet, hidden, editable, onHidden, onClose, run }: {
       {editable && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
           <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="A new column" aria-label="New column" style={{ flex: 1 }} />
-          <div style={{ width: 130 }}>
-            <Select value={newKind} onValueChange={v => setNewKind(v as Kind)}>
-              <SelectTrigger aria-label="New column's kind" />
-              <SelectContent>{NEW_COLUMN_KINDS.map(k => <SelectItem key={k} value={k}>{KIND_LABEL[k]}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <Button size="xs" disabled={!newName.trim()} onClick={() => void run(() => addColumn(sheet.id, newName, newKind),
-            `${newName} added`).then(ok => { if (ok) setNewName(""); })}>Add</Button>
+          {!modelWrites && (
+            <div style={{ width: 130 }}>
+              <Select value={newKind} onValueChange={v => setNewKind(v as Kind)}>
+                <SelectTrigger aria-label="New column's kind" />
+                <SelectContent>{NEW_COLUMN_KINDS.map(k => <SelectItem key={k} value={k}>{KIND_LABEL[k]}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
+          <Button size="xs" disabled={!newName.trim() || (modelWrites && (!instruction.trim() || reads.length === 0))}
+            onClick={() => void run(() => addColumn(sheet.id, newName, modelWrites ? "text" : newKind, "",
+              modelWrites ? { instruction, reads } : undefined),
+            `${newName} added${modelWrites ? ", written by a model" : ""}`).then(ok => {
+              if (ok) { setNewName(""); setInstruction(""); setReads([]); setModelWrites(false); }
+            })}>Add</Button>
         </div>
+      )}
+      {editable && byModel && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Checkbox checked={modelWrites} onChange={e => setModelWrites(e.target.checked)} aria-label="Written by a model" />
+            Written by a model — it fills a view you pick, at most 200 rows a fill, and nothing is counted from it
+          </label>
+          {modelWrites && (
+            <>
+              <Input value={instruction} onChange={e => setInstruction(e.target.value)} aria-label="What the model writes"
+                placeholder="What it writes for each row — e.g. the complaint, in two or three words" />
+              <span className="aug-fs-xs" style={MUTED}>It reads, for each row:</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                {readable.map(c => (
+                  <label key={c.id} className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Checkbox checked={reads.includes(c.id)} aria-label={`It reads ${c.name}`}
+                      onChange={e => setReads(e.target.checked ? [...reads, c.id] : reads.filter(x => x !== c.id))} />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Popover>
+  );
+}
+
+/** Fill a column a model writes for the rows of the view on screen (SH-5): what it would do is said first — the rows,
+ *  the calls and their cost — and nothing runs until Fill is pressed. */
+function FillPop({ sheet, column, query, run, onClose }: {
+  sheet: Sheet; column: string; query: Query;
+  run: (what: () => Promise<unknown>, words?: string) => Promise<boolean>; onClose: () => void;
+}) {
+  const [plan, setPlan] = useState<FillPlan | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [done, setDone] = useState<FillResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const c = sheet.columns.find(x => x.id === column);
+  const q = useMemo(() => ({ view: query.view, filter: query.filter, sort: query.sort, search: query.search }), [query]);
+  useEffect(() => {
+    let live = true;
+    fillPreview(sheet.id, column, q).then(p => { if (live) setPlan(p); })
+      .catch(e => { if (live) setFailed(e instanceof Error ? e.message : String(e)); });
+    return () => { live = false; };
+  }, [sheet.id, column, q, done]);
+  const fill = async () => {
+    setBusy(true);
+    await run(() => fillColumn(sheet.id, column, q).then(r => setDone(r)), `${c?.name ?? "The column"} filled`);
+    setBusy(false);
+  };
+  return (
+    <Popover onClose={onClose} left={300} width={460}>
+      <span className="aug-fs-xs" style={MUTED}>Fill {c?.name} · written by a model{c?.model_writes ? ` — ${c.model_writes.instruction}` : ""}</span>
+      {failed && <span role="alert" style={{ color: "var(--red4)" }}>{failed}</span>}
+      {!plan && !failed && <span className="aug-fs-xs" style={MUTED}>Reading what the fill would do…</span>}
+      {done && (
+        <span role="status">
+          Filled {formatCount(done.filled)} row{done.filled === 1 ? "" : "s"} with {done.calls} model call{done.calls === 1 ? "" : "s"}
+          {done.left_empty ? `; the model found nothing to write for ${formatCount(done.left_empty)}` : ""}
+          {done.failed ? `; ${formatCount(done.failed)} were not filled — a call failed` : ""}.
+        </span>
+      )}
+      {plan && !done && <span>{plan.said}</span>}
+      {plan && (
+        <span className="aug-fs-xs" style={MUTED}>
+          Each value is a model&apos;s reading, not a fact: no total, group, rule or card counts from it. A fill is one
+          change; undo takes it back whole.
+        </span>
+      )}
+      {plan && plan.rows > 0 && (
+        <Button size="xs" disabled={busy || !plan.model} style={{ alignSelf: "flex-end" }} onClick={() => void fill()}>
+          {busy ? "Filling…" : `Fill ${formatCount(plan.rows)} row${plan.rows === 1 ? "" : "s"}`}
+        </Button>
       )}
     </Popover>
   );

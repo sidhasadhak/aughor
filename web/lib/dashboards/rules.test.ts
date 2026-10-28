@@ -38,7 +38,8 @@ describe("the catalog", () => {
       version: DASHBOARD_VOCABULARY_VERSION,
       components: ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
                    "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart",
-                   "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer", "Question"],
+                   "ObjectBreakdown", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch",
+                   "Drawer", "Question"],
       tones: ["good", "warn", "bad", "info", "neutral"],
       sizes: ["small", "wide", "tall", "large", "full", "hero"],
       grid: { columns: 12, grade: 40 },
@@ -46,7 +47,7 @@ describe("the catalog", () => {
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(DASHBOARD_VOCABULARY_VERSION).toBe(11);        // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure (AP-4); 8: variables (AP-8); 9: sets read whole (AP-8b); 10: yes-no, lists, sums, queries (AP-8c); 11: a Question (PENDING 54)
+    expect(DASHBOARD_VOCABULARY_VERSION).toBe(12);        // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure (AP-4); 8: variables (AP-8); 9: sets read whole (AP-8b); 10: yes-no, lists, sums, queries (AP-8c); 11: a Question (PENDING 54); 12: a breakdown (the Grist study §10)
   });
 });
 
@@ -449,7 +450,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
       s.elements.d1.children = [];
       const section = Object.keys(s.elements).find(k => s.elements[k].type === "Section") as string;
       (s.elements[section].children as string[]).push("a1");
-    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons, ObjectList, ObjectMap, ObjectTimeline, ChooseOne, ObjectSearch, Question, Section.');
+    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ObjectBreakdown, ActionButtons, ObjectList, ObjectMap, ObjectTimeline, ChooseOne, ObjectSearch, Question, Section.');
   });
 
   it("refuses an expression where an id belongs, as for every prop", () => {
@@ -509,7 +510,7 @@ describe("a dashboard started from an object (2026-10-10)", () => {
 
   it("refuses a filter column inside a section", () => {
     expect(refused(s => placed(s, "f1", structuredClone(FILTERS))))
-      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons, ObjectList, ObjectMap, ObjectTimeline, ChooseOne, ObjectSearch, Question, Section.');
+      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ObjectBreakdown, ActionButtons, ObjectList, ObjectMap, ObjectTimeline, ChooseOne, ObjectSearch, Question, Section.');
   });
 
   it("refuses a filter whose entry says more than its path, label and object", () => {

@@ -20,7 +20,9 @@ import { useEffect, useMemo, useState } from "react";
 import { AskAboutPiece } from "@/components/dashboards/AskAbout";
 import { useCellBox, useMeasured, useSettled } from "@/components/dashboards/cellBox";
 import { Foot, Frame, Title } from "@/components/dashboards/DashboardTile";
-import { Body, Reading, Unread, WaitingWords, useNoun, usePieces, useSetQuery } from "@/components/dashboards/OntologyPieces";
+import {
+  Body, MARK_TONE, MarkLegend, Reading, Unread, WaitingWords, useMarked, useNoun, usePieces, useSetQuery, type Marked,
+} from "@/components/dashboards/OntologyPieces";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -103,9 +105,11 @@ function Pager({ offset, shown, total, limit, onPage }: { offset: number; shown:
 const CARD_PX = 54;
 const LIST_CHROME_PX = 96;
 
-export function ObjectListPiece({ elementKey, entity, set, setFrom, chooses, ticks, title, figure, mark, sort, descending }: {
+export function ObjectListPiece({ elementKey, entity, set, setFrom, chooses, ticks, title, figure, mark, sort, descending, marked }: {
   elementKey: string | null; entity?: string | null; set?: string | null; setFrom?: string | null; chooses?: string | null; ticks?: string | null;
   title?: string | null; figure?: string | null; mark?: string | null; sort?: string | null; descending?: boolean | null;
+  /** the Grist study §10 — the cards a declared rule or segment admits, marked in its tone */
+  marked?: Marked | null;
 }) {
   const { picked, pick, ticked, tickOne } = usePieces();
   const box = useCellBox();
@@ -115,6 +119,7 @@ export function ObjectListPiece({ elementKey, entity, set, setFrom, chooses, tic
   const { query, target, page, refused, offset, setOffset } = usePage({ entity, set, set_from: setFrom }, columns,
     { sort: sort ?? "", descending: !!descending, limit });
   const objects = useObjectsWord(target?.entity ?? entity, page?.type_id);
+  const marks = useMarked(target, marked, page?.key ?? "", page ? page.rows.map(r => String(r[0])) : []);
   if ("refused" in query) return <Unread what="This list cannot be read">{query.refused}</Unread>;
   if ("waiting" in query) {
     return <Frame testid="object-list"><Title title={query.label || "Objects"} /><div className="aug-fs-sm" data-testid="object-list-waiting" style={{ color: "var(--t3)" }}><WaitingWords choice={query.waiting} what={query.label} /></div></Frame>;
@@ -127,23 +132,26 @@ export function ObjectListPiece({ elementKey, entity, set, setFrom, chooses, tic
   const full = ticks_.length >= MAX_TICKED_RUNS;
   return (
     <Frame testid="object-list">
-      <Title title={query.label || objects} right={
+      <Title title={query.label || objects} right={<>
+        {marked && <MarkLegend marked={marked} read={marks} total={page.total} />}
         <span className="aug-fs-xs" data-testid="object-list-total" style={{ color: "var(--t3)", fontVariantNumeric: "tabular-nums" }}>
           {page.total == null ? "not counted" : formatCount(page.total)}
-        </span>} />
+        </span></>} />
       <Body testid="object-list-cards" gap={6}>
         {withUniqueKeys(page.rows, r => String(r[0])).map(([key, row]) => {
           const pk = String(row[0]);
           const object = { objectType: page.object_type, typeId: page.type_id, pk };
           const on = !!choice && picked[choice]?.pk === pk;
           const isTicked = ticks_.some(t => t.pk === pk);
+          const isMarked = !!marked && marks.on.has(pk);
           const cell = (i: number) => (i > 0 ? cellText(row[i], page.columns[i - 1]?.type, undefined, page.columns[i - 1]?.unit ?? "", page.columns[i - 1]?.role ?? "") : "—");
           return (
-            <div key={key} data-testid="object-list-card" aria-pressed={on} role="button" tabIndex={0}
+            <div key={key} data-testid="object-list-card" aria-pressed={on} role="button" tabIndex={0} data-marked={isMarked || undefined}
               onClick={() => choice && pick(choice, on ? null : object)} onKeyDown={e => { if (e.key === "Enter" && choice) pick(choice, on ? null : object); }}
               style={{ display: "grid", gridTemplateColumns: `${ticks ? "20px " : ""}minmax(0, 1fr) auto`, alignItems: "center", gap: 8,
                 padding: "8px 10px", borderRadius: "var(--r2)", border: "1px solid var(--b1)", cursor: choice ? "pointer" : undefined,
-                background: on ? "var(--bg-sel)" : "var(--bg-1)" }}>
+                background: on ? "var(--bg-sel)" : "var(--bg-1)",
+                boxShadow: isMarked && marked ? `inset 3px 0 0 ${MARK_TONE[marked.tone]}` : undefined }}>
               {ticks && <span onClick={e => e.stopPropagation()}><Checkbox checked={isTicked} disabled={!isTicked && full} aria-label={`Tick ${pk}`} onChange={e => tickOne(ticks, object, e.target.checked)} /></span>}
               <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                 <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ti ? cell(ti) : calledBy(page, row, 0)}</span>

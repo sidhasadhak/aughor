@@ -7,10 +7,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const setCells = vi.fn(async () => ({ change_id: "c1", cells: [] }));
+const boardReads = vi.fn();
 vi.mock("@/lib/sheets", async importOriginal => ({
   ...(await importOriginal<typeof import("@/lib/sheets")>()),
   setCells: (...a: unknown[]) => setCells(...(a as [])),
-  readBoard: async () => ({
+  readBoard: async () => (boardReads(), {
     column: "c2", total: 3, movable: true, columns: ["c1", "c2"], not_shown: [], marks: {},
     changed: { "4": { c2: { by: "user:ana", at: "2026-10-27T10:00:00", version: 2 } } },
     // row 7 was moved and then undone: it holds no edit, but its cell stands at version 2
@@ -38,7 +39,7 @@ const SHEET = {
 const board = (onMoved = vi.fn(), onOpenRow = vi.fn()) =>
   render(<SheetBoard sheet={SHEET} query={{}} column="c2" card={[]} editable tick={0} onMoved={onMoved} onOpenRow={onOpenRow} />);
 
-beforeEach(() => setCells.mockClear());
+beforeEach(() => { setCells.mockClear(); boardReads.mockClear(); });
 
 describe("SheetBoard by the keyboard", () => {
   it("moves a card to the lane beside with → and ←, at the version the board read", async () => {
@@ -72,5 +73,17 @@ describe("SheetBoard by the keyboard", () => {
     expect(to).toHaveTextContent("approved");
     fireEvent.click(screen.getByRole("button", { name: "approved" }));
     await waitFor(() => expect(setCells).toHaveBeenCalledWith("s1", [{ row: 3, column: "c2", value: "approved", version: 0 }]));
+  });
+
+  it("reads the board again when the card was moved by someone since, so it shows where they put it (SH-8)", async () => {
+    board();
+    const card = await screen.findByRole("group", { name: "Row 4, in shipped" });
+    await waitFor(() => expect(boardReads).toHaveBeenCalledTimes(1));
+    setCells.mockImplementationOnce(async () => {
+      throw Object.assign(new Error("cy changed order_status in row 4 at 18:01 UTC, after you read it"), { status: 409 });
+    });
+    fireEvent.keyDown(card, { key: "ArrowRight" });
+    expect(await screen.findByText(/cy changed order_status in row 4/)).toBeInTheDocument();
+    await waitFor(() => expect(boardReads).toHaveBeenCalledTimes(2));
   });
 });

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  asksForAChange, filterWords, lastChangeWords, monthWeeks, monthWords, opsFor, rowNoun, rowsQuery, rowsWord, shiftMonth,
-  showDate, showValue, totalWords, typedValue, valueCondition, viewCount, whenWords, type SheetColumn,
+  asksForAChange, filterWords, isStale, isWithheld, lastChangeWords, monthWeeks, monthWords, opsFor, rowNoun, rowsQuery,
+  rowsWord, sharedWords, shiftMonth, showDate, showValue, totalWords, typedValue, valueCondition, viewCount, whenWords,
+  type SheetColumn, type SheetSummary, type WithheldSheet,
 } from "./sheets";
 
 const col = (over: Partial<SheetColumn>): SheetColumn => ({
@@ -126,5 +127,25 @@ describe("a view's layouts", () => {
     expect(filterWords([{ column: "", op: "marked", value: "gone" }], [est], [rule])).toBe("marked by a rule that was taken off");
     expect(filterWords([{ column: "c5", op: "on", value: "2018-09-04" }], [est])).toBe("order_estimated_delivery_date on Sep 4, 2018");
     expect(opsFor("datetime")[0]).toBe("on");
+  });
+});
+
+describe("who a sheet is shared with (SH-8)", () => {
+  it("says the workspace, or how many people and groups were chosen", () => {
+    expect(sharedWords({ shared_with: "workspace" })).toBe("Workspace");
+    expect(sharedWords({ shared_with: "chosen", shares: 3 })).toBe("3 chosen");
+  });
+
+  it("tells a sheet not shared with the reader from one they may open", () => {
+    const withheld: WithheldSheet = { id: "s1", name: "Olist orders", created_by: "user:ana", created_at: "",
+      shared_with: "chosen", access: "", withheld: '"Olist orders" was not shared with you.' };
+    expect(isWithheld(withheld)).toBe(true);
+    expect(isWithheld({ id: "s2", name: "Olist customers", access: "view" } as SheetSummary)).toBe(false);
+  });
+
+  it("knows a change refused because the cell was changed since it was read", () => {
+    expect(isStale(Object.assign(new Error("cy changed it"), { status: 409 }))).toBe(true);
+    expect(isStale(Object.assign(new Error("not shared"), { status: 403 }))).toBe(false);
+    expect(isStale(null)).toBe(false);
   });
 });

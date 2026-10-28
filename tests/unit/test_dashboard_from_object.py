@@ -262,7 +262,7 @@ def no_edits(monkeypatch):
 def test_the_three_pieces_are_refused_while_their_flag_is_off(monkeypatch, no_edits):
     _flags(monkeypatch, {"ontology.dashboard_pieces"})
     [said] = pieces.not_resolved("c", _spec(f=FILTERS, g=FIGURE, h=CHART), graph=_graph())
-    assert "3 filter column, figure or chart piece(s)" in said and "off on this install" in said
+    assert "3 filter column, figure, chart or breakdown piece(s)" in said and "off on this install" in said
 
 
 def test_the_three_pieces_keep_when_every_query_they_make_compiles(monkeypatch, no_edits):

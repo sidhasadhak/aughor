@@ -47,8 +47,11 @@ import { z } from "zod";
  *  condition comparing any value as its kind allows. 9: a set's linked objects (`traverse`) and a set combined with
  *  another — either, both, but not (`combine`; Arc AP-8b, 2026-10-11). 10: a value of yes or no and a list, and a value
  *  summed from a set or read from a query of the dashboard's own (`sum`, `query`; Arc AP-8c, 2026-10-12). 11: a Question —
- *  asked by the agent on a rhythm and shown as the Data Canvas shows an answer (PENDING 54, 2026-10-23). */
-export const DASHBOARD_VOCABULARY_VERSION = 11;
+ *  asked by the agent on a rhythm and shown as the Data Canvas shows an answer (PENDING 54, 2026-10-23). 12: a breakdown —
+ *  an entity's objects grouped by one property, a measure or three per group, always adding up to the whole, a click on
+ *  a group the filter column's click (ObjectBreakdown), and the rows of a table or a list a declared rule or segment
+ *  admits, marked in a tone (`marked`; the Grist study §10, 2026-10-28). */
+export const DASHBOARD_VOCABULARY_VERSION = 12;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -102,6 +105,7 @@ export const LIMITS = {
   ObjectDetail: { w: [2, 12], h: [3, 16] },
   ObjectFigure: { w: [2, 6], h: [2, 4] },
   ObjectChart: { w: [3, 12], h: [4, 14] },
+  ObjectBreakdown: { w: [3, 12], h: [4, 16] },
   ActionButtons: { w: [2, 12], h: [2, 6] },
   ObjectList: { w: [3, 12], h: [4, 20] },
   ObjectMap: { w: [3, 12], h: [5, 20] },
@@ -254,6 +258,12 @@ export const CHART_DAYS = [7, 14, 30, 60, 90] as const;
 export const CHART_TOPS = [3, 4, 5, 6] as const;
 /** The measures a chart may split: a split stacks its bars, so what they measure must add up. */
 export const SPLIT_AGGS = ["count", "sum"] as const;
+/** How many groups a breakdown shows, most first; the rest are one Other row, so the column still adds to the whole. */
+export const BREAKDOWN_TOPS = [5, 8, 10, 12] as const;
+/** How a breakdown is shown: a table with share bars, or bars alone. */
+export const BREAKDOWN_SHOWS = ["table", "bars"] as const;
+/** A breakdown's measures per group: one to three. */
+export const MAX_BREAKDOWN_MEASURES = 3;
 
 const size = z.enum(SIZES).nullable().optional();
 /** An element's room on a section's grid: columns across and rows down (Arc AP-1). */
@@ -263,6 +273,13 @@ const h = z.number().int().min(1).max(MAX_ROWS).nullable().optional();
 const entityRef = z.string().regex(ONTOLOGY_ID).nullable().optional();
 const wireRef = z.string().regex(WIRE_NAME).nullable().optional();
 const pathRef = z.string().regex(PROPERTY_PATH);
+/** The rows a declared rule or segment admits, marked in one of the tones (the Grist study §10): never a formula of the
+ *  dashboard's own — the segment is the ontology's, read through the door as `in_set`. */
+const marked = z.object({
+  segment: z.string().regex(ONTOLOGY_ID),
+  tone: z.enum(TONES),
+  label: z.string().min(1).max(MAX_LABEL).nullable().optional(),
+}).strict().nullable().optional();
 
 export const dashboardCatalog = defineCatalog(schema, {
   components: {
@@ -341,6 +358,7 @@ export const dashboardCatalog = defineCatalog(schema, {
         columns: z.array(z.string().regex(PROPERTY_PATH)).max(MAX_TABLE_COLUMNS).nullable().optional(),
         sort: z.string().regex(PROPERTY_PATH).nullable().optional(),
         descending: z.boolean().nullable().optional(),
+        marked,
         size, w, h,
       }),
       description: "The objects of an entity, or of a segment of it, a page at a time: each object's key and the columns named, read through the object door.",
@@ -404,6 +422,27 @@ export const dashboardCatalog = defineCatalog(schema, {
       }),
       description: "An entity's objects per day over its last days — the reader's filtered objects as bars, all of them as a line behind. A bar may measure a property's aggregate, and be split by a property's most common values.",
     },
+    ObjectBreakdown: {
+      props: z.object({
+        entity: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+        /** a named set in place of an entity */
+        set: z.string().regex(WIRE_NAME).nullable().optional(),
+        label: z.string().min(1).max(MAX_LABEL),
+        /** The property the objects are grouped by — their own, or reached through to-one links. */
+        by: pathRef,
+        /** One to three measures per group: how many objects, or an aggregate of a property, as a figure's. */
+        measures: z.array(z.object({
+          agg: z.enum(FIGURE_AGGS),
+          path: z.string().regex(PROPERTY_PATH).nullable().optional(),
+          label: z.string().min(1).max(MAX_LABEL).nullable().optional(),
+          format: z.enum(FIGURE_FORMATS).nullable().optional(),
+        }).strict()).min(1).max(MAX_BREAKDOWN_MEASURES),
+        top: z.union([z.literal(5), z.literal(8), z.literal(10), z.literal(12)]).nullable().optional(),
+        show: z.enum(BREAKDOWN_SHOWS).nullable().optional(),
+        size, w, h,
+      }),
+      description: "An entity's objects grouped by one property, the largest groups first and the rest as one Other row, those with no value as their own row — so the groups always add up to the whole, said beneath. A click on a group narrows the dashboard as the filter column's does.",
+    },
     ActionButtons: {
       props: z.object({ buttons: z.array(actionButton).min(1).max(MAX_BUTTONS), size, w, h }),
       description: "A row of buttons, each a declared action run on what a reader chose or ticked, on a set, or with what they fill in — the declaration's own criteria, risk and approval holding every run.",
@@ -416,6 +455,7 @@ export const dashboardCatalog = defineCatalog(schema, {
          *  chip — under it. */
         title: pathRef.nullable().optional(), figure: pathRef.nullable().optional(), mark: pathRef.nullable().optional(),
         sort: pathRef.nullable().optional(), descending: z.boolean().nullable().optional(),
+        marked,
         size, w, h,
       }),
       description: "A queue of objects as cards: each called by a property, with a number and a mark beside it. A click chooses, a tick collects.",
@@ -484,17 +524,19 @@ export const dashboardCatalog = defineCatalog(schema, {
 /** Arc OC-4 — the pieces bound to the ontology. A person places them by hand; a model may arrange one and is never
  *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
 export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton" | "ObjectFilters" | "ObjectFigure"
-  | "ObjectChart" | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch" | "Drawer"
-  | "Question";
+  | "ObjectChart" | "ObjectBreakdown" | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne"
+  | "ObjectSearch" | "Drawer" | "Question";
 export const PIECE_NAMES: readonly PieceName[] = [
-  "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons",
-  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer", "Question",
+  "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart",
+  "ObjectBreakdown", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer",
+  "Question",
 ];
 /** Arc AP-4 — what the picker adds — its pieces and the drawer — each placed by hand and held to the structure's flag on
  *  the server. */
 export const AP4_PIECES: readonly PieceName[] = ["ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer"];
 /** The pieces that read an entity or a named set (Arc AP-2, AP-4). */
-export const SET_READERS: readonly PieceName[] = ["ObjectTable", "ObjectFigure", "ObjectChart", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne"];
+export const SET_READERS: readonly PieceName[] = ["ObjectTable", "ObjectFigure", "ObjectChart", "ObjectBreakdown", "ObjectList",
+  "ObjectMap", "ObjectTimeline", "ChooseOne"];
 /** The pieces a reader's click chooses an object in, and the ones whose ticks collect objects. */
 export const CHOOSERS: readonly PieceName[] = ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne"];
 export const TICKERS: readonly PieceName[] = ["ObjectTable", "ObjectList"];
@@ -510,8 +552,8 @@ export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_N
 
 /** The components a section holds — each sized, each in its place. */
 export const PLACED: readonly ComponentName[] = [
-  "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart", "ActionButtons",
-  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Question",
+  "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart", "ObjectBreakdown",
+  "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Question",
 ];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
@@ -533,6 +575,7 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   ObjectFilters: [],
   ObjectFigure: [],
   ObjectChart: [],
+  ObjectBreakdown: [],
   ActionButtons: [],
   ObjectList: [],
   ObjectMap: [],

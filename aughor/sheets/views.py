@@ -44,6 +44,16 @@ def _column(sheet: Sheet, ref: str, what: str) -> Column:
     return c
 
 
+def _counted_by(sheet: Sheet, ref: str, what: str) -> Column:
+    """A column a figure is counted by — never one a model writes (SH-5)."""
+    from aughor.sheets.model_columns import counting_refusal
+    c = _column(sheet, ref, what)
+    why = counting_refusal(c, what)
+    if why:
+        raise ViewRefused(why)
+    return c
+
+
 def check_view(sheet: Sheet, view: View) -> None:
     """Refuse a view whose layout names a column it cannot use: a board needs a choice or yes/no column, a calendar a
     date column. Its filter is read too, as every view's is."""
@@ -62,7 +72,7 @@ def check_view(sheet: Sheet, view: View) -> None:
         if c.kind not in CALENDAR_KINDS:
             raise ViewRefused(f"{c.name} is {kinds.LABELS.get(c.kind, c.kind)}; a calendar places rows by a date")
     elif view.group:
-        _column(sheet, view.group, "the grouping")
+        _counted_by(sheet, view.group, "a grouping")
     for ref in view.card:
         _column(sheet, ref, "the card")
 
@@ -72,6 +82,8 @@ def check_rule(sheet: Sheet, conditions: list[Condition]) -> None:
         raise ViewRefused("a rule needs at least one condition")
     if any(c.op in ("marked", "not_marked") for c in conditions):
         raise ViewRefused("a rule is made of conditions on columns, not of other rules")
+    for cond in conditions:
+        _counted_by(sheet, cond.column, "a rule")
     projection.where_sql(sheet, conditions)
 
 
@@ -158,7 +170,7 @@ def groups(sheet: Sheet, *, conditions: list[Condition], search: str = "", sort:
            group: str, per_group: int = GROUP_ROWS, with_totals: bool = True, org: str = "") -> dict:
     """The view's rows grouped by a column, the largest group first: each group's value, how many rows it holds, its
     totals over its own rows, and its first rows in the view's order."""
-    g = _column(sheet, group, "the grouping")
+    g = _counted_by(sheet, group, "a grouping")
     where, params = projection.where_sql(sheet, conditions, search)
     table, col = ident(sheet.table), ident(g.name)
     per_group = max(0, min(int(per_group), 50))

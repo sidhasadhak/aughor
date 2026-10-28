@@ -19,7 +19,7 @@ _ROOM = frozenset({"size", "w", "h"})
 #: The props that are a name a person reads, by the kinds whose they are: a section's or a tab's name, an image's
 #: caption, a figure's label. A list's `title` or a timeline's `label` names a property, and changing it is set-up.
 _NAMES = {"Cockpit": {"title"}, "Section": {"title"}, "Tab": {"label"}, "Image": {"caption"}, "Drawer": {"title"},
-          "ObjectFigure": {"label"}, "ObjectChart": {"label"}, "ObjectSearch": {"label"}}
+          "ObjectFigure": {"label"}, "ObjectChart": {"label"}, "ObjectBreakdown": {"label"}, "ObjectSearch": {"label"}}
 
 
 def _elements(spec: Any) -> dict:

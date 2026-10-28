@@ -46,7 +46,7 @@ import { ActionButtonsPiece } from "@/components/dashboards/ActionButtonsPiece";
 import { ReadSlotContext, type ReadSlot, type ReadStatus } from "@/components/dashboards/readSlot";
 import { ChooseOnePiece, ObjectListPiece, ObjectMapPiece, ObjectSearchPiece, ObjectTimelinePiece } from "@/components/dashboards/AppPieces";
 import {
-  ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
+  ActionButtonPiece, FilterBar, NotFiltered, ObjectBreakdownPiece, type Marked, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
   ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, ValuesBar, chooseWords, useFiltering, usePieceFiltering, usePieces,
   type FilterProperty,
 } from "@/components/dashboards/OntologyPieces";
@@ -846,6 +846,7 @@ function DashboardProcessBoard({ element }: ComponentRenderProps<{ process: stri
 function DashboardObjectTable({ element }: ComponentRenderProps<{
   entity?: string | null; segment?: string | null; columns?: string[] | null; sort?: string | null; descending?: boolean | null;
   size?: Size | null; set?: string | null; set_from?: string | null; chooses?: string | null; ticks?: string | null;
+  marked?: Marked | null;
 }>) {
   const p = element.props;
   const size = p.size ?? "wide";
@@ -856,7 +857,7 @@ function DashboardObjectTable({ element }: ComponentRenderProps<{
         {filtering.on && !filtering.narrows && <NotFiltered />}
         <ObjectTablePiece elementKey={key} entity={p.entity} segment={p.segment} set={p.set} setFrom={p.set_from}
           chooses={p.chooses} ticks={p.ticks} columns={p.columns} sort={p.sort} descending={p.descending}
-          tall={SPAN[size].h === 2} />
+          tall={SPAN[size].h === 2} marked={p.marked} />
       </>)}
     </Cell>
   );
@@ -897,6 +898,23 @@ function DashboardObjectFigure({ element }: ComponentRenderProps<{
   );
 }
 
+function DashboardObjectBreakdown({ element }: ComponentRenderProps<{
+  entity?: string | null; set?: string | null; label: string; by: string; size?: Size | null;
+  measures: { agg: string; path?: string | null; label?: string | null; format?: string | null }[];
+  top?: number | null; show?: string | null;
+}>) {
+  const { sym } = useDashboard();
+  const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
+  return (
+    <Cell type="ObjectBreakdown" props={p as Record<string, unknown>} size={p.size ?? "wide"} testid="dashboard-piece-cell">
+      {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectBreakdownPiece entity={p.entity} set={p.set} label={p.label} by={p.by} measures={p.measures} top={p.top}
+          show={p.show} sym={sym} /></>}
+    </Cell>
+  );
+}
+
 function DashboardObjectChart({ element }: ComponentRenderProps<{
   entity?: string | null; label: string; time: string; days?: number | null; size?: Size | null;
   agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null; set?: string | null;
@@ -929,6 +947,7 @@ type SetProps = { entity?: string | null; set?: string | null; set_from?: string
 
 function DashboardObjectList({ element }: ComponentRenderProps<SetProps & {
   ticks?: string | null; title: string; figure?: string | null; mark?: string | null; sort?: string | null; descending?: boolean | null;
+  marked?: Marked | null;
 }>) {
   const p = element.props;
   const filtering = usePieceFiltering(p as Record<string, unknown>);
@@ -936,7 +955,7 @@ function DashboardObjectList({ element }: ComponentRenderProps<SetProps & {
     <Cell type="ObjectList" props={p as Record<string, unknown>} size={p.size ?? "tall"} testid="dashboard-piece-cell">
       {key => <>{filtering.on && !filtering.narrows && <NotFiltered />}
         <ObjectListPiece elementKey={key} entity={p.entity} set={p.set} setFrom={p.set_from} chooses={p.chooses} ticks={p.ticks}
-          title={p.title} figure={p.figure} mark={p.mark} sort={p.sort} descending={p.descending} /></>}
+          title={p.title} figure={p.figure} mark={p.mark} sort={p.sort} descending={p.descending} marked={p.marked} /></>}
     </Cell>
   );
 }
@@ -1062,6 +1081,7 @@ const REGISTRY = {
   ObjectFilters: DashboardObjectFilters,
   ObjectFigure: DashboardObjectFigure,
   ObjectChart: DashboardObjectChart,
+  ObjectBreakdown: DashboardObjectBreakdown,
   ActionButtons: DashboardActionButtons,
   ObjectList: DashboardObjectList,
   ObjectMap: DashboardObjectMap,

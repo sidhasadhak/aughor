@@ -5,19 +5,21 @@
  * from, its last change and who it is shared with — and the files already uploaded to the Workspace, each one click
  * from becoming a sheet.
  */
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Chip, Empty, Label, MUTED, NUM, ONE_LINE } from "@/components/clarity/kit";
 import { NewSheetDialog, type NewSheetStart } from "@/components/sheets/NewSheetDialog";
 import { NewSheetChat } from "@/components/sheets/SheetChat";
+import { SharePop } from "@/components/sheets/SheetSharing";
 import type { SheetsWaves } from "@/components/sheets/SpreadsheetsPage";
-import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount, formatTimestamp } from "@/lib/format";
-import { lastChangeWords, listSheets, type SheetSummary, type SheetView, type UploadedFile } from "@/lib/sheets";
+import {
+  isWithheld, lastChangeWords, listSheets, sharedWords, type SheetSummary, type UploadedFile, type WithheldSheet,
+} from "@/lib/sheets";
 
 const BAR: CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, padding: "10px 22px", borderBottom: "1px solid var(--b1)",
@@ -31,7 +33,9 @@ function size(bytes: number): string {
 }
 
 export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id: string) => void }) {
-  const [data, setData] = useState<{ sheets: SheetSummary[]; uploads: UploadedFile[]; me: string } | null>(null);
+  // the sheets the reader may open, and apart from them the ones not shared with them — named, never read (SH-8)
+  const [data, setData] = useState<{ sheets: SheetSummary[]; withheld: WithheldSheet[]; uploads: UploadedFile[];
+    me: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [start, setStart] = useState<NewSheetStart | null>(null);
   const [chatting, setChatting] = useState(false);
@@ -40,7 +44,10 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
   const [moreFiles, setMoreFiles] = useState(false);
 
   const read = useCallback(() => {
-    listSheets().then(d => { setData(d); setFailed(null); })
+    listSheets().then(d => {
+      setData({ ...d, sheets: d.sheets.filter((s): s is SheetSummary => !isWithheld(s)), withheld: d.sheets.filter(isWithheld) });
+      setFailed(null);
+    })
       .catch(e => setFailed(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => { read(); }, [read]);
@@ -48,6 +55,10 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
   const shown = useMemo(() => {
     const q = find.trim().toLowerCase();
     return (data?.sheets ?? []).filter(s => !q || s.name.toLowerCase().includes(q) || s.came_from.toLowerCase().includes(q));
+  }, [data, find]);
+  const notShared = useMemo(() => {
+    const q = find.trim().toLowerCase();
+    return (data?.withheld ?? []).filter(s => !q || s.name.toLowerCase().includes(q));
   }, [data, find]);
 
   if (failed) return <ReadFailed what="the sheets" error={failed} onRetry={read} />;
@@ -78,9 +89,12 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
         <div style={BAR}>
           <span className="aug-fs-ui" style={{ fontWeight: 600, color: "var(--t1)" }}>Spreadsheets</span>
-          <Chip title="A sheet belongs to its workspace: everyone in it reads and edits it.">Workspace</Chip>
+          <Chip title={waves.sharing
+            ? "A sheet belongs to its workspace — everyone in it reads and edits it — until its maker shares it with chosen people."
+            : "A sheet belongs to its workspace: everyone in it reads and edits it."}>Workspace</Chip>
           <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>
             {formatCount(data.sheets.length)} sheet{data.sheets.length === 1 ? "" : "s"} · {formatCount(rows)} rows
+            {data.withheld.length ? ` · ${formatCount(data.withheld.length)} not shared with you` : ""}
           </span>
           <div style={{ marginLeft: "auto", width: 220 }}>
             <Input value={find} onChange={e => setFind(e.target.value)} placeholder="Find a sheet" aria-label="Find a sheet" />
@@ -112,7 +126,7 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
             <Label right={find ? `${formatCount(shown.length)} of ${formatCount(data.sheets.length)}` : undefined}>
               Sheets in this workspace
             </Label>
-            {data.sheets.length === 0 ? (
+            {data.sheets.length === 0 && data.withheld.length === 0 ? (
               <Empty>No sheet yet. Start one from a file, from nothing, or from a query&apos;s rows.</Empty>
             ) : (
               <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -134,6 +148,7 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
                           style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px" }}>
                           <Icon name="table" size={13} /> {s.name}
                         </Button>
+                        {s.access === "view" && <span className="aug-fs-xs" style={MUTED} title="Shared with you to read">can read</span>}
                       </td>
                       <td style={{ padding: "4px 8px", textAlign: "right", ...NUM }}>{formatCount(s.rows)}</td>
                       <td style={{ padding: "4px 8px", textAlign: "right", ...NUM }}>
@@ -147,10 +162,24 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
                       <td style={{ padding: "4px 8px", position: "relative" }}>
                         <Button variant="ghost" size="xs" onClick={() => setSharing(sharing === s.id ? "" : s.id)}
                           aria-expanded={sharing === s.id}>
-                          <Chip>Workspace</Chip>
+                          <Chip>{sharedWords(s)}</Chip>
                         </Button>
-                        {sharing === s.id && <SharePop name={s.name} sheetId={s.id} onDone={() => setSharing("")} />}
+                        {sharing === s.id && <SharePop name={s.name} sheetId={s.id} me={data.me} sharing={!!waves.sharing}
+                          onDone={() => setSharing("")} onChanged={read} />}
                       </td>
+                    </tr>
+                  ))}
+                  {notShared.map(s => (
+                    <tr key={s.id} style={{ borderTop: "1px solid var(--b0)", height: 34 }}>
+                      <td style={{ padding: "4px 8px" }}>
+                        <span style={{ ...MUTED, display: "inline-flex", alignItems: "center", gap: 6, padding: "0 4px" }}>
+                          <Icon name="lock" size={13} /> {s.name}
+                        </span>
+                      </td>
+                      <td colSpan={4} style={{ padding: "4px 8px", ...MUTED, ...ONE_LINE, maxWidth: 640 }} title={s.withheld}>
+                        {s.withheld}
+                      </td>
+                      <td style={{ padding: "4px 8px" }}><Chip>Not shared with you</Chip></td>
                     </tr>
                   ))}
                 </tbody>
@@ -202,38 +231,6 @@ export function SheetsHome({ waves, onOpen }: { waves: SheetsWaves; onOpen: (id:
       {chatting && (
         <NewSheetChat onClose={() => setChatting(false)} onMade={id => { setChatting(false); onOpen(id); }} />
       )}
-    </div>
-  );
-}
-
-/** What sharing is, said exactly: in this first version a sheet is its workspace's (the arc's call 8) — and, opened on
- *  a sheet, how many of its views everyone sees and how many are the reader's alone. */
-export function SharePop({ name, sheetId, views, me, onDone }: {
-  name: string; sheetId: string; views?: SheetView[]; me?: string; onDone: () => void;
-}) {
-  const shared = views?.filter(v => v.shared).length ?? 0;
-  const mine = views?.filter(v => !v.shared && v.owner === me).length ?? 0;
-  const ref = useRef<HTMLDivElement>(null);
-  useCloseOutside(ref, onDone);
-  return (
-    <div ref={ref} role="dialog" aria-label={`Share · ${name}`} className="aug-fs-sm" style={{ position: "absolute", right: 0,
-      top: "100%", zIndex: 20, width: 300, background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderRadius: "var(--r3)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-      <span className="aug-fs-xs" style={MUTED}>Share · {name}</span>
-      <span><b>Everyone in Workspace</b> can read and edit this sheet.</span>
-      <span className="aug-fs-xs" style={MUTED}>Choosing people, as readers or editors, comes in a later step.</span>
-      {views && (
-        <span className="aug-fs-xs">Views: <b>{shared} shared</b>{mine ? <> · <b>{mine} your own</b> (only you see {mine === 1 ? "it" : "them"})</> : ""}</span>
-      )}
-      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-        <Button variant="outline" size="xs" onClick={() => {
-          const url = new URL(window.location.href);
-          url.searchParams.set("tab", "spreadsheets");
-          url.searchParams.set("sheet", sheetId);
-          void navigator.clipboard?.writeText(url.toString());
-        }}>Copy link</Button>
-        <Button variant="ghost" size="xs" onClick={onDone}>Done</Button>
-      </div>
     </div>
   );
 }

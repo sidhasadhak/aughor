@@ -10,6 +10,12 @@ Subclasses implement:
 
 State is persisted in data/sync_state_{conn_id}.json so incremental syncs
 survive server restarts.
+
+An incremental sync must leave the mirror as a full sync of the same data would
+(Arc SV-3, Grist's reload oracle — tests/unit/test_api_sync_rebuild.py). One
+thing it cannot see is a deletion at the source, of a record or of a field from
+every record: it fetches only what changed, and a deleted record does not come
+back to say so. Deletions are seen only by a full sync, which replaces the table.
 """
 from __future__ import annotations
 
@@ -24,6 +30,7 @@ from aughor.connectors.base import Connector
 from aughor.db.doors import through_door
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.db.paths import state_dir
+from aughor.db.quoting import quote_ident
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,9 @@ _STATE_ROOT = state_dir()
 _SYNC_ROOT  = _STATE_ROOT / "api_sync"
 MAX_ROWS    = 2_000
 FULL_SYNC_LOOKBACK_DAYS = 730   # 2 years of history on first sync
+# The column an incremental sync replaces changed rows by. Matched without case, as DuckDB
+# matches names — Salesforce spells it `Id`. An object without it is always synced in full.
+KEY_COLUMN  = "id"
 
 
 class RestApiSync(Connector):
@@ -118,8 +128,24 @@ class RestApiSync(Connector):
     # ── Full / incremental sync ────────────────────────────────────────────────
 
     def sync_object(self, obj: str, since: datetime | None = None) -> int:
-        """Sync one API object. Returns count of records upserted."""
-        state   = self._load_state()
+        """Sync one API object. Returns count of records written.
+
+        `since` set → incremental: the records changed since then replace their rows by
+        KEY_COLUMN. `since` None → full: every record is fetched and the table is replaced,
+        which is the only way a deletion at the source reaches the mirror. An object with no
+        KEY_COLUMN, or no table yet, has nothing to replace rows by — appended, every changed
+        row would sit in the mirror twice — so its sync is a full one whatever `since` says.
+        """
+        state      = self._load_state()
+        table_name = obj.lower().replace("-", "_").replace(" ", "_")
+        table      = quote_ident(self, table_name)
+        columns    = self._table_columns(table_name)
+        if since is not None and KEY_COLUMN not in {c.lower() for c in columns}:
+            since = None
+
+        # The watermark is when the fetch STARTS. Stamped after it, a record changed while the
+        # pages were being read sits before the next sync's `since` and is never fetched.
+        started = datetime.now(timezone.utc)
         cursor  = None
         records: list[dict] = []
 
@@ -134,42 +160,51 @@ class RestApiSync(Connector):
             return 0
 
         flat_records = [self._flatten(r) for r in records]
-
-        # Ensure all keys are present in every record (pad missing with None)
         all_keys = sorted({k for r in flat_records for k in r})
-        flat_records = [{k: r.get(k) for k in all_keys} for r in flat_records]
 
-        table_name = obj.lower().replace("-", "_").replace(" ", "_")
-
-        # Create or replace table
-        existing = {r[0] for r in self._duckdb.execute("SHOW TABLES").fetchall()}
-        if table_name in existing:
-            # Incremental: upsert by ID if column exists
-            tmp = f"_tmp_{table_name}"
-            self._duckdb.register(tmp, flat_records)
-            if "id" in all_keys:
-                self._duckdb.execute(
-                    f"DELETE FROM {table_name} "
-                    f"WHERE id IN (SELECT id FROM {tmp})"
-                )
-                self._duckdb.execute(f"INSERT INTO {table_name} SELECT * FROM {tmp}")
+        tmp = quote_ident(self, f"_tmp_{table_name}")
+        self._load_records(tmp, all_keys, flat_records)
+        try:
+            if since is None:
+                self._duckdb.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM {tmp}")
             else:
-                self._duckdb.execute(f"INSERT INTO {table_name} SELECT * FROM {tmp}")
-            try:
-                self._duckdb.execute(f"DROP VIEW IF EXISTS {tmp}")
-            except Exception:
-                pass
-        else:
-            self._duckdb.register("_new_data", flat_records)
-            self._duckdb.execute(
-                f"CREATE TABLE {table_name} AS SELECT * FROM _new_data"
-            )
+                # By NAME, over the union of columns. By position (`SELECT *`), a page that
+                # lacks one field and adds another wrote its values into the wrong columns,
+                # without an error. A field the table has not seen is added to it, nullable.
+                known = {c.lower() for c in columns}
+                for key in all_keys:
+                    if key.lower() not in known:
+                        self._duckdb.execute(f"ALTER TABLE {table} ADD COLUMN {quote_ident(self, key)} VARCHAR")
+                id_col = quote_ident(self, KEY_COLUMN)
+                self._duckdb.execute(f"DELETE FROM {table} WHERE {id_col} IN (SELECT {id_col} FROM {tmp})")
+                self._duckdb.execute(f"INSERT INTO {table} BY NAME SELECT * FROM {tmp}")
+        finally:
+            self._duckdb.execute(f"DROP TABLE IF EXISTS {tmp}")
 
         # Update state
-        state[obj] = {"last_sync": datetime.now(timezone.utc).isoformat(), "rows": len(records)}
+        state[obj] = {"last_sync": started.isoformat(), "rows": len(records)}
         self._save_state(state)
         logger.info("API sync: %s.%s → %d records", self._connection_id, obj, len(records))
         return len(records)
+
+    def _table_columns(self, table_name: str) -> list[str]:
+        """The mirror table's column names — none when it has not been synced yet."""
+        return [r[0] for r in self._duckdb.execute(
+            "SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE table_catalog = current_database() AND table_schema = 'main' AND table_name = ? "
+            "ORDER BY ordinal_position", [table_name]).fetchall()]
+
+    def _load_records(self, tmp: str, keys: list[str], flat_records: list[dict]) -> None:
+        """The records as a temp table of named VARCHAR columns, a missing key read as NULL
+        (`_flatten` makes every value a string or None). This was `register(tmp, records)`:
+        DuckDB scans a DataFrame or an Arrow table, never a list of dicts, so every sync
+        raised before it wrote a row."""
+        self._duckdb.execute(
+            f"CREATE OR REPLACE TEMP TABLE {tmp} ("
+            + ", ".join(f"{quote_ident(self, k)} VARCHAR" for k in keys) + ")")
+        self._duckdb.executemany(
+            f"INSERT INTO {tmp} VALUES ({', '.join('?' for _ in keys)})",
+            [[r.get(k) for k in keys] for r in flat_records])
 
     def sync_all(self, incremental: bool = True) -> dict[str, int]:
         """Sync all objects. Returns {object: row_count}."""

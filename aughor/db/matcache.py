@@ -38,6 +38,12 @@ both live:
 stored rows — the row cap and the response format. Entries written before it existed are simply
 unreachable under the new key and expire on TTL; a cache miss costs a re-run, which is the one
 failure mode this store is allowed to have.
+
+**A connection that is never cached (Arc SH, SH-6 and SH-8).** The Sheets connection is live: its rows change with
+every edit, and a sheet shared with chosen people is each person's to read or not — decided at its door. A result kept
+here would be served stale after the next edit, and to a person the sheet was not shared with, before the door ever
+saw them (found on a scratch API 2026-10-27: one reader's cached rows were handed to the next). Its results are never
+kept and never served (`_never_cached`); every read of it goes to its door.
 """
 from __future__ import annotations
 
@@ -57,6 +63,13 @@ from aughor.control_plane.contracts.execution import QueryResult
 # file; it was hardcoded to the live data/ dir with no override (a non-hermetic hole).
 _CACHE_PATH = resolve_db_path("AUGHOR_MATCACHE_DB", Path("data") / "mat_cache.duckdb")
 DEFAULT_TTL: float = 3_600.0   # 1 hour
+
+
+def _never_cached(conn_id: str) -> bool:
+    """Whether a connection's results are never kept or served here — the Sheets connection (see the module
+    docstring)."""
+    from aughor.db.registry import SHEETS_ID
+    return conn_id == SHEETS_ID
 
 # Module-level connection — opened lazily once, reused — and SERIALISED: a DuckDB connection object
 # is not safe to use from two threads at once, and this one is used from every worker thread the API
@@ -140,7 +153,7 @@ def get_cached_entry(
     to both sides. A caller whose stored rows depend on a cap it chose MUST pass one, or it reads
     back a different caller's differently-sized answer. See the module docstring."""
     from aughor.kernel.registries.exclusions import refusal_for
-    if refusal_for(conn_id, "", sql, None):
+    if _never_cached(conn_id) or refusal_for(conn_id, "", sql, None):
         return None
     try:
         key = _cache_key(conn_id, sql, tenancy, variant)
@@ -198,6 +211,8 @@ def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | Non
     ``tenancy`` and ``variant`` MUST match the values used for the paired ``get_cached`` so a
     caller reads back exactly what it wrote. ``extra`` carries format-specific payload (typed
     columns, truncation) alongside the rows. See the module docstring."""
+    if _never_cached(conn_id):
+        return
     try:
         key = _cache_key(conn_id, sql, tenancy, variant)
         params = [key, conn_id, json.dumps(result.columns), json.dumps(result.rows), result.row_count,

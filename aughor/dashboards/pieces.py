@@ -24,14 +24,14 @@ import json
 from typing import Any, Optional
 
 PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure",
-          "ObjectChart", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch",
-          "Drawer")
+          "ObjectChart", "ObjectBreakdown", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne",
+          "ObjectSearch", "Drawer")
 FLAG = "ontology.dashboard_pieces"
 #: The pieces of a dashboard started from an object — refused unless its flag is on too.
-FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart")
+FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart", "ObjectBreakdown")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",
           "ActionButton": "action button", "ObjectFilters": "filter column", "ObjectFigure": "figure",
-          "ObjectChart": "chart", "ActionButtons": "action buttons", "ObjectList": "object list", "ObjectMap": "map",
+          "ObjectChart": "chart", "ObjectBreakdown": "breakdown", "ActionButtons": "action buttons", "ObjectList": "object list", "ObjectMap": "map",
           "ObjectTimeline": "timeline", "ChooseOne": "choose-one", "ObjectSearch": "search", "Drawer": "drawer"}
 #: Arc AP-4 — the pieces that list a set's objects as a table does: the props naming the properties each lists — a list's
 #: sort among them, since the object door sorts by a listed property only — and the prop it is ordered by.
@@ -48,7 +48,8 @@ def title_of(kind: str, props: dict) -> str:
     named = {"ProcessBoard": props.get("process"), "ActionButton": props.get("action"),
              "ObjectTable": ", ".join(str(v) for v in (props.get("entity") or props.get("set"), props.get("segment")) if v),
              "ObjectFilters": props.get("entity"), "ObjectFigure": props.get("label"),
-             "ObjectChart": props.get("label"), "ObjectSearch": props.get("label"), "Drawer": props.get("title"),
+             "ObjectChart": props.get("label"), "ObjectBreakdown": props.get("label"),
+             "ObjectSearch": props.get("label"), "Drawer": props.get("title"),
              **{k: props.get("entity") or props.get("set") for k in LISTED},
              "ActionButtons": ", ".join(str(b.get("label") or b.get("action")) for b in props.get("buttons") or []
                                         if isinstance(b, dict))}.get(kind)
@@ -92,8 +93,8 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
     from aughor.dashboards.from_object import FLAG as FROM_OBJECT_FLAG
     late = [key for key, (kind, _) in pieces.items() if kind in FROM_OBJECT]
     if late and not flag_enabled(FROM_OBJECT_FLAG):
-        return [f"The dashboard holds {len(late)} filter column, figure or chart piece(s), and starting a dashboard from "
-                "an object is off on this install."]
+        return [f"The dashboard holds {len(late)} filter column, figure, chart or breakdown piece(s), and starting a "
+                "dashboard from an object is off on this install."]
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
         return ["The dashboard holds pieces bound to the ontology, and no ontology is built for this connection."]
@@ -130,6 +131,17 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                 check_listing(body, graph, connection_id)
             except ObjectQueryRefused as exc:
                 said.append(f'The search "{key}" cannot be read: {exc.reason}.')
+    # the Grist study §10 — a table's or a list's mark names a segment the entity declares, or the keep is refused
+    from aughor.dashboards.marks import MARKED, probes as mark_probes
+    for key, (kind, props) in pieces.items():
+        if kind not in MARKED or not props.get("marked") or (props.get("set") and not (sets.get(props["set"]) or {}).get("entity")):
+            continue
+        entity, segment, conditions = _scope(props, sets)
+        for what, body in mark_probes(props, entity, {"segment": segment, "filters": conditions} if (segment or conditions) else {}):
+            try:
+                check_query(body, graph, connection_id)
+            except ObjectQueryRefused as exc:
+                said.append(f'The {_WORDS[kind]} "{key}" cannot be read — {what}: {exc.reason}.')
     for key, (kind, props) in pieces.items():
         if kind != "ActionButton":
             continue
@@ -163,6 +175,11 @@ def _from_object_probes(kind: str, props: dict, sets: Optional[dict] = None) -> 
     if kind == "ObjectFigure":
         return [("it", {"object_type": entity, **scope, "measures": [{"name": "n", "agg": props.get("agg") or "count",
                                                                        "path": props.get("path") or ""}]})]
+    if kind == "ObjectBreakdown":
+        # its groups: each measure per value of the property it groups by
+        measures = [{"name": f"m{i}", "agg": m.get("agg") or "count", "path": m.get("path") or ""}
+                    for i, m in enumerate(props.get("measures") or []) if isinstance(m, dict)]
+        return [("it", {"object_type": entity, **scope, "measures": measures or [count], "by": [props.get("by") or ""]})]
     # a chart's bars: how many objects, or what its measure says (Arc AP-1), per day — split by a property when it says one
     measure = {"name": "n", "agg": props.get("agg") or "count", "path": props.get("path") or ""}
     split = {"by": [props["split"]]} if props.get("split") else {}

@@ -16745,6 +16745,48 @@ export interface paths {
         patch: operations["update_column_sheets__sheet_id__columns__column_id__patch"];
         trace?: never;
     };
+    "/sheets/{sheet_id}/columns/{column_id}/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fill Column
+         * @description Fill the column for the view's rows not filled yet — at most 200, 25 a call — as one change kept under the
+         *     person signed in, said as written by a model. This route calls a model.
+         */
+        post: operations["fill_column_sheets__sheet_id__columns__column_id__fill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/columns/{column_id}/fill/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fill Preview
+         * @description What filling the column for the view's rows would do, before it runs: the rows it takes (at most 200), the model
+         *     calls (25 rows a call), and what they cost — or that the model's price is not set. No model is called.
+         */
+        post: operations["fill_preview_sheets__sheet_id__columns__column_id__fill_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/csv": {
         parameters: {
             query?: never;
@@ -17050,6 +17092,32 @@ export interface paths {
         post?: never;
         /** Remove Rule */
         delete: operations["remove_rule_sheets__sheet_id__rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Sharing
+         * @description Who a sheet is shared with — everyone in the workspace, or each person and group chosen with what they may do —
+         *     what the person asking may do, whether they may change it, and the people and groups they may choose from.
+         */
+        get: operations["read_sharing_sheets__sheet_id__sharing_get"];
+        /**
+         * Change Sharing
+         * @description Share a sheet with everyone in the workspace or with the people and groups chosen, kept as a version of its
+         *     definition. Only its maker may.
+         */
+        put: operations["change_sharing_sheets__sheet_id__sharing_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -19139,6 +19207,10 @@ export interface components {
              * @default text
              */
             kind: string;
+            /** Model */
+            model?: {
+                [key: string]: unknown;
+            } | null;
             /** Name */
             name: string;
         };
@@ -20075,6 +20147,27 @@ export interface components {
              * @default
              */
             url: string;
+        };
+        /** FillRequest */
+        FillRequest: {
+            /** Filter */
+            filter?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Search
+             * @default
+             */
+            search: string;
+            /** Sort */
+            sort?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * View
+             * @default
+             */
+            view: string;
         };
         /**
          * FixAllRequest
@@ -22307,6 +22400,15 @@ export interface components {
             until: string;
             /** Why */
             why: string;
+        };
+        /** SharingRequest */
+        SharingRequest: {
+            /** Shared With */
+            shared_with?: {
+                [key: string]: unknown;
+            }[];
+            /** Sharing */
+            sharing: string;
         };
         /** SheetIn */
         SheetIn: {
@@ -54069,6 +54171,82 @@ export interface operations {
             };
         };
     };
+    fill_column_sheets__sheet_id__columns__column_id__fill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+                column_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fill_preview_sheets__sheet_id__columns__column_id__fill_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+                column_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     csv_sheets__sheet_id__csv_get: {
         parameters: {
             query?: {
@@ -54668,6 +54846,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_sharing_sheets__sheet_id__sharing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_sharing_sheets__sheet_id__sharing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharingRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

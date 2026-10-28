@@ -213,3 +213,60 @@ export function dataTypeWord(type: string | null | undefined): string {
   if (kind === "time") return "date and time";
   return "text";
 }
+
+// ── a breakdown (the Grist study §10, 2026-10-28) ─────────────────────────────────────────────────
+
+/** One measure of a breakdown's groups: how many objects, or an aggregate of a property, as a figure's. */
+export interface BreakdownMeasure { agg: string; path?: string | null; label?: string | null; format?: string | null }
+
+/** A row a breakdown shows: one of its largest groups, the rest folded into Other, or the objects with no value. */
+export interface BreakdownRow { kind: "group" | "other" | "none"; value: string; values: (number | null)[]; groups: number }
+
+/** Whether a measure adds up across groups — a count or a sum. An average, a smallest, a largest or a count of
+ *  distinct values does not, and Other's is asked of the door rather than summed. */
+export const additive = (agg: string): boolean => agg === "count" || agg === "sum";
+
+const asNumber = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "" || v === "NULL") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const isEmptyValue = (v: unknown): boolean => v === null || v === undefined || v === "" || v === "NULL";
+
+/** A breakdown's rows from the door's groups (`[value, m0, m1, …]`, largest first): the first `top` groups with a
+ *  value, every other one folded into Other, and the objects with no value as their own row — never dropped, so the
+ *  rows hold every object. Other's additive measures are summed from the groups read; the rest are `other`, asked of
+ *  the door — and so is all of Other when the groups read are not all there are (`complete` false). */
+export function foldBreakdown(rows: unknown[][], top: number, measures: BreakdownMeasure[],
+  other: (number | null)[] | null, complete: boolean): BreakdownRow[] {
+  const valued = rows.filter(r => !isEmptyValue(r[0]));
+  const none = rows.filter(r => isEmptyValue(r[0]));
+  const row = (r: unknown[]): (number | null)[] => measures.map((_, i) => asNumber(r[i + 1]));
+  const out: BreakdownRow[] = valued.slice(0, top).map(r => ({ kind: "group", value: String(r[0]), values: row(r), groups: 1 }));
+  const rest = valued.slice(top);
+  if (rest.length || (!complete && other)) {
+    out.push({
+      kind: "other", value: "", groups: rest.length,
+      values: measures.map((m, i) => (complete && additive(m.agg)
+        ? rest.reduce((s, r) => s + (asNumber(r[i + 1]) ?? 0), 0) : other?.[i] ?? null)),
+    });
+  }
+  for (const r of none) out.push({ kind: "none", value: "", values: row(r), groups: 1 });
+  return out;
+}
+
+/** Whether the rows add up to the whole, measure by additive measure: the indexes of the measures whose rows' sum is
+ *  not the whole's (a group missed, or a door that counted an object twice). Non-additive measures are not checked. */
+export function breakdownGaps(rows: BreakdownRow[], whole: (number | null)[], measures: BreakdownMeasure[]): number[] {
+  return measures.flatMap((m, i) => {
+    if (!additive(m.agg) || whole[i] === null || whole[i] === undefined) return [];
+    const total = rows.reduce((s, r) => s + (r.values[i] ?? 0), 0);
+    return Math.abs(total - (whole[i] as number)) > Math.max(1e-6, Math.abs(whole[i] as number) * 1e-9) ? [i] : [];
+  });
+}
+
+/** A property path in words, and the link it is read through: "customer.country" → "Country", via "Customer". */
+export function pathWords(path: string): { label: string; via: string } {
+  const parts = path.split(".");
+  return { label: propertyLabel(parts[parts.length - 1]), via: parts.length > 1 ? propertyLabel(parts[parts.length - 2]) : "" };
+}

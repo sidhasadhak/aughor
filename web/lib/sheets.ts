@@ -44,6 +44,8 @@ export interface SheetColumn {
   by: string;
   how: string;
   made_by: string;
+  /** SH-5 — set on a column a model writes: its instruction, and the columns of each row it reads. */
+  model_writes?: { instruction: string; reads: string[] } | null;
 }
 
 export interface Condition { column: string; op: string; value?: unknown }
@@ -90,7 +92,44 @@ export interface SheetSummary {
   created_by: string;
   created_at: string;
   version: number;
+  /** "workspace" — everyone in it reads and edits — or, with SH-8, "chosen": only the people and groups chosen. */
   shared_with: string;
+  /** SH-8 — what the reader may do (said with `sheets.sharing` on, or for a sheet shared with chosen people). */
+  access?: SheetAccess;
+  /** How many people and groups a sheet is shared with, when it is shared with chosen ones. */
+  shares?: number;
+}
+
+/** What a person may do to a sheet: its maker owns it; the rest read or edit it. "" — it was not shared with them. */
+export type SheetAccess = "own" | "edit" | "view" | "";
+
+/** A sheet the home lists that was not shared with the reader: its name and maker, and why — nothing else (SH-8). */
+export interface WithheldSheet {
+  id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+  shared_with: string;
+  access: "";
+  withheld: string;
+}
+
+export const isWithheld = (s: SheetSummary | WithheldSheet): s is WithheldSheet => "withheld" in s && !!s.withheld;
+
+/** One person or group a sheet is shared with, and what they may do. */
+export interface SheetShare { kind: "person" | "group" | "role"; id: string; level: "view" | "edit"; name?: string }
+
+/** Who a sheet is shared with, as the person asking sees it. */
+export interface SheetSharing {
+  sharing: "workspace" | "chosen";
+  shared_with: Required<SheetShare>[];
+  maker: string;
+  access: SheetAccess;
+  why: string;
+  may_change: boolean;
+  /** The people this organisation knows by name, and its groups — what may be chosen. */
+  people: string[];
+  groups: { kind: "group" | "role"; id: string; name: string }[];
 }
 
 export interface Sheet extends Omit<SheetSummary, "columns"> {
@@ -135,7 +174,7 @@ export interface ColumnTotals {
   earliest?: string | null; latest?: string | null; yes?: number; distinct?: number;
 }
 
-export type Changed = Record<string, Record<string, { by: string; at: string; version: number }>>;
+export type Changed = Record<string, Record<string, { by: string; at: string; version: number; origin?: string }>>;
 /** Row → column → the version a change to that cell must name: set, or put back by an undo (then not in `changed`). */
 export type Versions = Record<string, Record<string, number>>;
 
@@ -251,7 +290,8 @@ async function call<T>(path: string, init: RequestInit | undefined, what: string
   const res = await fetch(`${getApiBase()}/sheets${path}`, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(body, `${what} failed (${res.status})`));
+    // the status rides along: a 409 is a cell someone changed since it was read, and the page reads it again
+    throw Object.assign(new Error(fastApiError(body, `${what} failed (${res.status})`)), { status: res.status });
   }
   return res.json() as Promise<T>;
 }
@@ -261,10 +301,26 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const listSheets = () =>
-  call<{ sheets: SheetSummary[]; uploads: UploadedFile[]; shared_with: string; me: string }>("", undefined,
+  call<{ sheets: (SheetSummary | WithheldSheet)[]; uploads: UploadedFile[]; shared_with: string; me: string }>("", undefined,
     "Reading the sheets");
 
 export const readSheet = (id: string) => call<Sheet>(`/${id}`, undefined, "Reading the sheet");
+
+export const readSharing = (id: string) => call<SheetSharing>(`/${id}/sharing`, undefined, "Reading who it is shared with");
+
+export const saveSharing = (id: string, sharing: "workspace" | "chosen", shared_with: SheetShare[]) =>
+  call<SheetSharing>(`/${id}/sharing`, json("PUT", { sharing, shared_with: shared_with.map(({ kind, id: who, level }) =>
+    ({ kind, id: who, level })) }), "Sharing the sheet");
+
+/** Whether an error is a change refused because the cell was changed after it was read (a 409). */
+export const isStale = (e: unknown) => (e as { status?: number } | null)?.status === 409;
+
+/** Who a sheet is shared with, in its button's and the home's words: "Workspace", or how many were chosen. */
+export function sharedWords(s: Pick<SheetSummary, "shared_with" | "shares">): string {
+  if (s.shared_with !== "chosen") return "Workspace";
+  const n = s.shares ?? 0;
+  return `${n} chosen`;
+}
 
 export function stageFile(file: File): Promise<StagedFile> {
   const form = new FormData();
@@ -381,8 +437,32 @@ export const addRow = (id: string, values: Record<string, unknown> = {}) =>
 export const removeRows = (id: string, rows: number[]) =>
   call<{ change_id: string }>(`/${id}/rows/remove`, json("POST", { rows }), "Removing the row");
 
-export const addColumn = (id: string, name: string, kind: Kind, description = "") =>
-  call<Sheet>(`/${id}/columns`, json("POST", { name, kind, description }), "Adding the column");
+export const addColumn = (id: string, name: string, kind: Kind, description = "",
+  model?: { instruction: string; reads: string[] }) =>
+  call<Sheet>(`/${id}/columns`, json("POST", { name, kind, description, ...(model ? { model } : {}) }), "Adding the column");
+
+/** SH-5 — what filling a column a model writes would do for a view's rows, said before it runs. */
+export interface FillPlan {
+  column: string; name: string; instruction: string;
+  /** The rows this fill takes (at most `cap`), how many of the view's rows are not filled, and how many it holds. */
+  rows: number; unfilled: number; of: number;
+  calls: number; batch: number; cap: number; model: string;
+  /** null when the model's price is not set — `cost` then says so. */
+  cost_usd: number | null; cost: string; said: string;
+}
+
+export interface FillResult {
+  change_id: string; filled: number; calls: number; asked: number; left_empty: number; failed: number;
+  unfilled: number; of: number; notes: string[]; model: string;
+}
+
+export interface FillQuery { view?: string; filter?: Condition[]; sort?: { column: string; desc: boolean }[]; search?: string }
+
+export const fillPreview = (id: string, column: string, q: FillQuery) =>
+  call<FillPlan>(`/${id}/columns/${column}/fill/preview`, json("POST", q), "Reading what the fill would do");
+
+export const fillColumn = (id: string, column: string, q: FillQuery) =>
+  call<FillResult>(`/${id}/columns/${column}/fill`, json("POST", q), "Filling the column");
 
 export const updateColumn = (id: string, column: string,
   change: { name?: string; description?: string; kind?: Kind; hidden?: boolean; before?: string }) =>

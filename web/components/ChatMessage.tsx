@@ -67,8 +67,8 @@ import { deriveFigureSource } from "@/lib/figureSource";
 import {
   DATE_COL,
   SHARE_COL,
+  classifyColumns,
   ORDINAL_COL,
-  DATE_VALUE_RE,
   isNumeric,
   firstNonNull,
   isIdLike,
@@ -115,13 +115,13 @@ export interface SourcePanelData {
 // Gran type now live in @/lib/format (imported above) — the single formatting home.
 
 // ── Smart source-panel title derived from column semantics ────────────────────
-function inferSourceTitle(columns: string[], rows: unknown[][]): string {
+export function inferSourceTitle(columns: string[], rows: unknown[][]): string {
   if (!columns.length) return "Query result";
 
-  const dateColIdx = columns.findIndex((c, i) => {
-    const v = rows[0]?.[i];
-    return DATE_COL.test(c) || (typeof v === "string" && DATE_VALUE_RE.test(v as string));
-  });
+  // The date column is the shared classifier's: a column of plain numbers is a date only when it is named as a calendar
+  // grain. By its name alone, a count called `orders_without_carrier_date` titled a breakdown by status "Daily Orders
+  // Without Carrier Date by Order Status" (a sheet's chat, 2026-10-27), though nothing in it was a day.
+  const dateColIdx = classifyColumns(columns, rows).dateIdxs[0] ?? -1;
   // isIdLike: camelCase ids (franchiseID) pass ORDINAL_COL and became the "measure"
   // in captions — "Franchiseid by Branch Name" over a chart actually plotting counts.
   const numColNames = columns.filter((c, i) =>  isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c) && !isIdLike(c));

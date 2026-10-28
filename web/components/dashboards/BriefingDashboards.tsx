@@ -770,6 +770,10 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [limitsOn, setLimitsOn] = useState(false);
   // Arc AP-7 — a query of the person's own, while `dashboard.queries` is on; a new one is written for a section
   const [queriesOn, setQueriesOn] = useState(false);
+  // a breakdown may be placed (the Grist study §10)
+  const [breakdownsOn, setBreakdownsOn] = useState(false);
+  // a table's or a list's rows marked by a declared rule (the Grist study §10)
+  const [marksOn, setMarksOn] = useState(false);
   // PENDING 54 — a question the agent answers on a rhythm
   const [questionsOn, setQuestionsOn] = useState(false);
   const [questioning, setQuestioning] = useState(false);
@@ -819,6 +823,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
         setObjectsOn(!!f["ontology.object_dashboards"]?.value); setBuilderOn(!!f["dashboard.builder"]?.value);
         setWiringOn(!!f["dashboard.wiring"]?.value); setStructureOn(!!f["dashboard.app_pieces"]?.value);
         setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["dashboard.queries"]?.value);
+        setBreakdownsOn(!!f["dashboard.breakdowns"]?.value); setMarksOn(!!f["dashboard.marks"]?.value);
         setVariablesOn(!!f["dashboard.variables"]?.value); setQuestionsOn(!!f["dashboard.questions"]?.value);
         setTemplatesOn(!!f["packs.dashboard_templates"]?.value);
       }
@@ -1193,7 +1198,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     return (
       <div data-testid="briefing-dashboards" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <DashboardBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
-          wiringOn={wiringOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
+          wiringOn={wiringOn} marksOn={marksOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
           checks={checks} variablesOn={variablesOn && wiringOn}
           cardReads={id => valuesRead(data.cards.find(c => c.id === id)?.sql)}
           queryCards={placedQueries(current, data.cards)}
@@ -1340,7 +1345,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
               {composers}
               {adding && structureOn && (
                 <PiecePicker spec={current} section={adding.section} connectionId={connectionId} schema={schema} wiringOn={wiringOn}
-                  queriesOn={queriesOn} onPlace={change} onClose={() => setAdding(null)}
+                  queriesOn={queriesOn} breakdownsOn={breakdownsOn} onPlace={change} onClose={() => setAdding(null)}
                   onHandOff={(kind, section) => {
                     setAdding(null); shut(); target.current = section;
                     if (kind === "query") { setShowHistory(false); setWriting({ section }); return; }

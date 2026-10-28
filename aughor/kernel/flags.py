@@ -157,6 +157,8 @@ FLAG_ENV = {
     "sheets.combine": "AUGHOR_SHEETS_COMBINE",
     "sheets.views": "AUGHOR_SHEETS_VIEWS",
     "sheets.everywhere": "AUGHOR_SHEETS_EVERYWHERE",
+    "sheets.sharing": "AUGHOR_SHEETS_SHARING",
+    "sheets.model_columns": "AUGHOR_SHEETS_MODEL_COLUMNS",
     # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
     # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
     # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
@@ -258,6 +260,10 @@ FLAG_ENV = {
     # and shown as the Data Canvas shows one; opening the dashboard never asks. OFF: the vocabulary refuses a Question
     # and the question routes answer 404.
     "dashboard.questions": "AUGHOR_DASHBOARD_QUESTIONS",
+    # A breakdown piece — an entity's objects grouped by a property, adding up to the whole (the Grist study §10).
+    "dashboard.breakdowns": "AUGHOR_DASHBOARD_BREAKDOWNS",
+    # A table's or a list's rows marked by a declared rule (the Grist study §10).
+    "dashboard.marks": "AUGHOR_DASHBOARD_MARKS",
     # PENDING 57 (2026-10-24, docs/DECISION_LOOP_STUDY_2026-10-24.md, D-1 to D-3). ON: a decision is booked in full where
     # it is made (Home's Decide cites its finding and may state an expectation; "Not worth it" books not acting; a
     # recommendation keeps its report's other actions as alternatives and marks what was recommended), every decision
@@ -921,6 +927,26 @@ FLAG_META = {
                        "pages past its newest thousand and exports as a file. Off: a payload read records who read it, "
                        "not why.",
     },
+    "dashboard.marks": {
+        "label": "Rows marked by a rule on dashboards",
+        "summary": "Mark a table's or a list's rows that a declared rule admits, in a colour you choose. Its "
+                   "legend says how many.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Only rules the ontology declares"}],
+        "description": "A mark is never a condition written on the dashboard: it names a rule or segment declared on "
+                       "the entity. One the entity does not declare is refused when the dashboard is kept. Off: no "
+                       "row is marked.",
+    },
+    "dashboard.breakdowns": {
+        "label": "Breakdowns on dashboards",
+        "summary": "Group an entity's objects by a property on a dashboard, with a count or a total per group. A click "
+                   "on a group narrows the dashboard.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Groups always add up"}],
+        "description": "The largest groups are shown, the rest are one Other row, and objects with no value are their "
+                       "own row. The line beneath says whether the groups add up to the whole. Off: a dashboard holds "
+                       "no breakdown, and one that does is refused when kept.",
+    },
     "dashboard.questions": {
         "label": "Questions on a dashboard",
         "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
@@ -1198,6 +1224,26 @@ FLAG_META = {
                   {"kind": "private", "text": "Cards read the sheet live"}],
         "description": "The cards offered are counted on the sheet first, and you keep the ones you tick. It needs "
                        "dashboards and their own queries on. Off: a sheet has no Make a dashboard.",
+    },
+    "sheets.sharing": {
+        "label": "Share sheets with chosen people",
+        "summary": "Share a sheet with the people and groups you choose, each able to read it or to edit it. "
+                   "Its maker decides.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Others see its name, not rows"}],
+        "description": "A sheet not shared with you says so and who made it; its rows are refused everywhere, the "
+                       "SQL Editor and the chat included. Off: every sheet is the workspace's, and a sheet already "
+                       "shared with chosen people stays shared only with them.",
+    },
+    "sheets.model_columns": {
+        "label": "Columns a model writes, row by row",
+        "summary": "Add a column a model fills for the rows of a view you pick. You see the calls and their cost "
+                   "before it runs.",
+        "facts": [{"kind": "model", "text": "1 call per 25 rows"},
+                  {"kind": "private", "text": "Marked, never counted in figures"}],
+        "description": "A fill takes at most 200 rows, and is one change you can undo. The column says it was written "
+                       "by a model wherever it is shown, and no total, group, rule or dashboard card counts from it. "
+                       "Off: no column is written by a model.",
     },
     "packs.installed_versions": {
         "label": "Record each pack's installed version",
@@ -1849,6 +1895,15 @@ GRADUATION_QUEUE: dict = {
                          "shows, and a cell edited in the sheet moves the card that reads it on the next read. "
                          "Falsifier: a card that differs from the grid's own total of the same rows, or that still "
                          "shows the value before an edit, stops it",
+    # Arc SH, SH-8 (ROADMAP §3.64), queued 2026-10-27. No model call.
+    "sheets.sharing": "receipt: on the live install, a sheet is shared with one chosen person to read and one to edit; "
+                      "a third person is told it exists and refused its rows in the grid, the SQL Editor and the chat. "
+                      "Falsifier: a row of a sheet not shared with someone reaching them through any door stops it",
+    # Arc SH, SH-5 (ROADMAP §3.64), queued 2026-10-28. Model calls: 1 per 25 rows filled.
+    "sheets.model_columns": "receipt: on the live install, a column a model writes is filled for one view's rows, the "
+                            "calls and cost said before and counted after; the column is marked everywhere it is shown. "
+                            "Falsifier: a figure, group, rule or card counted from a model's values, or a fill past "
+                            "200 rows, stops it",
     # Arc FA, FA-6 (ROADMAP §3.60), queued 2026-10-26. No model call.
     "packs.installed_versions": "receipt: on the live install, a pack bound at one version and moved to the next lists "
                                 "what was added, changed and removed, marks a declined term with the version it was "
@@ -1858,6 +1913,13 @@ GRADUATION_QUEUE: dict = {
                                  "with a card per registered approved metric, the rest named as skipped, and the kept "
                                  "dashboard's source names the pack and its version. Falsifier: a drafted card made "
                                  "from a metric the connection does not hold stops it",
+    # The Grist study §10, queued 2026-10-28. No model call.
+    "dashboard.marks": "receipt: on theLook, an objects table marks the objects a declared segment admits, and its "
+                       "legend's count equals the segment's own count over the same set. Falsifier: a marked row the "
+                       "segment does not admit, or a legend that differs from the segment's count, stops it",
+    "dashboard.breakdowns": "receipt: on theLook, a breakdown of an entity by a linked property shows groups whose "
+                            "count and sum add up to the dashboard's own figures, and a click on one narrows the other "
+                            "pieces to it. Falsifier: groups that do not add up to the whole stop it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "

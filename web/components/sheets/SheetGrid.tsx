@@ -66,7 +66,8 @@ export const MAX_WIDTH = 800;
  *  column carries and its ⓘ. */
 export function width(c: ShownColumn): number {
   if (typeof c.width === "number") return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, c.width));
-  const extra = (c.role !== "stored" ? 58 : 0) + (c.description || c.role !== "stored" ? 20 : 0) + (c.made_by ? 66 : 0);
+  const extra = (c.role !== "stored" ? 58 : 0) + (c.description || c.role !== "stored" ? 20 : 0) + (c.made_by ? 66 : 0)
+    + (c.model_writes ? 116 : 0);
   return Math.min(320, Math.max(WIDTH[c.kind] ?? 160, Math.min(260, c.name.length * 8 + 44)) + extra);
 }
 
@@ -118,7 +119,10 @@ function cellTone(c: ShownColumn, tone: string | undefined): string | undefined 
 
 /** A value as its column shows it; a long one ends in "…" and is whole on hover. */
 export function CellValue({ column, value }: { column: SheetColumn; value: unknown }) {
-  if (value === null || value === undefined || value === "") return <span style={{ color: "var(--t4)" }}>—</span>;
+  if (value === null || value === undefined || value === "") {
+    // a model column's empty cell is a row the model has not filled — said, never left to read as nothing there
+    return <span style={{ color: "var(--t4)" }}>{column.model_writes ? "not filled" : "—"}</span>;
+  }
   if (column.kind === "choice") return <Chip tone={choiceTone(column, value)}>{String(value)}</Chip>;
   if (column.kind === "yesno") return <Checkbox checked={value === true || value === "true"} disabled aria-label={column.name} />;
   const text = column.kind === "link" ? String(value) : showValue(value, column);
@@ -139,12 +143,16 @@ export function aboutColumn(sheet: Sheet, c: SheetColumn): string[] {
   if (c.description) lines.push(c.description.charAt(0).toUpperCase() + c.description.slice(1)
     + (c.description.endsWith(".") ? "" : "."));
   if (c.made_by) lines.push("Proposed by the assistant, applied by a person.");
+  if (c.model_writes) {
+    lines.push(`It reads ${c.model_writes.reads.map(nameOf).join(", ")}. Each value is a model's reading, not a fact: `
+      + "no total, group, rule or card counts from it.");
+  }
   return lines;
 }
 
 /** What a column's menu does — the grid keeps fitting a width; the view does the rest. */
 export type ColumnAction = "asc" | "desc" | "then-asc" | "then-desc" | "filter" | "hide" | "freeze" | "unfreeze" | "fit"
-  | "width";
+  | "width" | "fill";
 
 /** How far the pointer goes before a press on a header is a drag that moves the column, not a click that sorts. */
 const DRAG_PAST = 6;
@@ -165,7 +173,7 @@ export function edgeStep(rect: { left: number; right: number; top: number; botto
  *  a column's name sorts by it: lowest first, then highest first, then back to the sheet's own order; with Shift, after
  *  the sorts there are. A press and a drag moves the column. Its ▾, or a right-click, opens its menu: sort, filter, hide,
  *  freeze, fit. Its right edge takes a drag to make it wider or narrower, a double-click to fit, and the arrows. */
-export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, onAction, onMove }: {
+export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, onAction, onMove, canFill }: {
   sheet: Sheet; shown: ShownColumn[]; sort?: { column: string; desc: boolean }[];
   /** A click sorts by the column; with Shift, as a further sort after the ones there are. */
   onSort?: (column: string, add?: boolean) => void;
@@ -174,6 +182,8 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, on
   onAction?: (action: ColumnAction, column: string) => void;
   /** A column dragged to a new place: in front of `before` ("" — the end). */
   onMove?: (column: string, before: string) => void;
+  /** SH-5: a column a model writes offers Fill in its menu. */
+  canFill?: boolean;
 }) {
   const startResize = (e: ReactPointerEvent<HTMLElement>, c: ShownColumn) => {
     if (!onWidth || e.button !== 0) return;
@@ -264,6 +274,7 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, on
     ...(frozen ? [{ action: "unfreeze" as const, label: "Unfreeze the columns" }] : []),
     ...(onFit ? [{ action: "fit" as const, label: "Fit the width to what it holds" }] : []),
     ...(typeof menuOn.width === "number" ? [{ action: "width" as const, label: "Back to its own width" }] : []),
+    ...(canFill && menuOn.model_writes ? [{ action: "fill" as const, label: "Fill with the model…" }] : []),
   ] : [];
   return (
     <div ref={rowRef} role="row" className="aug-fs-xs" style={{ display: "flex", position: "sticky", top: 0, zIndex: 3,
@@ -309,6 +320,11 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, on
           </Button>
           {mark(c) && <Chip tone="accent">{mark(c)}</Chip>}
           {c.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
+          {c.model_writes && (
+            <Chip tone="violet" title="Each value is a model's reading, not a fact — nothing is counted from it">
+              written by a model
+            </Chip>
+          )}
           {(c.description || c.role !== "stored") && (
             <Button variant="ghost" size="icon-xs" aria-label={`What ${c.name} is`} aria-expanded={about === c.id}
               onClick={() => setAbout(about === c.id ? "" : c.id)} style={{ ...MUTED }}>
@@ -434,8 +450,11 @@ export function RowNumber({ row, marks, rules, onOpen }: {
 /** Where a cell's value came from, said from what the grid already holds — never a read per click. The whole history
  *  of a row's values is its record's (Open row). */
 export function cellOrigin(sheet: Sheet, c: SheetColumn, row: number,
-  set?: { by: string; at: string; version: number }): string {
+  set?: { by: string; at: string; version: number; origin?: string }): string {
   if (set) {
+    if (set.origin?.startsWith("model:")) {
+      return `Written by a model for ${who(set.by, sheet.me)} · ${formatTimestamp(set.at, "short")} · a reading, not a fact`;
+    }
     return `Set by ${who(set.by, sheet.me)} · ${formatTimestamp(set.at, "short")}`
       + (set.version > 1 ? ` · changed ${formatCount(set.version)} times` : "");
   }
@@ -884,7 +903,9 @@ export function rangeWords(r: Range, got: { cols: SheetColumn[]; rows: unknown[]
 
 /** The flat grid: every row of the view in one scroll, read a block at a time as it comes into sight. */
 export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, onUndo, onRedo, onOpenRow, footer, sort,
-  onSort, reading = "", widths, onWidth, frozen = 0, onColumnAction, onMoveColumn }: {
+  onSort, reading = "", widths, onWidth, frozen = 0, onColumnAction, onMoveColumn, canFill }: {
+  /** SH-5: a column a model writes offers Fill in its menu. */
+  canFill?: boolean;
   /** How many of the columns shown stay at the left. */
   frozen?: number;
   /** A column's menu — all but fitting its width, which the grid does itself. */
@@ -1062,7 +1083,7 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, o
         <div style={{ width: span, minWidth: "100%", position: "relative" }}>
           <GridHeader sheet={sheet} shown={shown} sort={sort} onSort={onSort} onWidth={onWidth} onFit={fit}
             onAction={onColumnAction ? (a, col) => (a === "fit" ? fit(col) : onColumnAction(a, col)) : undefined}
-            onMove={onMoveColumn} />
+            onMove={onMoveColumn} canFill={canFill} />
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {items.map(item => {
               const r = rows.rowAt(item.index);
@@ -1150,7 +1171,7 @@ function CellEditor({ column, text, original, saving, typed, onChange, onSave, o
  */
 function CellBar({ sheet, selected, column, value, set, editable, error, said, range, onChange, onOpenRow }: {
   sheet: Sheet; selected: Selected | null; column?: SheetColumn; value: unknown;
-  set?: { by: string; at: string; version: number }; editable: boolean; error: string | null;
+  set?: { by: string; at: string; version: number; origin?: string }; editable: boolean; error: string | null;
   /** What was just done here — a copy. */
   said: string | null;
   /** A range selected, in words — its size, and its sum where it holds numbers. */
@@ -1163,8 +1184,13 @@ function CellBar({ sheet, selected, column, value, set, editable, error, said, r
       flex: "0 0 auto", display: "flex", alignItems: "center", gap: 10, padding: "0 12px", minWidth: 0,
       borderBottom: "1px solid var(--b0)", background: "var(--bg-1)", color: "var(--t3)" }}>
       {!selected || !column ? (
-        <span style={ELLIPSIS}>Select a cell to see where its value came from · double-click, Enter or type to change it ·
-          drag or Shift selects a range · paste with Cmd or Ctrl+V</span>
+        editable ? (
+          <span style={ELLIPSIS}>Select a cell to see where its value came from · double-click, Enter or type to change it ·
+            drag or Shift selects a range · paste with Cmd or Ctrl+V</span>
+        ) : (
+          <span style={ELLIPSIS}>Select a cell to see where its value came from · drag or Shift selects a range · copy with
+            Cmd or Ctrl+C</span>
+        )
       ) : selected.row === -1 && !range ? (
         // a key reached a row not read yet: said while it is read, never as a row number it does not have
         <span style={ELLIPSIS}>{column.name} · reading the row…</span>
@@ -1178,7 +1204,7 @@ function CellBar({ sheet, selected, column, value, set, editable, error, said, r
           <span style={{ ...NUM, whiteSpace: "nowrap" }}>{column.name} · row {formatCount(selected.row)}</span>
           <span className="aug-fs-sm" title={empty ? undefined : String(value)}
             style={{ ...ELLIPSIS, maxWidth: 360, color: empty ? "var(--t4)" : "var(--t1)", fontWeight: 600 }}>
-            {empty ? "empty" : showValue(value, column) || String(value)}
+            {empty ? (column.model_writes ? "not filled" : "empty") : showValue(value, column) || String(value)}
           </span>
           {error ? <span role="alert" style={{ ...ELLIPSIS, color: "var(--red4)" }} title={error}>{error}</span>
             : said ? <span style={{ ...ELLIPSIS, color: "var(--grn4)" }}>{said}</span>

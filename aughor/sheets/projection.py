@@ -545,6 +545,8 @@ def totals(sheet: Sheet, where: str, params: list, cur) -> dict:
         col = ident(c.name)
         exprs.append(f"COUNT({col})")
         keys.append((c.id, "filled"))
+        if c.model_writes is not None:
+            continue                        # SH-5: how many rows a model filled, and nothing counted from its values
         if c.kind in (kinds.NUMBER, kinds.MONEY):
             exprs += [f"SUM({col})", f"AVG({col})", f"MIN({col})", f"MAX({col})"]
             keys += [(c.id, "sum"), (c.id, "average"), (c.id, "min"), (c.id, "max")]

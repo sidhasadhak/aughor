@@ -472,12 +472,14 @@ function Sidebar({
         ))}
       </div>
       <div className="aug-nav-foot">
-        {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
-        {/* Demo posture is stated, not implied. The hosted demo names a real company, so
-            a visitor must be able to see at a glance that the operational figures are
-            synthetic — and "Local" was simply wrong there: the backend is a recording. */}
-        <div className="aug-fs-xs aug-mono aug-nav-meta" style={{ color: "var(--t3)", padding: "6px 14px 0" }}>
-          {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
+        <div className="aug-nav-foot-row">
+          {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
+          {/* Demo posture is stated, not implied. The hosted demo names a real company, so
+              a visitor must be able to see at a glance that the operational figures are
+              synthetic — and "Local" was simply wrong there: the backend is a recording. */}
+          <div className="aug-fs-xs aug-mono aug-nav-meta" style={{ color: "var(--t3)", padding: "0 14px 0 0", whiteSpace: "nowrap" }}>
+            {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
+          </div>
         </div>
         {DEMO_PACK && (
           <div

@@ -156,6 +156,7 @@ function checkProps(key: string, type: ComponentName, props: Obj, out: Dashboard
   const parsed = declared.safeParse(literal);
   if (parsed.success) {
     if (type === "ObjectChart") checkChart(key, literal, out);
+    if (type === "ObjectBreakdown") checkBreakdown(key, literal, out);
     return;
   }
   for (const issue of parsed.error.issues) {
@@ -180,6 +181,26 @@ function checkChart(key: string, props: Obj, out: DashboardIssue[]): void {
   if (props.top != null && !props.split) {
     refuse(`The chart ${q(key)} says how many values to draw and splits by nothing. Name the property in "split".`);
   }
+}
+
+/** A breakdown's measures each say what they read: a count reads no property, any other aggregate names one — and the
+ *  property it groups by is never one it measures, which would be a group's own value said again. */
+function checkBreakdown(key: string, props: Obj, out: DashboardIssue[]): void {
+  const refuse = (message: string) => out.push({ code: "bad_prop", elementKey: key, message });
+  const measures = Array.isArray(props.measures) ? props.measures as Obj[] : [];
+  measures.forEach((m, i) => {
+    const agg = String(m.agg ?? "count");
+    if (agg !== "count" && !m.path) {
+      refuse(`The breakdown ${q(key)} measures the ${agg} of nothing in its measure ${i + 1}. Name the property it reads in "path".`);
+    }
+    if (agg === "count" && m.path) {
+      refuse(`The breakdown ${q(key)} counts objects in its measure ${i + 1} and names a property. A count reads none — `
+        + "say count_distinct to count a property's different values.");
+    }
+    if (m.path && m.path === props.by) {
+      refuse(`The breakdown ${q(key)} groups by ${q(String(props.by))} and also measures it. A group's measure reads another property.`);
+    }
+  });
 }
 
 /** Arc AP-2 and AP-3 — the wiring, by name: every set, value and choice a piece names is one the dashboard holds, sets
@@ -456,7 +477,8 @@ function checkStructure(sound: Map<string, { type: ComponentName; props: Obj; ch
 /** "A figure", "An objects table" — a kind's word with its article, capitalised. */
 const an = (word: string) => `${/^[aeiou]/i.test(word) ? "An" : "A"} ${word}`;
 const KIND: Partial<Record<string, string>> = {
-  ObjectTable: "objects table", ObjectFigure: "figure", ObjectChart: "chart", ObjectList: "object list", ObjectMap: "map",
+  ObjectTable: "objects table", ObjectFigure: "figure", ObjectChart: "chart", ObjectBreakdown: "breakdown",
+  ObjectList: "object list", ObjectMap: "map",
   ObjectTimeline: "timeline", ChooseOne: "choose-one", ObjectSearch: "search", Drawer: "drawer",
 };
 

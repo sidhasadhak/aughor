@@ -151,6 +151,32 @@ describe("a chart's measure and split are held to one sense", () => {
   });
 });
 
+describe("a breakdown's measures each say what they read (the Grist study §10)", () => {
+  const breakdown = (props: Record<string, unknown>) => {
+    const s = objectDashboard();
+    s.elements.sec.children = [...s.elements.sec.children, "by-country"];
+    s.elements["by-country"] = { type: "ObjectBreakdown", children: [], props: { entity: "order", label: "Orders by country",
+      by: "placed_by.country", measures: [{ agg: "count" }], ...props } };
+    return issues(s);
+  };
+
+  it("accepts a count, a sum of a property, three measures, a top and bars", () => {
+    expect(breakdown({})).toEqual([]);
+    expect(breakdown({ measures: [{ agg: "count" }, { agg: "sum", path: "revenue", format: "money" }, { agg: "avg", path: "num_of_item" }],
+      top: 10, show: "bars" })).toEqual([]);
+  });
+
+  it("refuses an aggregate of nothing, a count of a property, measuring what it groups by, and a fourth measure", () => {
+    expect(breakdown({ measures: [{ agg: "sum" }] }).join(" ")).toMatch(/measures the sum of nothing in its measure 1/);
+    expect(breakdown({ measures: [{ agg: "count", path: "revenue" }] }).join(" ")).toMatch(/A count reads none/);
+    expect(breakdown({ measures: [{ agg: "count_distinct", path: "placed_by.country" }] }).join(" "))
+      .toMatch(/groups by "placed_by.country" and also measures it/);
+    expect(breakdown({ measures: [{ agg: "count" }, { agg: "count" }, { agg: "count" }, { agg: "count" }] }).join(" "))
+      .toMatch(/measures/);
+    expect(breakdown({ entity: null }).join(" ")).toMatch(/names neither an entity nor a set/);
+  });
+});
+
 describe("what a dashboard's writer is told", () => {
   it("says nothing of the grid while dashboards are not built in place, and two fragments more while they are", () => {
     const off = grammar();

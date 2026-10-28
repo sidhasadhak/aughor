@@ -83,6 +83,9 @@ def _column_line(c: Column, sheet: Sheet) -> dict:
         line["currency"] = c.currency or "not confirmed — say amounts plainly"
     if c.kind == kinds.DATE:
         line["compare"] = "by calendar day — never against a timestamp's time of day"
+    if c.model_writes is not None:
+        line["written_by_a_model"] = ("each value is a model's reading, not a fact: never count by it, never total it, "
+                                      "and never state its values as findings; empty means not filled yet")
     if c.role == "computed":
         line["computed_from"] = c.expression
     elif c.role == "lookup":
@@ -130,6 +133,11 @@ def explain_sheet(ref: str) -> dict:
     sheet = model.get(sheet_id)
     if sheet is None:
         return {"found": False, "kind": "sheet", "id": ref, "summary": f"No sheet {sheet_id!r} is kept here."}
+    from aughor.sheets.sharing import NotShared, readable
+    try:
+        readable(sheet)
+    except NotShared as exc:
+        return {"found": False, "kind": "sheet", "id": ref, "summary": str(exc)}
     view = next((v for v in sheet.views if v.id == view_id), None)
     total = projection.count(sheet)
     out: dict[str, Any] = {
@@ -343,6 +351,16 @@ def _check_rule(sheet: Sheet, change: dict, name: str, cur) -> dict:
                            params).fetchone()[0])
     return {"type": "rule", "name": name, "conditions": [c.model_dump() for c in conds], "tone": tone, "rows": rows,
             "where": where_text(sheet, conds), "said": f"Rule {name} — marks {rows:,} rows"}
+
+
+def _applied_from(sheet_id: str) -> Sheet:
+    """The other sheet a link or a total being applied reads — still there, and one the person applying it may read:
+    whoever applies a proposal may not be who asked for it."""
+    from aughor.sheets.sharing import readable
+    other = model.get(sheet_id)
+    if other is None:
+        raise service.Refused("the sheet this would read from is gone")
+    return readable(other)
 
 
 def _named_sheet(ref: str) -> Sheet:
@@ -587,7 +605,7 @@ def _apply_one(sheet: Sheet, ch: dict) -> None:
                                     made_by="the assistant"))
     elif t == "link":
         from aughor.sheets.model import Link
-        other = model.get(ch["other"])
+        other = _applied_from(ch["other"])
         mine = sheet.column(ch["column"])
         mine.kind = kinds.LINK
         mine.link = Link(sheet=other.id, column=ch["other_column"], matched=ch["matched"], missed=ch["missed"])
@@ -599,7 +617,7 @@ def _apply_one(sheet: Sheet, ch: dict) -> None:
                                         description=f"{oc.name} of {other.name}, read through {mine.name}"))
     elif t == "total":
         from aughor.sheets.combine import total_kind
-        other = model.get(ch["other"])
+        other = _applied_from(ch["other"])
         of = other.column(ch["of"]) if ch["of"] else None
         k, integer, currency = total_kind(ch["how"], of)
         sheet.columns.append(Column(id=sheet.new_column_id(), name=service.unique_name(ch["name"], sheet), kind=k,

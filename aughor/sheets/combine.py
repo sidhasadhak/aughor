@@ -28,18 +28,22 @@ SHOWN = 50
 
 
 def _other(sheet_id: str) -> Sheet:
+    """The sheet combined with — one the person may read (SH-8): a link or a total brings its values in."""
+    from aughor.sheets.sharing import readable
     other = model.get(sheet_id)
     if other is None:
         raise Refused("that sheet is not there to combine with")
-    return other
+    return readable(other)
 
 
 def _stored_of(sheet: Sheet, ref: str, what: str) -> Column:
+    from aughor.sheets.model_columns import refuse_counting
     c = sheet.column(ref)
     if c is None:
         raise Refused(f"{sheet.name} has no column {ref!r}")
     if c.role != "stored":
         raise Refused(f"{c.name} in {sheet.name} is itself read from elsewhere; {what} reads a column kept in the sheet")
+    refuse_counting(c, what)                # SH-5: never a key, a total or a value brought by a link
     return c
 
 

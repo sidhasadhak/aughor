@@ -19,8 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { formatCount } from "@/lib/format";
 import {
-  applyMerge, keepLink, keepTotal, listSheets, previewLink, previewMerge, previewTotal, readSheet, showValue,
-  stageFile, type LinkPreview, type MergePreview, type Sheet, type SheetSummary, type TotalPreview,
+  applyMerge, isWithheld, keepLink, keepTotal, listSheets, previewLink, previewMerge, previewTotal, readSheet,
+  showValue, stageFile, type LinkPreview, type MergePreview, type Sheet, type SheetSummary, type TotalPreview,
 } from "@/lib/sheets";
 
 const HOWS = ["sum", "count", "average", "min", "max", "earliest", "latest"];
@@ -71,7 +71,9 @@ export function SheetCombine({ sheet, onClose, onChanged }: {
   const [others, setOthers] = useState<SheetSummary[]>([]);
   const [refused, setRefused] = useState<string | null>(null);
   useEffect(() => {
-    listSheets().then(d => setOthers(d.sheets.filter(s => s.id !== sheet.id))).catch(() => setOthers([]));
+    // only the sheets the person may read: combining brings the other sheet's values in (SH-8)
+    listSheets().then(d => setOthers(d.sheets.filter((s): s is SheetSummary => !isWithheld(s) && s.id !== sheet.id)))
+      .catch(() => setOthers([]));
   }, [sheet.id]);
   const stored = sheet.columns.filter(c => c.role === "stored");
   const fail = (e: unknown) => setRefused(e instanceof Error ? e.message : String(e));

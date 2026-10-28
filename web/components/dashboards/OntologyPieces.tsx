@@ -35,8 +35,10 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { SelectField } from "@/components/ui/select";
+import { TableActions } from "@/components/TableActions";
 import {
-  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, propertyLabel,
+  additive, anyFilter, breakdownGaps, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText,
+  foldBreakdown, onDays, pathWords, plural, propertyLabel, type BreakdownMeasure,
   splitOnDays, typeWord, inLastWindow, withWords, WORDS,
   ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/dashboards/objectView";
@@ -616,7 +618,7 @@ export function ProcessBoardPiece({ process }: { process: string }) {
 const TABLE_ROW_PX = 29;
 const TABLE_CHROME_PX = 110;
 
-export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, chooses, ticks, columns, sort, descending, tall }: {
+export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, chooses, ticks, columns, sort, descending, tall, marked }: {
   elementKey: string | null;
   entity?: string | null;
   segment?: string | null;
@@ -629,6 +631,8 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   sort?: string | null;
   descending?: boolean | null;
   tall: boolean;
+  /** the Grist study §10 — the rows a declared rule or segment admits, marked in its tone */
+  marked?: Marked | null;
 }) {
   const { connectionId, schema, tick, picked, pick, ticked, tickOne, tickNone, asGroup, say } = usePieces();
   const query = useSetQuery({ entity, segment, set, set_from: setFrom });
@@ -660,6 +664,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the table asks
   }, [asked, offset, limit, connectionId, schema, tick, asGroup]);
+  const marks = useMarked(target, marked, page?.key ?? "", page ? page.rows.map(r => String(r[0])) : []);
 
   if ("refused" in query) return <Unread what="This table cannot be read">{query.refused}</Unread>;
   if ("waiting" in query) {
@@ -684,11 +689,12 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   const shown = page.rows.length;
   return (
     <Frame testid="object-table">
-      <Title title={heading} right={
+      <Title title={heading} right={<>
+        {marked && <MarkLegend marked={marked} read={marks} total={page.total} />}
         <span className="aug-fs-xs" title={page.segment_said || undefined} data-testid="object-table-total"
           style={{ color: "var(--t3)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
           {page.total == null ? "not counted" : formatCount(page.total)}
-        </span>} />
+        </span></>} />
       <div style={{ overflowX: "auto", minHeight: 0, ...(box.onGrid ? { flex: 1, overflowY: "auto" } : {}) }}>
         <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
           <thead>
@@ -711,8 +717,9 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
               const on = chosen?.pk === pk;
               const object = { objectType: page.object_type, typeId: page.type_id, pk };
               const isTicked = ticks_.some(t => t.pk === pk);
+              const isMarked = !!marked && marks.on.has(pk);
               return (
-                <tr key={rowKey} data-testid="object-table-row" aria-selected={on}
+                <tr key={rowKey} data-testid="object-table-row" aria-selected={on} data-marked={isMarked || undefined}
                   onClick={() => choice && pick(choice, on ? null : object)}
                   style={{ cursor: choice ? "pointer" : undefined, background: on ? "var(--bg-sel)" : undefined }}>
                   {ticks && (
@@ -729,7 +736,8 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
                     const num = i > 0 && isNumericType(type);
                     return (
                       <td key={page.names[i] ?? i} className={i === 0 ? "aug-mono" : undefined} style={{
-                        padding: "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
+                        padding: i === 0 && marked ? "5px 8px 5px 8px" : "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
+                        boxShadow: i === 0 && isMarked && marked ? `inset 3px 0 0 ${MARK_TONE[marked.tone]}` : undefined,
                         textAlign: num ? "right" : undefined, color: text === "—" ? "var(--t3)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
                         {i > 0 && page.columns[i - 1]?.edited && text !== "—" && <Icon name="edit" size={11} label="Edited" />} {text}
                       </td>
@@ -1299,6 +1307,217 @@ export function ObjectFigurePiece({ entity, set, of, shows, label, agg, path, fo
         <div className="aug-fs-xs" data-testid="object-figure-whole" style={{ color: "var(--t3)", minHeight: 16 }}>{besideWords}</div>
       </div>
     </Frame>
+  );
+}
+
+/** The most groups a breakdown reads; past them, Other is asked of the door rather than folded from what was read. */
+const BREAKDOWN_READ = 1000;
+/** A breakdown's groups when it says none. */
+export const BREAKDOWN_TOP = 8;
+
+/** An entity's objects grouped by one property (the Grist study §10): the largest groups first, the rest as one Other
+ *  row, those with no value as their own row — so the rows hold every object, and the line beneath says whether they
+ *  add up to the whole. A click on a group is the filter column's click: it narrows every piece over the entity, while
+ *  this one, counted under the OTHER filters, keeps every group and ticks the chosen. Other and No value are not
+ *  chosen — a filter of one value cannot hold them yet. */
+export function ObjectBreakdownPiece({ entity, set, label, by, measures, top, show, sym = "$" }: {
+  entity?: string | null; set?: string | null; label: string; by: string; measures: BreakdownMeasure[];
+  top?: number | null; show?: string | null; sym?: string;
+}) {
+  const { filters, toggle } = usePieces();
+  // its set without the reader's filters, then those filters but its own — choosing a group never hides the rest
+  const base = useSetQuery({ entity, set }, { reader: false });
+  const scoped = "entity" in base ? base : null;
+  const noun = useNoun(scoped?.entity ?? entity ?? "");
+  const conditions = scoped ? [...scoped.conditions, ...(conditionsFor(filters, scoped.entity, by) as unknown as DoorCondition[])] : [];
+  const ms = measures.map((m, i) => ({ name: `m${i}`, agg: m.agg, path: m.path ?? "" }));
+  const scope = scoped ? { object_type: scoped.entity, ...(scoped.segment ? { segment: scoped.segment } : {}) } : null;
+  const n = top ?? BREAKDOWN_TOP;
+  const read = useObjectQuery(scope ? { ...scope, ...(conditions.length ? { filters: conditions } : {}), measures: ms,
+    by: [by], order_by: "m0", descending: true, limit: BREAKDOWN_READ } : null);
+  const whole = useObjectQuery(scope ? { ...scope, ...(conditions.length ? { filters: conditions } : {}), measures: ms } : null);
+  const rows = read && "rows" in read ? read.rows : [];
+  const complete = rows.length < BREAKDOWN_READ;
+  const shownValues = rows.filter(r => !(r[0] === null || r[0] === undefined || r[0] === "" || r[0] === "NULL"))
+    .slice(0, n).map(r => String(r[0]));
+  const valued = rows.filter(r => !(r[0] === null || r[0] === undefined || r[0] === "" || r[0] === "NULL")).length;
+  // Other's measures that do not add up — or all of Other, when the groups read are not all there are — from the door
+  const askOther = !!scope && !!read && "rows" in read && (valued > n || !complete)
+    && (!complete || measures.some(m => !additive(m.agg)));
+  const otherRead = useObjectQuery(askOther && scope ? { ...scope, measures: ms,
+    filters: [...conditions, { path: by, op: "not_in", values: shownValues } as unknown as DoorCondition] } : null);
+  const { label: byLabel, via } = pathWords(by);
+  const groupNoun = plural(byLabel.toLowerCase());
+  const chosen = scoped ? filters[entityKey(scoped.entity)]?.[by] ?? [] : [];
+  if ("refused" in base) return <Unread what={`${label} cannot be read`}>{base.refused}</Unread>;
+  if ("waiting" in base) return <Unread what={label}><WaitingWords choice={base.waiting} what={label} /></Unread>;
+  for (const r of [read, whole, otherRead]) if (r && "refused" in r) return <Unread what={`${label} cannot be read`}>{r.refused}</Unread>;
+  if (!read || !whole || (askOther && !otherRead)) return <Reading what={label.toLowerCase()} />;
+  const other = otherRead && "rows" in otherRead ? measures.map((_, i) => num(otherRead.rows[0]?.[i])) : null;
+  const folded = foldBreakdown(rows, n, measures, other, complete);
+  const all = measures.map((_, i) => ("rows" in whole ? num(whole.rows[0]?.[i]) : null));
+  const gaps = breakdownGaps(folded, all, measures);
+  const word = (m: BreakdownMeasure, i: number) => m.label || (m.agg === "count" ? propertyLabel(noun)
+    : `${AGG_WORDS[m.agg] ?? m.agg} ${pathWords(m.path ?? "").label.toLowerCase()}`) || `Measure ${i + 1}`;
+  const text = (v: number | null, i: number) => figureText(v, measures[i].agg, measures[i].format, sym);
+  // the share a row is of the whole: of the first sum, else of the count — none when nothing adds up
+  const shareAt = Math.max(measures.findIndex(m => m.agg === "sum"), measures.findIndex(m => m.agg === "count"));
+  const share = (r: (typeof folded)[number]) => (shareAt >= 0 && all[shareAt] ? (r.values[shareAt] ?? 0) / (all[shareAt] as number) : null);
+  const most = Math.max(1e-9, ...folded.map(r => Math.abs(r.values[0] ?? 0)));
+  const name = (r: (typeof folded)[number]) => (r.kind === "group" ? r.value : r.kind === "other"
+    ? `Other · ${formatCount(r.groups)} ${r.groups === 1 ? byLabel.toLowerCase() : groupNoun}` : "No value");
+  const groups = rows.filter(r => !(r[0] === null || r[0] === undefined || r[0] === "" || r[0] === "NULL")).length;
+  const counted = measures.map((m, i) => (additive(m.agg) ? text(all[i], i) : "")).filter(Boolean);
+  const foot = gaps.length
+    ? `The groups hold ${text(folded.reduce((s, r) => s + (r.values[gaps[0]] ?? 0), 0), gaps[0])} of ${text(all[gaps[0]], gaps[0])} — `
+      + "some objects are in no row."
+    : `${complete ? formatCount(groups) : `More than ${formatCount(groups)}`} ${groups === 1 ? byLabel.toLowerCase() : groupNoun}`
+      + `${counted.length ? ` · ${counted.join(" · ")}` : ""}${measures.some(m => additive(m.agg)) ? ` — every ${noun.replace(/s$/, "")} is in one row.` : "."}`;
+  const pick = (r: (typeof folded)[number]) => (r.kind === "group" && scoped ? () => toggle(scoped.entity, by, r.value) : undefined);
+  const why = (r: (typeof folded)[number]) => (r.kind === "other" ? "Other cannot be chosen — choose its groups in a filter column"
+    : r.kind === "none" ? "Objects with no value cannot be chosen" : chosen.includes(r.value) ? `Let go of ${r.value}` : `Narrow the dashboard to ${r.value}`);
+  return (
+    <Frame testid="object-breakdown">
+      <Title title={label} right={<>
+        {via && <Via what={via} />}
+        <TableActions name={label} read={() => ({
+          columns: [byLabel, ...measures.map(word), ...(shareAt >= 0 ? ["Share"] : [])],
+          rows: folded.map(r => [name(r), ...r.values.map(v => v ?? ""), ...(shareAt >= 0 ? [share(r) ?? ""] : [])]),
+        })} />
+      </>} />
+      <Body testid="object-breakdown-rows">
+        {show === "bars" ? folded.map(r => {
+          const on = r.kind === "group" && chosen.includes(r.value);
+          return (
+            <div key={`${r.kind}:${r.value}`} data-testid="object-breakdown-row" data-on={on || undefined} title={why(r)}
+              role={r.kind === "group" ? "button" : undefined} tabIndex={r.kind === "group" ? 0 : undefined} aria-pressed={r.kind === "group" ? on : undefined}
+              onClick={pick(r)} onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && pick(r)) { e.preventDefault(); pick(r)?.(); } }}
+              className="aug-fs-sm" style={{ display: "grid", gridTemplateColumns: "minmax(0, 120px) minmax(0, 1fr) auto", alignItems: "center",
+                gap: 8, padding: "3px 4px", borderRadius: "var(--r2)", cursor: r.kind === "group" ? "pointer" : "default",
+                background: on ? "var(--bg-sel)" : undefined }}>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: r.kind === "group" ? "var(--t1)" : "var(--t3)" }}>
+                {on ? "✓ " : ""}{name(r)}
+              </span>
+              <span aria-hidden="true" style={{ height: 10, background: "var(--bg-4)", borderRadius: 3, overflow: "hidden" }}>
+                <span style={{ display: "block", height: "100%", width: `${(Math.abs(r.values[0] ?? 0) / most) * 100}%`,
+                  background: r.kind === "group" ? "var(--chart-1)" : "var(--chart-deemph)" }} />
+              </span>
+              <span style={{ textAlign: "right", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>{text(r.values[0], 0)}</span>
+            </div>
+          );
+        }) : (
+          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "left" }}>
+                <th style={{ padding: "4px 6px", fontWeight: 500 }}>{byLabel}</th>
+                {measures.map((m, i) => <th key={`m${i}`} style={{ padding: "4px 6px", fontWeight: 500, textAlign: "right" }}>{word(m, i)}</th>)}
+                {shareAt >= 0 && <th style={{ padding: "4px 6px", fontWeight: 500 }}>Share of {word(measures[shareAt], shareAt).toLowerCase()}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {folded.map(r => {
+                const on = r.kind === "group" && chosen.includes(r.value);
+                const s = share(r);
+                return (
+                  <tr key={`${r.kind}:${r.value}`} data-testid="object-breakdown-row" data-on={on || undefined} title={why(r)}
+                    tabIndex={r.kind === "group" ? 0 : undefined} aria-selected={r.kind === "group" ? on : undefined}
+                    onClick={pick(r)} onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && pick(r)) { e.preventDefault(); pick(r)?.(); } }}
+                    style={{ borderTop: "1px solid var(--b0)", cursor: r.kind === "group" ? "pointer" : "default",
+                      background: on ? "var(--bg-sel)" : undefined, color: r.kind === "group" ? "var(--t1)" : "var(--t3)" }}>
+                    <td style={{ padding: "4px 6px", whiteSpace: "nowrap", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {on ? "✓ " : ""}{name(r)}
+                    </td>
+                    {r.values.map((v, i) => (
+                      <td key={`m${i}`} style={{ padding: "4px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{text(v, i)}</td>
+                    ))}
+                    {shareAt >= 0 && (
+                      <td style={{ padding: "4px 6px", minWidth: 120 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span aria-hidden="true" style={{ flex: 1, height: 6, background: "var(--bg-4)", borderRadius: 3, overflow: "hidden" }}>
+                            <span style={{ display: "block", height: "100%", width: `${Math.max(0, Math.min(1, s ?? 0)) * 100}%`,
+                              background: r.kind === "group" ? "var(--chart-1)" : "var(--chart-deemph)" }} />
+                          </span>
+                          <span style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums", minWidth: 42, textAlign: "right" }}>
+                            {s === null ? "—" : pct(s, 1)}
+                          </span>
+                        </span>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </Body>
+      <div className="aug-fs-xs" data-testid="object-breakdown-foot" style={{ color: gaps.length ? "var(--amb4)" : "var(--t3)", paddingTop: 4 }}>
+        {foot}
+      </div>
+      {chosen.length > 0 && (
+        <div className="aug-fs-xs" data-testid="object-breakdown-chosen" style={{ color: "var(--t2)" }}>
+          Chosen: {chosen.join(", ")} — click {chosen.length === 1 ? "it" : "one"} again to let go.
+        </div>
+      )}
+    </Frame>
+  );
+}
+
+const AGG_WORDS: Record<string, string> = {
+  sum: "Sum of", avg: "Average", min: "Least", max: "Most", count_distinct: "Distinct",
+};
+
+/** A table's or a list's rows marked by a declared rule or segment (the Grist study §10, flag `dashboard.marks`). */
+export interface Marked { segment: string; tone: "good" | "warn" | "bad" | "info" | "neutral"; label?: string | null }
+
+/** A mark's colour, as a card's rule is drawn. */
+export const MARK_TONE: Record<Marked["tone"], string> = {
+  good: "var(--grn3)", warn: "var(--amb3)", bad: "var(--red3)", info: "var(--blue3)", neutral: "var(--b2)",
+};
+
+/** Which of the keys on screen a mark admits, and how many of the listing's objects it marks — both read through the
+ *  door as `in_set`, a set of the listing's own entity kept to the declared segment. Nothing a dashboard marks by is a
+ *  formula of its own: a mark names what the ontology declares, or it is refused at the keep. */
+export function useMarked(target: { entity: string; segment: string; conditions: DoorCondition[] } | null,
+  marked: Marked | null | undefined, keyPath: string, keys: string[]): { on: Set<string>; count: number | null; refused: string } {
+  const { connectionId, schema, asGroup } = usePieces();
+  const inSet = target && marked
+    ? ({ path: "", op: "in_set", sets: [{ entity: target.entity, segment: marked.segment }] } as unknown as DoorCondition) : null;
+  const counted = useObjectQuery(inSet && target ? { object_type: target.entity, ...(target.segment ? { segment: target.segment } : {}),
+    measures: [COUNT], filters: [...target.conditions, inSet] } : null);
+  const [on, setOn] = useState<Set<string>>(() => new Set());
+  const [refused, setRefused] = useState("");
+  const asked = JSON.stringify([target?.entity, target?.segment, target?.conditions, marked?.segment, keyPath, keys]);
+  useEffect(() => {
+    if (!target || !inSet || !keyPath || !keys.length) { setOn(new Set()); return; }
+    let alive = true;
+    listObjects({ entity: target.entity, segment: target.segment, columns: [], offset: 0, limit: keys.length,
+                  filters: [...target.conditions, inSet, { path: keyPath, op: "in", values: keys } as unknown as DoorCondition] },
+                connectionId, schema, ...(asGroup ? [asGroup] : []))
+      .then(out => {
+        if (!alive) return;
+        if (out.path === "refused") { setRefused(out.refused); setOn(new Set()); return; }
+        setRefused(out.error ?? "");
+        setOn(new Set(out.rows.map(r => String(r[0]))));
+      })
+      .catch(e => { if (alive) setRefused((e as Error).message); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what it asks
+  }, [asked, connectionId, schema, asGroup]);
+  return { on, count: counted && "rows" in counted ? num(counted.rows[0]?.[0]) : null,
+    refused: counted && "refused" in counted ? counted.refused : refused };
+}
+
+/** What a mark means and how many it marks, beside the piece's title: "● Late dispatch — 1,275 of 6,366". A mark that
+ *  cannot be read says so in its place. */
+export function MarkLegend({ marked, read, total }: { marked: Marked; read: ReturnType<typeof useMarked>; total: number | null }) {
+  const name = marked.label || words(marked.segment).replace(/^./, c => c.toUpperCase());
+  return (
+    <span className="aug-fs-xs" data-testid="object-mark-legend" title={read.refused || `Rows ${name} admits are marked`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 5, color: read.refused ? "var(--amb4)" : "var(--t2)", whiteSpace: "nowrap" }}>
+      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: MARK_TONE[marked.tone] }} />
+      {read.refused ? `${name} cannot be marked` : `${name} — ${read.count == null ? "…" : formatCount(read.count)}`
+        + `${total != null && read.count != null ? ` of ${formatCount(total)}` : ""}`}
+    </span>
   );
 }
 

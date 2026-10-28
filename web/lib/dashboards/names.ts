@@ -25,6 +25,7 @@ export const KIND_WORDS: Record<ComponentName, string> = {
   ObjectFilters: "filter column",
   ObjectFigure: "figure",
   ObjectChart: "chart",
+  ObjectBreakdown: "breakdown",
   ActionButtons: "action buttons",
   ObjectList: "object list",
   ObjectMap: "map",
@@ -88,7 +89,7 @@ export function nameOf(elements: Record<string, El | undefined>, key: string,
       }
       // a filter column counting within a set says so: "Customer Order · within Waiting"
       case "ObjectFilters": return p.set ? `${entity(p.entity)} · within ${setTitle(String(p.set)) ?? words(p.set)}` : entity(p.entity);
-      case "ObjectFigure": case "ObjectChart": return String(p.label ?? "");
+      case "ObjectFigure": case "ObjectChart": case "ObjectBreakdown": return String(p.label ?? "");
       // Arc AP-4 — the pieces the picker adds, by what they read; a search by what it is called
       case "ObjectList": case "ObjectMap": case "ObjectTimeline": case "ChooseOne":
         if (p.set) return setTitle(String(p.set)) ?? words(p.set);

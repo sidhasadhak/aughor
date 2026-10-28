@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rail fit</title>
+<!-- The left rail at 1440×900, as measured on the live install 2026-10-28 (left) and as proposed (right). Every
+     size on the left is the live page's computed one; the right changes only the group headings and the footer.
+     Not app code. -->
+<style>
+  :root {
+    --bg: color(display-p3 0.067 0.067 0.074); --rail: color(display-p3 0.095 0.098 0.105);
+    --line: color(display-p3 0.265 0.28 0.302); --t1: color(display-p3 0.93 0.933 0.94);
+    --t2: color(display-p3 0.692 0.704 0.728); --active: color(display-p3 0.033 0.197 0.37);
+    --warn: #f0a33a; --ok: #3fb68b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--t2); font: 13px "Source Sans 3", system-ui, sans-serif; }
+  header { padding: 18px 24px 6px; color: var(--t1); }
+  header h1 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+  header p { margin: 0; max-width: 900px; line-height: 1.45; }
+  .pair { display: flex; gap: 48px; padding: 18px 24px 40px; align-items: flex-start; flex-wrap: wrap; }
+  figure { margin: 0; }
+  figcaption { color: var(--t1); font-weight: 600; margin-bottom: 8px; }
+  figcaption span { color: var(--t2); font-weight: 400; }
+  /* the window below the 48px top bar: 852px of a 900px viewport */
+  .rail { position: relative; width: 248px; height: 852px; background: var(--rail); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; }
+  .collapse { height: 45px; flex: 0 0 auto; display: flex; align-items: center; padding: 0 14px; }
+  .list { flex: 1 1 auto; overflow: hidden; position: relative; }
+  .item { height: 28px; margin-bottom: 2px; display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+  .item i { width: 14px; height: 14px; border: 1.5px solid var(--t2); border-radius: 3px; opacity: .7; flex: 0 0 auto; }
+  .item.on { background: var(--active); color: var(--t1); }
+  .item.new { color: var(--t1); }
+  .grp { padding: 8px 0 10px; }
+  .grp .item:last-child { margin-bottom: 0; }
+  .head { height: 28px; margin-bottom: 2px; padding: 6px 14px 0; color: var(--t2); font-size: 12px; font-weight: 600; }
+  .after .grp { padding: 4px 0 6px; }
+  .after .head { height: 24px; padding-top: 4px; }
+  .foot { flex: 0 0 auto; border-top: 1px solid var(--line); }
+  .before .foot { height: 71px; }
+  .before .foot .item { margin: 6px 0 0; }
+  .before .ver { padding: 6px 14px; font: 11px "JetBrains Mono", ui-monospace, monospace; }
+  .after .foot { height: 46px; display: flex; align-items: center; }
+  .after .foot .item { flex: 1; margin: 0; }
+  .after .ver { padding: 0 14px 0 0; font: 11px "JetBrains Mono", ui-monospace, monospace; }
+  .clip { position: absolute; left: 0; right: 0; bottom: 0; height: 52px; background:
+    repeating-linear-gradient(-45deg, rgba(240,163,58,.22) 0 6px, transparent 6px 12px); border-top: 1px dashed var(--warn); }
+  .note { font-size: 12px; margin-top: 8px; max-width: 248px; line-height: 1.4; }
+  .note b { color: var(--t1); }
+  .bad { color: var(--warn); } .good { color: var(--ok); }
+  @media (max-width: 640px) { .pair { padding: 12px 16px 32px; gap: 28px; } header { padding: 14px 16px 4px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>The rail at 1440×900 — every row in view, Spreadsheets kept in Data</h1>
+  <p>Left: the live rail, measured. Its list holds 788px in a 736px box, so the last 52px — Security &amp; Audit's lower
+  half and Evals — sit under the footer and are reached only by scrolling. Right: the proposal. Rows stay 28px on
+  their 30px pitch; only the groups tighten (8px above and 10px below each → 4px and 6px, a heading 28px → 24px) and
+  the version moves beside Settings: every row in view with about 15px to spare (measured on this page). At
+  1280×800 the list still scrolls — by about 85px instead of 152px.</p>
+</header>
+<div class="pair">
+  <figure class="before">
+    <figcaption>Today <span>· live, 1440×900</span></figcaption>
+    <div class="rail">
+      <div class="collapse"><i style="width:14px;height:14px;border:1.5px solid var(--t2);border-radius:3px"></i></div>
+      <div class="list">
+        <div class="grp"><div class="item on"><i></i>Home</div><div class="item"><i></i>Inbox</div><div class="item"><i></i>Now</div>
+        <div class="item"><i></i>Data Canvas</div></div>
+        <div class="grp"><div class="head">Intelligence</div><div class="item"><i></i>Briefing</div><div class="item"><i></i>Ontology</div><div class="item"><i></i>Agent runs</div>
+        <div class="item"><i></i>Health</div><div class="item"><i></i>Documents</div><div class="item"><i></i>Record</div></div>
+        <div class="grp"><div class="head">Data</div><div class="item"><i></i>Catalog</div><div class="item"><i></i>SQL Editor</div><div class="item"><i></i>Semantic Layer</div>
+        <div class="item new"><i></i>Spreadsheets</div></div>
+        <div class="grp"><div class="head">Operations</div><div class="item"><i></i>Agent Ops</div><div class="item"><i></i>Monitors</div><div class="item"><i></i>Notifications</div>
+        <div class="item"><i></i>Integrations</div><div class="item"><i></i>Spend</div><div class="item"><i></i>Security &amp; Audit</div>
+        <div class="item"><i></i>Evals</div></div>
+        <div class="clip"></div>
+      </div>
+      <div class="foot"><div class="item"><i></i>Settings</div><div class="ver">v2 · Local</div></div>
+    </div>
+    <div class="note"><b class="bad">52px hidden</b> — Evals and half of Security &amp; Audit under the footer.</div>
+  </figure>
+  <figure class="after">
+    <figcaption>Proposed <span>· same rows, tighter headings, one-line footer</span></figcaption>
+    <div class="rail">
+      <div class="collapse"><i style="width:14px;height:14px;border:1.5px solid var(--t2);border-radius:3px"></i></div>
+      <div class="list">
+        <div class="grp"><div class="item on"><i></i>Home</div><div class="item"><i></i>Inbox</div><div class="item"><i></i>Now</div>
+        <div class="item"><i></i>Data Canvas</div></div>
+        <div class="grp"><div class="head">Intelligence</div><div class="item"><i></i>Briefing</div><div class="item"><i></i>Ontology</div><div class="item"><i></i>Agent runs</div>
+        <div class="item"><i></i>Health</div><div class="item"><i></i>Documents</div><div class="item"><i></i>Record</div></div>
+        <div class="grp"><div class="head">Data</div><div class="item"><i></i>Catalog</div><div class="item"><i></i>SQL Editor</div><div class="item"><i></i>Semantic Layer</div>
+        <div class="item new"><i></i>Spreadsheets</div></div>
+        <div class="grp"><div class="head">Operations</div><div class="item"><i></i>Agent Ops</div><div class="item"><i></i>Monitors</div><div class="item"><i></i>Notifications</div>
+        <div class="item"><i></i>Integrations</div><div class="item"><i></i>Spend</div><div class="item"><i></i>Security &amp; Audit</div>
+        <div class="item"><i></i>Evals</div></div>
+      </div>
+      <div class="foot"><div class="item"><i></i>Settings</div><span class="ver">v2 · Local</span></div>
+    </div>
+    <div class="note"><b class="good">Every row in view</b>, about 15px to spare. Row height, icons, text and colours unchanged.</div>
+  </figure>
+</div>
+</body>
+</html>

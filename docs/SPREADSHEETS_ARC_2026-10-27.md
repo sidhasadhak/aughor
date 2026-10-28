@@ -25,7 +25,10 @@ recommended and adopt Arc SH (with SV-1/SV-2 first) into the roadmap."* PENDING 
 2026-10-27** behind their flags, all off (ROADMAP §3.64 "built"). **SH-3 built 2026-10-27** behind `sheets.views`, off,
 with the built screens brought to this mockup (ROADMAP §3.64 "SH-3, built"). **SH-6's first piece built 2026-10-27** —
 *Make a dashboard from this sheet*, behind `sheets.everywhere`, off — with the chat proposing rules and the board moved by
-the keyboard; the rest of SH-6, SH-5 and SH-8 are not.
+the keyboard. **SH-8 built 2026-10-28** behind `sheets.sharing`, off — chosen people and groups, each to read or to
+edit, and a stale write that says who (ROADMAP §3.64 "SH-8, built"). **SH-5 built 2026-10-28** behind
+`sheets.model_columns`, off — a column a model writes, filled for a view's rows (ROADMAP §3.64 "SH-5, built"). The rest
+of SH-6 is not.
 
 **The mockup.** `design-mockups/spreadsheets.html`, ten screens. Every row is the uploaded Olist files in the Workspace
 connection: orders, customers, payments and reviews. They were read with the reader the upload door uses

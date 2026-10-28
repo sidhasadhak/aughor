@@ -41,6 +41,13 @@ class Link(BaseModel):
     missed: int = 0
 
 
+class ModelWrites(BaseModel):
+    """SH-5 — what a model writes in a column: the instruction a person gave it, and the columns of each row it reads.
+    Its values are a model's, never a fact: no figure is counted from them (`model_columns.py`)."""
+    instruction: str
+    reads: list[str] = Field(default_factory=list)   # column ids
+
+
 class Column(BaseModel):
     id: str
     name: str
@@ -65,6 +72,8 @@ class Column(BaseModel):
     by: str = ""                  # total: this sheet's column holding the key
     how: str = ""                 # total: sum | count | latest | earliest | average | min | max
     made_by: str = ""             # "the assistant" when a model proposed it (a person applied it)
+    #: SH-5 — set for a column a model writes; kept in the definition only on such a column (`save`).
+    model_writes: Optional[ModelWrites] = None
 
 
 class Condition(BaseModel):
@@ -125,6 +134,21 @@ class Source(BaseModel):
     schema_name: str = ""
 
 
+#: Who a sheet is shared with (SH-8): everyone in the workspace, as every sheet was before, or only the people and
+#: groups chosen.
+Sharing = Literal["workspace", "chosen"]
+
+
+class Share(BaseModel):
+    """One person or group a sheet is shared with, and what they may do: ``view`` to read it, ``edit`` to change it —
+    the access ladder's own words (``rbac/levels.py``). A group is an organisation's own (``group``) or a built-in one,
+    the roles (``role``)."""
+    kind: Literal["person", "group", "role"]
+    #: a person's id as they sign in (``user:`` left off) · a group's id · a role's stored name
+    id: str
+    level: Literal["view", "edit"] = "view"
+
+
 class Change(BaseModel):
     """The last change made to a definition: what it was, who made it, and what made it."""
     id: str = ""
@@ -149,6 +173,10 @@ class Sheet(BaseModel):
     next_column: int = 1
     created_by: str = ""
     created_at: str = ""
+    #: SH-8 — who reads and changes the sheet beside its maker. Kept in the definition only once a sheet is shared with
+    #: chosen people (`save`), so the definition of a sheet never shared is what it was before sharing existed.
+    sharing: Sharing = "workspace"
+    shared_with: list[Share] = Field(default_factory=list)
     change: Change = Field(default_factory=Change)
     #: The definition's version on the ledger (filled when read, never written).
     version: int = 0
@@ -249,7 +277,11 @@ def save(sheet: Sheet, *, what: str, by: str, origin: str = "", change_id: str =
          state: lifecycle.PublicationState = "published") -> Sheet:
     """Keep the next version of a sheet's definition, recorded with what changed, who changed it and what made it."""
     sheet.change = Change(id=change_id or uuid.uuid4().hex[:12], what=what[:300], by=by, at=now(), origin=origin)
-    body = sheet.model_dump(exclude={"version", "state"})
+    plain = sheet.sharing == "workspace" and not sheet.shared_with
+    body = sheet.model_dump(exclude={"version", "state", *(("sharing", "shared_with") if plain else ())})
+    for col in body.get("columns") or []:
+        if col.get("model_writes") is None:
+            col.pop("model_writes", None)           # a column no model writes is stored as it was before SH-5
     note = f"proposed by the assistant ({origin.split(':', 1)[1]}), applied by {by}" if origin.startswith("proposal:") else ""
     rev = lifecycle.record(KIND, natural_key(sheet.id, _org()), body, state, by=by, note=note,
                            conn_id=SHEETS_CONNECTION)
