@@ -29,7 +29,7 @@ def test_the_harness_imports_from_aughor_at_all():
 def _resolves(module: str, name: str) -> bool:
     if hasattr(importlib.import_module(module), name):
         return True
-    try:   # `from aughor.tools import catalog_profiles` names a submodule
+    try:   # `from aughor.tools import <module>` names a submodule
         importlib.import_module(f"{module}.{name}")
         return True
     except ModuleNotFoundError:

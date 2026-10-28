@@ -62,8 +62,8 @@ Everything else is either the product, or a piece of the product that waits for 
 **The five decided once:** `grounding.full_schema_first` has its own record in its favour (two test runs, never
 worse, twice answered where the shorter schema could not) — keep it. `judgment.shadow_treatment` makes one extra model
 call on every question to record how much work it needed, for PENDING item 4 — stop it, and measure once when item 4
-is taken up. `grounding.data_profiles` was measured twice without a clean answer — one clean run, then its own rule
-decides. `explore.route_wide` and `federation.planner` are off and were never measurable (no broad and no two-source
+is taken up. `grounding.data_profiles` is decided: ✅ deleted 2026-10-28 by its own rule after its first clean run
+(0.661 → 0.651). `explore.route_wide` and `federation.planner` are off and were never measurable (no broad and no two-source
 questions in the test set) — delete them; nothing anyone sees changes.
 
 ## 4. The rule for new work (replaces the flag invariant)
@@ -235,7 +235,7 @@ Admin-only, in Settings ▸ Organization ▸ *What Aughor may do*.
 Each changes prompts or routing. None stays a switch.
 
 - `grounding.full_schema_first` — For a small schema, the SQL writer sees every table, not only the ones picked for the question. *Today:* off. *Recommended:* Keep — always on — its own record: in two test runs it never wrote a worse query, and twice it answered where the shorter schema could not.
-- `grounding.data_profiles` — Adds a short data profile — row counts, ranges, common values — to the SQL writer's prompt, from the profiler's cache. *Today:* off. *Recommended:* one clean with/without run, then its own rule decides (kept if it helps, deleted if not) — measured twice already (PENDING 19): 2026-09-24 a small gain that was not significant (paired t 1.49) and a regression on the 12 hard questions; 2026-10-04 no gain, on a run that lost a third of its calls to the provider's rate limit. Roughly 400 calls on the cheap model.
+- `grounding.data_profiles` — Added a short data profile — row counts, ranges, common values — to the SQL writer's prompt. ✅ **Decided 2026-10-28: deleted with its block.** The one clean run (the two before it never built the block: the golden harness's table link had failed silently since June) read 0.661 → 0.651 over 65 questions × 3 runs on claude-haiku-5-5 (paired t −1.01; 11 better, 17 worse), so its own rule fired — `evals/data_profiles_ab_2026-10-28.json`.
 - `explore.route_wide` — When Aughor chooses the route itself, a broad question ("how do sales vary across the business") goes to the survey engine — many cuts at once — instead of one deep analysis. *Today:* off. *Recommended:* Delete — it changes nothing anyone sees today; the shape table already sends a broad question asked for in depth to the survey engine; never measured, because none of the 102 test questions is broad.
 - `federation.planner` — A question needing two connections: a model plans one query for each and how to join them. *Today:* off. *Recommended:* Delete — no screen calls it, only automatic routing would, and the test questions are all single-source; it returns from history, measured, when a sheet beside the warehouse makes such questions common.
 - `judgment.shadow_treatment` — After every question, a model notes the smallest answer that would have done. *Today:* on. *Recommended:* Stop it — one extra model call on every question, for a record nobody reads yet; it can run as a one-off measurement when PENDING 4 is taken up.

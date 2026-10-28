@@ -8415,7 +8415,7 @@ filter-domain checks (which read the question and probe the warehouse) are not a
 `TABLE:`-only parsers remain (`schema_linker`, `answer_resolution`, the portrait's fallback) — item 19 reaches the
 ones on the value path.
 
-### 3.38 · The SQL writer sees the data, not only the schema (PENDING.md item 19, the ML review's point 5; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; two bug fixes default-on, the prompt block behind `grounding.data_profiles`, **off**)
+### 3.38 · The SQL writer sees the data, not only the schema (PENDING.md item 19, the ML review's point 5; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; two bug fixes default-on, the prompt block behind `grounding.data_profiles`, **off** · ❌ the block **DELETED 2026-10-28** by its own falsifier)
 
 > **The fact it answers.** docs/ENGINE_REVIEW_ANSWERS_2026-09-24.md §3: the model writing SQL attends to the warehouse's
 > schema and five head rows per table; the profiler's measured statistics reach no SQL prompt; tables are linked by
@@ -8443,6 +8443,15 @@ ones on the value path.
    only as "about N", above what is listed — the first render said "5 values:" over a list of six (SUMMARIZE
    estimates), and a short list is never called complete. **Measured:** mean 1,662 characters on the golden set
    (max 1,771) beside a mean catalog of 4,067; no table left out.
+   ❌ **DELETED 2026-10-28, with its flag, by its own falsifier** (the user: *"Run the one clean data-profiles test on
+   the cheap model, and let its own rule decide keep or delete"*). The run found first that neither earlier run had
+   measured the block: `evals/run_golden.py` imported `_parse_schema_tables`, gone from `aughor.tools.schema` since
+   2026-06-30, inside `try: … except: pass`, so no table was linked and the block rendered for none — both arms got one
+   prompt (fixed in `df151f9b`, with a test that resolves every Aughor import in the harness). The first clean run, in
+   its own state on claude-haiku-5-5, 65 questions × 3 runs, the block in all 195 "on" prompts and none of the "off":
+   0.661 → 0.651 (paired t −1.01; 11 better, 17 worse), lower on both sets; execution success 0.995 → 1.000 (one
+   question); 407 calls, about $0.71 (`evals/data_profiles_ab_2026-10-28.json`). No gain, so the block and the flag
+   are gone; the rule was written down before the run.
 
 ✅ **The falsifier RAN 2026-09-24** (`evals/data_profiles_ab_2026-09-24.json`) — and two pieces of prep had to
 land first, or it would have measured nothing: `evals/run_golden.py` **never built the block** (`catalog_profiles`

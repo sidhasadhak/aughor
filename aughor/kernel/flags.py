@@ -321,7 +321,11 @@ FLAG_ENV = {
     # one, and each such read is journaled once as `access.justified`. OFF: the feed reads its newest thousand, and a
     # payload read records who read it but not why.
     "govern.justifications": "AUGHOR_GOVERN_JUSTIFICATIONS",
-    "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
+    # "grounding.data_profiles" (AUGHOR_GROUNDING_DATA_PROFILES) was DELETED 2026-10-28, with the DATA PROFILE block
+    # (`tools/catalog_profiles.py`), by its own falsifier: the first clean with/without run — the two before it never
+    # built the block, the golden harness's table link having failed silently since 2026-06-30 — read 0.661 → 0.651
+    # over 65 questions × 3 runs on claude-haiku-5-5 (paired t −1.01; 11 better, 17 worse), the block in every "on"
+    # prompt (`evals/data_profiles_ab_2026-10-28.json`). An operator's env var is ignored.
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
     # rates, normal ranges for share metrics, method backtests, never a connection id or a claim's text —
@@ -686,16 +690,6 @@ FLAG_META = {
         "description": "Integrations → Slack shows whether the bot is running, with a Restart button. "
                        "The installer adds what the bot needs when this is on. Off: start the bot by "
                        "hand from a terminal.",
-    },
-    "grounding.data_profiles": {
-        "label": "Show the SQL writer what the data holds",
-        "summary": "Adds a short data profile to the quick answer prompt: row counts, date ranges, "
-                   "common values and null rates.",
-        "facts": [{"kind": "free", "text": "No extra queries"},
-                  {"kind": "model", "text": "Slightly longer prompts"}],
-        "description": "Profiles come from the cache, so no question waits for profiling. The profile "
-                       "stays under 2,400 characters and names any table it leaves out. Off: the prompt "
-                       "holds the schema only.",
     },
     "chat.buttons_reach_agent": {
         "label": "Send chat buttons to the conversation agent",
@@ -1653,16 +1647,9 @@ EXPERIMENT: dict = {
                                   "it ran under, and is a save sent with a stale revision refused? Falsifier (§3.59): "
                                   "an answer names a revision other than the one it ran under, or a save is taken over "
                                   "a revision newer than the one its caller read — stop",
-    # PENDING item 19 (ROADMAP §3.38) — the ML review's point 5, its first level: the warehouse's
-    # measured data in the SQL writer's context. The context it adds is measured model-free
-    # (evals/linker_recall_eval.py reports the recall it rides on; the block's size is pinned);
-    # whether answers improve is a paid A/B.
-    "grounding.data_profiles": "do answers get more right when the SQL writer is shown the profiler's "
-                               "measured values, ranges and null rates for the linked tables? The "
-                               "values a filter must match and the magnitude a sum should land in are "
-                               "exactly what five head rows cannot show. Falsifier: if a with/without "
-                               "run on the golden and ablation sets shows no gain in execution "
-                               "accuracy, the block is deleted with the flag",
+    # "grounding.data_profiles" left this set 2026-10-28: DELETED (see the FLAG_ENV tombstone) — its own
+    # falsifier, "no gain in execution accuracy ⇒ the block is deleted with the flag", fired on the first run
+    # that put the block in the prompt.
     # "briefing.by_period", "answers.recheck", "ontology.explore_on_connect" and
     # "chat.buttons_reach_agent" GRADUATED to FLAG_DEFAULT 2026-09-24 (the user's call,
     # no eval receipt): their falsifiers moved with them onto the FLAG_DEFAULT entries.
