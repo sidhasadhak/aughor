@@ -108,7 +108,7 @@ class _LLM:
 
 def test_a_redraft_keeps_a_persons_readers_and_proposes_the_rest(con, monkeypatch):
     monkeypatch.setattr(G, "_context", lambda conn_id, schema, today: "context")
-    monkeypatch.setattr(G, "_function_groups", lambda: [{"id": "finance", "name": "Finance", "description": ""},
+    monkeypatch.setattr(G, "function_groups", lambda: [{"id": "finance", "name": "Finance", "description": ""},
                                                         {"id": "product", "name": "Product", "description": ""}])
     monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
     monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])

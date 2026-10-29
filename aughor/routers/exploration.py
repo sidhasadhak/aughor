@@ -2093,3 +2093,55 @@ def publish_briefing_guide(conn_id: str, request: Request, schema: str | None = 
     if G.publish(conn_id, schema, by=_person(request), version=version) is None:
         raise HTTPException(status_code=404, detail="there is no guide version to publish")
     return _guide_out(conn_id, schema)
+
+
+# ── Arc BG-3 · an edition, for one reader ────────────────────────────────────────────────────
+
+def _edition_spec(conn_id: str, preset: str | None, start: str | None, end: str | None,
+                  workspace_id: str | None, schema: str | None):
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
+    if spec is None:
+        raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
+    return spec
+
+
+@router.get("/exploration/{conn_id}/briefing/edition")
+def read_briefing_edition(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
+                          preset: str | None = None, start: str | None = None, end: str | None = None,
+                          reader: str = ""):
+    """A READ never builds: the range's edition for ``reader`` (a function group; "" = the
+    organisation) as it was last written, or ``{"built": false}`` with the range it would cover."""
+    from aughor.briefing import edition as E
+    from aughor.briefing import ranges
+    from aughor.knowledge.briefing import peek_entry
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
+    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    block = ranges.range_block(spec)
+    entry = peek_entry(E.cache_key(scope_key, spec, reader))
+    same = isinstance(entry, dict) and entry.get("edition") and all(
+        (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
+    if not same:
+        return {"built": False, "period": block, "reader": reader, "scope_key": scope_key}
+    return {**entry, "built": True, "scope_key": scope_key}
+
+
+@router.post("/exploration/{conn_id}/briefing/edition")
+def write_briefing_edition(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
+                           preset: str | None = None, start: str | None = None, end: str | None = None,
+                           reader: str = ""):
+    """Write the range's edition for ``reader``: the guide's checks measured (one statement each), then
+    ONE model call — two when the first draft states a number nobody measured or claims a cause."""
+    from aughor.briefing import edition as E
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
+    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    try:
+        entry = E.build(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=reader)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {**entry, "built": True, "scope_key": scope_key}

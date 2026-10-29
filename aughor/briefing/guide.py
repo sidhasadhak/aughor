@@ -358,7 +358,7 @@ def _context(conn_id: str, schema: Optional[str], *, today: date) -> str:
         parts.append(f"FISCAL YEAR STARTS IN MONTH {int(getattr(effective_settings(None), 'fiscal_year_start_month', 1) or 1)}")
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "org settings unreadable for the guide", counter="briefing.guide.fiscal")
-    groups = _function_groups()
+    groups = function_groups()
     if groups:
         parts.append("THE ORGANISATION'S GROUPS:\n" + "\n".join(f"- {g['id']}: {g['name']} — {g['description']}"
                                                                 for g in groups))
@@ -367,7 +367,7 @@ def _context(conn_id: str, schema: Optional[str], *, today: date) -> str:
     return "\n\n".join(parts)
 
 
-def _function_groups() -> list[dict]:
+def function_groups() -> list[dict]:
     """The organisation's function groups — the readers a guide can name."""
     try:
         from aughor.org.context import current_org_id
@@ -385,7 +385,7 @@ def _place_readers(drafted: list[Reader], previous: Optional[BriefingGuide],
                    check_ids: set[str]) -> tuple[list[Reader], list[Reader]]:
     """(readers, proposed): readers a person already had stay as they were; a drafted reader whose
     group exists becomes one of them, the rest are proposals a person adds."""
-    groups = {g["id"] for g in _function_groups()}
+    groups = {g["id"] for g in function_groups()}
     kept = list(previous.readers) if previous else []
     have = {r.group_id for r in kept}
     proposed: list[Reader] = []

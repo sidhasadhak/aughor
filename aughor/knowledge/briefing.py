@@ -940,6 +940,12 @@ def peek_entry(key: str) -> dict[str, Any] | None:
         return None
 
 
+def keep_entry(key: str, entry: dict) -> None:
+    """Store ``entry`` under ``key`` in the Briefing cache — the edition's writer (Arc BG-3) keeps each
+    reader's edition here, beside the range Briefings, so a read finds it with ``peek_entry``."""
+    _store().put(key, entry)
+
+
 def _kept_version(connection_id: str, briefing: dict, scope_key, period) -> dict:
     """BR-6 — keep this reading as of the day it was built, and hand the page its stamp.
 
