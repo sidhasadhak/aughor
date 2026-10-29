@@ -12871,6 +12871,10 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
 - **Answerable in place:** every number opens its source (query, rows, receipts, status); a drill (compiled, no model)
   or a question (the quick answer, in the reader's own request) writes its answer into the page.
 - **Replaces** Arc BG's edition page; the guide, the measurement, readers and the gates stay.
+- **Built 2026-10-29** on `claude/briefing-guide` (BC-1…BC-6) and **proven live on LuxExperience** the same day
+  (PENDING item 69): the Leadership and Finance editions each investigated the week's record net revenue and profit per
+  order and found returns not yet arrived — what Arc BG's edition the day before had celebrated as nine-week highs —
+  and drew their investigation (a line of return rate by order week; kept profit per order by storefront).
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

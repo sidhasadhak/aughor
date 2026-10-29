@@ -36,12 +36,12 @@ const RULE = "1px solid var(--b1)";
 
 const when = (iso?: string): string => (iso ? formatTimestamp(iso, "short") : "");
 
-export function BriefingEdition({ connectionId, schema, workspaceId, onInvestigate }: {
+export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnalysis }: {
   connectionId: string;
   schema?: string;
   workspaceId?: string;
   /** Hand a question to deep analysis (the Data Canvas). */
-  onInvestigate?: (q: string) => void;
+  onDeepAnalysis?: (q: string) => void;
 }) {
   const [range, setRange] = useState<BriefingRange>({ preset: "last_week" });
   /** The reader asked for: undefined = the person's own, which the server resolves. */
@@ -136,9 +136,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onInvestiga
   const onDecide = useCallback((action: string, block: EditionBlock) => {
     if (action === "not_now") { setHidden(h => new Set(h).add(block.id)); return; }
     const q = (block.text ?? "").replace(/\{([^{}|]+)\|[A-Za-z0-9_-]+\}/g, "$1");
-    if (onInvestigate) onInvestigate(q);
+    if (onDeepAnalysis) onDeepAnalysis(q);
     else setAskSeed(s => ({ q, n: (s?.n ?? 0) + 1 }));
-  }, [onInvestigate]);
+  }, [onDeepAnalysis]);
 
   const period = edition?.period;
   const periodWord = period?.period ?? "week";
@@ -204,10 +204,10 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onInvestiga
               <h2 className="aug-fs-display" style={{ margin: "0 0 8px", color: "var(--t1)" }}>Not written yet for {readerName}</h2>
               <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 12px" }}>
                 The guide&apos;s {guide?.guide?.checks.length ?? 0} checks are measured for {period?.covers ?? "this range"}; then the
-                model investigates what moved — at most 8 queries of its own — and composes the page for {readerName}. Every number
+                model looks into what moved — at most 8 queries of its own — and composes the page for {readerName}. Every number
                 it writes is checked against what was measured. It takes about a minute.
               </p>
-              <Button disabled={!!busy} onClick={() => void write()}>{busy === "write" ? "Investigating and writing…" : writeLabel(periodWord, custom)}</Button>
+              <Button disabled={!!busy} onClick={() => void write()}>{busy === "write" ? "Looking into it and writing…" : writeLabel(periodWord, custom)}</Button>
             </section>
           ) : (
             <>
@@ -229,12 +229,12 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onInvestiga
               )}
               {period && (
                 <EditionAsk key={askSeed?.n ?? 0} connectionId={connectionId} schema={schema} periodKey={period.key}
-                  reader={toServerReader(reader ?? ORGANISATION)} seed={askSeed?.q} onDeeper={onInvestigate} />
+                  reader={toServerReader(reader ?? ORGANISATION)} seed={askSeed?.q} onDeeper={onDeepAnalysis} />
               )}
               <div className="aug-fs-xs" style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18, color: "var(--t3)" }}>
                 <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => void write()}
-                  title="Measure again, investigate again and write again">
-                  {busy === "write" ? "Investigating and writing…" : "Write it again"}
+                  title="Measure again, look again and write again">
+                  {busy === "write" ? "Looking into it and writing…" : "Write it again"}
                 </Button>
                 <span>
                   written {when(edition.generated_at)} · {edition.model_steps ?? 0} model steps · {edition.queries ?? 0} queries

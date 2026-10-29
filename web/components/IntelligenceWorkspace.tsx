@@ -256,7 +256,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // request issued twice under two scope keys. One settled mount, one wave.
         if (id === "briefing" && !canvasId && schemaResolved) return (
           <BriefingEdition key={`${connectionId}:${schema ?? ""}`} connectionId={connectionId} schema={schema}
-            workspaceId={workspaceId} onInvestigate={q => onInvestigate(q, "investigate")} />
+            workspaceId={workspaceId} onDeepAnalysis={askAgent} />
         );
         if (id === "briefing") return (canvasId || schemaResolved)
           ? (

@@ -42,7 +42,7 @@ def test_a_good_spec_passes_whole():
         {"type": "compare", "source": "stores", "label": "platform", "value": "this_week", "compare": "usual",
          "listens": "store"},
         {"type": "table", "source": "orders", "link": "order_id", "listens": "store"},
-        {"type": "decision", "text": "Look into it?", "actions": ["investigate", "not_now"]},
+        {"type": "decision", "text": "Look into it?", "actions": ["deep_analysis", "not_now"]},
     ), SOURCES)
     assert refusals == [] and [b.type for b in blocks] == ["lead", "bridge", "control", "compare", "table", "decision"]
     assert len({b.id for b in blocks}) == 6

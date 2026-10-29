@@ -48,10 +48,10 @@ TYPES: dict[str, str] = {
     "line": "source; x, value; mark (optional): {at: an x value, text: a few words}.",
     "control": "source + column: offers that column's values (and All); other blocks listen to it by naming this "
                "block's id in listens — they fade the rows of every other value. Their sources must hold the column.",
-    "decision": "text (required): one sentence asking for a decision; actions: any of investigate, not_now.",
+    "decision": "text (required): one sentence asking for a decision; actions: any of deep_analysis, not_now.",
     "quiet": "text: one line of what held steady, numbers cited.",
 }
-ACTIONS = ("investigate", "not_now")
+ACTIONS = ("deep_analysis", "not_now")
 _CITE_RE = re.compile(r"\{([^{}|]+)\|([A-Za-z0-9_\-]+)\}")
 _ID_RE = re.compile(r"[^a-z0-9_]+")
 #: Where one sentence ends — the split Arc BG's gates read sentences by.

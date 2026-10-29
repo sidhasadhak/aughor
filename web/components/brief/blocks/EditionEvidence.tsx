@@ -100,7 +100,7 @@ export function EditionAsk({ connectionId, schema, periodKey, reader, seed, onDe
   /** `range:<preset>:<start>..<last day>` — with the reader it names the edition the answer reads. */
   periodKey: string;
   reader: string;
-  /** A question to ask at once (a decision's Investigate). */
+  /** A question to ask at once (a decision's Deep analysis, with no deep analysis to hand it to). */
   seed?: string;
   onDeeper?: (q: string) => void;
 }) {

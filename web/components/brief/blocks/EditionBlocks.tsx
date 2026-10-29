@@ -256,9 +256,9 @@ const BODY: Record<BlockType, (p: BodyProps) => React.ReactNode> = {
     <>
       <p className="aug-fs-h2" style={{ color: "var(--t1)", margin: 0 }}><CitedText text={block.text} onCite={ctx.onCite} /></p>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        {(block.actions?.length ? block.actions : ["investigate", "not_now"]).map(a => (
-          <Button key={a} size="sm" variant={a === "investigate" ? "default" : "ghost"} onClick={() => ctx.onDecide(a, block)}>
-            {a === "investigate" ? "Investigate" : "Not now"}
+        {(block.actions?.length ? block.actions : ["deep_analysis", "not_now"]).map(a => (
+          <Button key={a} size="sm" variant={a === "not_now" ? "ghost" : "default"} onClick={() => ctx.onDecide(a, block)}>
+            {a === "not_now" ? "Not now" : "Deep analysis"}
           </Button>
         ))}
       </div>

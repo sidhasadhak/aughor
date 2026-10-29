@@ -61,7 +61,7 @@ const WRITTEN: Edition = { built: true, composed: true, scope_key: "c", period: 
     { id: "tbl", type: "table", source: "orders", title: "The largest orders", link: "order_id" },
     { id: "map", type: "map", source: "countries", label: "country", value: "this_week", compare: "usual", title: "Where orders went" },
     { id: "odd", type: "sankey", source: "sales" },
-    { id: "dec", type: "decision", text: "Look into app conversion before Singles Day?", actions: ["investigate", "not_now"] },
+    { id: "dec", type: "decision", text: "Look into app conversion before Singles Day?", actions: ["deep_analysis", "not_now"] },
   ],
   withheld: [{ block: "lead", sentence: "Promotions lifted sales.", why: "it claims a cause (“lifted”)" }],
   guide: { version: 5, state: "draft" }, model_steps: 5, queries: 2, generated_at: "2026-10-29T09:00:00Z", currency_code: "EUR" };
@@ -146,6 +146,7 @@ describe("BriefingEdition", () => {
     await waitFor(() => expect(screen.getAllByTestId("edition-block")[2].getAttribute("data-type")).toBe("compare"));
     expect(api.drillBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership",
       { source_id: "by_top", column: "platform", segment: true, after: "where" }, "luxexperience", undefined);
+    expect(screen.getByRole("button", { name: "Deep analysis" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByText(/Look into app conversion/)).toBeNull();
   });

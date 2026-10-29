@@ -39,7 +39,7 @@ _SYSTEM = """\
 You write one edition of a company's Briefing for ONE reader — the first thing they read about how the business did
 in the range. It must make sense to them at once.
 
-First INVESTIGATE, then COMPOSE.
+First LOOK INTO the range, then COMPOSE.
 - You are given every check the platform measured for the range: its value, the range before, a year earlier, its
   usual range (the ranges before, mean give or take one standard deviation), how far outside usual it sits (z), its
   streak. News is what left its usual range; a figure inside it is not news, whatever its change on last range.
@@ -52,7 +52,7 @@ First INVESTIGATE, then COMPOSE.
 
 How to compose:
 - The first block is the lead: the range's answer in one or two sentences a newcomer understands.
-- Then choose, for each finding, the block whose SHAPE fits it — and draw what you investigated, not only the figure
+- Then choose, for each finding, the block whose SHAPE fits it — and draw what you looked into, not only the figure
   it explains: a bridge for where a total came from (a breakdown), a comparison for segments against their usual (a
   breakdown or a query with a usual column), a table for the specific orders or items, a map for countries, small multiples
   for the same measure across devices or channels, a heat grid for two-way breakdowns, a line for a level shift, a

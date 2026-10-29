@@ -989,10 +989,24 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     should make sense right away to any user!"*) — mocked on live LuxExperience data
     (`design-mockups/briefing-canvas-lux.html`), accepted, plan approved; calls in ROADMAP §6 item 59, §3.67. Branch
     `claude/briefing-guide`, on top of Arc BG.
-    - [ ] BC-1 sources: a measured check, a compiled breakdown by any column, a guarded SELECT — rows, SQL, receipts
-    - [ ] BC-2 the canvas spec: a closed vocabulary, validated, with the number and claims gates over every word
-    - [ ] BC-3 investigate and compose: the tool loop under a budget; the floor; kept per reader
-    - [ ] BC-4 drill (compiled) and ask (the quick answer) written into the page
-    - [ ] BC-5 the page: blocks, the evidence panel, controls, Vega charts; Arc BG's edition page retired
-    - [ ] BC-6 subscriptions send a canvas, judged at departure
-    - [ ] BC-7 live on LuxExperience: Leadership and Finance canvases for the week of 19–25 Oct
+    - [x] BC-1 sources: a measured check, a compiled breakdown by any column, a guarded SELECT — rows, SQL, receipts
+      (`aughor/briefing/compose/sources.py`)
+    - [x] BC-2 the edition's blocks: a closed vocabulary, validated, with the number and claims gates over every word
+      (`compose/spec.py`)
+    - [x] BC-3 investigate and compose: the tool loop under the Briefer's budget; the floor; kept per reader
+      (`compose/write.py`); Arc BG's writer retired, its gates kept
+    - [x] BC-4 drill (compiled, only the columns the edition offers) and a question that reads the edition on screen
+    - [x] BC-5 the page: blocks, the Sources/Guide panel, controls, the choropleth (`web/components/brief/blocks/`)
+    - [x] BC-6 a sent edition judged against every source re-run at departure
+    - [~] BC-7 live on LuxExperience (2026-10-29, `~/dev/aughor` detached on the branch): the user published the guide
+      (v8, 15:53 UTC). Week of 19–25 Oct written for Leadership and Finance, 4–5 model steps and 2 queries each. Both
+      investigated the record net revenue and profit per order and found returns not yet arrived (item return rate by
+      order week falling to near 0 for the newest weeks) — "reported profit looks far better than it is" — and asked
+      whether to re-read before Singles' Day; Finance drew kept profit per order by storefront as small multiples.
+      The live runs found and fixed: query numbers returned as text, five figure blocks and no breakdown, breakdowns
+      tried on whole-statement metrics, untitled blocks, a rate axis reading 0.336, a mark label off the edge.
+      14 Sonnet calls for the proof.
+    - [ ] Follow-ups, named not done: *Give it to a team* on a decision; the Data Canvas still mounts the earlier panel;
+      a written query's numbers only re-measured at departure as raw cells (a change against usual quoted from a
+      breakdown is held); the gate checks a number exists in a source, not that the sentence uses it rightly; one
+      fix (no breakdown on a whole statement) awaits an API restart.
