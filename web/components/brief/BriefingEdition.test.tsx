@@ -14,7 +14,7 @@ import type { BriefingEdition as Edition, BriefingGuideResponse, EditionSource }
 
 const api = vi.hoisted(() => ({
   readBriefingEdition: vi.fn(), writeBriefingEdition: vi.fn(), readBriefingGuide: vi.fn(), draftBriefingGuide: vi.fn(),
-  getGroups: vi.fn(), putMyPreference: vi.fn(), drillBriefingEdition: vi.fn(),
+  getGroups: vi.fn(), putMyPreference: vi.fn(), drillBriefingEdition: vi.fn(), giveBriefingDecision: vi.fn(),
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/api")>()), ...api }));
 vi.mock("@/components/brief/BriefSchedule", () => ({ BriefSchedule: () => null }));
@@ -61,7 +61,7 @@ const WRITTEN: Edition = { built: true, composed: true, scope_key: "c", period: 
     { id: "tbl", type: "table", source: "orders", title: "The largest orders", link: "order_id" },
     { id: "map", type: "map", source: "countries", label: "country", value: "this_week", compare: "usual", title: "Where orders went" },
     { id: "odd", type: "sankey", source: "sales" },
-    { id: "dec", type: "decision", text: "Look into app conversion before Singles Day?", actions: ["deep_analysis", "not_now"] },
+    { id: "dec", type: "decision", text: "Look into app conversion before Singles Day?", actions: ["investigate", "not_now"] },
   ],
   withheld: [{ block: "lead", sentence: "Promotions lifted sales.", why: "it claims a cause (“lifted”)" }],
   guide: { version: 5, state: "draft" }, model_steps: 5, queries: 2, generated_at: "2026-10-29T09:00:00Z", currency_code: "EUR" };
@@ -76,7 +76,8 @@ const GUIDE: BriefingGuideResponse = {
 beforeEach(() => {
   Object.values(api).forEach(f => f.mockReset());
   api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [
-    { id: "leadership", name: "Leadership", kind: "function", description: "", channel_trigger_id: "" }] });
+    { id: "leadership", name: "Leadership", kind: "function", description: "", channel_trigger_id: "" },
+    { id: "finance", name: "Finance", kind: "function", description: "", channel_trigger_id: "" }] });
   api.readBriefingGuide.mockResolvedValue(GUIDE);
   api.putMyPreference.mockResolvedValue(undefined);
 });
@@ -96,7 +97,7 @@ describe("BriefingEdition", () => {
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     fireEvent.click(await screen.findByRole("button", { name: "Write this week's edition" }));
     await screen.findByTestId("edition-lead");
-    expect(api.writeBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership", "luxexperience", undefined);
+    expect(api.writeBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership", "luxexperience", undefined, undefined);
   });
 
   it("draws the blocks it was given, in their order, and says the one it cannot draw", async () => {
@@ -145,10 +146,41 @@ describe("BriefingEdition", () => {
     fireEvent.click(screen.getByRole("button", { name: /By platform, within Yes/ }));
     await waitFor(() => expect(screen.getAllByTestId("edition-block")[2].getAttribute("data-type")).toBe("compare"));
     expect(api.drillBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership",
-      { source_id: "by_top", column: "platform", segment: true, after: "where" }, "luxexperience", undefined);
+      { source_id: "by_top", column: "platform", segment: true, after: "where" }, "luxexperience", undefined, undefined);
     expect(screen.getByRole("button", { name: "Deep analysis" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByText(/Look into app conversion/)).toBeNull();
+  });
+
+  it("offers every decision deep analysis, a team and not now — an edition kept before the rename too", async () => {
+    api.readBriefingEdition.mockResolvedValue(WRITTEN);
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    const dec = (await screen.findAllByTestId("edition-block")).find(b => b.getAttribute("data-type") === "decision")!;
+    expect(within(dec).getAllByRole("button").map(b => b.textContent)).toEqual(["Deep analysis", "Give it to a team", "Not now"]);
+  });
+
+  it("gives a decision to the team picked and says what became of it", async () => {
+    api.readBriefingEdition.mockResolvedValue(WRITTEN);
+    api.giveBriefingDecision.mockResolvedValue({ block: "dec", group_id: "finance", name: "Finance", by: "user:amit",
+      at: "2026-10-30T09:00:00Z", status: "not_sent", note: "Finance has no channel bound — bind one to the group, then give it again",
+      departure_id: "", target: "" });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Give it to a team" }));
+    const picker = screen.getByTestId("edition-give");
+    expect(within(picker).getAllByRole("button").map(b => b.textContent)).toEqual(["Finance", "Leadership"]);
+    fireEvent.click(within(picker).getByRole("button", { name: "Finance" }));
+    const said = await screen.findByTestId("edition-given");
+    expect(said.textContent).toContain("Given to Finance by amit · not sent — Finance has no channel bound");
+    expect(api.giveBriefingDecision).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership",
+      { block_id: "dec", group_id: "finance" }, "luxexperience", undefined, undefined);
+  });
+
+  it("in a Data Canvas, reads the canvas's edition, says which checks it leaves out, and offers no schedule", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, canvas: { id: "cv1", tables: ["orders"], checks_outside: ["Refunds paid"] } });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" canvasId="cv1" />);
+    expect((await screen.findByTestId("edition-canvas")).textContent).toContain("left out: Refunds paid");
+    expect(api.readBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, undefined, "luxexperience", undefined, "cv1");
+    expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
   });
 
   it("with no guide, says so and drafts one only on a click", async () => {

@@ -42,8 +42,9 @@ def test_a_good_spec_passes_whole():
         {"type": "compare", "source": "stores", "label": "platform", "value": "this_week", "compare": "usual",
          "listens": "store"},
         {"type": "table", "source": "orders", "link": "order_id", "listens": "store"},
-        {"type": "decision", "text": "Look into it?", "actions": ["deep_analysis", "not_now"]},
+        {"type": "decision", "text": "Look into it?", "actions": ["email_the_ceo"]},
     ), SOURCES)
+    assert blocks[-1].actions == ["deep_analysis", "give_to_team", "not_now"]   # offered by code, always
     assert refusals == [] and [b.type for b in blocks] == ["lead", "bridge", "control", "compare", "table", "decision"]
     assert len({b.id for b in blocks}) == 6
 
@@ -57,7 +58,6 @@ def test_what_cannot_be_drawn_is_refused_in_sentences_the_model_can_act_on():
         {"type": "compare", "source": "stores", "label": "storefront", "value": "this_week"},
         {"type": "figure", "source": "stores"},
         {"type": "table", "source": "orders", "listens": "no_control"},
-        {"type": "decision", "text": "Do it?", "actions": ["email_the_ceo"]},
     ), SOURCES)
     said = " | ".join(refusals)
     assert "no block type 'pie'" in said
@@ -66,7 +66,6 @@ def test_what_cannot_be_drawn_is_refused_in_sentences_the_model_can_act_on():
     assert "names column 'storefront'" in said and "platform, this_week, usual" in said
     assert "(figure) must read a check" in said
     assert "listens to 'no_control', which is not a control" in said
-    assert "offers email_the_ceo" in said
     assert [b.type for b in blocks] == ["lead"]
 
 
@@ -119,3 +118,46 @@ def test_a_made_up_number_and_a_cause_are_withheld_and_listed():
     assert "12.0k" in reasons["Top clients spent €12.0k more."]
     assert any(w["why"] == "every sentence of it was held" for w in withheld)
     assert refusals                                                        # and said back for the rewrite
+
+
+# ── a number is checked against what it is said of, not only against every source ────────────
+
+BY_STORE = Source(id="by_store", label="Sales by storefront", kind="breakdown", columns=BREAKDOWN_COLUMNS,
+                  rows=[["Mytheresa", 38840.0, 29849.0, 8991.0, 0.301, 24, False],
+                        ["YOOX", 9845.0, 11051.0, -1206.0, -0.109, 12, False]])
+MORE = {**SOURCES, "by_store": BY_STORE}
+
+
+def _held(*blocks) -> dict[str, str]:
+    validated, _ = P.validate(_spec(LEAD, *blocks), MORE)
+    _kept, withheld, _ = P.gate(validated, MORE)
+    return {w["sentence"]: w["why"] for w in withheld if w["sentence"]}
+
+
+def test_a_cited_number_must_come_from_the_source_its_citation_names():
+    held = _held({"type": "quiet", "text": "Sales came to {€38.8k|sales}. Top clients spent {€38.8k|stores}."})
+    assert held == {"Sales came to €38.8k.": "it cites Sales for 38.8k, which Sales does not hold"}
+
+
+def test_a_number_said_of_a_segment_must_be_that_segments():
+    held = _held({"type": "quiet", "text": "YOOX's top clients spent {€38.8k|stores}. "
+                                            "Mytheresa's top clients spent {€38.8k|stores}."})
+    assert held == {"YOOX's top clients spent €38.8k.":
+                    "it puts 38.8k on YOOX, which is not YOOX's in Top clients by storefront"}
+
+
+def test_a_direction_must_be_the_way_the_measured_change_went():
+    held = _held({"type": "quiet", "text": "YOOX rose to {€9.8k|by_store}. Mytheresa rose to {€38.8k|by_store}. "
+                                            "Sales fell to {€166,988|sales}. Sales rose to {€167.0k|sales}."})
+    assert held == {"YOOX rose to €9.8k.": "it says YOOX rose, but YOOX is below its usual in Sales by storefront",
+                    "Sales fell to €166,988.": "it says Sales fell, but it is above every range it is compared with"}
+
+
+def test_a_direction_in_another_clause_is_not_put_on_the_citation():
+    assert _held({"type": "quiet", "text": "Returns fell below usual, so sales came to {€167.0k|sales}."}) == {}
+
+
+def test_a_number_outside_a_citation_must_come_from_a_source_the_block_reads():
+    held = _held({"type": "figure", "source": "sales", "text": "Top clients bought 9,417 more. Sales were 166,988."})
+    assert held == {"Top clients bought 9,417 more.":
+                    "it states 9,417, which none of the sources it reads (Sales) holds"}

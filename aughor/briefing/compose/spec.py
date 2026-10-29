@@ -48,10 +48,12 @@ TYPES: dict[str, str] = {
     "line": "source; x, value; mark (optional): {at: an x value, text: a few words}.",
     "control": "source + column: offers that column's values (and All); other blocks listen to it by naming this "
                "block's id in listens — they fade the rows of every other value. Their sources must hold the column.",
-    "decision": "text (required): one sentence asking for a decision; actions: any of deep_analysis, not_now.",
+    "decision": "text (required): one sentence asking for a decision. The reader is offered what to do with it: "
+                "take it into deep analysis, give it to a team, or put it away.",
     "quiet": "text: one line of what held steady, numbers cited.",
 }
-ACTIONS = ("deep_analysis", "not_now")
+#: What a reader may do with a decision — offered by code on every decision, never chosen by the model.
+ACTIONS = ("deep_analysis", "give_to_team", "not_now")
 _CITE_RE = re.compile(r"\{([^{}|]+)\|([A-Za-z0-9_\-]+)\}")
 _ID_RE = re.compile(r"[^a-z0-9_]+")
 #: Where one sentence ends — the split Arc BG's gates read sentences by.
@@ -170,10 +172,7 @@ def validate(spec: Spec, sources: dict[str, Source]) -> tuple[list[Block], list[
             if b.type == "control" and not b.column:
                 why.append(f"block {n} (control) needs the column whose values it offers")
         if b.type == "decision":
-            bad = [a for a in b.actions if a not in ACTIONS]
-            if bad:
-                why.append(f"block {n} (decision) offers {', '.join(bad)}; it may offer {', '.join(ACTIONS)}")
-            b.actions = [a for a in b.actions if a in ACTIONS] or list(ACTIONS)
+            b.actions = list(ACTIONS)
         if why:
             refusals += why
             continue
@@ -268,6 +267,124 @@ def allowed_numbers(sources: dict[str, Source]) -> list[float]:
     return sorted(vals)
 
 
+#: The words that only ever claim a direction — "more" and "less" are left out on purpose ("€9.4k more" says how
+#: much, not against what), and "up"/"down" count only before a number or a comparison ("down 4%", "up on usual").
+_UP = re.compile(r"(?i)\b(rose|risen|rising|grew|grown|increased|higher|above)\b"
+                 r"|\bup(?=\s+(?:[-−+€$£]?\d|on\b|from\b|against\b))")
+_DOWN = re.compile(r"(?i)\b(fell|fallen|falling|dropped|declined|decreased|lower|below)\b"
+                   r"|\bdown(?=\s+(?:[-−+€$£]?\d|on\b|from\b|against\b))")
+
+
+def _direction(words: str) -> int:
+    up, down = bool(_UP.search(words)), bool(_DOWN.search(words))
+    return 1 if up and not down else -1 if down and not up else 0
+
+
+def _labels(src: Source) -> dict[str, list[int]]:
+    """The segments a source names — each text value of its first text column — and the rows holding each."""
+    col = next((i for i in range(len(src.columns))
+                if any(isinstance(r[i], str) for r in src.rows if i < len(r))), None)
+    out: dict[str, list[int]] = {}
+    if col is None:
+        return out
+    for n, r in enumerate(src.rows):
+        v = r[col] if col < len(r) else None
+        if isinstance(v, str) and len(v.strip()) >= 3:
+            out.setdefault(v.strip(), []).append(n)
+    return out
+
+
+def _row_numbers(src: Source, rows: list[int]) -> list[float]:
+    """What a sentence may say about one segment: its own cells and the changes between them, and its share of each
+    column's whole."""
+    vals = set(allowed_numbers({src.id: src.model_copy(update={"rows": [src.rows[i] for i in rows], "facts": {}})}))
+    for c in range(len(src.columns)):
+        total = sum(_num(r[c]) or 0.0 for r in src.rows if c < len(r))
+        for i in rows:
+            v = _num(src.rows[i][c]) if c < len(src.rows[i]) else None
+            if total and v is not None:
+                vals.update({v / total * 100, abs(v / total * 100)})
+    return sorted(vals)
+
+
+def _bound(numbers: str, context: str, src: Source, pool: list[float], *, cited: bool = True) -> str:
+    """Why words put a number on the wrong thing in ``src``, or "": a cited number another source holds but this
+    one does not; a number that is not the segment's the ``context`` (the clause around it) names; a direction the
+    measured change does not take."""
+    from aughor.briefing.edition import unmeasured_numbers
+
+    if src.status == "refused":
+        return ""
+    if cited:
+        wrong = [n for n in unmeasured_numbers(numbers, allowed_numbers({src.id: src}))
+                 if not unmeasured_numbers(n, pool)]
+        if wrong:
+            return f"it cites {src.label} for {', '.join(wrong)}, which {src.label} does not hold"
+    said = _direction(context)
+    word = "rose" if said > 0 else "fell"
+    if src.kind == "check":
+        f = src.facts or {}
+        against = ("usual_mean",) if "usual" in context.lower() else ("previous", "usual_mean", "last_year")
+        diffs = [_num(f.get("current")) - _num(f.get(k)) for k in against
+                 if _num(f.get("current")) is not None and _num(f.get(k)) is not None]
+        if said and diffs and all(d * said < 0 for d in diffs):
+            return (f"it says {src.label} {word}, but it is {'below' if said > 0 else 'above'} "
+                    f"{'its usual' if against == ('usual_mean',) else 'every range it is compared with'}")
+        return ""
+    labels = _labels(src)
+    named = [lab for lab in labels if re.search(rf"(?<!\w){re.escape(lab)}(?!\w)", context)]
+    if len(named) != 1:
+        return ""
+    lab, rows = named[0], labels[named[0]]
+    wrong = unmeasured_numbers(numbers, _row_numbers(src, rows))
+    if wrong:
+        return f"it puts {', '.join(wrong)} on {lab}, which is not {lab}'s in {src.label}"
+    if said and src.kind in ("breakdown", "drill") and "change" in src.columns:
+        at = src.columns.index("change")
+        moves = [_num(src.rows[i][at]) for i in rows if at < len(src.rows[i])]
+        moves = [m for m in moves if m is not None]
+        if moves and all(m * said < 0 for m in moves):
+            return f"it says {lab} {word}, but {lab} is {'below' if said > 0 else 'above'} its usual in {src.label}"
+    return ""
+
+
+#: Where a clause ends — the words around a citation that are about it, and no further.
+_CLAUSE_RE = re.compile(r",(?!\d)|[;:—–]|\s(?:but|while|whereas|although|though)\s", re.I)
+
+
+def _clause(sentence: str, at: int, end: int) -> str:
+    """The clause of ``sentence`` around the citation at ``at``…``end`` — read with every citation's own words
+    masked, so "€150,773" never ends one."""
+    masked = _CITE_RE.sub(lambda m: "x" * len(m.group(0)), sentence)
+    before = [m.end() for m in _CLAUSE_RE.finditer(masked, 0, at)]
+    after = _CLAUSE_RE.search(masked, end)
+    return plain(sentence[(before[-1] if before else 0):(after.start() if after else len(sentence))])
+
+
+def misused(sentence: str, b: Block, sources: dict[str, Source], pool: list[float]) -> str:
+    """Why a sentence (citation marks intact) uses a measured number wrongly, or "". Each cited number must come
+    from the source its citation names — and from the segment the clause around it names, moving the way it says;
+    a number outside a citation must come from a source the block reads."""
+    from aughor.briefing.edition import unmeasured_numbers
+
+    for m in _CITE_RE.finditer(sentence):
+        words, sid = m.group(1), m.group(2)
+        if sid in sources:
+            why = _bound(words, _clause(sentence, m.start(), m.end()), sources[sid], pool)
+            if why:
+                return why
+    own = {sid: sources[sid] for sid in sources_of(b) if sid in sources and sources[sid].status != "refused"}
+    outside = _CITE_RE.sub(" ", sentence)
+    if own:
+        wrong = [n for n in unmeasured_numbers(outside, allowed_numbers(own)) if not unmeasured_numbers(n, pool)]
+        if wrong:
+            return (f"it states {', '.join(wrong)}, which none of the sources it reads "
+                    f"({', '.join(s.label for s in own.values())}) holds")
+    if b.source in sources and not b.chain and not cites(sentence):
+        return _bound(outside, outside, sources[b.source], pool, cited=False)
+    return ""
+
+
 def _words_of(b: Block) -> list[tuple[str, str]]:
     out = [(f, plain(getattr(b, f))) for f in ("kicker", "title", "text", "sub") if getattr(b, f)]
     if b.mark:
@@ -287,11 +404,17 @@ def gate(blocks: list[Block], sources: dict[str, Source]) -> tuple[list[Block], 
     for b in blocks:
         b = b.model_copy()
         for field, words in _words_of(b):
+            raw = b.mark.text if field == "mark" and b.mark else getattr(b, field)
             held = dict(held_sentences(words, allowed))
+            for sentence in _SENTENCE_RE.split(raw):
+                said = plain(sentence).strip()
+                if said and said not in held:
+                    why = misused(sentence, b, sources, allowed)
+                    if why:
+                        held[said] = why
             if not held:
                 continue
             refusals += [f"block {b.id}: “{s}” — {why}" for s, why in held.items()]
-            raw = b.mark.text if field == "mark" and b.mark else getattr(b, field)
             kept = []
             for sentence in _SENTENCE_RE.split(raw):
                 if plain(sentence).strip() in held:

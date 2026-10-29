@@ -1006,7 +1006,19 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       The live runs found and fixed: query numbers returned as text, five figure blocks and no breakdown, breakdowns
       tried on whole-statement metrics, untitled blocks, a rate axis reading 0.336, a mark label off the edge.
       14 Sonnet calls for the proof.
-    - [ ] Follow-ups, named not done: *Give it to a team* on a decision; the Data Canvas still mounts the earlier panel;
-      a written query's numbers only re-measured at departure as raw cells (a change against usual quoted from a
-      breakdown is held); the gate checks a number exists in a source, not that the sentence uses it rightly. Every
-      fix is live: `~/dev/aughor` detached at the branch tip, the API restarted on it (2026-10-29).
+    - [x] The five follow-ups, built 2026-10-30 (the user: "Do this now"):
+      - *Give it to a team* on every decision (`compose/write.give`, `POST …/briefing/edition/give`): posted to the
+        channel the function group binds, through the departure gate (origin person, the edition's sources re-run),
+        written into the edition under the decision — sent, held with why, or not sent because the group binds no
+        channel; given once per group. A decision's three choices are offered by code, never chosen by the model.
+      - The Data Canvas mounts the edition page (`canvas_id` on every edition route): only the guide's checks that
+        read the canvas's tables are measured, the model is shown and queries only those tables, and the checks left
+        out are said on the page. The earlier `BriefingPanel` component is mounted nowhere now; its exported pieces
+        (`DossierTrace`, `EvidenceDrawer`, `FindingActions`) stay in use.
+      - A breakdown's segments are re-derived at departure from its re-run rows (`sources.rerun`), so a change
+        against usual departs on the change measured at the send.
+      - The number gate binds a number to what it is said of (`spec.misused`): a cited number to its cited source, to
+        the segment the clause around it names, moving the way that segment moved; an uncited number to a source the
+        block reads. Measured on the two kept live editions first: 0 of 29 sentences newly held.
+      - A person's guide edit measures each new or changed check once before it is kept (`guide.verify_edit`) and is
+        refused with why when one cannot be; ids must be snake_case and unique and readers must watch real checks.

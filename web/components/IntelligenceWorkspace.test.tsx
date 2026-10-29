@@ -110,7 +110,7 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
   it("reads once for an opened Briefing, through shell re-renders and a switch to Profile, and never writes", async () => {
     const { rerender } = render(shell("briefing"));
     await waitFor(() => expect(readBriefingEdition).toHaveBeenCalledTimes(1), { timeout: 5_000 });
-    expect(readBriefingEdition).toHaveBeenLastCalledWith(CONN, WEEK, undefined, "sales", "default");
+    expect(readBriefingEdition).toHaveBeenLastCalledWith(CONN, WEEK, undefined, "sales", "default", undefined);
 
     rerender(shell("briefing"));   // the shell re-renders: ⌘K opens, a nav count lands
     await settle();
@@ -135,7 +135,7 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
     await settle();
 
     expect(readBriefingEdition).toHaveBeenCalledTimes(1);
-    expect(readBriefingEdition).toHaveBeenLastCalledWith(CONN, WEEK, undefined, "sales", "default");
+    expect(readBriefingEdition).toHaveBeenLastCalledWith(CONN, WEEK, undefined, "sales", "default", undefined);
     expect(writeBriefingEdition).not.toHaveBeenCalled();
     expect(getCatalogTree).not.toHaveBeenCalled();
   });
@@ -152,6 +152,16 @@ describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc
     await settle();
     expect(readRangeBriefing).not.toHaveBeenCalled();
     expect(buildRangeBriefing).not.toHaveBeenCalled();
+  });
+
+  it("a canvas's Briefing is the edition page, reading the canvas's own edition and never writing", async () => {
+    render(<IntelligenceWorkspace connectionId={CONN} layer="briefing" onLayerChange={noop} onInvestigate={noop}
+      canvasId="cv1" workspaceId="default" />);
+    await waitFor(() => expect(readBriefingEdition).toHaveBeenCalledTimes(1), { timeout: 5_000 });
+    expect(vi.mocked(readBriefingEdition).mock.calls[0].at(-1)).toBe("cv1");
+    expect(await screen.findByTestId("briefing-edition")).toBeTruthy();
+    expect(writeBriefingEdition).not.toHaveBeenCalled();
+    expect(readRangeBriefing).not.toHaveBeenCalled();
   });
 
   it("is not there for a canvas, which is for questions and deep analysis, and a link to it opens the Briefing", async () => {

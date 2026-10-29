@@ -12875,6 +12875,11 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   (PENDING item 69): the Leadership and Finance editions each investigated the week's record net revenue and profit per
   order and found returns not yet arrived — what Arc BG's edition the day before had celebrated as nine-week highs —
   and drew their investigation (a line of return rate by order week; kept profit per order by storefront).
+- **2026-10-30, the named follow-ups built** (PENDING item 69): a decision can be given to a team (the function
+  group's channel, through the departure gate, said on the edition); the Data Canvas reads its own edition from its
+  own tables on the same page; a breakdown's change against usual is re-measured at a send; the number gate checks a
+  number against the source, segment and direction it is said of, not only that some source holds it; and a person's
+  guide edit measures its new or changed checks before it is kept.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

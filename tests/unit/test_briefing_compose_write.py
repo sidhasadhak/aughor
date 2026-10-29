@@ -230,6 +230,25 @@ def test_a_send_measures_a_written_querys_numbers_again_at_departure(con, setup)
     assert any(abs(v - (a_sales + 9999.0)) < 0.01 for v in after.values)
 
 
+def test_a_send_measures_a_breakdowns_change_against_usual_again_at_departure(con, setup):
+    from aughor.briefing import edition as E
+    from aughor.briefing.compose import sources as S
+
+    m, _ = E.measurable(SALES, {})
+    src = S.breakdown("sales_by_is_top", "Sales by top client", m, "is_top", _week(), usual_n=8,
+                      run_sql=_run(con), dialect="duckdb", unit="EUR", check_id="sales")
+    top = next(r for r in src.rows if r[0] is True)
+    change = top[3]
+    entry = {"period": {"label": "Weekly", "measured": [], "last_day": "2026-10-25"},
+             "sources": {src.id: src.model_dump(mode="json")}}
+    before = W.departure_measurement("compose_c1", entry, runner=setup["runner"])
+    assert any(abs(v - change) < 0.01 for v in before.values)             # "€X above its usual" departs
+    con.execute("INSERT INTO orders VALUES (DATE '2026-10-21', 'A', true, 5000.0)")   # late rows land
+    after = W.departure_measurement("compose_c1", entry, runner=setup["runner"])
+    assert not any(abs(v - change) < 0.01 for v in after.values)          # the old change no longer stands
+    assert any(abs(v - (change + 5000.0)) < 0.01 for v in after.values)   # the change measured now does
+
+
 def test_a_read_finds_the_composed_edition_and_never_an_older_one(setup, monkeypatch):
     from aughor.knowledge.briefing import keep_entry
     from aughor.routers import exploration as R
@@ -255,3 +274,107 @@ def test_a_whole_statement_check_is_offered_no_column_to_break_it_down_by(setup,
     entry = W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
                       run_query=_top_orders)
     assert entry["drill_columns"]["net"] == [] and entry["drill_columns"]["sales"] == ["platform", "is_top"]
+
+
+# ── a decision, given to a team ──────────────────────────────────────────────────────────────
+
+class _Group:
+    def __init__(self, gid, name, channel=""):
+        self.id, self.name, self.channel_trigger_id = gid, name, channel
+
+
+def _with_decision(setup, monkeypatch):
+    blocks = [LEAD, {"id": "ask", "type": "decision", "text": "Hold the {€42.1k|sales} as provisional?"}]
+    loop, _ = _loop([("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    return W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                     run_query=_top_orders)
+
+
+def test_every_decision_offers_deep_analysis_a_team_and_not_now(setup, monkeypatch):
+    entry = _with_decision(setup, monkeypatch)
+    assert next(b for b in entry["blocks"] if b["type"] == "decision")["actions"] == [
+        "deep_analysis", "give_to_team", "not_now"]
+
+
+def test_a_team_with_no_channel_is_not_reached_and_the_edition_says_so(setup, monkeypatch):
+    from aughor.knowledge.briefing import peek_entry
+
+    _with_decision(setup, monkeypatch)
+    monkeypatch.setattr("aughor.rbac.groups.get_group", lambda org, gid: _Group(gid, "Finance"))
+    fired = []
+    monkeypatch.setattr("aughor.notifications.executor.fire_action", lambda *a, **k: fired.append(a))
+    out = W.give("compose_c1", _week(), scope_key="compose_c1", block_id="ask", group_id="finance",
+                 by="user:amit", runner=setup["runner"])
+    assert out["status"] == "not_sent" and "Finance has no channel bound" in out["note"] and not fired
+    kept = peek_entry(f"compose_c1#{_week().key}@_organisation")
+    assert kept["given"] == [out] and out["by"] == "user:amit"                    # written into the edition
+
+
+def test_a_decision_given_to_a_team_departs_through_the_gate_once(setup, monkeypatch):
+    from types import SimpleNamespace
+
+    _with_decision(setup, monkeypatch)
+    monkeypatch.setattr("aughor.rbac.groups.get_group", lambda org, gid: _Group(gid, "Finance", "trg_fin"))
+    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: SimpleNamespace(id=tid))
+    gated, fired = [], []
+
+    def gate(**kw):
+        gated.append(kw)
+        return SimpleNamespace(held=False, record_id="dep_1", receipt={}, receipt_line=lambda: "receipt",
+                               reason_sentence=lambda: "")
+    monkeypatch.setattr("aughor.govern.departure.gate_departure", gate)
+    monkeypatch.setattr("aughor.notifications.executor.fire_action",
+                        lambda trigger, payload: fired.append(payload) or SimpleNamespace(status="ok", error=None))
+    out = W.give("compose_c1", _week(), scope_key="compose_c1", block_id="ask", group_id="finance",
+                 by="user:amit", runner=setup["runner"])
+    assert out["status"] == "sent" and out["departure_id"] == "dep_1"
+    assert gated[0]["text"] == "Hold the €42.1k as provisional?" and gated[0]["origin"] == "person"
+    assert any(abs(v - 42100) < 100 for v in gated[0]["measurement"].values)     # judged on the re-run sources
+    assert "Given to Finance by user:amit" in fired[0].recommendation
+    again = W.give("compose_c1", _week(), scope_key="compose_c1", block_id="ask", group_id="finance",
+                   by="user:amit", runner=setup["runner"])
+    assert again == out and len(fired) == 1                                      # given once per group
+
+
+def test_a_held_decision_is_not_posted_and_says_why(setup, monkeypatch):
+    from types import SimpleNamespace
+
+    _with_decision(setup, monkeypatch)
+    monkeypatch.setattr("aughor.rbac.groups.get_group", lambda org, gid: _Group(gid, "Finance", "trg_fin"))
+    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: SimpleNamespace(id=tid))
+    monkeypatch.setattr("aughor.govern.departure.gate_departure", lambda **kw: SimpleNamespace(
+        held=True, record_id="dep_2", reason_sentence=lambda: "€42.1k was not measured at the send"))
+    fired = []
+    monkeypatch.setattr("aughor.notifications.executor.fire_action", lambda *a, **k: fired.append(a))
+    out = W.give("compose_c1", _week(), scope_key="compose_c1", block_id="ask", group_id="finance",
+                 by="user:amit", runner=setup["runner"])
+    assert out["status"] == "held" and "not measured" in out["note"] and not fired
+    with pytest.raises(LookupError, match="no decision"):
+        W.give("compose_c1", _week(), scope_key="compose_c1", block_id="lead_1", group_id="finance", by="user:amit")
+
+
+# ── an edition inside a Data Canvas ──────────────────────────────────────────────────────────
+
+def test_a_canvas_edition_reads_only_the_canvas_tables(setup, monkeypatch):
+    refunds = G.Check(id="refunds", label="Refunds", sql="SUM(refund)", tables=["returns"],
+                      time_column="returns.return_date", unit="EUR")
+    G.save("compose_cv", None, G.BriefingGuide(business="A shop.", checks=[SALES, refunds]), by="user:amit",
+           publish=True)
+    monkeypatch.setattr("aughor.business_profile.infer.gather_context", lambda c, s: (
+        "TABLE: orders  (1 rows)\n  gmv DOUBLE\n\nTABLE: returns  (1 rows)\n  refund DOUBLE\n", []))
+    asked = {}
+
+    def run_query(conn_id, args, **kw):
+        asked.update(kw)
+        return _top_orders(conn_id, args)
+    loop, seen = _loop([("query", {"id": "q", "label": "Q", "sql": "SELECT 1", "purpose": "p"}),
+                        ("compose", {"blocks": [LEAD]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_cv", _week(), scope_key="canvas:cv1", canvas_id="cv1", tables=("orders",),
+                      llm=object(), runner=setup["runner"], run_query=run_query)
+    assert entry["canvas"] == {"id": "cv1", "tables": ["orders"], "checks_outside": ["Refunds"]}
+    assert [f["id"] for f in entry["period"]["measured"]] == ["sales"]           # the canvas's check only
+    schema_seen = seen[0]["question"].split("SCHEMA (for query):")[1]
+    assert "TABLE: orders" in schema_seen and "returns" not in schema_seen       # shown the canvas's tables
+    assert asked["canvas_id"] == "cv1"                                           # queries run in its scope

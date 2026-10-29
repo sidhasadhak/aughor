@@ -297,6 +297,44 @@ def verify_checks(checks: list[Check], *, metrics_by_name: dict, run_sql, dialec
     return kept, dropped
 
 
+_DEFINITION = ("metric", "sql", "tables", "filters", "time_column", "time_kind")
+
+
+def verify_edit(conn_id: str, schema: Optional[str], edited: BriefingGuide, *, runner=None) -> BriefingGuide:
+    """A person's edit, checked before it is kept: every check id snake_case and unique, every reader
+    watching checks the guide has, and each check whose definition is new or changed measured once over
+    the last two complete weeks — an unchanged check was measured when it was drafted, so it runs no
+    query. Raises ValueError naming each check that cannot be kept and why; nothing is saved then."""
+    from aughor.briefing import ranges
+    from aughor.knowledge import period_brief
+
+    ids = [c.id for c in edited.checks]
+    bad = sorted({i for i in ids if i != _slug(i) or ids.count(i) > 1})
+    if bad:
+        raise ValueError(f"a check's id is snake_case and unique in the guide: {', '.join(bad)}")
+    known = set(ids)
+    unknown = [f"{r.name} watches {c}" for r in edited.readers for c in r.check_ids if c not in known]
+    if unknown:
+        raise ValueError(f"a reader watches checks the guide has: {'; '.join(unknown)}")
+    before, _rev = working_copy(conn_id, schema)
+    was = {c.id: c for c in (before.checks if before else [])}
+    changed = [c for c in edited.checks
+               if c.id not in was or any(getattr(c, f) != getattr(was[c.id], f) for f in _DEFINITION)]
+    if not changed:
+        return edited
+    spec, why = ranges.resolve_for(conn_id, "last_week", schema=schema)
+    if spec is None:
+        raise ValueError(f"the changed checks cannot be measured: the last complete week could not be read ({why})")
+    metrics_by_name = {m.name: m for m in ranges.governed_metrics(conn_id, schema)}
+    with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+        kept, dropped = verify_checks(changed, metrics_by_name=metrics_by_name, run_sql=run_sql,
+                                      dialect=dialect, windows=spec.windows()[:2])
+    if dropped:
+        raise ValueError("the guide was not saved — " + "; ".join(f"“{d.label}” {d.reason}" for d in dropped))
+    measured = {c.id: c for c in kept}
+    return edited.model_copy(update={"checks": [measured.get(c.id, c) for c in edited.checks]})
+
+
 # ── the draft ────────────────────────────────────────────────────────────────────────────────
 
 _SYSTEM = """\

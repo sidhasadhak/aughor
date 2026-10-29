@@ -61,7 +61,9 @@ How to compose:
   never a figure where a comparison, bridge or line would show more. A quiet range gets a short edition. At most 14
   blocks.
 - Every number in your words must come from a source, written as given (rounding allowed), and cited as
-  {{words|source_id}} in lead, quiet and decision text. Never compute a new number.
+  {{words|source_id}} in lead, quiet and decision text — cited to the source it comes from, said of the segment it
+  belongs to, and moving the way it was measured to move (a segment below its usual never "rose"). Never compute a
+  new number.
 - Never write that one thing caused, drove, lifted or was behind another, and never predict.
 - Every figure marked floor must appear in a block (a figure block reading it is enough).
 
@@ -132,7 +134,7 @@ def _compose_params() -> dict:
     block = {"type": "object", "required": ["type"], "properties": {
         "id": s, "type": {"type": "string", "enum": list(P.TYPES)}, "kicker": s, "title": s, "text": s, "sub": s,
         "source": s, "chain": arr, "label": s, "value": s, "compare": s, "series": s, "x": s, "columns": arr,
-        "link": s, "column": s, "listens": s, "actions": arr,
+        "link": s, "column": s, "listens": s,
         "mark": {"type": "object", "properties": {"at": s, "text": s}}}}
     return {"type": "object", "required": ["blocks"], "properties": {"blocks": {"type": "array", "items": block}}}
 
@@ -146,9 +148,27 @@ def code_edition(figures: list[dict], floor: list[str], why: str) -> dict:
     return {"blocks": blocks, "withheld": [], "left_out": [], "drawn_by_code": why}
 
 
+def inside(check, metrics_by_name: dict, tables) -> bool:
+    """Whether ``check`` reads only ``tables`` (a Data Canvas's own; empty = every table)."""
+    from aughor.briefing import edition as E
+    from aughor.semantic.metric_time import bare_name
+
+    if not tables:
+        return True
+    m, _why = E.measurable(check, metrics_by_name)
+    if m is None:
+        return False
+    read = list((m.get("tables") if isinstance(m, dict) else getattr(m, "tables", [])) or []) + [_dated_table(m)]
+    own = {bare_name(str(t)).lower() for t in tables}
+    return all(bare_name(str(t)).lower() in own for t in read if t)
+
+
 def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, reader_id: str = "",
-            llm=None, runner=None, run_query=None) -> dict:
-    """Measure, investigate, compose, check — and keep the edition per reader. Raises LookupError with no guide."""
+            canvas_id: Optional[str] = None, tables=(), llm=None, runner=None, run_query=None) -> dict:
+    """Measure, investigate, compose, check — and keep the edition per reader. In a Data Canvas (``canvas_id``,
+    its ``tables``) only the checks that read the canvas's tables are measured, the model is shown only those
+    tables and its queries run in the canvas's scope; the checks left out are listed on the edition. Raises
+    LookupError with no guide."""
     from aughor.briefing import edition as E
     from aughor.briefing import guide as G
     from aughor.briefing import ranges, versions
@@ -166,6 +186,9 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
     period = spec.period if spec.period in ("day", "week", "month", "year") else "custom"
     currency = figure_currency(conn_id, schema)
     metrics_by_name = {m.name: m for m in ranges.governed_metrics(conn_id, schema)}
+    outside = [c.label for c in guide.checks if not inside(c, metrics_by_name, tables)]
+    if outside:
+        guide = guide.model_copy(update={"checks": [c for c in guide.checks if inside(c, metrics_by_name, tables)]})
     usual_n = guide.news.usual_for(period)
     counts = {"queries": 0, "compose": 0, "steps": 0}
     stop_reason = ""
@@ -224,7 +247,8 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                 counts["queries"] += 1
                 sid = _slug(str(args.get("id") or f"query_{counts['queries']}"))
                 src = S.query(sid, str(args.get("label") or sid), conn_id, str(args.get("sql") or ""),
-                              purpose=str(args.get("purpose") or ""), schema=schema, run=run_query)
+                              purpose=str(args.get("purpose") or ""), schema=schema, canvas_id=canvas_id,
+                              run=run_query)
                 sources[sid] = src
                 return S.for_model(src)
 
@@ -263,6 +287,9 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
             from aughor.business_profile.infer import gather_context
             from aughor.agent.tool_loop import run_tool_loop
             schema_text = gather_context(conn_id, schema)[0]
+            if tables:
+                from aughor.tools.schema import get_schema_for_tables
+                schema_text = get_schema_for_tables(schema_text, list(tables))
             system = _SYSTEM.format(queries=MAX_QUERIES, steps=MAX_STEPS,
                                     types="\n".join(f"- {k}: {v}" for k, v in P.TYPES.items()))
             question = _question(guide, reader, block, figures, sources, columns, measured["floor"], schema_text,
@@ -298,6 +325,7 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
              "period": {**block, "measured": figures}, "not_read": measured["not_read"], "floor": measured["floor"],
              "generated_at": datetime.now(timezone.utc).isoformat(), "currency_code": currency,
              "model_steps": counts["steps"] + counts["compose"], "queries": counts["queries"],
+             "canvas": {"id": canvas_id, "tables": list(tables), "checks_outside": outside} if canvas_id else None,
              "stop_reason": stop_reason,
              # what each check can be drilled by — the page offers these, a drill accepts no other
              "drill_columns": columns}
@@ -395,13 +423,88 @@ def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
     return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json"), "at": at}
 
 
+# ── a decision, given to a team ──────────────────────────────────────────────────────────────
+
+def give(conn_id: str, spec, *, scope_key: str, reader_id: str = "", block_id: str, group_id: str, by: str,
+         runner=None, now: Optional[datetime] = None) -> dict:
+    """Hand a decision on the edition to a function group: posted to the channel the group binds, through the
+    departure gate — its numbers judged against the edition's sources re-run now — and written into the kept
+    edition, so everyone reading it sees who it was given to and what became of it. A group with no channel is
+    not reached, and the record says so. Given once per group: asking again returns what happened the first time.
+    Raises LookupError when the edition, the decision or the group is not there."""
+    from aughor.briefing import edition as E
+    from aughor.knowledge.briefing import keep_entry, peek_entry
+    from aughor.org.context import current_org_id
+    from aughor.rbac.groups import get_group
+
+    now = now or datetime.now(timezone.utc)
+    key = E.cache_key(scope_key, spec, reader_id)
+    entry = peek_entry(key)
+    if not (isinstance(entry, dict) and entry.get("composed")):
+        raise LookupError("this edition has not been written yet")
+    block = next((b for b in entry.get("blocks") or [] if b.get("id") == block_id and b.get("type") == "decision"),
+                 None)
+    if block is None:
+        raise LookupError(f"this edition has no decision {block_id!r}")
+    org = current_org_id() or "default"
+    group = get_group(org, group_id)
+    if group is None:
+        raise LookupError(f"there is no group {group_id!r}")
+    given = list(entry.get("given") or [])
+    before = next((g for g in given if g.get("block") == block_id and g.get("group_id") == group_id
+                   and g.get("status") == "sent"), None)
+    if before is not None:
+        return before
+    period = entry.get("period") or {}
+    reader = (entry.get("reader") or {}).get("name") or "the organisation"
+    question = P.plain(block.get("text") or "")
+    text = f"{question}\n— from the Briefing for {reader}, {period.get('covers') or spec.key}. Given to {group.name} by {by}."
+    record = {"block": block_id, "group_id": group_id, "name": group.name, "by": by, "at": now.isoformat(),
+              "status": "", "note": "", "departure_id": "", "target": group.channel_trigger_id}
+    trigger = None
+    if group.channel_trigger_id:
+        from aughor.notifications.store import get_trigger
+        trigger = get_trigger(group.channel_trigger_id)
+    if not group.channel_trigger_id:
+        record.update(status="not_sent", note=f"{group.name} has no channel bound — bind one to the group, then "
+                                              f"give it again")
+    elif trigger is None:
+        record.update(status="not_sent", note=f"the channel bound to {group.name} no longer exists")
+    else:
+        from aughor.govern.departure import PERSON, gate_departure
+        from aughor.notifications.executor import fire_action
+        from aughor.notifications.models import ActionPayload
+        verdict = gate_departure(
+            kind="briefing_decision", org_id=org, conn_id=conn_id, text=question, target=trigger.id,
+            actor=by, origin=PERSON, source_kind="briefing", source_id=key,
+            source_name=f"the Briefing for {reader}", about=f"group:{group_id}",
+            measurement=departure_measurement(conn_id, entry, runner=runner),
+            declared_definition="the edition's sources, re-run at the send")
+        record["departure_id"] = verdict.record_id
+        if verdict.held:
+            record.update(status="held", note=verdict.reason_sentence())
+        else:
+            log = fire_action(trigger, ActionPayload(
+                investigation_id=f"brief:{key}", rec_index=0, recommendation=text, metric_name=conn_id,
+                headline=question[:200], trigger_id=trigger.id, triggered_at=now.isoformat(),
+                delivery_key=f"briefing-give:{key}:{block_id}:{group_id}",
+                context={"given_by": by, "given_to": group_id, "edition": key, "receipt": verdict.receipt,
+                         "receipt_line": verdict.receipt_line()}))
+            status = getattr(log, "status", "") or "unknown"
+            record.update(status="sent" if status == "ok" else status,
+                          note="" if status == "ok" else str(getattr(log, "error", "") or ""))
+    keep_entry(key, {**entry, "given": given + [record]})
+    return record
+
+
 # ── BC-6 · a send, judged against its sources re-run ─────────────────────────────────────────
 
 def departure_measurement(conn_id: str, entry: dict, *, runner=None):
     """Law 1's basis for sending an edition: the checks' compiled statements RE-RUN uncached
     (`ranges.fresh_measurement`), and every other source's own SQL re-run too — a line quoting the largest orders
     is measured against those orders as they stand at the send, never against the rows the edition was written
-    from. A source that fails now contributes nothing, so a line resting only on it is held."""
+    from, and a breakdown's segments are re-derived from its re-run rows, so "€9.4k above its usual" departs on
+    the change measured now. A source that fails now contributes nothing, so a line resting only on it is held."""
     import dataclasses
 
     from aughor.briefing import ranges
@@ -413,13 +516,11 @@ def departure_measurement(conn_id: str, entry: dict, *, runner=None):
         with (runner or (lambda: period_brief.connection_runner(conn_id, cached=False)))() as (run_sql, _dialect):
             for sid, raw in (entry.get("sources") or {}).items():
                 src = S.Source.model_validate(raw)
-                if src.kind == "check" or not src.sql or src.status == "refused":
+                if src.kind == "check":
                     continue
-                cols, rows, error = run_sql(src.sql)
-                if error:
-                    continue
-                rerun[sid] = src.model_copy(update={"columns": [str(c) for c in cols or []],
-                                                    "rows": S.json_rows(list(rows or [])), "facts": {}})
+                again = S.rerun(src, run_sql)
+                if again is not None:
+                    rerun[sid] = again
     except Exception as exc:  # noqa: BLE001 — a source that cannot be re-run holds its lines; the send goes on
         from aughor.kernel.errors import tolerate
         tolerate(exc, "an edition's sources could not be re-run at departure; their lines hold",

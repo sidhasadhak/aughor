@@ -6292,7 +6292,7 @@ export interface paths {
          * Read Briefing Edition
          * @description A READ never builds: the range's edition for ``reader`` (a function group; "" = the
          *     organisation; unnamed = the person's own reader) as it was last written, or ``{"built": false}``
-         *     with the range it would cover.
+         *     with the range it would cover. With ``canvas_id``, the Data Canvas's own edition.
          */
         get: operations["read_briefing_edition_exploration__conn_id__briefing_edition_get"];
         put?: never;
@@ -6300,7 +6300,8 @@ export interface paths {
          * Write Briefing Edition
          * @description Write the range's edition for ``reader`` (Arc BC): the guide's checks measured, then the model
          *     investigates — breakdowns and guarded SELECTs, at most 8 — and composes the page from blocks; code checks
-         *     every number and every block before it is kept. At most 7 model steps, under the Briefer's budget.
+         *     every number and every block before it is kept. At most 7 model steps, under the Briefer's budget. With
+         *     ``canvas_id``, only the Data Canvas's tables are read.
          */
         post: operations["write_briefing_edition_exploration__conn_id__briefing_edition_post"];
         delete?: never;
@@ -6324,6 +6325,28 @@ export interface paths {
          *     segment when one is named — compiled, no model call. Written into the edition under the block it came from.
          */
         post: operations["drill_briefing_edition_exploration__conn_id__briefing_edition_drill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/edition/give": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give Briefing Decision
+         * @description Give a decision on the edition to a team: posted to the channel its function group binds, through the
+         *     departure gate, and written into the edition under the decision — sent, held with why, or not sent because
+         *     the group binds no channel. No model call. Given once per group.
+         */
+        post: operations["give_briefing_decision_exploration__conn_id__briefing_edition_give_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6393,8 +6416,9 @@ export interface paths {
         get: operations["read_briefing_guide_exploration__conn_id__briefing_guide_get"];
         /**
          * Edit Briefing Guide
-         * @description A person's edit, kept as a new draft under their name. Nothing an edition reads changes until
-         *     it is published.
+         * @description A person's edit, kept as a new draft under their name — each new or changed check measured once
+         *     first, and the edit refused with why when one cannot be. Nothing an edition reads changes until it
+         *     is published.
          */
         put: operations["edit_briefing_guide_exploration__conn_id__briefing_guide_put"];
         post?: never;
@@ -20524,6 +20548,13 @@ export interface components {
              * @default []
              */
             wrong_usage_examples: string[];
+        };
+        /** GiveIn */
+        GiveIn: {
+            /** Block Id */
+            block_id: string;
+            /** Group Id */
+            group_id: string;
         };
         /** GoldenCertify */
         GoldenCertify: {
@@ -36108,6 +36139,7 @@ export interface operations {
                 start?: string | null;
                 end?: string | null;
                 reader?: string | null;
+                canvas_id?: string | null;
             };
             header?: never;
             path: {
@@ -36146,6 +36178,7 @@ export interface operations {
                 start?: string | null;
                 end?: string | null;
                 reader?: string | null;
+                canvas_id?: string | null;
             };
             header?: never;
             path: {
@@ -36184,6 +36217,7 @@ export interface operations {
                 start?: string | null;
                 end?: string | null;
                 reader?: string | null;
+                canvas_id?: string | null;
             };
             header?: never;
             path: {
@@ -36194,6 +36228,49 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DrillIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    give_briefing_decision_exploration__conn_id__briefing_edition_give_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                reader?: string | null;
+                canvas_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GiveIn"];
             };
         };
         responses: {

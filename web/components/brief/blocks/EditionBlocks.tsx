@@ -15,7 +15,7 @@ import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { TableActions, rawCells } from "@/components/TableActions";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
-import type { EditionBlock, EditionFigure, EditionSource } from "@/lib/api";
+import type { EditionBlock, EditionFigure, EditionGiven, EditionSource } from "@/lib/api";
 import { bridgeSteps, drillOptions, fmtChange, fmtValue, parseCited } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { getObjectCatalog } from "@/lib/objects";
@@ -43,6 +43,11 @@ interface Ctx {
   onDrill: (block: EditionBlock, column: string, segment?: unknown) => void;
   onDecide: (action: string, block: EditionBlock) => void;
   drilling: string;
+  /** The function groups a decision can be given to. */
+  teams: { id: string; name: string }[];
+  given: EditionGiven[];
+  onGive?: (block: EditionBlock, groupId: string) => void;
+  giving: string;
 }
 
 /** Words with their cited numbers as buttons that open the source. */
@@ -95,6 +100,47 @@ function pairRows(block: EditionBlock, src: EditionSource) {
 }
 
 type BodyProps = { block: EditionBlock; src?: EditionSource; ctx: Ctx };
+
+const NO_TEAMS: { id: string; name: string }[] = [];
+const NONE_GIVEN: EditionGiven[] = [];
+const GIVEN_WORDS: Record<string, string> = { sent: "sent to its channel", held: "held at departure", not_sent: "not sent" };
+
+/** A decision, and what a reader may do with it — offered by code on every decision: take it into deep analysis,
+ *  give it to a team (posted to the channel its function group binds), or put it away. */
+function DecisionBody({ block, ctx }: BodyProps) {
+  const [picking, setPicking] = useState(false);
+  const given = ctx.given.filter(g => g.block === block.id);
+  return (
+    <>
+      <p className="aug-fs-h2" style={{ color: "var(--t1)", margin: 0 }}><CitedText text={block.text} onCite={ctx.onCite} /></p>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <Button size="sm" onClick={() => ctx.onDecide("deep_analysis", block)}>Deep analysis</Button>
+        {ctx.onGive && (
+          <Button size="sm" variant="secondary" aria-expanded={picking} onClick={() => setPicking(!picking)}>Give it to a team</Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={() => ctx.onDecide("not_now", block)}>Not now</Button>
+      </div>
+      {picking && ctx.onGive && (
+        <div data-testid="edition-give" style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Give it to</span>
+          {ctx.teams.length === 0
+            ? <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>— there are no function groups yet</span>
+            : ctx.teams.map(team => (
+              <Button key={team.id} size="xs" variant="secondary" disabled={!!ctx.giving} onClick={() => ctx.onGive?.(block, team.id)}>
+                {ctx.giving === `${block.id}:${team.id}` ? "Giving…" : team.name}
+              </Button>
+            ))}
+        </div>
+      )}
+      {given.map(g => (
+        <div key={`${g.group_id}:${g.at}`} data-testid="edition-given" className="aug-fs-xs"
+          style={{ color: g.status === "sent" ? "var(--t2)" : "var(--amb4)", marginTop: 8 }}>
+          Given to {g.name} by {g.by.replace(/^user:/, "")} · {GIVEN_WORDS[g.status] ?? g.status}{g.note ? ` — ${g.note}` : ""}
+        </div>
+      ))}
+    </>
+  );
+}
 
 function Missing({ what }: { what: string }) {
   return <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}>{what}</p>;
@@ -252,18 +298,7 @@ const BODY: Record<BlockType, (p: BodyProps) => React.ReactNode> = {
       </div>
     );
   },
-  decision: ({ block, ctx }) => (
-    <>
-      <p className="aug-fs-h2" style={{ color: "var(--t1)", margin: 0 }}><CitedText text={block.text} onCite={ctx.onCite} /></p>
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        {(block.actions?.length ? block.actions : ["deep_analysis", "not_now"]).map(a => (
-          <Button key={a} size="sm" variant={a === "not_now" ? "ghost" : "default"} onClick={() => ctx.onDecide(a, block)}>
-            {a === "not_now" ? "Not now" : "Deep analysis"}
-          </Button>
-        ))}
-      </div>
-    </>
-  ),
+  decision: p => <DecisionBody {...p} />,
   quiet: ({ block, ctx }) => <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}><CitedText text={block.text} onCite={ctx.onCite} /></p>,
 };
 
@@ -307,7 +342,7 @@ function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
 }
 
 export function EditionBlocks({ blocks, sources, figures, drillColumns, currency, connectionId, schema, onCite, onDrill,
-                                onDecide, drilling }: {
+                                onDecide, drilling, teams = NO_TEAMS, given = NONE_GIVEN, onGive, giving = "" }: {
   blocks: EditionBlock[];
   sources: Record<string, EditionSource>;
   figures: EditionFigure[];
@@ -319,6 +354,10 @@ export function EditionBlocks({ blocks, sources, figures, drillColumns, currency
   onDrill: (block: EditionBlock, column: string, segment?: unknown) => void;
   onDecide: (action: string, block: EditionBlock) => void;
   drilling: string;
+  teams?: { id: string; name: string }[];
+  given?: EditionGiven[];
+  onGive?: (block: EditionBlock, groupId: string) => void;
+  giving?: string;
 }) {
   const [controls, setControls] = useState<Record<string, string>>({});
   const [keyTypes, setKeyTypes] = useState<Map<string, string>>(new Map());
@@ -334,7 +373,8 @@ export function EditionBlocks({ blocks, sources, figures, drillColumns, currency
     sources, figures: Object.fromEntries(figures.map(f => [f.id, f])), drillColumns, controls,
     controlBlocks: Object.fromEntries(blocks.filter(b => b.type === "control").map(b => [b.id, b])),
     setControl: (id, v) => setControls(c => ({ ...c, [id]: v })), currency, connectionId, schema, keyTypes,
-    onCite, onDrill, onDecide, drilling,
-  }), [sources, figures, drillColumns, controls, blocks, currency, connectionId, schema, keyTypes, onCite, onDrill, onDecide, drilling]);
+    onCite, onDrill, onDecide, drilling, teams, given, onGive, giving,
+  }), [sources, figures, drillColumns, controls, blocks, currency, connectionId, schema, keyTypes, onCite, onDrill, onDecide,
+       drilling, teams, given, onGive, giving]);
   return <>{withUniqueKeys(blocks, b => b.id).map(([key, b]) => <BlockCard key={key} block={b} ctx={ctx} />)}</>;
 }

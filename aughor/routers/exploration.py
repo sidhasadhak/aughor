@@ -2067,8 +2067,9 @@ def draft_briefing_guide(conn_id: str, request: Request, schema: str | None = No
 
 @router.put("/exploration/{conn_id}/briefing/guide")
 def edit_briefing_guide(conn_id: str, body: GuideIn, request: Request, schema: str | None = None):
-    """A person's edit, kept as a new draft under their name. Nothing an edition reads changes until
-    it is published."""
+    """A person's edit, kept as a new draft under their name — each new or changed check measured once
+    first, and the edit refused with why when one cannot be. Nothing an edition reads changes until it
+    is published."""
     from aughor.briefing import guide as G
     from aughor.routers._shared import canonical_schema
 
@@ -2077,6 +2078,10 @@ def edit_briefing_guide(conn_id: str, body: GuideIn, request: Request, schema: s
         parsed = G.BriefingGuide.model_validate(body.guide)
     except Exception as exc:  # noqa: BLE001 — pydantic's message says which field
         raise HTTPException(status_code=422, detail=f"the guide does not read: {exc}")
+    try:
+        parsed = G.verify_edit(conn_id, schema, parsed)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     G.save(conn_id, schema, parsed, by=_person(request), note=body.note or "edited by a person")
     return _guide_out(conn_id, schema)
 
@@ -2106,6 +2111,26 @@ def _reader_of(request, reader: str | None) -> str:
     return default_reader(_person(request) if request is not None else "")
 
 
+def _edition_scope(conn_id: str, schema: str | None, canvas_id: str | None) -> tuple[str | None, str, tuple]:
+    """``(schema, scope_key, tables)`` an edition is written and kept under: the dataset's, or — in a Data
+    Canvas — the canvas's schema and tables, kept apart from the dataset's own edition."""
+    from aughor.routers._shared import canonical_schema
+
+    if not canvas_id:
+        schema = canonical_schema(conn_id, schema)
+        return schema, (f"{conn_id}:{schema}" if schema else conn_id), ()
+    from aughor.canvas.scope import resolve_execution_scope
+    from aughor.canvas.store import get_canvas
+
+    canvas = get_canvas(canvas_id)
+    if canvas is None or not canvas.scopes:
+        raise HTTPException(status_code=404, detail="there is no such canvas")
+    if canvas.primary_connection_id != conn_id:
+        raise HTTPException(status_code=422, detail="this canvas reads another connection")
+    scope = resolve_execution_scope(conn_id, canvas_id)
+    return canonical_schema(conn_id, scope.eff_schema or schema), f"canvas:{canvas_id}", tuple(scope.tables)
+
+
 def _edition_spec(conn_id: str, preset: str | None, start: str | None, end: str | None,
                   workspace_id: str | None, schema: str | None):
     spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
@@ -2117,19 +2142,17 @@ def _edition_spec(conn_id: str, preset: str | None, start: str | None, end: str 
 @router.get("/exploration/{conn_id}/briefing/edition")
 def read_briefing_edition(conn_id: str, request: Request = None, schema: str | None = None,
                           workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
-                          end: str | None = None, reader: str | None = None):
+                          end: str | None = None, reader: str | None = None, canvas_id: str | None = None):
     """A READ never builds: the range's edition for ``reader`` (a function group; "" = the
     organisation; unnamed = the person's own reader) as it was last written, or ``{"built": false}``
-    with the range it would cover."""
+    with the range it would cover. With ``canvas_id``, the Data Canvas's own edition."""
     from aughor.briefing import edition as E
     from aughor.briefing import ranges
     from aughor.knowledge.briefing import peek_entry
-    from aughor.routers._shared import canonical_schema
 
-    schema = canonical_schema(conn_id, schema)
+    schema, scope_key, _tables = _edition_scope(conn_id, schema, canvas_id)
     reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
-    scope_key = f"{conn_id}:{schema}" if schema else conn_id
     block = ranges.range_block(spec)
     off = briefing_off_for(conn_id, schema)
     if off:
@@ -2146,22 +2169,22 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
 @router.post("/exploration/{conn_id}/briefing/edition")
 def write_briefing_edition(conn_id: str, request: Request = None, schema: str | None = None,
                            workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
-                           end: str | None = None, reader: str | None = None):
+                           end: str | None = None, reader: str | None = None, canvas_id: str | None = None):
     """Write the range's edition for ``reader`` (Arc BC): the guide's checks measured, then the model
     investigates — breakdowns and guarded SELECTs, at most 8 — and composes the page from blocks; code checks
-    every number and every block before it is kept. At most 7 model steps, under the Briefer's budget."""
+    every number and every block before it is kept. At most 7 model steps, under the Briefer's budget. With
+    ``canvas_id``, only the Data Canvas's tables are read."""
     from aughor.briefing.compose import write as W
-    from aughor.routers._shared import canonical_schema
 
-    schema = canonical_schema(conn_id, schema)
+    schema, scope_key, tables = _edition_scope(conn_id, schema, canvas_id)
     reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
-    scope_key = f"{conn_id}:{schema}" if schema else conn_id
     off = briefing_off_for(conn_id, schema)
     if off:
         raise HTTPException(status_code=409, detail=off.get("said") or "the Briefing is turned off for this dataset")
     try:
-        entry = W.compose(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=reader)
+        entry = W.compose(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=reader,
+                          canvas_id=canvas_id, tables=tables)
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return {**entry, "built": True, "scope_key": scope_key}
@@ -2206,15 +2229,13 @@ class DrillIn(BaseModel):
 @router.post("/exploration/{conn_id}/briefing/edition/drill")
 def drill_briefing_edition(conn_id: str, body: DrillIn, request: Request = None, schema: str | None = None,
                            workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
-                           end: str | None = None, reader: str | None = None):
+                           end: str | None = None, reader: str | None = None, canvas_id: str | None = None):
     """One level deeper on a block's source (Arc BC-4): the same check broken down by another column — within a
     segment when one is named — compiled, no model call. Written into the edition under the block it came from."""
     from aughor.briefing.compose import write as W
-    from aughor.routers._shared import canonical_schema
 
-    schema = canonical_schema(conn_id, schema)
+    schema, scope_key, _tables = _edition_scope(conn_id, schema, canvas_id)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
-    scope_key = f"{conn_id}:{schema}" if schema else conn_id
     try:
         return W.drill(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=_reader_of(request, reader),
                        source_id=body.source_id, column=body.column, segment=body.segment, after=body.after)
@@ -2222,3 +2243,28 @@ def drill_briefing_edition(conn_id: str, body: DrillIn, request: Request = None,
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+class GiveIn(BaseModel):
+    #: The decision block on the edition.
+    block_id: str
+    #: The function group it is given to.
+    group_id: str
+
+
+@router.post("/exploration/{conn_id}/briefing/edition/give")
+def give_briefing_decision(conn_id: str, body: GiveIn, request: Request = None, schema: str | None = None,
+                           workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
+                           end: str | None = None, reader: str | None = None, canvas_id: str | None = None):
+    """Give a decision on the edition to a team: posted to the channel its function group binds, through the
+    departure gate, and written into the edition under the decision — sent, held with why, or not sent because
+    the group binds no channel. No model call. Given once per group."""
+    from aughor.briefing.compose import write as W
+
+    schema, scope_key, _tables = _edition_scope(conn_id, schema, canvas_id)
+    spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
+    try:
+        return W.give(conn_id, spec, scope_key=scope_key, reader_id=_reader_of(request, reader),
+                      block_id=body.block_id, group_id=body.group_id, by=_person(request))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

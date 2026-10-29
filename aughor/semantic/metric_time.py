@@ -730,6 +730,12 @@ def run_measure(metric: Any, windows: list[Window], run_sql: RunSql, *, dialect:
             # a refusal, not a failure: a person turned a table it reads off — said whole (§6)
             return [], str(error)[len("[EXCLUDED] "):]
         return [], f"its query failed: {str(error)[:160]}"
+    return measured_rows(rows, by=bool(by)), ""
+
+
+def measured_rows(rows: Any, *, by: bool) -> list[dict]:
+    """The rows `measure_sql`'s statement returns, read as ``[{"window", "group", "value", "first",
+    "last", "n"}]`` — shared by `run_measure` and anything that re-runs a kept statement as it stands."""
     out = []
     for r in rows or []:
         cells = list(r.values()) if isinstance(r, dict) else list(r)
@@ -739,7 +745,7 @@ def run_measure(metric: Any, windows: list[Window], run_sql: RunSql, *, dialect:
         v, first, last, n = cells[-4], cells[-3], cells[-2], cells[-1]
         out.append({"window": str(cells[0]), "group": g, "value": _num(v),
                     "first": _as_date(first), "last": _as_date(last), "n": int(_num(n) or 0)})
-    return out, ""
+    return out
 
 
 def figure_status(metric: Any, window: Window, *, as_of: date, lag_days: int,

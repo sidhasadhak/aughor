@@ -8148,41 +8148,72 @@ export interface BriefingEdition {
   currency_code?: string;
   /** Present when the dataset's Briefing is turned off — said, never an empty page. */
   off?: BriefingOff;
+  /** The decisions given to a team, each with what became of it — sent, held with why, or not sent. */
+  given?: EditionGiven[];
+  /** A Data Canvas's edition: its tables, and the guide's checks left out because they read other tables. */
+  canvas?: { id: string; tables: string[]; checks_outside: string[] } | null;
+}
+
+/** A decision on an edition given to a team: posted to the channel its function group binds, through the departure gate. */
+export interface EditionGiven {
+  block: string;
+  group_id: string;
+  name: string;
+  by: string;
+  at: string;
+  status: "sent" | "held" | "not_sent" | string;
+  note: string;
+  departure_id: string;
+  target: string;
+}
+
+/** Give a decision on the edition to a team — no model call; written into the edition under the decision. */
+export async function giveBriefingDecision(
+  connectionId: string, range: BriefingRange, reader: string | undefined, body: { block_id: string; group_id: string },
+  schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<EditionGiven> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/give?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await refused(res, "Giving this decision to a team");
+  return res.json();
 }
 
 /** One level deeper on a block's source — compiled, no model — written into the edition under `after`. */
 export async function drillBriefingEdition(
   connectionId: string, range: BriefingRange, reader: string | undefined,
   body: { source_id: string; column: string; segment?: string | number | boolean | null; after?: string },
-  schema?: string, workspaceId?: string,
+  schema?: string, workspaceId?: string, canvasId?: string,
 ): Promise<{ block: EditionBlock; source: EditionSource; at: number }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/drill?${editionQuery(range, reader, schema, workspaceId)}`,
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/drill?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw await refused(res, "Drilling into this block");
   return res.json();
 }
 
-/** The query a reader adds to an edition read or write: none = the person's own reader, "" = the organisation. */
-function editionQuery(range: BriefingRange, reader: string | undefined, schema?: string, workspaceId?: string): string {
+/** The query a reader adds to an edition read or write: none = the person's own reader, "" = the organisation;
+ *  a Data Canvas's id reads and writes the canvas's own edition. */
+function editionQuery(range: BriefingRange, reader: string | undefined, schema?: string, workspaceId?: string,
+                      canvasId?: string): string {
   const q = new URLSearchParams(rangeQuery(range, schema, workspaceId));
   if (reader !== undefined) q.set("reader", reader);
+  if (canvasId) q.set("canvas_id", canvasId);
   return q.toString();
 }
 
 /** A READ never writes: the range's edition for a reader as last written, or `built: false`. */
 export async function readBriefingEdition(
-  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string,
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string, canvasId?: string,
 ): Promise<BriefingEdition> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId)}`);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId, canvasId)}`);
   if (!res.ok) throw await refused(res, "Reading this edition");
   return res.json();
 }
 
 /** Write the range's edition for a reader: the guide's checks measured, then one model call. */
 export async function writeBriefingEdition(
-  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string,
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string, canvasId?: string,
 ): Promise<BriefingEdition> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId)}`,
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
     { method: "POST" });
   if (!res.ok) throw await refused(res, "Writing this edition");
   return res.json();

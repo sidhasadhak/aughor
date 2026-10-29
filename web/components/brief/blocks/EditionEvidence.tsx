@@ -94,9 +94,11 @@ export function EditionEvidence({ source, used, onPick, onClose }: {
 }
 
 /** A question about the edition on screen, answered under the page by the Briefing's quick answer. */
-export function EditionAsk({ connectionId, schema, periodKey, reader, seed, onDeeper }: {
+export function EditionAsk({ connectionId, schema, canvasId, periodKey, reader, seed, onDeeper }: {
   connectionId: string;
   schema?: string;
+  /** A Data Canvas's edition: the answer reads the canvas's tables and its edition. */
+  canvasId?: string;
   /** `range:<preset>:<start>..<last day>` — with the reader it names the edition the answer reads. */
   periodKey: string;
   reader: string;
@@ -107,7 +109,7 @@ export function EditionAsk({ connectionId, schema, periodKey, reader, seed, onDe
   const [sessionId] = useState(() => newSessionId());
   const { messages, sendMessage, status, error } = useAughorChat({
     connectionId, sessionId,
-    body: { depth: "quick", schema: schema ?? null, canvas_id: null, surface: BRIEFING_SURFACE,
+    body: { depth: "quick", schema: schema ?? null, canvas_id: canvasId ?? null, surface: BRIEFING_SURFACE,
             brief_period: `${periodKey}@${reader || "_organisation"}` },
   });
   const streaming = status === "submitted" || status === "streaming";

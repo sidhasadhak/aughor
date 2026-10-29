@@ -190,3 +190,56 @@ def test_a_small_table_is_read_in_full_for_the_drafter(shop):
     text = G.reference_rows(schema_text, _run(shop))
     assert "corporate_events:" in text and "OUT sold to a buyer" in text
     assert "orders:" not in text                                       # a large table is never dumped
+
+
+# ── a person's edit is checked before it is kept ─────────────────────────────────────────────
+
+_REFUNDS = G.Check(id="refunds", label="Refunds paid", sql="SUM(refund_eur)", tables=["returns"],
+                   time_column="returns.return_date")
+
+
+def _no_query():
+    raise AssertionError("an unchanged check must run no query")
+
+
+def test_an_edit_that_leaves_every_check_as_it_was_runs_no_query(monkeypatch):
+    G.save("guide_e1", None, _guide(checks=[_REFUNDS]), by="explorer")
+    edited = _guide(business="A shop that sells shoes.", checks=[_REFUNDS])
+    assert G.verify_edit("guide_e1", None, edited, runner=_no_query) == edited
+
+
+def test_a_changed_check_that_cannot_be_measured_refuses_the_edit_and_says_which(con, monkeypatch):
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
+    G.save("guide_e2", None, _guide(checks=[_REFUNDS]), by="explorer")
+    broken = _REFUNDS.model_copy(update={"sql": "SUM(no_such_column)"})
+    empty = G.Check(id="none", label="No reason given", sql="COUNT(*)", tables=["returns"],
+                    filters=["reason = 'none'"], time_column="returns.return_date")
+    with pytest.raises(ValueError) as why:
+        G.verify_edit("guide_e2", None, _guide(checks=[broken, empty]),
+                      runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
+    assert "“Refunds paid” its query failed" in str(why.value) and "“No reason given”" in str(why.value)
+    assert "no rows" in str(why.value)
+
+
+def test_a_new_check_that_measures_is_kept(con, monkeypatch):
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
+    G.save("guide_e3", None, _guide(checks=[_REFUNDS]), by="explorer")
+    sizing = G.Check(id="size_fit_refunds", label="Size-fit refunds", sql="SUM(refund_eur)", tables=["returns"],
+                     filters=["reason = 'size_fit'"], time_column="returns.return_date")
+    kept = G.verify_edit("guide_e3", None, _guide(checks=[_REFUNDS, sizing]),
+                         runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
+    assert [c.id for c in kept.checks] == ["refunds", "size_fit_refunds"]
+
+
+def test_an_edit_with_a_bad_id_or_a_reader_watching_nothing_is_refused():
+    G.save("guide_e4", None, _guide(checks=[_REFUNDS]), by="explorer")
+    with pytest.raises(ValueError, match="snake_case and unique in the guide: Refunds Paid"):
+        G.verify_edit("guide_e4", None, _guide(checks=[_REFUNDS.model_copy(update={"id": "Refunds Paid"})]),
+                      runner=_no_query)
+    with pytest.raises(ValueError, match="snake_case and unique in the guide: refunds"):
+        G.verify_edit("guide_e4", None, _guide(checks=[_REFUNDS, _REFUNDS]), runner=_no_query)
+    reader = G.Reader(group_id="finance", name="Finance", watches="cash", check_ids=["refunds", "cash_out"])
+    with pytest.raises(ValueError, match="Finance watches cash_out"):
+        G.verify_edit("guide_e4", None, _guide(checks=[_REFUNDS], readers=[reader]), runner=_no_query)

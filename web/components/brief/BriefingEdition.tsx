@@ -24,8 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/toast";
 import {
-  draftBriefingGuide, drillBriefingEdition, getGroups, putMyPreference, readBriefingEdition, readBriefingGuide,
-  writeBriefingEdition,
+  draftBriefingGuide, drillBriefingEdition, getGroups, giveBriefingDecision, putMyPreference, readBriefingEdition,
+  readBriefingGuide, writeBriefingEdition,
   type AccessGroup, type BriefingEdition as Edition, type BriefingGuideResponse, type BriefingRange, type EditionBlock,
 } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
@@ -36,10 +36,12 @@ const RULE = "1px solid var(--b1)";
 
 const when = (iso?: string): string => (iso ? formatTimestamp(iso, "short") : "");
 
-export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnalysis }: {
+export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, onDeepAnalysis }: {
   connectionId: string;
   schema?: string;
   workspaceId?: string;
+  /** A Data Canvas: its own edition, reading only the canvas's tables. */
+  canvasId?: string;
   /** Hand a question to deep analysis (the Data Canvas). */
   onDeepAnalysis?: (q: string) => void;
 }) {
@@ -57,6 +59,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
   const [side, setSide] = useState<"sources" | "guide" | "">("sources");
   const [picked, setPicked] = useState<string>("");
   const [drilling, setDrilling] = useState("");
+  const [giving, setGiving] = useState("");
   const [askSeed, setAskSeed] = useState<{ q: string; n: number } | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [schedule, setSchedule] = useState(false);
@@ -79,7 +82,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
     setLoading(true);
     setError("");
     setPicked("");
-    readBriefingEdition(connectionId, range, asked === undefined ? undefined : toServerReader(asked), schema, workspaceId)
+    readBriefingEdition(connectionId, range, asked === undefined ? undefined : toServerReader(asked), schema, workspaceId, canvasId)
       .then(e => {
         if (!alive) return;
         setEdition(e);
@@ -92,7 +95,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
       .catch(e => { if (alive) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [connectionId, schema, workspaceId, range, asked]);
+  }, [connectionId, schema, workspaceId, canvasId, range, asked]);
 
   const chooseReader = (v: string) => {
     setReader(v);
@@ -102,7 +105,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
 
   const write = async () => {
     setBusy("write");
-    try { setEdition(await writeBriefingEdition(connectionId, range, toServerReader(reader ?? ORGANISATION), schema, workspaceId)); }
+    try { setEdition(await writeBriefingEdition(connectionId, range, toServerReader(reader ?? ORGANISATION), schema, workspaceId, canvasId)); }
     catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(""); }
   };
@@ -122,7 +125,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
     try {
       const out = await drillBriefingEdition(connectionId, range, toServerReader(reader ?? ORGANISATION),
         { source_id: block.source, column, segment: segment as string | number | boolean | null | undefined, after: block.id },
-        schema, workspaceId);
+        schema, workspaceId, canvasId);
       setEdition(e => {
         if (!e?.blocks) return e;
         const blocks = [...e.blocks];
@@ -131,7 +134,17 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
       });
     } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
     finally { setDrilling(""); }
-  }, [connectionId, range, reader, schema, workspaceId]);
+  }, [connectionId, range, reader, schema, workspaceId, canvasId]);
+
+  const onGive = useCallback(async (block: EditionBlock, groupId: string) => {
+    setGiving(`${block.id}:${groupId}`);
+    try {
+      const got = await giveBriefingDecision(connectionId, range, toServerReader(reader ?? ORGANISATION),
+        { block_id: block.id, group_id: groupId }, schema, workspaceId, canvasId);
+      setEdition(e => e && ({ ...e, given: [...(e.given ?? []).filter(g => !(g.block === got.block && g.group_id === got.group_id)), got] }));
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setGiving(""); }
+  }, [connectionId, range, reader, schema, workspaceId, canvasId]);
 
   const onDecide = useCallback((action: string, block: EditionBlock) => {
     if (action === "not_now") { setHidden(h => new Set(h).add(block.id)); return; }
@@ -144,6 +157,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
   const periodWord = period?.period ?? "week";
   const custom = range.preset === "custom";
   const readerName = readerOptions(groups).find(o => o.value === (reader ?? ORGANISATION))?.label ?? "The organisation";
+  const teams = useMemo(() => groups.filter(g => g.kind === "function").map(g => ({ id: g.id, name: g.name }))
+    .sort((a, b) => a.name.localeCompare(b.name)), [groups]);
   const hasGuide = !!guide?.available;
   const blocks = useMemo(() => (edition?.blocks ?? []).filter(b => !hidden.has(b.id)), [edition, hidden]);
   const sources = edition?.sources ?? {};
@@ -170,7 +185,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
             <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <RangeControl value={range as RangeChoice} presets={[...PRESETS]}
                 onChange={c => { if (c.preset !== "standing") setRange(c as BriefingRange); }} />
-              <Button size="sm" variant="ghost" onClick={() => setSchedule(!schedule)}>{schedule ? "Close schedule" : "Schedule"}</Button>
+              {!canvasId && <Button size="sm" variant="ghost" onClick={() => setSchedule(!schedule)}>{schedule ? "Close schedule" : "Schedule"}</Button>}
               {!side && <Button size="sm" variant="ghost" onClick={() => setSide("sources")}>Sources &amp; guide</Button>}
             </span>
           </div>
@@ -184,6 +199,12 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
               What changed in {period.covers}, written for <b style={{ color: "var(--t2)", fontWeight: 500 }}>{readerName}</b>, against{" "}
               {period.compared_with}. Every underlined number opens where it came from.
               {edition.guide?.state === "draft" ? " Written from a draft guide no person has published." : ""}
+            </p>
+          )}
+          {edition?.built && !!edition.canvas?.checks_outside.length && (
+            <p className="aug-fs-xs" data-testid="edition-canvas" style={{ color: "var(--t3)", margin: "0 0 4px" }}>
+              This canvas reads {edition.canvas.tables.join(", ")}; the guide&apos;s checks on other tables are left out:{" "}
+              {edition.canvas.checks_outside.join(", ")}.
             </p>
           )}
 
@@ -218,7 +239,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
               )}
               <EditionBlocks blocks={blocks} sources={sources} figures={period?.measured ?? []} drillColumns={edition.drill_columns}
                 currency={edition.currency_code ?? ""} connectionId={connectionId} schema={schema}
-                onCite={onCite} onDrill={(b, c, s) => void onDrill(b, c, s)} onDecide={onDecide} drilling={drilling} />
+                onCite={onCite} onDrill={(b, c, s) => void onDrill(b, c, s)} onDecide={onDecide} drilling={drilling}
+                teams={teams} given={edition.given} onGive={(b, g) => void onGive(b, g)} giving={giving} />
               {(!!edition.withheld?.length || !!edition.left_out?.length) && (
                 <section data-testid="edition-withheld" className="aug-fs-xs" style={{ color: "var(--t3)", borderTop: RULE, paddingTop: 10, marginTop: 18 }}>
                   {edition.withheld?.map((w, i) => (
@@ -228,7 +250,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, onDeepAnaly
                 </section>
               )}
               {period && (
-                <EditionAsk key={askSeed?.n ?? 0} connectionId={connectionId} schema={schema} periodKey={period.key}
+                <EditionAsk key={askSeed?.n ?? 0} connectionId={connectionId} schema={schema} canvasId={canvasId} periodKey={period.key}
                   reader={toServerReader(reader ?? ORGANISATION)} seed={askSeed?.q} onDeeper={onDeepAnalysis} />
               )}
               <div className="aug-fs-xs" style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18, color: "var(--t3)" }}>

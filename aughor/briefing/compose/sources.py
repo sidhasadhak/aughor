@@ -111,7 +111,12 @@ def segment_rows(m: Any, column: str, windows: list, run_sql, dialect: str) -> t
     if why:
         return [], "", why
     sql, _ = mt.measure_sql(m, windows, dialect=dialect, by=column)
-    current = windows[0].label
+    return segments(got, windows[0].label), sql or "", ""
+
+
+def segments(got: list[dict], current: str = "current") -> list[list[Any]]:
+    """Measured rows (`metric_time.measured_rows`) as a breakdown's rows: each group's value in the ``current``
+    window against the mean of its other windows."""
     by_group: dict[Any, dict] = {}
     for r in got:
         g = by_group.setdefault(r["group"], {"now": None, "n": 0, "usual": []})
@@ -128,7 +133,7 @@ def segment_rows(m: Any, column: str, windows: list, run_sql, dialect: str) -> t
         pct = None if not usual else change / abs(usual)
         rows.append([cell(group), g["now"], usual, change, pct, g["n"], g["n"] < MIN_CELL_ROWS])
     rows.sort(key=lambda r: (r[6], -abs(r[3] or 0)))
-    return rows[:MAX_SEGMENTS], sql or "", ""
+    return rows[:MAX_SEGMENTS]
 
 
 BREAKDOWN_COLUMNS = ["segment", "this_range", "usual", "change", "change_pct", "rows", "too_few"]
@@ -153,14 +158,34 @@ def breakdown(source_id: str, label: str, m: Any, column: str, spec, *, usual_n:
                   unit=unit, better=better)
 
 
+def rerun(src: Source, run_sql) -> Optional[Source]:
+    """``src`` with its own SQL run again as it stands — a breakdown's or a drill's rows re-derived (each segment's
+    change against its usual measured again, not only its cells), a query's rows typed as before. ``None`` when it
+    cannot be run now: a line resting only on it holds."""
+    from aughor.semantic import metric_time as mt
+
+    if not src.sql or src.status == "refused":
+        return None
+    cols, rows, error = run_sql(src.sql)
+    if error:
+        return None
+    if src.kind in ("breakdown", "drill"):
+        return src.model_copy(update={"rows": segments(mt.measured_rows(rows, by=True))})
+    columns = [str(c) for c in cols or []]
+    return src.model_copy(update={"columns": columns, "rows": typed(columns, json_rows(list(rows or []))),
+                                  "facts": {}})
+
+
 # ── query ────────────────────────────────────────────────────────────────────────────────────
 
 def query(source_id: str, label: str, conn_id: str, sql: str, *, purpose: str, schema: Optional[str] = None,
-          run=None) -> Source:
-    """A SELECT the model wrote, run through the Data Canvas's guarded door (`converse_tools.run_sql`)."""
+          canvas_id: Optional[str] = None, run=None) -> Source:
+    """A SELECT the model wrote, run through the Data Canvas's guarded door (`converse_tools.run_sql`) — in a
+    canvas's scope when the edition is a canvas's."""
     if run is None:
         from aughor.agent.converse_tools import run_sql as run
-    out = run(conn_id, {"sql": sql}, user_question=purpose, schema_scope=schema, max_rows=MAX_ROWS)
+    scoped = {"canvas_id": canvas_id} if canvas_id else {}
+    out = run(conn_id, {"sql": sql}, user_question=purpose, schema_scope=schema, max_rows=MAX_ROWS, **scoped)
     if out.get("error"):
         return Source(id=source_id, label=label, kind="query", sql=sql, status="refused", error=str(out["error"]),
                       repair=dict(out.get("repair") or {}), receipts=list(out.get("guard_receipts") or []))
