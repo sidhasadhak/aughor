@@ -188,3 +188,26 @@ def test_an_edition_is_kept_per_reader_and_a_read_never_writes(con, monkeypatch,
 def test_no_guide_no_edition(monkeypatch):
     with pytest.raises(LookupError):
         E.build("nobody", _week(), scope_key="nobody")
+
+
+# ── what the live LuxExperience edition taught (2026-10-29) ──────────────────────────────────
+
+def test_an_iso_day_is_a_date_not_a_figure():
+    """"2026-04-30" lost its year to the year rule and read "30" as a figure: a true sentence withheld."""
+    assert E.unmeasured_numbers("THE OUTNET has no orders after 2026-04-30.", ALLOWED) == []
+
+
+def test_a_share_declared_as_a_ratio_reads_as_a_percentage_and_a_percent_keeps_its_sign():
+    assert E._unit("ratio 0-1 (e-commerce typically 0.005-0.05)", [0.0205, 0.0217, None]) == "ratio 0..1"
+    assert E._unit("ratio 0-1", [0.4, 1.7]) == "ratio 0-1"              # not a share when a value is past 1
+    assert E._text(0.0205, "Session conversion", "ratio 0..1", "") == "2.05%"
+    assert E._text(0.476, "Return rate", "ratio 0..1", "") == "47.6%"
+    assert E._text(47.55, "Gross margin on items", "%", "").endswith("%")
+
+
+def test_the_writer_is_told_weeks_not_ranges():
+    fig = {**MEASURED["figures"][0], "extreme": {"which": "highest", "of": 9}, "streak": -4}
+    out = E._for_model(fig, watched=False, period="week")
+    assert out["extreme"] == "the highest of the last 9 weeks"
+    assert out["in_a_row"] == "4 weeks in a row down"
+    assert "the 8 weeks before" in out["usual_range"]

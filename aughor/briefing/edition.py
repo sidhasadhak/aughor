@@ -121,6 +121,24 @@ def _measure(m: Any, windows: list, run_sql: RunSql, dialect: str, lfl) -> tuple
     return out, "", sql
 
 
+def _unit(declared: str, values: list) -> str:
+    """The unit a figure is worded in. A metric declared "ratio 0-1 (…)" whose values sit in 0..1 is a
+    share and reads as a percentage — LuxExperience's conversion read "0.02" for 2.05% (2026-10-29)."""
+    if declared.strip().lower().startswith("ratio") and all(v is None or 0 <= v <= 1 for v in values):
+        return "ratio 0..1"
+    return declared
+
+
+def _text(value: Optional[float], name: str, unit: str, currency: str) -> Optional[str]:
+    from aughor.briefing.ranges import figure_text
+    if unit == "ratio 0..1" and value is not None and abs(value) < 0.1:
+        return f"{value * 100:.2f}%"                     # a small share keeps its second decimal: 2.05%, not 2.0%
+    out = figure_text(value, name, unit, currency)
+    if out and unit.strip().lower() in ("%", "percent", "pct") and not out.endswith("%"):
+        out += "%"
+    return out
+
+
 def _rel(a: Optional[float], b: Optional[float]) -> Optional[float]:
     if a is None or b in (None, 0):
         return None
@@ -143,7 +161,6 @@ def _streak(series: list[Optional[float]]) -> int:
 def _cells(m: Any, check: Check, windows: list, run_sql: RunSql, dialect: str, *, name: str, unit: str,
            currency: str) -> dict[str, dict]:
     """Each dimension's segments against their own usual: ``{dim: {"cells": [...], "why": ""}}``."""
-    from aughor.briefing.ranges import figure_text
     from aughor.semantic.metric_statement import is_statement
 
     out: dict[str, dict] = {}
@@ -172,8 +189,8 @@ def _cells(m: Any, check: Check, windows: list, run_sql: RunSql, dialect: str, *
             cells.append({"group": "" if group is None else str(group), "current": g["current"], "usual": u,
                           "delta": delta, "rel": _rel(g["current"], u), "n": g["n"],
                           "thin": g["n"] < MIN_CELL_ROWS,
-                          "current_text": figure_text(g["current"], name, unit, currency),
-                          "usual_text": figure_text(u, name, unit, currency)})
+                          "current_text": _text(g["current"], name, unit, currency),
+                          "usual_text": _text(u, name, unit, currency)})
         cells.sort(key=lambda c: (c["thin"], -abs(c["delta"] or 0)))
         out[dim] = {"cells": cells[:MAX_CELLS], "why": ""}
     return out
@@ -182,8 +199,6 @@ def _cells(m: Any, check: Check, windows: list, run_sql: RunSql, dialect: str, *
 def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published: bool, run_sql: RunSql,
                   dialect: str, currency: str) -> tuple[Optional[dict], str]:
     """One check as an edition figure, or ``(None, why)``."""
-    from aughor.briefing.ranges import figure_text
-
     news = guide.news
     usual_w = usual_windows(spec, news.usual_for(_period(spec)))
     windows = spec.windows() + usual_w
@@ -201,7 +216,8 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
               for w in usual_w] + [{"label": "current", "start": spec.start.isoformat(), "value": value}]
     usual_vals = [p["value"] for p in series[:-1] if p["value"] is not None]
     name = check.label
-    unit = check.unit or str(_get(m, "unit") or "")
+    unit = _unit(check.unit or str(_get(m, "unit") or ""),
+                 [value, previous, last_year] + usual_vals)
     fig: dict = {
         "id": check.id, "label": check.label, "metric": check.metric or None, "unit": unit,
         "better": check.better, "why": check.why, "time_kind": _get(m, "time_kind"),
@@ -217,9 +233,9 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
         mean = statistics.fmean(usual_vals)
         sd = statistics.stdev(usual_vals)
         fig["usual"] = {"mean": mean, "low": mean - sd, "high": mean + sd, "n": len(usual_vals),
-                        "mean_text": figure_text(mean, name, unit, currency),
-                        "low_text": figure_text(mean - sd, name, unit, currency),
-                        "high_text": figure_text(mean + sd, name, unit, currency)}
+                        "mean_text": _text(mean, name, unit, currency),
+                        "low_text": _text(mean - sd, name, unit, currency),
+                        "high_text": _text(mean + sd, name, unit, currency)}
         if sd > 0:
             z = (value - mean) / sd
             fig["z"] = z
@@ -231,7 +247,7 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
         elif value <= min(everything):
             fig["extreme"] = {"which": "lowest", "of": len(everything)}
     for k in ("current", "previous", "last_year"):
-        fig[f"{k}_text"] = figure_text(fig[k], name, unit, currency)
+        fig[f"{k}_text"] = _text(fig[k], name, unit, currency)
     fig["cells"] = _cells(m, check, [windows[0]] + usual_w, run_sql, dialect, name=name, unit=unit,
                           currency=currency) if check.dimensions else {}
     return fig, ""
@@ -334,7 +350,13 @@ def _pct(v: Optional[float]) -> Optional[str]:
     return None if v is None else f"{v * 100:+.1f}%"
 
 
-def _for_model(fig: dict, *, watched: bool) -> dict:
+def _words(period: str, n: int) -> str:
+    one, many = {"day": ("day", "days"), "week": ("week", "weeks"), "month": ("month", "months"),
+                 "year": ("year", "years")}.get(period, ("range", "ranges"))
+    return f"{n} {one if n == 1 else many}"
+
+
+def _for_model(fig: dict, *, watched: bool, period: str = "custom") -> dict:
     u = fig.get("usual") or {}
     out = {"id": fig["id"], "label": fig["label"], "unit": fig["unit"], "better": fig["better"],
            "why_it_matters": fig.get("why") or "", "this_range": fig.get("current_text"),
@@ -345,12 +367,12 @@ def _for_model(fig: dict, *, watched: bool) -> dict:
         out["a_year_earlier_is"] = fig["like_for_like"]
     if u:
         out["usual_range"] = f"{u.get('low_text')} to {u.get('high_text')} (mean {u.get('mean_text')}, " \
-                             f"the {u.get('n')} ranges before)"
+                             f"the {_words(period, int(u.get('n') or 0))} before)"
         out["z"] = None if fig.get("z") is None else round(fig["z"], 1)
     if fig.get("streak"):
-        out["ranges_in_a_row"] = f"{abs(fig['streak'])} {'up' if fig['streak'] > 0 else 'down'}"
+        out["in_a_row"] = f"{_words(period, abs(fig['streak']))} in a row {'up' if fig['streak'] > 0 else 'down'}"
     if fig.get("extreme"):
-        out["extreme"] = f"the {fig['extreme']['which']} of the {fig['extreme']['of']} ranges read"
+        out["extreme"] = f"the {fig['extreme']['which']} of the last {_words(period, fig['extreme']['of'])}"
     segs = {}
     for dim, got in (fig.get("cells") or {}).items():
         segs[dim] = [{"segment": c["group"], "this_range": c["current_text"], "usual": c["usual_text"],
@@ -376,8 +398,10 @@ def candidates(measured: dict, reader: Reader) -> list[dict]:
 
 _MONTHS = ("january|february|march|april|may|june|july|august|september|october|november|december|"
            "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec")
-_DATE_RE = re.compile(rf"\b\d{{1,2}}(?:\s*[–-]\s*\d{{1,2}})?\s+(?:{_MONTHS})\b|\b(?:{_MONTHS})\s+\d{{1,2}}\b"
-                      rf"|\b(?:19|20)\d{{2}}\b|\b\d{{4}}-\d{{2}}-\d{{2}}\b", re.I)
+# An ISO day first: tried after the year, "2026-04-30" lost its year and read "30" as a figure (the live
+# LuxExperience edition, 2026-10-29, withheld a true sentence for it).
+_DATE_RE = re.compile(rf"\b\d{{4}}-\d{{2}}-\d{{2}}\b|\b\d{{1,2}}(?:\s*[–-]\s*\d{{1,2}})?\s+(?:{_MONTHS})\b"
+                      rf"|\b(?:{_MONTHS})\s+\d{{1,2}}\b|\b(?:19|20)\d{{2}}\b", re.I)
 _NUM_RE = re.compile(r"(?<![\w.])[-−+]?\d[\d,]*(?:\.\d+)?\s*(?:k|m|bn|%|pts?|pp)?(?![\w])", re.I)
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -533,7 +557,7 @@ def _user_prompt(guide: BriefingGuide, reader: Reader, block: dict, figs: list[d
         "reader": {"name": reader.name, "watches": reader.watches},
         "read_with_care": [c.text for c in guide.care],
         "fair_comparisons": [c.text for c in guide.comparisons],
-        "figures": [_for_model(f, watched=f["id"] in set(reader.check_ids)) for f in figs],
+        "figures": [_for_model(f, watched=f["id"] in set(reader.check_ids), period=period) for f in figs],
     }
     words = WORDS.get(period, WORDS["custom"])
     return (f"Write the edition in {words} words in all.\n"
