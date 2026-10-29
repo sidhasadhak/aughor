@@ -12842,6 +12842,11 @@ add (*"I may have Product as another department or Team"*), then *"But lets buil
   each person reads as one (`briefing_reader`).
 - **Retires:** `recipes.py`'s sections and guidance, the morning paper's fixed columns, the Briefing switches and
   figure choices, Day and "What we know" on the page (Day subscriptions keep sending).
+- **Built 2026-10-29** on `claude/briefing-guide` (BG-1…BG-5) and **proven live on LuxExperience** the same day
+  (PENDING item 68): the live run found what the tests could not — metrics named by label (16 of 18 checks kept out),
+  THE OUTNET invisible to a drafter that saw only columns, an ISO day read as a figure, shares printed as 0.02, the
+  page cut off at the window — each fixed with a failing test first. The Data Canvas keeps the earlier panel until
+  its editions read the canvas's own tables; until then the old range Briefing's code stays.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

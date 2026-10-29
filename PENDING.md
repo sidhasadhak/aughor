@@ -966,10 +966,20 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     prompt for each connection which will be built by the LLM itself as a part of the exploration phase"*) — mocked on
     live LuxExperience data (`design-mockups/briefing-week-lux.html`, Week 43, five readers), approved (*"I like it"*),
     then *"But lets build it"*; calls taken as recommended (ROADMAP §6 item 58, §3.66). Branch `claude/briefing-guide`.
-    - [ ] BG-1 the guide: model, lifecycle kind `briefing_guide`, drafter, check verification, routes, drafted at an
-      exploration's end
-    - [ ] BG-2 measure: every check against the range, the one before, a year earlier and its usual range; the floor
-    - [ ] BG-3 write: one call per reader; number and claims gates; cached and kept per reader; `recipes.py` retired
-    - [ ] BG-4 readers: function groups, `briefing_reader`, a reader's watch list drafted from plain words
-    - [ ] BG-5 the page: Week · Month · Year · Custom, Reading as, the guide panel; the morning paper retired
-    - [ ] BG-6 live on LuxExperience: the guide drafted and published, the Week written for three readers
+    - [x] BG-1 the guide: model, lifecycle kind `briefing_guide`, drafter, check verification, routes, drafted at an
+      exploration's end — `aughor/briefing/guide.py`
+    - [x] BG-2 measure: every check against the range, the one before, a year earlier and its usual range; the floor
+    - [x] BG-3 write: one call per reader; number and claims gates; cached and kept per reader
+    - [x] BG-4 readers: function groups, `briefing_reader`, a reader's watch list drafted from plain words; a
+      subscription sends its reader's edition
+    - [x] BG-5 the page: Week · Month · Year · Custom, Reading as, the guide panel (`web/components/brief/BriefingEdition.tsx`)
+    - [~] BG-6 live on LuxExperience (2026-10-29, `~/dev/aughor` detached on the branch, API restarted three times):
+      the first draft kept 16 of 18 checks out (metrics named by label) and missed THE OUTNET — fixed; the second
+      measured 17 of 17 and wrote THE OUTNET's like-for-like rule from the data. Three readers added from its
+      proposals (Leadership, Finance, Digital and growth); the Week of 19–25 Oct written for each, one model call each,
+      nothing withheld, every figure equal to the mockup's measurement (AOV €645, usual €566–613; conversion 2.05%, the
+      lowest of nine weeks). 7 model calls in all. **Open: the guide is still a draft — publishing it is the user's.**
+    - [ ] Follow-ups, named not done: a Data Canvas still mounts the earlier panel, so the morning paper's code and the
+      `briefing_sections` / `briefing_figures` keys stay until it reads editions; `recipes.py` still writes the old
+      range Briefing for a dataset without a guide; the departure gate re-measures window values, not band edges;
+      "Not read" lists every care note, not only the ones this edition touched; a count's usual prints "115.75".
