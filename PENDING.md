@@ -960,3 +960,16 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     may do* (Jev on through the environment, said so), the object and SQL doors read 124,669 orders, and the alert
     summary — serving for the first time — names theLook's one declared impact, "not measured to hold". Open: the
     named gaps in §3.65.
+
+68. [~] **The Briefing written from a guide, for a reader — Arc BG** (the user, 2026-10-29: *"Imagine there is no
+    structure to it. Only the periods like the week month year and the custom day range… based on their role… a good
+    prompt for each connection which will be built by the LLM itself as a part of the exploration phase"*) — mocked on
+    live LuxExperience data (`design-mockups/briefing-week-lux.html`, Week 43, five readers), approved (*"I like it"*),
+    then *"But lets build it"*; calls taken as recommended (ROADMAP §6 item 58, §3.66). Branch `claude/briefing-guide`.
+    - [ ] BG-1 the guide: model, lifecycle kind `briefing_guide`, drafter, check verification, routes, drafted at an
+      exploration's end
+    - [ ] BG-2 measure: every check against the range, the one before, a year earlier and its usual range; the floor
+    - [ ] BG-3 write: one call per reader; number and claims gates; cached and kept per reader; `recipes.py` retired
+    - [ ] BG-4 readers: function groups, `briefing_reader`, a reader's watch list drafted from plain words
+    - [ ] BG-5 the page: Week · Month · Year · Custom, Reading as, the guide panel; the morning paper retired
+    - [ ] BG-6 live on LuxExperience: the guide drafted and published, the Week written for three readers

@@ -12812,6 +12812,37 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
     `/object-types` and `/object-paths` describe entities outside a principal's grant, and an action on one is still
     described; the quick prompt's "connection graph" of stored findings was not measured against a row policy.
 
+### 3.66 · Arc BG — the Briefing written from a guide, for a reader (DRAFTED and ✅ ADOPTED 2026-10-29 — §6 item 58 · mockup `design-mockups/briefing-week-lux.html` · PENDING item 68)
+
+The user, 2026-10-29: *"Imagine there is no structure to it. Only the periods like the week month year and the custom
+day range. And then based on the period selected the LLM figures out which are the most critical parts or insights or
+numbers that the user is supposed to know based on their role… the current one looks very restrictive and therefore not
+very intelligent… a good prompt for each connection which will be built by the LLM itself as a part of the exploration
+phase."* The Week mockup on live LuxExperience data (19–25 Oct 2026) was approved (*"I like it"*), then readers people
+add (*"I may have Product as another department or Team"*), then *"But lets build it"*.
+
+- **Measured first (three surveys, 2026-10-29):** every range ran a fixed recipe (`briefing/recipes.py` SECTIONS and
+  GUIDANCE — Week was always what moved · the norm · why · actions) written for "a CFO", from the profile's headline
+  metrics — of LuxExperience's eight, four cannot be read for a week (prices end Apr 2024, clienteling and inventory
+  Jun 2025, marketing per fiscal year). Nothing checked the narrator's numbers on screen; the no-causes rule ran only at
+  send; opening the tab could POST a paid build; the business profile is overwritten with no history. The measuring
+  layer (`ranges.py` windows, `metric_time.run_measure`, `earlier_ranges`, `scoped_statement`) is sound and reused.
+- **The guide** (`briefing/guide.py`): per connection and dataset, the Explorer's draft of how its Briefing is written —
+  the business, what each range is for here, what counts as news (the usual range: the ranges before, mean ± sd), fair
+  comparisons, the calendar, what to read with care, the readers and what each watches, and the CHECKS an edition can
+  measure (approved metrics with the dimensions to break them by, and statements the drafter ran once). A Ledger
+  artifact through `kernel/lifecycle.py`: a draft until a person publishes it, every version kept. Judgement only —
+  the guide states no figure an edition prints.
+- **The edition** (`briefing/edition.py`): code measures every check against the range, the range before, a year
+  earlier and its usual range; ranks by distance from usual; one model call writes the headline, the lede and the
+  stories for one reader; code draws every figure, chart, source and "not read" line. A number the measurement does not
+  hold, and a sentence that claims a cause, are withheld and said. A figure more than 2 sd from usual appears for every
+  reader.
+- **Readers** are the organisation's function groups (`rbac/groups.py`); the guide proposes them, a person adds them;
+  each person reads as one (`briefing_reader`).
+- **Retires:** `recipes.py`'s sections and guidance, the morning paper's fixed columns, the Briefing switches and
+  figure choices, Day and "What we know" on the page (Day subscriptions keep sending).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -15299,6 +15330,17 @@ the browser** · **measure the premise before building.**
     - **Experiments:** `grounding.full_schema_first` kept on its record; `judgment.shadow_treatment` stopped;
       `explore.route_wide` deleted; `federation.planner` kept (its doors, not chat's routing);
       `grounding.data_profiles` deleted by its own clean run.
+
+58. ✅ **DECIDED 2026-10-29 — the Briefing written from a guide, for a reader** (§3.66). The user approved the Week
+    mockup on LuxExperience (*"I like it"*) and the plan (*"But lets build it"*), the calls taken as recommended:
+    - **The page's ranges are Week · Month · Year · Custom;** Day and "What we know" leave the page.
+    - **Opening never spends:** an edition is written on a click or by a subscription, whose `reader` it honours.
+    - **The guide is the Explorer's draft until a person publishes it;** a rule that changes a figure (a like-for-like
+      exclusion) applies only once published.
+    - **A reader is a function group,** or the organisation; the guide proposes, a person adds.
+    - **The floor:** more than 2 sd from usual appears for every reader; the model orders, never omits.
+    - **One model call per edition per reader;** the guide plans once, at drafting.
+    - **Words:** Briefing guide · reader ("Reading as") · usual range.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
