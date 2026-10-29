@@ -91,7 +91,7 @@ def _visible_schema(connection_id: str, *, canvas_id: Optional[str] = None,
 
 def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
             user_question: str = "", canvas_id: Optional[str] = None,
-            schema_scope: Optional[str] = None) -> dict:
+            schema_scope: Optional[str] = None, max_rows: int = _MAX_PREVIEW_ROWS) -> dict:
     """Execute one query through the guard battery and report what the guards did.
 
     Returns the rows AND the receipts together, because a number without the guard
@@ -136,10 +136,11 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     out = {
         "columns": list(result.columns or []),
         # Truncated on purpose: the model reasons about a shape, and a 10k-row answer
-        # spends the context window that the rest of the conversation needs.
-        "rows": rows[:_MAX_PREVIEW_ROWS],
+        # spends the context window that the rest of the conversation needs. A Briefing edition
+        # (Arc BC) asks for more — its blocks draw the rows — and trims what its model sees itself.
+        "rows": rows[:max_rows],
         "row_count": result.row_count,
-        "truncated": len(rows) > _MAX_PREVIEW_ROWS,
+        "truncated": len(rows) > max_rows,
         "error": result.error,
         "caveats": list(result.caveats or []) + ([fanout] if fanout else []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
