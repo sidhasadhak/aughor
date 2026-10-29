@@ -126,3 +126,17 @@ def test_the_model_is_shown_a_trimmed_source():
                    facts={"current": 1.0, "current_text": "1"})
     seen = S.for_model(src)
     assert len(seen["rows"]) == 25 and seen["rows_not_shown"] == 15 and "current_text" not in seen["facts"]
+
+
+def test_numbers_the_guarded_door_returns_as_text_become_numbers_but_an_id_stays_text():
+    rows = S.typed(["wk", "orders", "aov", "order_id", "zip_code"],
+                   [["2026-10-19", "259", "645.2", "00123", "02134"], ["2026-10-12", "255", "623", "00124", "NULL"]])
+    assert rows[0][1:3] == [259, 645.2] and rows[1][1:3] == [255, 623]
+    assert rows[0][0] == "2026-10-19" and rows[0][3] == "00123" and rows[0][4] == "02134"
+
+
+def test_a_query_source_carries_typed_numbers():
+    def run(conn_id, args, **kw):
+        return {"columns": ["platform", "orders"], "rows": [("Mytheresa", "72"), ("YOOX", "100")], "guard_receipts": []}
+    src = S.query("q", "Q", "c1", "SELECT 1", purpose="p", run=run)
+    assert src.rows == [["Mytheresa", 72], ["YOOX", 100]]

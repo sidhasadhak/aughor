@@ -16,6 +16,7 @@ read the same values.
 """
 from __future__ import annotations
 
+import re
 import statistics
 from datetime import date, datetime
 from decimal import Decimal
@@ -163,10 +164,34 @@ def query(source_id: str, label: str, conn_id: str, sql: str, *, purpose: str, s
     if out.get("error"):
         return Source(id=source_id, label=label, kind="query", sql=sql, status="refused", error=str(out["error"]),
                       repair=dict(out.get("repair") or {}), receipts=list(out.get("guard_receipts") or []))
-    return Source(id=source_id, label=label, kind="query", columns=[str(c) for c in out.get("columns") or []],
-                  rows=json_rows(list(out.get("rows") or [])), sql=str(out.get("sql") or sql),
+    columns = [str(c) for c in out.get("columns") or []]
+    return Source(id=source_id, label=label, kind="query", columns=columns,
+                  rows=typed(columns, json_rows(list(out.get("rows") or []))), sql=str(out.get("sql") or sql),
                   receipts=list(out.get("guard_receipts") or []), caveats=[str(c) for c in out.get("caveats") or []],
                   note=purpose + (" (more rows than shown)" if out.get("truncated") else ""))
+
+
+_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?([eE][-+]?\d+)?$")
+_ID_COL_RE = re.compile(r"(^id$|_id$|_key$|^code$|_code$|zip|postal|phone)", re.I)
+
+
+def typed(columns: list[str], rows: list[list[Any]]) -> list[list[Any]]:
+    """Cells the guarded door hands back as text ('243'), as numbers — a column at a time, only when every value in
+    it is a plain number and its name is not an identifier's (an order id or a postal code stays text)."""
+    if not rows:
+        return rows
+    out = [list(r) for r in rows]
+    for i, name in enumerate(columns):
+        if _ID_COL_RE.search(str(name)):
+            continue
+        vals = [r[i] for r in out if i < len(r) and r[i] not in (None, "", "NULL")]
+        if vals and all(isinstance(v, (int, float)) or (isinstance(v, str) and _NUMBER_RE.match(v.strip()))
+                        for v in vals):
+            for r in out:
+                if i < len(r) and isinstance(r[i], str):
+                    r[i] = None if r[i].strip() in ("", "NULL") else float(r[i]) if any(c in r[i] for c in ".eE") \
+                        else int(r[i])
+    return out
 
 
 def for_model(src: Source, *, max_rows: int = 25) -> dict:
