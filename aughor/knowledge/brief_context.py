@@ -36,7 +36,8 @@ BRIEFING_SURFACE = "briefing"
 #: A range Briefing's own cache key under its scope (`briefing/ranges.RangeSpec.key`), e.g.
 #: ``range:last_month:2026-08-01..2026-08-31``. Anything else is refused rather than read: the
 #: key is joined into a cache key, and a caller must not be able to walk the store with it.
-PERIOD_KEY = re.compile(r"^range:[a-z_]+:\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$")
+# A range key, and — for an edition (Arc BC) — the reader it was written for: `@<group id>` or `@_organisation`.
+PERIOD_KEY = re.compile(r"^range:[a-z_]+:\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}(@[a-z0-9_-]{1,64})?$")
 
 
 def _period_lines(period: dict[str, Any]) -> list[str]:
@@ -127,6 +128,8 @@ def build_brief_block(brief: dict[str, Any] | None, *,
     looking at that window."""
     if not isinstance(brief, dict):
         return ""
+    if brief.get("composed"):
+        return _edition_block(brief)
     theme = (brief.get("headline_theme") or "").strip()
     narrative = (brief.get("narrative") or "").strip()
     citations = brief.get("citations") or []
@@ -167,6 +170,35 @@ def build_brief_block(brief: dict[str, Any] | None, *,
             lines.append(f"  - {f'[{domain}] ' if domain else ''}{finding}")
     lines += measured_lines
     lines += _key_metric_lines(key_metrics)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _edition_block(edition: dict[str, Any]) -> str:
+    """An edition the model composed (Arc BC), as the question's context: its period, every block's words as the
+    reader sees them, and what each source it cites is — never its rows: numbers come from the query the answer
+    runs."""
+    import re as _re
+    plain = lambda t: _re.sub(r"\{([^{}|]+)\|[A-Za-z0-9_\-]+\}", r"\1", t or "")   # noqa: E731
+    period = edition.get("period") if isinstance(edition.get("period"), dict) else {}
+    reader = edition.get("reader") or {}
+    lines = ["THE BRIEFING THE USER IS LOOKING AT — the question is most likely ABOUT this.",
+             "Use it to resolve references ('that', 'the drop', 'those brands') and to stay on the",
+             "same entities and time window. It is CONTEXT, not a source of numbers: every figure",
+             "in your answer must still come from the query you run.", ""]
+    lines += _period_lines(period) if period else []
+    if reader.get("name"):
+        lines.append(f"WRITTEN FOR: {reader['name']}")
+    lines.append("ON SCREEN, IN ORDER:")
+    for b in (edition.get("blocks") or [])[:MAX_CITATIONS * 2]:
+        words = " ".join(plain(b.get(k)) for k in ("title", "text", "sub") if b.get(k)).strip()
+        if words:
+            lines.append(f"  - [{b.get('type')}] {words[:MAX_FINDING_CHARS]}")
+    sources = edition.get("sources") or {}
+    if sources:
+        lines.append("WHAT IT READS:")
+        for sid, src in list(sources.items())[:MAX_CITATIONS * 2]:
+            lines.append(f"  - {sid}: {src.get('label')} ({src.get('kind')}; columns {', '.join(src.get('columns') or [])})")
     lines.append("")
     return "\n".join(lines)
 

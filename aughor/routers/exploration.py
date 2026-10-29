@@ -2191,3 +2191,33 @@ def add_briefing_reader(conn_id: str, body: ReaderIn, request: Request, schema: 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return _guide_out(conn_id, schema)
+
+
+class DrillIn(BaseModel):
+    source_id: str
+    column: str
+    #: A segment of the source's own breakdown to drill within — True, a storefront's name, a number.
+    segment: str | int | float | bool | None = None
+    #: The block the drill is written under; "" = at the end.
+    after: str = ""
+
+
+@router.post("/exploration/{conn_id}/briefing/edition/drill")
+def drill_briefing_edition(conn_id: str, body: DrillIn, request: Request = None, schema: str | None = None,
+                           workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
+                           end: str | None = None, reader: str | None = None):
+    """One level deeper on a block's source (Arc BC-4): the same check broken down by another column — within a
+    segment when one is named — compiled, no model call. Written into the edition under the block it came from."""
+    from aughor.briefing.compose import write as W
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
+    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    try:
+        return W.drill(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=_reader_of(request, reader),
+                       source_id=body.source_id, column=body.column, segment=body.segment, after=body.after)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

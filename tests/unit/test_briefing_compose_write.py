@@ -153,3 +153,56 @@ def test_an_edition_departs_as_its_blocks_words():
     lines = W.sheet_lines({"blocks": [{"type": "lead", "text": "Sales rose to {€19.6k|sales}."},
                                       {"type": "table", "title": "The largest orders"}, {"type": "control"}]})
     assert lines == [("narrative", ["Sales rose to €19.6k.", "The largest orders"])]
+
+
+# ── BC-4 · drills and questions ──────────────────────────────────────────────────────────────
+
+def _composed(setup, monkeypatch):
+    blocks = [LEAD, {"id": "where", "type": "bridge", "source": "sales_by_is_top", "title": "Where it came from"},
+              {"type": "table", "source": "top_orders"}]
+    loop, _ = _loop([("breakdown", {"check_id": "sales", "column": "is_top"}),
+                     ("query", {"id": "top_orders", "label": "Largest orders", "sql": "SELECT 1", "purpose": "p"}),
+                     ("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    return W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                     run_query=_top_orders)
+
+
+def test_a_drill_goes_one_level_deeper_within_the_segment_and_is_written_under_its_block(setup, monkeypatch):
+    from aughor.knowledge.briefing import peek_entry
+
+    _composed(setup, monkeypatch)
+    out = W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="sales_by_is_top", segment=True,
+                  column="platform", after="where", runner=setup["runner"])
+    assert [r[0] for r in out["source"]["rows"]] == ["A"]          # within the top clients: only storefront A
+    assert out["source"]["facts"]["within"] == {"is_top": True} and out["source"]["kind"] == "drill"
+    assert out["block"]["type"] == "compare" and out["block"]["by_code"] is True
+    kept = peek_entry(f"compose_c1#{_week().key}@_organisation")
+    assert [b["id"] for b in kept["blocks"]][:3] == ["lead_1", "where", out["block"]["id"]]   # under its block
+    assert out["source"]["id"] in kept["sources"]
+
+
+def test_a_check_drills_by_any_column_and_a_written_query_cannot_be_drilled(setup, monkeypatch):
+    import pytest as _pt
+    _composed(setup, monkeypatch)
+    out = W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="sales", column="platform",
+                  runner=setup["runner"])
+    assert {r[0] for r in out["source"]["rows"]} == {"A", "B"}
+    with _pt.raises(ValueError, match="written query"):
+        W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="top_orders", column="platform",
+                runner=setup["runner"])
+    with _pt.raises(LookupError):
+        W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="nope", column="platform",
+                runner=setup["runner"])
+
+
+def test_a_question_asked_from_an_edition_reads_what_is_on_screen(setup, monkeypatch):
+    from aughor.knowledge import brief_context as BC
+
+    entry = _composed(setup, monkeypatch)
+    key = f"{_week().key}@_organisation"
+    assert BC.PERIOD_KEY.match(key) and BC.PERIOD_KEY.match(f"{_week().key}@digital-and-growth")
+    block = BC.build_brief_block(entry)
+    assert "ON SCREEN, IN ORDER:" in block and "Where it came from" in block
+    assert "Sales rose to €42.1k" in block and "{" not in block.split("ON SCREEN")[1].split("WHAT IT READS")[0]
+    assert "sales_by_is_top: Sales by is top (drill" not in block and "sales_by_is_top" in block

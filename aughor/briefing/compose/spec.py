@@ -160,7 +160,8 @@ def validate(spec: Spec, sources: dict[str, Source]) -> tuple[list[Block], list[
                 why.append(f"block {n} (figure) must read a check; {b.source!r} is a {src.kind}")
             if b.type == "bridge" and b.source and src.kind not in ("breakdown", "drill"):
                 why.append(f"block {n} (bridge) reads a breakdown; {b.source!r} is a {src.kind}")
-            if b.type in ("compare", "map", "heat", "progress") and not (b.label and b.value) and src.kind != "breakdown":
+            if b.type in ("compare", "map", "heat", "progress") and not (b.label and b.value) \
+                    and src.kind not in ("breakdown", "drill"):
                 why.append(f"block {n} ({b.type}) needs label and value columns")
             if b.type in ("multiples",) and not (b.x and b.series and b.value):
                 why.append(f"block {n} (multiples) needs x, series and value columns")

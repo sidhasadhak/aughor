@@ -133,8 +133,10 @@ BREAKDOWN_COLUMNS = ["segment", "this_range", "usual", "change", "change_pct", "
 
 
 def breakdown(source_id: str, label: str, m: Any, column: str, spec, *, usual_n: int, run_sql, dialect: str,
-              unit: str = "", better: str = "none", kind: str = "breakdown") -> Source:
-    """A check broken down by ``column``, each segment against its own usual range."""
+              unit: str = "", better: str = "none", kind: str = "breakdown", check_id: str = "",
+              within: Optional[dict] = None) -> Source:
+    """A check broken down by ``column``, each segment against its own usual range. ``check_id`` and ``within``
+    (the segment a drill narrowed to) are kept in its facts, so a drill can go one level deeper from it."""
     from aughor.briefing.edition import usual_windows
 
     windows = [spec.windows()[0]] + usual_windows(spec, usual_n)
@@ -142,7 +144,8 @@ def breakdown(source_id: str, label: str, m: Any, column: str, spec, *, usual_n:
     if why:
         return Source(id=source_id, label=label, kind=kind, status="refused", error=why, unit=unit, better=better)
     word = spec.period if spec.period in ("day", "week", "month", "year") else "range"
-    return Source(id=source_id, label=label, kind=kind, columns=BREAKDOWN_COLUMNS, rows=rows, sql=sql,
+    facts = {"check": check_id, "by": column, "within": dict(within or {})}
+    return Source(id=source_id, label=label, kind=kind, columns=BREAKDOWN_COLUMNS, rows=rows, sql=sql, facts=facts,
                   note=f"each {column.replace('_', ' ')} against its own usual: the mean of the {usual_n} {word}s "
                        f"before; under {MIN_CELL_ROWS} rows is too few to call",
                   unit=unit, better=better)

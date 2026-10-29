@@ -204,7 +204,7 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                 sid = f"{check.id}_by_{column}".lower()
                 src = S.breakdown(sid, f"{check.label} by {column.replace('_', ' ')}", m, column, spec,
                                   usual_n=usual_n, run_sql=run_sql, dialect=dialect, unit=check.unit,
-                                  better=check.better)
+                                  better=check.better, check_id=check.id)
                 sources[sid] = src
                 return S.for_model(src)
 
@@ -310,3 +310,72 @@ def sheet_lines(entry: dict) -> list[tuple[str, list[str]]]:
         if words.strip():
             prose.append(words.strip())
     return [("narrative", prose)] if prose else []
+
+
+# ── BC-4 · a drill, written into the page ────────────────────────────────────────────────────
+
+def _literal(v: Any) -> str:
+    if isinstance(v, bool):
+        return "TRUE" if v else "FALSE"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, reader_id: str = "",
+          source_id: str, column: str, segment: Any = None, after: str = "", runner=None) -> dict:
+    """One level deeper on a block's source: the same check broken down by ``column`` — within ``segment`` of the
+    source's own breakdown when one is named — compiled, no model. Written into the kept edition under the block
+    ``after`` (or at the end), so everyone reading the edition sees it. Raises LookupError / ValueError with why."""
+    from aughor.briefing import edition as E
+    from aughor.briefing import guide as G
+    from aughor.briefing import ranges
+    from aughor.knowledge import period_brief
+    from aughor.knowledge.briefing import keep_entry, peek_entry
+
+    key = E.cache_key(scope_key, spec, reader_id)
+    entry = peek_entry(key)
+    if not (isinstance(entry, dict) and entry.get("composed")):
+        raise LookupError("this edition has not been written yet")
+    raw = (entry.get("sources") or {}).get(source_id)
+    if raw is None:
+        raise LookupError(f"this edition has no source {source_id!r}")
+    src = S.Source.model_validate(raw)
+    if src.kind == "check":
+        check_id, within = src.id, {}
+    elif src.kind in ("breakdown", "drill"):
+        check_id, within = str(src.facts.get("check") or ""), dict(src.facts.get("within") or {})
+        if segment is not None:
+            within[str(src.facts.get("by"))] = segment
+    else:
+        raise ValueError("only a check or a breakdown can be drilled; a written query is not compiled from one")
+    if not column.isidentifier() or not all(str(k).isidentifier() for k in within):
+        raise ValueError("a drill names a column")
+    guide, _rev = G.current(conn_id, schema)
+    check = guide.check(check_id) if guide else None
+    if check is None:
+        raise LookupError(f"the guide no longer has the check {check_id!r}")
+    m, why = E.measurable(check, {mm.name: mm for mm in ranges.governed_metrics(conn_id, schema)})
+    if m is None:
+        raise ValueError(why)
+    for col, val in within.items():
+        cond = f"{col} = {_literal(val)}"
+        filters = list(m.get("filters") if isinstance(m, dict) else getattr(m, "filters", []) or []) + [cond]
+        m = {**m, "filters": filters} if isinstance(m, dict) else m.model_copy(update={"filters": filters})
+    words = " and ".join(f"{k.replace('_', ' ')} {v}" for k, v in within.items())
+    label = f"{check.label} by {column.replace('_', ' ')}" + (f", within {words}" if words else "")
+    sid = _slug(f"{check.id}_{'_'.join(str(v) for v in within.values())}_by_{column}")
+    usual_n = guide.news.usual_for(spec.period if spec.period in ("day", "week", "month", "year") else "custom")
+    with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+        new = S.breakdown(sid, label, m, column, spec, usual_n=usual_n, run_sql=run_sql, dialect=dialect,
+                          unit=check.unit, better=check.better, kind="drill", check_id=check.id, within=within)
+    if new.error:
+        raise ValueError(new.error)
+    block = P.Block(id=f"drill_{sid}", type="compare", source=sid, kicker="Drill", title=label + ", against usual",
+                    by_code=True)
+    blocks = list(entry.get("blocks") or [])
+    at = next((i + 1 for i, b in enumerate(blocks) if b.get("id") == after), len(blocks))
+    blocks.insert(at, block.model_dump(mode="json"))
+    entry = {**entry, "blocks": blocks, "sources": {**(entry.get("sources") or {}), sid: new.model_dump(mode="json")}}
+    keep_entry(key, entry)
+    return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json"), "at": at}
