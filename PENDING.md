@@ -983,3 +983,16 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       `briefing_sections` / `briefing_figures` keys stay until it reads editions; `recipes.py` still writes the old
       range Briefing for a dataset without a guide; the departure gate re-measures window values, not band edges;
       "Not read" lists every care note, not only the ones this edition touched; a count's usual prints "115.75".
+
+69. [~] **The Briefing as an open canvas the model composes — Arc BC** (the user, 2026-10-29: *"let the LLMs use The
+    Briefing as an open canvas to draw any element … everything with citations and drill down possibilities … it
+    should make sense right away to any user!"*) — mocked on live LuxExperience data
+    (`design-mockups/briefing-canvas-lux.html`), accepted, plan approved; calls in ROADMAP §6 item 59, §3.67. Branch
+    `claude/briefing-guide`, on top of Arc BG.
+    - [ ] BC-1 sources: a measured check, a compiled breakdown by any column, a guarded SELECT — rows, SQL, receipts
+    - [ ] BC-2 the canvas spec: a closed vocabulary, validated, with the number and claims gates over every word
+    - [ ] BC-3 investigate and compose: the tool loop under a budget; the floor; kept per reader
+    - [ ] BC-4 drill (compiled) and ask (the quick answer) written into the page
+    - [ ] BC-5 the page: blocks, the evidence panel, controls, Vega charts; Arc BG's edition page retired
+    - [ ] BC-6 subscriptions send a canvas, judged at departure
+    - [ ] BC-7 live on LuxExperience: Leadership and Finance canvases for the week of 19–25 Oct

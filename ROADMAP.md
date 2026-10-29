@@ -12848,6 +12848,30 @@ add (*"I may have Product as another department or Team"*), then *"But lets buil
   page cut off at the window — each fixed with a failing test first. The Data Canvas keeps the earlier panel until
   its editions read the canvas's own tables; until then the old range Briefing's code stays.
 
+### 3.67 · Arc BC — the Briefing as an open canvas the model composes (DRAFTED and ✅ ADOPTED 2026-10-29 — §6 item 59 · mockup `design-mockups/briefing-canvas-lux.html` · PENDING item 69)
+
+The user, 2026-10-29, on Arc BG's built page: *"still feels clunky.. like a car in 1960s.. Its a fixed pattern that
+limits the intelligence"*, then *"let the LLMs use The Briefing as an open canvas to draw any element (table, text,
+graphs, radio buttons, filters, map - everything with citations and drill down possibilities…) … The Briefing is like
+the first thing or first contact with the sheer intelligence of the platform … it should make sense right away to any
+user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next? Building it?"*).
+
+- **Measured first (three surveys):** the edition still had one skeleton and one chart grammar, and could not dig (the
+  live Leadership edition wrote *"The platform split is not shown here, so check it"*). Reusable: the chart forms
+  (waterfall, heatmap, small multiples, choropleth with `/geo/world.json`), the closed answer vocabulary
+  (`agent/present_tool.py`), the tool loop (`agent/tool_loop.run_tool_loop`, the dashboards' `ask.py`), the guarded
+  door for a model's SELECT (`sql/executor.execute_guarded`), object links (`lib/objectLinks`), the quick answer.
+  The dashboard catalog is NOT reused as is: its rules forbid a model writing SQL or adding controls.
+- **Investigate, then compose.** After Arc BG measures the guide's checks, the model asks its own follow-up questions —
+  a compiled breakdown of a check by any low-cardinality column, or a SELECT through the guarded door — within a
+  budget, then composes the page from a closed set of block types (a sentence with cited numbers, figure, bridge,
+  comparison, table, map, small multiples, heat grid, progress, line, a control other blocks listen to, a decision).
+- **Code decides what is shown:** every block names its sources; code runs them, validates the spec, and holds any
+  word stating a number no source holds or claiming a cause. A floor figure the page left out is added by code.
+- **Answerable in place:** every number opens its source (query, rows, receipts, status); a drill (compiled, no model)
+  or a question (the quick answer, in the reader's own request) writes its answer into the page.
+- **Replaces** Arc BG's edition page; the guide, the measurement, readers and the gates stay.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -15346,6 +15370,15 @@ the browser** · **measure the premise before building.**
     - **The floor:** more than 2 sd from usual appears for every reader; the model orders, never omits.
     - **One model call per edition per reader;** the guide plans once, at drafting.
     - **Words:** Briefing guide · reader ("Reading as") · usual range.
+
+59. ✅ **DECIDED 2026-10-29 — the Briefing as an open canvas the model composes** (§3.67). The user accepted the
+    canvas mockup on LuxExperience (*"Whats next? Building it?"*) and the plan, the calls taken as recommended:
+    - **Sonnet investigates and composes;** opening never spends, a drill never calls a model, a question is one call.
+    - **Budget per edition:** at most 8 follow-up queries and 7 model steps under the Briefer's charter.
+    - **The model may write SELECTs for follow-ups,** through the guarded door the Analyst uses; dashboards unchanged.
+    - **Decisions in v1:** Investigate and Not now; *Give it to a team* is a follow-up.
+    - **The canvas replaces Arc BG's edition page;** controls filter in the browser; the map is the choropleth.
+    - **Words:** canvas · block · source · drill.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
