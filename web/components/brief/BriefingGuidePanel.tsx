@@ -70,7 +70,7 @@ export function BriefingGuidePanel({ connectionId, schema, guide, onChange, read
   return (
     <aside data-testid="briefing-guide" aria-label="Briefing guide"
       style={{ borderLeft: "1px solid var(--b1)", background: "var(--bg-1)", padding: "18px 20px 30px",
-               overflowY: "auto", minWidth: 0 }}>
+               height: "100%", overflowY: "auto", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <h2 className="aug-fs-h1" style={{ fontFamily: "var(--font-serif)", fontWeight: 600, margin: 0, color: "var(--t1)" }}>
           Briefing guide

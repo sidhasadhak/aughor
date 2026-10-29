@@ -168,9 +168,11 @@ export function BriefingEdition({ connectionId, schema, workspaceId }: {
   const hasGuide = !!guide?.available;
 
   return (
+    // The layer around the Briefing does not scroll (it is overflow: hidden): the edition and the guide each
+    // scroll on their own, the guide staying beside whatever story is in view.
     <div data-testid="briefing-edition" style={{ display: "grid", gridTemplateColumns: hasGuide && guideOpen ? "minmax(0,1fr) 372px" : "minmax(0,1fr)",
-                                                  alignItems: "start", minHeight: "100%" }}>
-      <article style={{ padding: "22px 34px 40px", minWidth: 0 }}>
+                                                  height: "100%", minHeight: 0 }}>
+      <article style={{ padding: "22px 34px 40px", minWidth: 0, height: "100%", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 16, paddingBottom: 10, borderBottom: "2px solid var(--t1)", flexWrap: "wrap" }}>
           <h1 className="aug-fs-display" style={{ fontFamily: "var(--font-serif)", fontWeight: 600, margin: 0, lineHeight: 1, color: "var(--t1)" }}>The Briefing</h1>
           {schema && <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{schema}</span>}
