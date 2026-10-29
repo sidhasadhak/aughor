@@ -160,6 +160,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const teams = useMemo(() => groups.filter(g => g.kind === "function").map(g => ({ id: g.id, name: g.name }))
     .sort((a, b) => a.name.localeCompare(b.name)), [groups]);
   const hasGuide = !!guide?.available;
+  const ownCanvas = edition?.canvas?.own ? edition.canvas : null;
   const blocks = useMemo(() => (edition?.blocks ?? []).filter(b => !hidden.has(b.id)), [edition, hidden]);
   const sources = edition?.sources ?? {};
   const used = useMemo(() => {
@@ -201,10 +202,17 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
               {edition.guide?.state === "draft" ? " Written from a draft guide no person has published." : ""}
             </p>
           )}
-          {edition?.built && !!edition.canvas?.checks_outside.length && (
-            <p className="aug-fs-xs" data-testid="edition-canvas" style={{ color: "var(--t3)", margin: "0 0 4px" }}>
-              This canvas reads {edition.canvas.tables.join(", ")}; the guide&apos;s checks on other tables are left out:{" "}
-              {edition.canvas.checks_outside.join(", ")}.
+          {edition?.canvas && (
+            <p className="aug-fs-xs" data-testid="edition-canvas"
+              style={{ color: "var(--t2)", margin: "6px 0 4px", padding: "6px 10px", borderLeft: "2px solid var(--blue4)", background: "var(--bg-1)" }}>
+              {edition.canvas.own
+                ? <>This canvas reads <b style={{ color: "var(--t1)", fontWeight: 500 }}>{edition.canvas.tables.join(", ")}</b>, so its
+                    edition is its own: {edition.canvas.checks_inside.length} of the guide&apos;s{" "}
+                    {edition.canvas.checks_inside.length + edition.canvas.checks_outside.length} checks, and the model looks only at
+                    these tables.{edition.built && edition.canvas.checks_outside.length > 0
+                      ? ` Left out, because they read other tables: ${edition.canvas.checks_outside.join(", ")}.` : ""}</>
+                : <>This canvas reads every table of {edition.canvas.dataset || "this dataset"}, so its Briefing is the dataset&apos;s own
+                    edition — the one the Briefing page shows, written once.</>}
             </p>
           )}
 
@@ -223,10 +231,23 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           ) : !edition?.built ? (
             <section data-testid="edition-unwritten" style={{ padding: "26px 0" }}>
               <h2 className="aug-fs-display" style={{ margin: "0 0 8px", color: "var(--t1)" }}>Not written yet for {readerName}</h2>
+              {ownCanvas && (
+                <>
+                  <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 10px" }}>
+                    <b style={{ color: "var(--t1)", fontWeight: 500 }}>Measured here:</b> {ownCanvas.checks_inside.join(", ") || "none of the guide's checks"}.
+                  </p>
+                  {ownCanvas.checks_outside.length > 0 && (
+                    <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 10px" }}>
+                      <b style={{ color: "var(--t1)", fontWeight: 500 }}>Left out, because they read other tables:</b> {ownCanvas.checks_outside.join(", ")}.
+                    </p>
+                  )}
+                </>
+              )}
               <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 12px" }}>
-                The guide&apos;s {guide?.guide?.checks.length ?? 0} checks are measured for {period?.covers ?? "this range"}; then the
-                model looks into what moved — at most 8 queries of its own — and composes the page for {readerName}. Every number
-                it writes is checked against what was measured. It takes about a minute.
+                {ownCanvas ? `The ${ownCanvas.checks_inside.length}` : `The guide's ${guide?.guide?.checks.length ?? 0}`} checks are measured for{" "}
+                {period?.covers ?? "this range"}; then the model looks into what moved — at most 8 queries of its own
+                {ownCanvas ? ", on these tables only" : ""} — and composes the page for {readerName}. Every number it writes is checked
+                against what was measured. It takes about a minute.
               </p>
               <Button disabled={!!busy} onClick={() => void write()}>{busy === "write" ? "Looking into it and writing…" : writeLabel(periodWord, custom)}</Button>
             </section>

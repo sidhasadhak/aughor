@@ -378,3 +378,45 @@ def test_a_canvas_edition_reads_only_the_canvas_tables(setup, monkeypatch):
     schema_seen = seen[0]["question"].split("SCHEMA (for query):")[1]
     assert "TABLE: orders" in schema_seen and "returns" not in schema_seen       # shown the canvas's tables
     assert asked["canvas_id"] == "cv1"                                           # queries run in its scope
+
+
+def _canvas(monkeypatch, cid: str, conn: str, tables: list[str]):
+    from aughor.canvas.models import Canvas, CanvasScope
+    canvas = Canvas(id=cid, name=cid, scopes=[CanvasScope(connection_id=conn, tables=tables)])
+    monkeypatch.setattr("aughor.canvas.store.get_canvas", lambda c: canvas if c == cid else None)
+
+
+def test_a_canvas_on_every_table_reads_the_datasets_own_edition(setup, monkeypatch):
+    from aughor.routers import exploration as R
+
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda conn, schema: schema)
+    monkeypatch.setattr(R, "briefing_off_for", lambda *a, **k: None)
+    _canvas(monkeypatch, "cv_all", "compose_c1", [])
+    _composed(setup, monkeypatch)                                                   # the dataset's edition
+    got = R.read_briefing_edition("compose_c1", preset="last_week", reader="", canvas_id="cv_all")
+    assert got["built"] is True and got["scope_key"] == "compose_c1"                # written once, read here too
+    assert got["canvas"] == {"id": "cv_all", "own": False, "dataset": "", "tables": [], "checks_inside": [],
+                             "checks_outside": []}
+
+
+def test_a_canvas_that_names_tables_has_its_own_edition_and_says_what_it_leaves_out(setup, monkeypatch):
+    from fastapi import HTTPException
+
+    from aughor.routers import exploration as R
+
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda conn, schema: schema)
+    monkeypatch.setattr(R, "briefing_off_for", lambda *a, **k: None)
+    refunds = G.Check(id="refunds", label="Refunds", sql="SUM(refund)", tables=["returns"],
+                      time_column="returns.return_date")
+    G.save("compose_cv2", None, G.BriefingGuide(business="A shop.", checks=[SALES, refunds]), by="user:amit",
+           publish=True)
+    _canvas(monkeypatch, "cv_named", "compose_cv2", ["orders"])
+    got = R.read_briefing_edition("compose_cv2", preset="last_week", reader="", canvas_id="cv_named")
+    assert got["built"] is False and got["scope_key"] == "canvas:cv_named"          # kept apart, not written yet
+    assert got["canvas"]["own"] is True and got["canvas"]["tables"] == ["orders"]
+    assert got["canvas"]["checks_inside"] == ["Sales"] and got["canvas"]["checks_outside"] == ["Refunds"]
+    with pytest.raises(HTTPException) as refused:
+        R.read_briefing_edition("compose_c1", preset="last_week", reader="", canvas_id="cv_named")
+    assert refused.value.status_code == 422                                         # another connection's canvas

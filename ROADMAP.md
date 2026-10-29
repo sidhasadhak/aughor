@@ -12880,6 +12880,8 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   own tables on the same page; a breakdown's change against usual is re-measured at a send; the number gate checks a
   number against the source, segment and direction it is said of, not only that some source holds it; and a person's
   guide edit measures its new or changed checks before it is kept.
+- **2026-10-30, a Briefing tab in the Data Canvas** (mocked, then "Build as drawn"): after Chat; a canvas on every
+  table reads the dataset's own edition, one that names tables writes its own from those tables.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

@@ -2111,14 +2111,16 @@ def _reader_of(request, reader: str | None) -> str:
     return default_reader(_person(request) if request is not None else "")
 
 
-def _edition_scope(conn_id: str, schema: str | None, canvas_id: str | None) -> tuple[str | None, str, tuple]:
-    """``(schema, scope_key, tables)`` an edition is written and kept under: the dataset's, or — in a Data
-    Canvas — the canvas's schema and tables, kept apart from the dataset's own edition."""
+def _edition_scope(conn_id: str, schema: str | None,
+                   canvas_id: str | None) -> tuple[str | None, str, tuple, str | None]:
+    """``(schema, scope_key, tables, canvas_id)`` an edition is written and kept under: the dataset's, or — in a
+    Data Canvas that names tables — the canvas's own, read from those tables only. A canvas on every table reads
+    the dataset's own edition: written once, read in both places (the user's call, 2026-10-30)."""
     from aughor.routers._shared import canonical_schema
 
     if not canvas_id:
         schema = canonical_schema(conn_id, schema)
-        return schema, (f"{conn_id}:{schema}" if schema else conn_id), ()
+        return schema, (f"{conn_id}:{schema}" if schema else conn_id), (), None
     from aughor.canvas.scope import resolve_execution_scope
     from aughor.canvas.store import get_canvas
 
@@ -2128,7 +2130,30 @@ def _edition_scope(conn_id: str, schema: str | None, canvas_id: str | None) -> t
     if canvas.primary_connection_id != conn_id:
         raise HTTPException(status_code=422, detail="this canvas reads another connection")
     scope = resolve_execution_scope(conn_id, canvas_id)
-    return canonical_schema(conn_id, scope.eff_schema or schema), f"canvas:{canvas_id}", tuple(scope.tables)
+    schema = canonical_schema(conn_id, scope.eff_schema or schema)
+    if scope.is_full_schema:
+        return schema, (f"{conn_id}:{schema}" if schema else conn_id), (), None
+    return schema, f"canvas:{canvas_id}", tuple(scope.tables), canvas_id
+
+
+def _canvas_said(conn_id: str, schema: str | None, canvas_id: str | None, tables: tuple) -> dict | None:
+    """What the page says of a canvas's edition, written or not: the dataset's own (a canvas on every table), or
+    its own — which of the guide's checks read only its tables, and which are left out. A read: no warehouse query."""
+    if not canvas_id:
+        return None
+    said = {"id": canvas_id, "own": bool(tables), "dataset": schema or "", "tables": list(tables),
+            "checks_inside": [], "checks_outside": []}
+    if tables:
+        from aughor.briefing import guide as G
+        from aughor.briefing import ranges
+        from aughor.briefing.compose.write import inside
+
+        guide, _rev = G.current(conn_id, schema)
+        if guide is not None:
+            metrics = {m.name: m for m in ranges.governed_metrics(conn_id, schema)}
+            said["checks_inside"] = [c.label for c in guide.checks if inside(c, metrics, tables)]
+            said["checks_outside"] = [c.label for c in guide.checks if not inside(c, metrics, tables)]
+    return said
 
 
 def _edition_spec(conn_id: str, preset: str | None, start: str | None, end: str | None,
@@ -2145,12 +2170,13 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
                           end: str | None = None, reader: str | None = None, canvas_id: str | None = None):
     """A READ never builds: the range's edition for ``reader`` (a function group; "" = the
     organisation; unnamed = the person's own reader) as it was last written, or ``{"built": false}``
-    with the range it would cover. With ``canvas_id``, the Data Canvas's own edition."""
+    with the range it would cover. With ``canvas_id``, a Data Canvas's: its own when it names tables, else the
+    dataset's — and what the page says of it either way."""
     from aughor.briefing import edition as E
     from aughor.briefing import ranges
     from aughor.knowledge.briefing import peek_entry
 
-    schema, scope_key, _tables = _edition_scope(conn_id, schema, canvas_id)
+    schema, scope_key, tables, _own = _edition_scope(conn_id, schema, canvas_id)
     reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     block = ranges.range_block(spec)
@@ -2161,9 +2187,11 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
     # Arc BC: only a composed edition is one; an Arc BG edition kept before it reads as not written yet
     same = isinstance(entry, dict) and entry.get("composed") and all(
         (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
+    canvas = _canvas_said(conn_id, schema, canvas_id, tables) if canvas_id else None
     if not same:
-        return {"built": False, "period": block, "reader": reader, "scope_key": scope_key}
-    return {**entry, "built": True, "scope_key": scope_key}
+        return {"built": False, "period": block, "reader": reader, "scope_key": scope_key,
+                **({"canvas": canvas} if canvas else {})}
+    return {**entry, "built": True, "scope_key": scope_key, **({"canvas": canvas} if canvas else {})}
 
 
 @router.post("/exploration/{conn_id}/briefing/edition")
@@ -2176,7 +2204,8 @@ def write_briefing_edition(conn_id: str, request: Request = None, schema: str | 
     ``canvas_id``, only the Data Canvas's tables are read."""
     from aughor.briefing.compose import write as W
 
-    schema, scope_key, tables = _edition_scope(conn_id, schema, canvas_id)
+    asked_canvas = canvas_id
+    schema, scope_key, tables, canvas_id = _edition_scope(conn_id, schema, canvas_id)
     reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     off = briefing_off_for(conn_id, schema)
@@ -2187,7 +2216,8 @@ def write_briefing_edition(conn_id: str, request: Request = None, schema: str | 
                           canvas_id=canvas_id, tables=tables)
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    return {**entry, "built": True, "scope_key": scope_key}
+    canvas = _canvas_said(conn_id, schema, asked_canvas, tables) if asked_canvas else None
+    return {**entry, "built": True, "scope_key": scope_key, **({"canvas": canvas} if canvas else {})}
 
 
 class ReaderIn(BaseModel):
@@ -2234,7 +2264,7 @@ def drill_briefing_edition(conn_id: str, body: DrillIn, request: Request = None,
     segment when one is named — compiled, no model call. Written into the edition under the block it came from."""
     from aughor.briefing.compose import write as W
 
-    schema, scope_key, _tables = _edition_scope(conn_id, schema, canvas_id)
+    schema, scope_key, _tables, _canvas = _edition_scope(conn_id, schema, canvas_id)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     try:
         return W.drill(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=_reader_of(request, reader),
@@ -2261,7 +2291,7 @@ def give_briefing_decision(conn_id: str, body: GiveIn, request: Request = None, 
     the group binds no channel. No model call. Given once per group."""
     from aughor.briefing.compose import write as W
 
-    schema, scope_key, _tables = _edition_scope(conn_id, schema, canvas_id)
+    schema, scope_key, _tables, _canvas = _edition_scope(conn_id, schema, canvas_id)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     try:
         return W.give(conn_id, spec, scope_key=scope_key, reader_id=_reader_of(request, reader),

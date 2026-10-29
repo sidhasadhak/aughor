@@ -8150,8 +8150,18 @@ export interface BriefingEdition {
   off?: BriefingOff;
   /** The decisions given to a team, each with what became of it — sent, held with why, or not sent. */
   given?: EditionGiven[];
-  /** A Data Canvas's edition: its tables, and the guide's checks left out because they read other tables. */
-  canvas?: { id: string; tables: string[]; checks_outside: string[] } | null;
+  /** Read in a Data Canvas: the dataset's own edition (`own` false — a canvas on every table), or the canvas's own,
+   *  with which of the guide's checks read only its tables and which are left out. */
+  canvas?: EditionCanvas | null;
+}
+
+export interface EditionCanvas {
+  id: string;
+  own: boolean;
+  dataset: string;
+  tables: string[];
+  checks_inside: string[];
+  checks_outside: string[];
 }
 
 /** A decision on an edition given to a team: posted to the channel its function group binds, through the departure gate. */
@@ -8955,6 +8965,8 @@ export interface FleetJob {
 export type JobRow = FleetJob;
 /** The kernel job kind a deep analysis runs as — the backend's frozen spelling, named here once. */
 export const DEEP_ANALYSIS_JOB_KIND = "investigation";
+/** The chat's mode for a deep analysis — the frozen wire literal the chat route reads. */
+export const DEEP_ANALYSIS_MODE = "investigate" as const;
 
 export async function getJobs(params?: {
   state?: string; conn_id?: string; kind?: string; limit?: number;

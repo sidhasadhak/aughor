@@ -175,12 +175,34 @@ describe("BriefingEdition", () => {
       { block_id: "dec", group_id: "finance" }, "luxexperience", undefined, undefined);
   });
 
-  it("in a Data Canvas, reads the canvas's edition, says which checks it leaves out, and offers no schedule", async () => {
-    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, canvas: { id: "cv1", tables: ["orders"], checks_outside: ["Refunds paid"] } });
+  const OWN = { id: "cv1", own: true, dataset: "luxexperience", tables: ["orders", "shipments"],
+                checks_inside: ["Orders placed", "Shipping cost"], checks_outside: ["Session conversion rate"] };
+
+  it("in a Data Canvas that names tables, reads its own edition, says what it leaves out, and offers no schedule", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, canvas: OWN });
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" canvasId="cv1" />);
-    expect((await screen.findByTestId("edition-canvas")).textContent).toContain("left out: Refunds paid");
+    const said = (await screen.findByTestId("edition-canvas")).textContent ?? "";
+    expect(said).toContain("This canvas reads orders, shipments, so its edition is its own: 2 of the guide's 3 checks");
+    expect(said).toContain("Left out, because they read other tables: Session conversion rate.");
     expect(api.readBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, undefined, "luxexperience", undefined, "cv1");
     expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+  });
+
+  it("before a canvas's own edition is written, lists what it would measure and what it leaves out", async () => {
+    api.readBriefingEdition.mockResolvedValue({ built: false, scope_key: "canvas:cv1", period: PERIOD, reader: "leadership", canvas: OWN });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" canvasId="cv1" />);
+    const unwritten = await screen.findByTestId("edition-unwritten");
+    expect(unwritten.textContent).toContain("Measured here: Orders placed, Shipping cost.");
+    expect(unwritten.textContent).toContain("Left out, because they read other tables: Session conversion rate.");
+    expect(unwritten.textContent).toContain("The 2 checks are measured");
+    expect(unwritten.textContent).toContain("on these tables only");
+  });
+
+  it("in a Data Canvas on every table, says it is the dataset's own edition", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, canvas: { ...OWN, own: false, tables: [], checks_inside: [], checks_outside: [] } });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" canvasId="cv1" />);
+    expect((await screen.findByTestId("edition-canvas")).textContent).toContain(
+      "This canvas reads every table of luxexperience, so its Briefing is the dataset's own edition");
   });
 
   it("with no guide, says so and drafts one only on a click", async () => {

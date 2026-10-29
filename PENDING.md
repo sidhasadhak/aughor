@@ -1014,7 +1014,12 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       - The Data Canvas mounts the edition page (`canvas_id` on every edition route): only the guide's checks that
         read the canvas's tables are measured, the model is shown and queries only those tables, and the checks left
         out are said on the page. The earlier `BriefingPanel` component is mounted nowhere now; its exported pieces
-        (`DossierTrace`, `EvidenceDrawer`, `FindingActions`) stay in use.
+        (`DossierTrace`, `EvidenceDrawer`, `FindingActions`) stay in use. The premise was wrong: no screen opened a
+        canvas's Briefing at all (the canvas workspace had Chat · History · Artifacts) — so it was mocked
+        (`design-mockups/canvas-briefing-tab.html`) and the user took its four calls as drawn ("Build as drawn"):
+        the tab sits after Chat and a canvas still opens on Chat; a canvas on every table reads the dataset's own
+        edition (written once); only a canvas that names tables writes its own, and says before writing which checks
+        it measures and which it leaves out; no Schedule in a canvas; Reading as is the person's own reader.
       - A breakdown's segments are re-derived at departure from its re-run rows (`sources.rerun`), so a change
         against usual departs on the change measured at the send.
       - The number gate binds a number to what it is said of (`spec.misused`): a cited number to its cited source, to

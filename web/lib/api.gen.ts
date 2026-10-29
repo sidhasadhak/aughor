@@ -6292,7 +6292,8 @@ export interface paths {
          * Read Briefing Edition
          * @description A READ never builds: the range's edition for ``reader`` (a function group; "" = the
          *     organisation; unnamed = the person's own reader) as it was last written, or ``{"built": false}``
-         *     with the range it would cover. With ``canvas_id``, the Data Canvas's own edition.
+         *     with the range it would cover. With ``canvas_id``, a Data Canvas's: its own when it names tables, else the
+         *     dataset's — and what the page says of it either way.
          */
         get: operations["read_briefing_edition_exploration__conn_id__briefing_edition_get"];
         put?: never;
