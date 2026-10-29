@@ -19,6 +19,7 @@ import {
   type BriefingGuideDoc, type BriefingGuideResponse, type GuideReader,
 } from "@/lib/api";
 import { groupIdOf } from "@/lib/briefingEdition";
+import { withUniqueKeys } from "@/lib/listKeys";
 
 const H = ({ children }: { children: React.ReactNode }) => (
   <h3 className="aug-label" style={{ margin: "14px 0 4px", color: "var(--t3)" }}>{children}</h3>
@@ -187,8 +188,8 @@ export function BriefingGuidePanel({ connectionId, schema, guide, onChange, read
       {doc.proposed_readers.length > 0 && (
         <div data-testid="guide-proposed-readers" style={{ marginTop: 8 }}>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>The guide proposes:</span>
-          {doc.proposed_readers.map((r: GuideReader) => (
-            <div key={r.name} className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0" }}>
+          {withUniqueKeys(doc.proposed_readers, (r: GuideReader) => r.name).map(([key, r]) => (
+            <div key={key} className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0" }}>
               <span style={{ flex: 1 }}><b style={{ fontWeight: 500, color: "var(--t1)" }}>{r.name}</b> — {r.watches}</span>
               <Button size="sm" variant="secondary" disabled={!!busy}
                 onClick={() => addReader({ name: r.name, watches: r.watches, check_ids: r.check_ids })}>Add</Button>
