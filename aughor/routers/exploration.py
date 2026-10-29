@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.paths import state_dir
@@ -2005,3 +2005,91 @@ def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest)
     Same body, same payload — it delegates to the handler above. Kept for one release.
     """
     return dismiss_canvas_finding(canvas_id, insight_id, req)
+
+
+# ── Arc BG-1 · the Briefing guide (ROADMAP §3.66) ────────────────────────────────────────────
+
+def _person(request) -> str:
+    """Who a guide version is kept under: the person signed in, else the one this request acts for."""
+    from aughor.security.authz import acting_person, caller, get_principal as _principal
+    return acting_person(_principal(request)) or f"user:{caller()}"
+
+
+def _guide_out(conn_id: str, schema: str | None) -> dict:
+    from aughor.briefing import guide as G
+
+    revs = G.versions(conn_id, schema)
+    used, used_rev = G.current(conn_id, schema)
+    working, working_rev = G.working_copy(conn_id, schema)
+    published = next((r for r in revs if r.is_published), None)
+
+    def _rev(r):
+        return {"version": r.version, "state": r.state, "by": r.by, "note": r.note,
+                "created_at": r.created_at, "published_at": r.published_at}
+
+    return {"available": working is not None,
+            "guide": working.model_dump(mode="json") if working else None,
+            "version": _rev(working_rev) if working_rev else None,
+            # what an edition reads: the newest published version, else the newest draft — said either way
+            "editions_read": ({"version": used_rev.version, "state": used_rev.state} if used_rev else None),
+            "published_version": published.version if published else None,
+            "versions": [_rev(r) for r in revs]}
+
+
+class GuideIn(BaseModel):
+    guide: dict
+    note: str = ""
+
+
+@router.get("/exploration/{conn_id}/briefing/guide")
+def read_briefing_guide(conn_id: str, schema: str | None = None):
+    """The connection's Briefing guide for a dataset — the newest version, what editions read, and every
+    version kept. A read: no model call, no warehouse query."""
+    from aughor.routers._shared import canonical_schema
+    return _guide_out(conn_id, canonical_schema(conn_id, schema))
+
+
+@router.post("/exploration/{conn_id}/briefing/guide/draft")
+def draft_briefing_guide(conn_id: str, request: Request, schema: str | None = None):
+    """Draft the guide from what the exploration learned — ONE model call, then each check measured
+    once over the last complete week — kept as a new draft. A published version stays what editions
+    read until a person publishes this one."""
+    from aughor.briefing import guide as G
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    try:
+        G.draft_guide(conn_id, schema, by=f"explorer, at {_person(request)}'s request")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _guide_out(conn_id, schema)
+
+
+@router.put("/exploration/{conn_id}/briefing/guide")
+def edit_briefing_guide(conn_id: str, body: GuideIn, request: Request, schema: str | None = None):
+    """A person's edit, kept as a new draft under their name. Nothing an edition reads changes until
+    it is published."""
+    from aughor.briefing import guide as G
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    try:
+        parsed = G.BriefingGuide.model_validate(body.guide)
+    except Exception as exc:  # noqa: BLE001 — pydantic's message says which field
+        raise HTTPException(status_code=422, detail=f"the guide does not read: {exc}")
+    G.save(conn_id, schema, parsed, by=_person(request), note=body.note or "edited by a person")
+    return _guide_out(conn_id, schema)
+
+
+@router.post("/exploration/{conn_id}/briefing/guide/publish")
+def publish_briefing_guide(conn_id: str, request: Request, schema: str | None = None,
+                           version: int | None = None):
+    """Publish a version (the newest, unless named) under the person's name: from now on editions read
+    it, and its like-for-like rules apply."""
+    from aughor.briefing import guide as G
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    if G.publish(conn_id, schema, by=_person(request), version=version) is None:
+        raise HTTPException(status_code=404, detail="there is no guide version to publish")
+    return _guide_out(conn_id, schema)

@@ -77,9 +77,12 @@ _OWN_DOORS: dict[str, str] = {
 def _own_doors() -> dict[str, str]:
     # Arc ED, ED-4: a dashboard's versions carry their publication state, and a version written here would hold no
     # spec — its readers would read an empty App. Its kind is read where it is defined, when a write is asked for.
+    from aughor.briefing.guide import KIND as GUIDE
     from aughor.dashboards.versions import KIND as DASHBOARD
     return {**_OWN_DOORS, DASHBOARD: "a dashboard is kept, published and restored only through the dashboard's own "
-                                     "doors, which check it before it is written"}
+                                     "doors, which check it before it is written",
+            GUIDE: "a Briefing guide is kept and published only through its own doors, which name the person "
+                   "who publishes it"}
 
 
 def _refuse_own_doors(kind: str) -> None:

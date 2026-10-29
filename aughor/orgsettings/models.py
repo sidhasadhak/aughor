@@ -127,7 +127,8 @@ class OrgSettings(BaseModel):
     scheduled_model_work: Optional[bool] = Field(
         default=None,
         description="Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test "
-                    "questions, and re-tests after reviews. Off by default.",
+                    "questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that "
+                    "ran on its own. Off by default.",
     )
 
     # ── Working memory (CB-6) ──

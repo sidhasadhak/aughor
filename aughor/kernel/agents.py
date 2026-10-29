@@ -156,7 +156,7 @@ AGENTS: tuple[AgentCharter, ...] = (
     AgentCharter(
         id="briefer", name="Briefer", role="Verdict synthesizer",
         goal="Synthesize the briefing — the state of the business in one read.",
-        lane="background", job_kinds=("brief",), tools=("tree-reduce", "grounding"),
+        lane="background", job_kinds=("brief", "briefing_guide"), tools=("tree-reduce", "grounding"),
         icon="newspaper",
         # WP-7: a briefing runs real tree-reduce synthesis (LLM) over the workspace findings.
         # scheduled, so latency-tolerant; briefing prose quality is user-visible

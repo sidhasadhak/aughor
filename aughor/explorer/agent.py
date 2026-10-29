@@ -1338,6 +1338,21 @@ class SchemaExplorer:
                 from aughor.kernel.errors import tolerate
                 tolerate(_alert_exc, "alert proposals are best-effort after an exploration",
                          counter="explorer.alert_proposals")
+            # Arc BG-1 — the Briefing guide, drafted from what this run learned: the Briefer's job,
+            # keyed on the schema fingerprint. Never for a structure-only run (no model call may
+            # follow it) or a canvas; a re-run nobody started drafts only when the organisation
+            # lets Aughor make model calls nobody pressed for.
+            if not self._structure_only and not self.canvas_id:
+                try:
+                    from aughor.orgsettings.allows import allows
+                    if not self._gaps_only or allows("scheduled_model_work"):
+                        from aughor.briefing.guide import submit_draft
+                        await submit_draft(self.connection_id, self.schema_name,
+                                           fingerprint=str(self._state.get("schema_fingerprint") or ""))
+                except Exception as _guide_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_guide_exc, "the Briefing guide's draft is best-effort after an exploration",
+                             counter="explorer.briefing_guide")
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
                 f"{self._status.queries_executed}q, "
