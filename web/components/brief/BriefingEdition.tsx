@@ -44,7 +44,10 @@ function Kicker({ children, tone }: { children: React.ReactNode; tone?: "amber" 
 
 function Story({ story, period }: { story: EditionStory; period: string }) {
   const fig: EditionFigure | undefined = story.figures[0];
-  const dims = fig ? Object.entries(fig.cells || {}).filter(([, v]) => v.cells.length > 0) : [];
+  // The segments come from whichever of the story's figures has them — "AOV rose while YOOX orders fell" reads
+  // its storefronts from the orders figure, not the first one (seen live on LuxExperience, 2026-10-29).
+  const segFig = story.figures.find(f => Object.values(f.cells || {}).some(v => v.cells.length > 0));
+  const dims = segFig ? Object.entries(segFig.cells).filter(([, v]) => v.cells.length > 0) : [];
   const tone = story.reason === "new_level" ? "green" : story.reason === "watch" ? "dim" : "amber";
   return (
     <section data-testid="edition-story" style={{ display: "grid", gridTemplateColumns: fig ? "minmax(0,1.25fr) minmax(0,1fr)" : "1fr",
@@ -65,8 +68,10 @@ function Story({ story, period }: { story: EditionStory; period: string }) {
           {fig.usual && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Shaded: its usual range, the {fig.usual.n} before.</div>}
           {dims.slice(0, 1).map(([dim, v]) => (
             <div key={dim} style={{ marginTop: 12 }}>
-              <div className="aug-fs-xs" style={{ color: "var(--t1)", fontWeight: 500 }}>By {dim.replace(/_/g, " ")}, against its usual</div>
-              <SegmentBars cells={v.cells} better={fig.better} />
+              <div className="aug-fs-xs" style={{ color: "var(--t1)", fontWeight: 500 }}>
+                {segFig!.label} by {dim.replace(/_/g, " ")}, against its usual
+              </div>
+              <SegmentBars cells={v.cells} better={segFig!.better} />
               {v.cells.some(c => c.thin) && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Grey: under 30 rows — too few to call.</div>}
             </div>
           ))}

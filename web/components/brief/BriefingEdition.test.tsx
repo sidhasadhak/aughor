@@ -89,6 +89,16 @@ describe("BriefingEdition", () => {
     expect(screen.getByTestId("briefing-guide")).toBeTruthy();
   });
 
+  it("draws a story's segments from whichever of its figures has them", async () => {
+    const orders = { ...FIG, id: "orders", label: "Orders placed", cells: { platform: { why: "", cells: [
+      { group: "YOOX", current: 100, usual: 115.75, delta: -15.75, rel: -0.136, n: 100, thin: false, current_text: "100", usual_text: "115.75" }] } } };
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, stories: [{ ...WRITTEN.stories![0], check_ids: ["aov", "orders"], figures: [FIG, orders] }] });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    const story = await screen.findByTestId("edition-story");
+    expect(within(story).getByTestId("edition-segment-bars")).toBeTruthy();
+    expect(within(story).getByText(/Orders placed by platform/)).toBeTruthy();
+  });
+
   it("keeps a reader chosen as the person's setting and re-reads for them", async () => {
     api.readBriefingEdition.mockResolvedValue({ built: false, scope_key: "c", period: PERIOD, reader: "finance" });
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
