@@ -2146,9 +2146,10 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
 def write_briefing_edition(conn_id: str, request: Request = None, schema: str | None = None,
                            workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
                            end: str | None = None, reader: str | None = None):
-    """Write the range's edition for ``reader``: the guide's checks measured (one statement each), then
-    ONE model call — two when the first draft states a number nobody measured or claims a cause."""
-    from aughor.briefing import edition as E
+    """Write the range's edition for ``reader`` (Arc BC): the guide's checks measured, then the model
+    investigates — breakdowns and guarded SELECTs, at most 8 — and composes the page from blocks; code checks
+    every number and every block before it is kept. At most 7 model steps, under the Briefer's budget."""
+    from aughor.briefing.compose import write as W
     from aughor.routers._shared import canonical_schema
 
     schema = canonical_schema(conn_id, schema)
@@ -2159,7 +2160,7 @@ def write_briefing_edition(conn_id: str, request: Request = None, schema: str | 
     if off:
         raise HTTPException(status_code=409, detail=off.get("said") or "the Briefing is turned off for this dataset")
     try:
-        entry = E.build(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=reader)
+        entry = W.compose(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=reader)
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return {**entry, "built": True, "scope_key": scope_key}

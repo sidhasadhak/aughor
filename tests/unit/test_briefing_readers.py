@@ -55,10 +55,10 @@ def _guide():
 
 
 def test_a_proposed_reader_is_added_without_a_model(groups):
-    G.save("c1", None, _guide(), by="explorer")
-    G.add_reader("c1", None, group_id="product", name="Product", watches="pages", by="user:amit",
+    G.save("readers_c1", None, _guide(), by="explorer")
+    G.add_reader("readers_c1", None, group_id="product", name="Product", watches="pages", by="user:amit",
                  check_ids=["refunds", "ghost"], llm=object())         # any model call would fail
-    guide, rev = G.working_copy("c1", None)
+    guide, rev = G.working_copy("readers_c1", None)
     assert rev.by == "user:amit" and rev.state == "draft"
     assert [(r.group_id, r.check_ids) for r in guide.readers] == [("product", ["refunds"])]
     assert guide.proposed_readers == []                                # accepted, no longer proposed
@@ -99,14 +99,14 @@ def test_a_reader_from_plain_words_maps_to_checks_and_may_add_measured_ones(grou
     monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
     monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: ranges.resolve_range(
         "last_week", today=OCT29, lag_days=1, lag_source="learned"))
-    G.save("c2", None, _guide(), by="explorer")
+    G.save("readers_c2", None, _guide(), by="explorer")
     llm = _LLM(G._ReaderDraft(check_ids=["refunds"], new_checks=[
         G.Check(id="size_returns", label="Size returns", sql="COUNT(*)", tables=["returns"],
                 filters=["reason = 'size_fit'"], time_column="returns.return_date"),
         G.Check(id="bad", label="Bad", sql="SUM(nope)", tables=["returns"], time_column="returns.return_date")]))
-    G.add_reader("c2", None, group_id="product", name="Product", watches="pages and size returns",
+    G.add_reader("readers_c2", None, group_id="product", name="Product", watches="pages and size returns",
                  by="user:amit", llm=llm, runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
-    guide, _ = G.working_copy("c2", None)
+    guide, _ = G.working_copy("readers_c2", None)
     assert llm.calls == 1
     assert guide.reader("product").check_ids == ["refunds", "size_returns"]
     assert [c.id for c in guide.checks] == ["refunds", "size_returns"]   # the new check measured, kept
@@ -120,7 +120,7 @@ def test_no_guide_no_reader(groups):
 
 def test_a_subscription_sends_the_edition_written_for_its_reader(monkeypatch):
     from aughor.briefing import delivery
-    from aughor.briefing import edition as E
+    from aughor.briefing.compose import write as W
     from aughor.briefing.models import BriefSubscription
     from aughor.govern.departure import Measurement
 
@@ -130,15 +130,16 @@ def test_a_subscription_sends_the_edition_written_for_its_reader(monkeypatch):
     monkeypatch.setattr(G, "current", lambda *a, **k: (G.BriefingGuide(), None))
     asked = {}
 
-    def build(conn_id, spec, **kw):
+    def compose(conn_id, spec, **kw):
         asked.update(kw)
-        return {"headline": "Baskets far above usual", "lede": "The average order sat outside its usual range.",
-                "stories": [], "also_unusual": [], "steady": [], "period": ranges.range_block(spec)}
+        return {"blocks": [{"type": "lead", "text": "Baskets far above usual."},
+                           {"type": "figure", "text": "The average order sat outside its usual range."}],
+                "period": ranges.range_block(spec)}
 
-    monkeypatch.setattr(E, "build", build)
+    monkeypatch.setattr(W, "compose", compose)
     monkeypatch.setattr(ranges, "fresh_measurement", lambda *a, **k: Measurement(
         source="test", values=[], measured_at="2026-10-29T00:00:00Z", as_of="2026-10-25"))
-    out = delivery.build_period_departure(BriefSubscription(conn_id="c3", name="Weekly", period="week",
+    out = delivery.build_period_departure(BriefSubscription(conn_id="readers_c3", name="Weekly", period="week",
                                                             reader="group:finance"))
     assert asked["reader_id"] == "finance"
     assert "Baskets far above usual" in out["markdown"]

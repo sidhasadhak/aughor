@@ -154,14 +154,14 @@ def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
     scope_key = f"{sub.conn_id}:{sub.schema_name}" if sub.schema_name else sub.conn_id
     # Arc BG-4 — a dataset with a Briefing guide sends the edition written for the subscription's
     # reader ("group:<id>"; none = the organisation), judged line by line exactly as before.
-    from aughor.briefing import edition as E
     from aughor.briefing import guide as G
+    from aughor.briefing.compose import write as W
     guide, _rev = G.current(sub.conn_id, sub.schema_name or None)
     if guide is not None:
         reader = sub.reader.split(":", 1)[1] if (sub.reader or "").startswith("group:") else ""
-        brief = E.build(sub.conn_id, spec, scope_key=scope_key, schema=sub.schema_name or None,
-                        reader_id=reader, runner=runner)
-        sections = E.sheet_lines(brief)
+        brief = W.compose(sub.conn_id, spec, scope_key=scope_key, schema=sub.schema_name or None,
+                          reader_id=reader, runner=runner)
+        sections = W.sheet_lines(brief)
     else:
         brief = ranges.build_range_briefing(sub.conn_id, spec, scope_key=scope_key, domain_data=domain_data,
                                             profile=profile, workspace_id=sub.workspace_id or None,

@@ -54,24 +54,24 @@ def _guide(**kw) -> G.BriefingGuide:
 
 def test_a_version_needs_who_wrote_it():
     with pytest.raises(ValueError):
-        G.save("c1", None, _guide(), by="")
+        G.save("guide_c1", None, _guide(), by="")
 
 
 def test_a_published_version_stays_what_editions_read_after_a_later_draft():
-    G.save("c1", "s", _guide(business="first draft"), by="explorer")
-    used, rev = G.current("c1", "s")
+    G.save("guide_c1", "s", _guide(business="first draft"), by="explorer")
+    used, rev = G.current("guide_c1", "s")
     assert used.business == "first draft" and rev.state == "draft"      # a draft is read until one is published
 
-    G.publish("c1", "s", by="user:amit")
-    G.save("c1", "s", _guide(business="the explorer's redraft"), by="explorer")
+    G.publish("guide_c1", "s", by="user:amit")
+    G.save("guide_c1", "s", _guide(business="the explorer's redraft"), by="explorer")
 
-    used, rev = G.current("c1", "s")
+    used, rev = G.current("guide_c1", "s")
     assert used.business == "first draft" and rev.state == "published" and rev.by == "user:amit"
-    working, wrev = G.working_copy("c1", "s")
+    working, wrev = G.working_copy("guide_c1", "s")
     assert working.business == "the explorer's redraft" and wrev.state == "draft"
-    assert [r.version for r in G.versions("c1", "s")] == sorted(
-        (r.version for r in G.versions("c1", "s")), reverse=True)        # every version kept, newest first
-    assert len(G.versions("c1", "s")) == 3
+    assert [r.version for r in G.versions("guide_c1", "s")] == sorted(
+        (r.version for r in G.versions("guide_c1", "s")), reverse=True)        # every version kept, newest first
+    assert len(G.versions("guide_c1", "s")) == 3
 
 
 def test_a_check_that_cannot_be_measured_is_kept_out_with_why(con):
@@ -113,7 +113,7 @@ def test_a_redraft_keeps_a_persons_readers_and_proposes_the_rest(con, monkeypatc
     monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
     monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
     # a person already added Finance, watching one check
-    G.save("c2", None, _guide(readers=[G.Reader(group_id="finance", name="Finance", watches="cash",
+    G.save("guide_c2", None, _guide(readers=[G.Reader(group_id="finance", name="Finance", watches="cash",
                                                 check_ids=["refunds"])]), by="user:amit", publish=True)
     draft = G._Draft(
         business="A returns-heavy shop.", ranges=G.RangeNotes(week="steer"),
@@ -124,7 +124,7 @@ def test_a_redraft_keeps_a_persons_readers_and_proposes_the_rest(con, monkeypatc
                  G.Reader(group_id="product", name="Product", watches="pages", check_ids=["refunds", "ghost"]),
                  G.Reader(group_id="buying", name="Buying", watches="categories")])
     llm = _LLM(draft)
-    rev = G.draft_guide("c2", None, today=OCT29, llm=llm,
+    rev = G.draft_guide("guide_c2", None, today=OCT29, llm=llm,
                         runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
 
     assert llm.calls == 1 and rev.state == "draft" and rev.by == "explorer"
@@ -135,7 +135,7 @@ def test_a_redraft_keeps_a_persons_readers_and_proposes_the_rest(con, monkeypatc
     assert by_group["finance"].watches == "cash"                             # the person's reader kept as it was
     assert by_group["product"].check_ids == ["refunds"]                      # an existing group: a reader
     assert [r.name for r in body.proposed_readers] == ["Buying"]             # no such group: a proposal
-    used, used_rev = G.current("c2", None)
+    used, used_rev = G.current("guide_c2", None)
     assert used_rev.state == "published" and used.readers[0].watches == "cash"   # the redraft replaces nothing
 
 
