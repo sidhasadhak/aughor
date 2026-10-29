@@ -36,10 +36,13 @@ const SEGMENTS: { value: "standing" | RangePreset; label: string; title: string 
   { value: "year_to_date", label: "Year to date", title: "This year up to the newest settled day" },
 ];
 
-export function RangeControl({ value, onChange, disabled, standing, label = "Briefing range" }: {
+export function RangeControl({ value, onChange, disabled, standing, label = "Briefing range", presets }: {
   value: RangeChoice;
   onChange: (c: RangeChoice) => void;
   disabled?: boolean;
+  /** The ranges offered, in this order (Custom always last); every one when unsaid. The Briefing's edition
+   *  offers Week · Month · Year · Custom (Arc BG, §6 item 58). */
+  presets?: ("standing" | RangePreset)[];
   /** What "no range" is called on this screen. The Briefing's is "What we know"; a dashboard's
    *  cards, read with no range, run as they were written — which is a different thing to say. */
   standing?: { label: string; title: string };
@@ -58,7 +61,8 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
           setCustom(false); onChange({ preset: v } as RangeChoice);
         }}
         options={[
-          ...SEGMENTS.map(s => { const words = s.value === "standing" && standing ? standing : s; return { value: s.value, label: words.label, title: words.title }; }),
+          ...(presets ? presets.map(p => SEGMENTS.find(s => s.value === p)).filter((s): s is typeof SEGMENTS[number] => !!s) : SEGMENTS)
+            .map(s => { const words = s.value === "standing" && standing ? standing : s; return { value: s.value, label: words.label, title: words.title }; }),
           { value: "custom" as const, label: "Custom", title: "Any range, first and last day" },
         ]} />
       {custom && (

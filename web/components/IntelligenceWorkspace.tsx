@@ -24,6 +24,9 @@ const loading = () => (
 );
 
 const BriefingPanel    = dynamic(() => import("@/components/BriefingPanel").then(m => ({ default: m.BriefingPanel })),      { ssr: false, loading });
+// Arc BG — a connection's Briefing is an edition written from its guide, for a reader; a Data Canvas keeps
+// the earlier Briefing until its editions read the canvas's own tables.
+const BriefingEdition  = dynamic(() => import("@/components/brief/BriefingEdition").then(m => ({ default: m.BriefingEdition })), { ssr: false, loading });
 const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then(m => ({ default: m.OntologyPanel })),       { ssr: false, loading });
 const ProfileLayer     = dynamic(() => import("@/components/ProfileLayer").then(m => ({ default: m.ProfileLayer })),       { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
@@ -251,6 +254,10 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // content paints) → schema arrives → key change REMOUNTS the panel (blank) →
         // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
         // request issued twice under two scope keys. One settled mount, one wave.
+        if (id === "briefing" && !canvasId && schemaResolved) return (
+          <BriefingEdition key={`${connectionId}:${schema ?? ""}`} connectionId={connectionId} schema={schema}
+            workspaceId={workspaceId} />
+        );
         if (id === "briefing") return (canvasId || schemaResolved)
           ? (
             // The metric drawer: a measured figure on the Briefing opens beside it (§6 item 43).

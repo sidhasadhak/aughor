@@ -6281,6 +6281,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/briefing/edition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Briefing Edition
+         * @description A READ never builds: the range's edition for ``reader`` (a function group; "" = the
+         *     organisation; unnamed = the person's own reader) as it was last written, or ``{"built": false}``
+         *     with the range it would cover.
+         */
+        get: operations["read_briefing_edition_exploration__conn_id__briefing_edition_get"];
+        put?: never;
+        /**
+         * Write Briefing Edition
+         * @description Write the range's edition for ``reader``: the guide's checks measured (one statement each), then
+         *     ONE model call — two when the first draft states a number nobody measured or claims a cause.
+         */
+        post: operations["write_briefing_edition_exploration__conn_id__briefing_edition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/briefing/expected": {
         parameters: {
             query?: never;
@@ -6323,6 +6350,97 @@ export interface paths {
          *     falsely flagged just because the *nearest* citation wasn't its origin.
          */
         post: operations["ground_briefing_number_exploration__conn_id__briefing_ground_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Briefing Guide
+         * @description The connection's Briefing guide for a dataset — the newest version, what editions read, and every
+         *     version kept. A read: no model call, no warehouse query.
+         */
+        get: operations["read_briefing_guide_exploration__conn_id__briefing_guide_get"];
+        /**
+         * Edit Briefing Guide
+         * @description A person's edit, kept as a new draft under their name. Nothing an edition reads changes until
+         *     it is published.
+         */
+        put: operations["edit_briefing_guide_exploration__conn_id__briefing_guide_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/guide/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Briefing Guide
+         * @description Draft the guide from what the exploration learned — ONE model call, then each check measured
+         *     once over the last complete week — kept as a new draft. A published version stays what editions
+         *     read until a person publishes this one.
+         */
+        post: operations["draft_briefing_guide_exploration__conn_id__briefing_guide_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/guide/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Briefing Guide
+         * @description Publish a version (the newest, unless named) under the person's name: from now on editions read
+         *     it, and its like-for-like rules apply.
+         */
+        post: operations["publish_briefing_guide_exploration__conn_id__briefing_guide_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/guide/readers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Briefing Reader
+         * @description Add a reader — a function group — to the guide, as a new draft under the person's name. With the
+         *     proposal's checks no model is called; with only words, ONE call maps them onto the guide's checks and
+         *     may add up to four, each measured once before it is kept.
+         */
+        post: operations["add_briefing_reader_exploration__conn_id__briefing_guide_readers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -20522,6 +20640,18 @@ export interface components {
              */
             pii: string;
         };
+        /** GuideIn */
+        GuideIn: {
+            /** Guide */
+            guide: {
+                [key: string]: unknown;
+            };
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -21459,7 +21589,7 @@ export interface components {
             reason_to_read_runs?: boolean | null;
             /**
              * Scheduled Model Work
-             * @description Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test questions, and re-tests after reviews. Off by default.
+             * @description Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that ran on its own. Off by default.
              */
             scheduled_model_work?: boolean | null;
             /**
@@ -21989,6 +22119,20 @@ export interface components {
         QuestionRhythmRequest: {
             /** Rhythm */
             rhythm: string;
+        };
+        /** ReaderIn */
+        ReaderIn: {
+            /** Check Ids */
+            check_ids?: string[] | null;
+            /** Group Id */
+            group_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Watches
+             * @default
+             */
+            watches: string;
         };
         /**
          * ReasoningMessage
@@ -35919,6 +36063,82 @@ export interface operations {
             };
         };
     };
+    read_briefing_edition_exploration__conn_id__briefing_edition_get: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                reader?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_briefing_edition_exploration__conn_id__briefing_edition_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                reader?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_expected_next_exploration__conn_id__briefing_expected_post: {
         parameters: {
             query?: {
@@ -35968,6 +36188,180 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GroundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_briefing_guide_exploration__conn_id__briefing_guide_get: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_briefing_guide_exploration__conn_id__briefing_guide_put: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_briefing_guide_exploration__conn_id__briefing_guide_draft_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_briefing_guide_exploration__conn_id__briefing_guide_publish_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_briefing_reader_exploration__conn_id__briefing_guide_readers_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReaderIn"];
             };
         };
         responses: {

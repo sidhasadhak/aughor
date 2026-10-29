@@ -8031,6 +8031,190 @@ export async function readRangeBriefing(
   return res.json();
 }
 
+// ── Arc BG · an edition written from the connection's Briefing guide, for one reader ─────────
+
+/** One segment of a figure against its own usual range. */
+export interface EditionCell {
+  group: string;
+  current: number | null;
+  usual: number | null;
+  delta: number | null;
+  rel: number | null;
+  n: number;
+  /** Fewer than 30 rows: too few to call. */
+  thin: boolean;
+  current_text: string | null;
+  usual_text: string | null;
+}
+
+/** One measured check: the range, the range before, a year earlier and the usual range. */
+export interface EditionFigure {
+  id: string;
+  label: string;
+  metric: string | null;
+  unit: string;
+  better: "up" | "down" | "none";
+  why: string;
+  current: number | null;
+  previous: number | null;
+  last_year: number | null;
+  rel: number | null;
+  rel_last_year: number | null;
+  n: number;
+  status: string;
+  usual: { mean: number; low: number; high: number; n: number; mean_text: string | null;
+           low_text: string | null; high_text: string | null } | null;
+  z: number | null;
+  outside: boolean;
+  floor: boolean;
+  streak: number;
+  extreme: { which: "highest" | "lowest"; of: number } | null;
+  series: { label: string; start: string; value: number | null }[];
+  cells: Record<string, { cells: EditionCell[]; why: string }>;
+  current_text: string | null;
+  previous_text: string | null;
+  last_year_text: string | null;
+  like_for_like: string;
+  sql: string;
+}
+
+export interface EditionStory {
+  check_ids: string[];
+  reason: string;
+  title: string;
+  body: string;
+  figures: EditionFigure[];
+}
+
+export interface BriefingEdition {
+  built: boolean;
+  scope_key: string;
+  period: Omit<BriefingRangeBlock, "measured"> & { measured?: EditionFigure[] };
+  reader?: { group_id: string; name: string } | string;
+  headline?: string;
+  lede?: string;
+  stories?: EditionStory[];
+  also_unusual?: { check_id: string; line: string }[];
+  steady?: { check_id: string; line: string }[];
+  coming_up?: { name: string; date: string; line: string; source: string }[];
+  not_read?: { label: string; reason: string; tables: string[] }[];
+  /** Sentences the gates kept off the page, each with why — withheld is said, never implied. */
+  withheld?: { sentence: string; why: string }[];
+  floor?: string[];
+  guide?: { version: number | null; state: string | null };
+  model_calls?: number;
+  generated_at?: string;
+  /** Present when the dataset's Briefing is turned off — said, never an empty page. */
+  off?: BriefingOff;
+}
+
+/** The query a reader adds to an edition read or write: none = the person's own reader, "" = the organisation. */
+function editionQuery(range: BriefingRange, reader: string | undefined, schema?: string, workspaceId?: string): string {
+  const q = new URLSearchParams(rangeQuery(range, schema, workspaceId));
+  if (reader !== undefined) q.set("reader", reader);
+  return q.toString();
+}
+
+/** A READ never writes: the range's edition for a reader as last written, or `built: false`. */
+export async function readBriefingEdition(
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string,
+): Promise<BriefingEdition> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId)}`);
+  if (!res.ok) throw await refused(res, "Reading this edition");
+  return res.json();
+}
+
+/** Write the range's edition for a reader: the guide's checks measured, then one model call. */
+export async function writeBriefingEdition(
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string,
+): Promise<BriefingEdition> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId)}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Writing this edition");
+  return res.json();
+}
+
+export interface GuideCheck {
+  id: string; label: string; metric: string; sql: string; tables: string[]; filters: string[];
+  time_column: string; time_kind: string; unit: string; better: string; dimensions: string[]; why: string;
+  evidence: string;
+}
+
+export interface GuideReader { group_id: string; name: string; watches: string; check_ids: string[] }
+
+export interface BriefingGuideDoc {
+  business: string;
+  ranges: { week: string; month: string; year: string; custom: string; day: string };
+  news: Record<string, number>;
+  comparisons: { text: string; exclude_from_last_year: { column: string; value: string; until: string } | null;
+                 evidence: string }[];
+  calendar: { name: string; when: string; source: string; evidence: string }[];
+  care: { text: string; tables: string[]; evidence: string }[];
+  checks: GuideCheck[];
+  dropped: { id: string; label: string; reason: string }[];
+  readers: GuideReader[];
+  proposed_readers: GuideReader[];
+}
+
+export interface GuideVersion { version: number; state: string; by: string; note: string; created_at: string; published_at: string }
+
+export interface BriefingGuideResponse {
+  available: boolean;
+  guide: BriefingGuideDoc | null;
+  version: GuideVersion | null;
+  /** The version editions read: the newest published one, else the newest draft. */
+  editions_read: { version: number; state: string } | null;
+  published_version: number | null;
+  versions: GuideVersion[];
+}
+
+function guideUrl(connectionId: string, tail: string, schema?: string, extra?: Record<string, string>): string {
+  const q = new URLSearchParams(extra);
+  if (schema) q.set("schema", schema);
+  const qs = q.toString();
+  return `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide${tail}${qs ? `?${qs}` : ""}`;
+}
+
+export async function readBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(guideUrl(connectionId, "", schema));
+  if (!res.ok) throw await refused(res, "Reading the Briefing guide");
+  return res.json();
+}
+
+/** Draft the guide from what the exploration learned — one model call; kept as a draft. */
+export async function draftBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(guideUrl(connectionId, "/draft", schema), { method: "POST" });
+  if (!res.ok) throw await refused(res, "Drafting the Briefing guide");
+  return res.json();
+}
+
+/** A person's edit, kept as a new draft under their name. */
+export async function saveBriefingGuide(connectionId: string, guide: BriefingGuideDoc, note: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(guideUrl(connectionId, "", schema), {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guide, note }),
+  });
+  if (!res.ok) throw await refused(res, "Saving the Briefing guide");
+  return res.json();
+}
+
+export async function publishBriefingGuide(connectionId: string, schema?: string, version?: number): Promise<BriefingGuideResponse> {
+  const res = await fetch(guideUrl(connectionId, "/publish", schema, version !== undefined ? { version: String(version) } : undefined),
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Publishing the Briefing guide");
+  return res.json();
+}
+
+/** Add a reader (a function group) to the guide: with the proposal's checks no model is called. */
+export async function addBriefingReader(
+  connectionId: string, body: { group_id: string; name: string; watches: string; check_ids?: string[] }, schema?: string,
+): Promise<BriefingGuideResponse> {
+  const res = await fetch(guideUrl(connectionId, "/readers", schema), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await refused(res, "Adding the reader");
+  return res.json();
+}
+
 /** The range's approved metrics, measured — the Dashboard's default view. No narrative is written
  *  and no model is called; a Briefing built for the same window inside its cache age hands back
  *  its own figures (`from_briefing`), so the two pages cannot disagree about one. */

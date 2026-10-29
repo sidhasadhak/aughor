@@ -2131,6 +2131,9 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     scope_key = f"{conn_id}:{schema}" if schema else conn_id
     block = ranges.range_block(spec)
+    off = briefing_off_for(conn_id, schema)
+    if off:
+        return _off_response(off, scope_key, period=block, reader=reader)
     entry = peek_entry(E.cache_key(scope_key, spec, reader))
     same = isinstance(entry, dict) and entry.get("edition") and all(
         (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
@@ -2152,6 +2155,9 @@ def write_briefing_edition(conn_id: str, request: Request = None, schema: str | 
     reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    off = briefing_off_for(conn_id, schema)
+    if off:
+        raise HTTPException(status_code=409, detail=off.get("said") or "the Briefing is turned off for this dataset")
     try:
         entry = E.build(conn_id, spec, scope_key=scope_key, schema=schema, reader_id=reader)
     except LookupError as exc:

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 /**
- * The Briefing asks for its brief when it MOUNTS — it opens on the Day, reads that range's kept
- * Briefing, and when none is built asks for one: `POST /exploration/{conn}/briefing`, which the
- * server answers from its cache or by writing a narrative (a model call on a miss or a stale entry).
- * A mount nobody asked for is spend nobody asked for, so these tests count that request.
+ * The Briefing READS its edition when it MOUNTS — it opens on the Week and reads the edition last written
+ * for the person's reader (`GET /exploration/{conn}/briefing/edition`) — and writes one only on a click
+ * (Arc BG, §6 item 58: opening never spends). Until 2026-10-29 a mount with nothing built POSTed a build,
+ * a model call nobody asked for; these tests count the read, and that no write follows it.
  *
  * Measured on a stub API before the fix, for a connection that declares no schema: every re-render
  * of the shell posted the brief again — opening ⌘K, a nav count landing, switching to Profile — with
@@ -17,7 +17,7 @@ import { act, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
-import { buildRangeBriefing, getCatalogTree, readRangeBriefing } from "@/lib/api";
+import { buildRangeBriefing, getCatalogTree, readBriefingEdition, readBriefingGuide, readRangeBriefing, writeBriefingEdition } from "@/lib/api";
 
 // Every async call in the API module stays pending unless a test answers it, so the real
 // BriefingPanel renders its loading state and nothing reaches the no-network guard. Synchronous
@@ -64,6 +64,8 @@ async function settle() {
 // The Briefing is a large module graph behind a lazy layer. Pay its first import here: inside the
 // first test it outlasted the wait for the brief, and that test failed on loading, not on behaviour.
 beforeAll(async () => {
+  await import("@/components/brief/BriefingEdition");
+  // The Profile layer imports pieces of the earlier Briefing panel (its evidence drawer); pay that graph too.
   await import("@/components/BriefingPanel");
 }, 60_000);
 
@@ -84,9 +86,14 @@ beforeEach(() => {
   vi.mocked(buildRangeBriefing).mockReset().mockResolvedValue({
     narrative: "", headline_theme: "", citations: [], generated_at: null, available: false,
   });
+  // The Week's edition is not written yet: the page says so and waits for a click.
+  vi.mocked(readBriefingEdition).mockReset().mockResolvedValue({ built: false, scope_key: CONN, period: {} as never, reader: "" });
+  vi.mocked(readBriefingGuide).mockReset().mockResolvedValue({
+    available: false, guide: null, version: null, editions_read: null, published_version: null, versions: [] });
+  vi.mocked(writeBriefingEdition).mockReset();
 });
 
-const DAY = { preset: "yesterday" };
+const WEEK = { preset: "last_week" };
 
 describe("IntelligenceWorkspace — the Briefing asks for its brief only when it is opened", () => {
   it("never mounts the Briefing when the workspace opens on Profile, however often the shell re-renders", async () => {
@@ -100,11 +107,10 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
     expect(buildRangeBriefing).not.toHaveBeenCalled();
   });
 
-  it("asks once for an opened Briefing, through shell re-renders and a switch to Profile", async () => {
+  it("reads once for an opened Briefing, through shell re-renders and a switch to Profile, and never writes", async () => {
     const { rerender } = render(shell("briefing"));
-    await waitFor(() => expect(buildRangeBriefing).toHaveBeenCalledTimes(1), { timeout: 5_000 });
-    expect(readRangeBriefing).toHaveBeenLastCalledWith(CONN, DAY, "sales", "default");
-    expect(buildRangeBriefing).toHaveBeenLastCalledWith(CONN, DAY, "sales", "default", false);
+    await waitFor(() => expect(readBriefingEdition).toHaveBeenCalledTimes(1), { timeout: 5_000 });
+    expect(readBriefingEdition).toHaveBeenLastCalledWith(CONN, WEEK, undefined, "sales", "default");
 
     rerender(shell("briefing"));   // the shell re-renders: ⌘K opens, a nav count lands
     await settle();
@@ -114,8 +120,9 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
     rerender(shell("hub"));        // and the shell re-renders again
     await settle();
 
-    expect(readRangeBriefing).toHaveBeenCalledTimes(1);
-    expect(buildRangeBriefing).toHaveBeenCalledTimes(1);
+    expect(readBriefingEdition).toHaveBeenCalledTimes(1);
+    expect(writeBriefingEdition).not.toHaveBeenCalled();
+    expect(buildRangeBriefing).not.toHaveBeenCalled();
     // The scope was resolved once. A re-render is no reason to re-read the catalog tree, which
     // opens every connection.
     expect(getCatalogTree).toHaveBeenCalledTimes(1);
@@ -123,12 +130,13 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 
   it("briefs a connection that declares its schema on that schema, without reading the catalog", async () => {
     const { rerender } = render(shell("briefing", "sales"));
-    await waitFor(() => expect(buildRangeBriefing).toHaveBeenCalledTimes(1), { timeout: 5_000 });
+    await waitFor(() => expect(readBriefingEdition).toHaveBeenCalledTimes(1), { timeout: 5_000 });
     rerender(shell("briefing", "sales"));
     await settle();
 
-    expect(buildRangeBriefing).toHaveBeenCalledTimes(1);
-    expect(buildRangeBriefing).toHaveBeenLastCalledWith(CONN, DAY, "sales", "default", false);
+    expect(readBriefingEdition).toHaveBeenCalledTimes(1);
+    expect(readBriefingEdition).toHaveBeenLastCalledWith(CONN, WEEK, undefined, "sales", "default");
+    expect(writeBriefingEdition).not.toHaveBeenCalled();
     expect(getCatalogTree).not.toHaveBeenCalled();
   });
 });
