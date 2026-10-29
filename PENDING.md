@@ -1008,5 +1008,5 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       14 Sonnet calls for the proof.
     - [ ] Follow-ups, named not done: *Give it to a team* on a decision; the Data Canvas still mounts the earlier panel;
       a written query's numbers only re-measured at departure as raw cells (a change against usual quoted from a
-      breakdown is held); the gate checks a number exists in a source, not that the sentence uses it rightly; one
-      fix (no breakdown on a whole statement) awaits an API restart.
+      breakdown is held); the gate checks a number exists in a source, not that the sentence uses it rightly. Every
+      fix is live: `~/dev/aughor` detached at the branch tip, the API restarted on it (2026-10-29).
