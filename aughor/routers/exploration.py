@@ -2130,7 +2130,16 @@ def _edition_scope(conn_id: str, schema: str | None,
     if canvas.primary_connection_id != conn_id:
         raise HTTPException(status_code=422, detail="this canvas reads another connection")
     scope = resolve_execution_scope(conn_id, canvas_id)
-    schema = canonical_schema(conn_id, scope.eff_schema or schema)
+    # a canvas that names no schema works in its connection's default one — the dataset its chat reads
+    default = None
+    if not (scope.eff_schema or schema):
+        try:
+            from aughor.db.registry import get_meta
+            default = (get_meta(conn_id) or {}).get("schema_name")
+        except Exception as exc:  # noqa: BLE001 — an unreadable registry leaves the bare connection, as before
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a canvas's connection default schema is unreadable", counter="briefing.canvas.schema")
+    schema = canonical_schema(conn_id, scope.eff_schema or schema or default)
     if scope.is_full_schema:
         return schema, (f"{conn_id}:{schema}" if schema else conn_id), (), None
     return schema, f"canvas:{canvas_id}", tuple(scope.tables), canvas_id

@@ -420,3 +420,15 @@ def test_a_canvas_that_names_tables_has_its_own_edition_and_says_what_it_leaves_
     with pytest.raises(HTTPException) as refused:
         R.read_briefing_edition("compose_c1", preset="last_week", reader="", canvas_id="cv_named")
     assert refused.value.status_code == 422                                         # another connection's canvas
+
+
+def test_a_canvas_that_names_no_schema_reads_its_connections_default_dataset(setup, monkeypatch):
+    from aughor.routers import exploration as R
+
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda conn, schema: schema)
+    monkeypatch.setattr(R, "briefing_off_for", lambda *a, **k: None)
+    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "lux"})
+    _canvas(monkeypatch, "cv_lux", "compose_c1", [])
+    got = R.read_briefing_edition("compose_c1", preset="last_week", reader="", canvas_id="cv_lux")
+    assert got["scope_key"] == "compose_c1:lux" and got["canvas"]["dataset"] == "lux"

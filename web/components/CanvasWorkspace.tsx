@@ -675,7 +675,7 @@ export function CanvasWorkspace({ canvas, connections, allConnections, onClose, 
             display: wsTab === "briefing" ? "flex" : "none",
             flex: 1, flexDirection: "column", overflow: "hidden",
           }}>
-            <BriefingEdition connectionId={connectionId} schema={canvas.scopes[0]?.schema_name ?? undefined}
+            <BriefingEdition connectionId={connectionId} schema={canvas.scopes[0]?.schema_name ?? connection?.schema_name ?? undefined}
               workspaceId={workspaceId} canvasId={canvas.id} onDeepAnalysis={deepAnalysis} />
           </div>
         )}
