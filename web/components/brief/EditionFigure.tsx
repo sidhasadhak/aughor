@@ -194,7 +194,9 @@ export function LineMark({ points, fmt, mark }: { points: { x: string; v: number
       {mi >= 0 && mark && (
         <g>
           <line x1={X(mi)} x2={X(mi)} y1={pad.t} y2={h - pad.b} stroke="var(--b1)" strokeDasharray="3 3" />
-          <text x={X(mi) + 5} y={pad.t + 10} fontSize={11} fill="var(--t2)">{mark.text}</text>
+          {/* the label on whichever side of the line has room — a late mark's ran off the edge */}
+          <text x={mi > (points.length - 1) / 2 ? X(mi) - 5 : X(mi) + 5} y={pad.t + 10} fontSize={11} fill="var(--t2)"
+            textAnchor={mi > (points.length - 1) / 2 ? "end" : "start"}>{mark.text}</text>
         </g>
       )}
     </svg>

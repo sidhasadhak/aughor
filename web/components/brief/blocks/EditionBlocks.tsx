@@ -65,8 +65,12 @@ const col = (src: EditionSource, name?: string) => (name ? src.columns.indexOf(n
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const word = (v: unknown) => (v === true ? "Yes" : v === false ? "No" : v === null || v === undefined ? "—" : String(v));
 
+const SHARE_COL = /(rate|share|ratio|pct|percent)/i;
+
 function fmtFor(src: EditionSource, column: string | undefined, currency: string) {
-  const unit = src.unit || (column && MONEY_COL.test(column) ? currency : "");
+  // a written query carries no unit: a rate or share column of values within 0..1 reads as a percentage
+  const share = !src.unit && !!column && SHARE_COL.test(column);
+  const unit = src.unit || (share ? "ratio 0..1" : column && MONEY_COL.test(column) ? currency : "");
   return (v: unknown) => fmtValue(v, unit);
 }
 
