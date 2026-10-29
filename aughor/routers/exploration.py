@@ -2097,6 +2097,15 @@ def publish_briefing_guide(conn_id: str, request: Request, schema: str | None = 
 
 # ── Arc BG-3 · an edition, for one reader ────────────────────────────────────────────────────
 
+def _reader_of(request, reader: str | None) -> str:
+    """The reader a request names, else the person's own (Arc BG-4): their setting, else their first
+    function group, else the organisation."""
+    if reader is not None:
+        return reader
+    from aughor.briefing.guide import default_reader
+    return default_reader(_person(request) if request is not None else "")
+
+
 def _edition_spec(conn_id: str, preset: str | None, start: str | None, end: str | None,
                   workspace_id: str | None, schema: str | None):
     spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
@@ -2106,17 +2115,19 @@ def _edition_spec(conn_id: str, preset: str | None, start: str | None, end: str 
 
 
 @router.get("/exploration/{conn_id}/briefing/edition")
-def read_briefing_edition(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
-                          preset: str | None = None, start: str | None = None, end: str | None = None,
-                          reader: str = ""):
+def read_briefing_edition(conn_id: str, request: Request = None, schema: str | None = None,
+                          workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
+                          end: str | None = None, reader: str | None = None):
     """A READ never builds: the range's edition for ``reader`` (a function group; "" = the
-    organisation) as it was last written, or ``{"built": false}`` with the range it would cover."""
+    organisation; unnamed = the person's own reader) as it was last written, or ``{"built": false}``
+    with the range it would cover."""
     from aughor.briefing import edition as E
     from aughor.briefing import ranges
     from aughor.knowledge.briefing import peek_entry
     from aughor.routers._shared import canonical_schema
 
     schema = canonical_schema(conn_id, schema)
+    reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     scope_key = f"{conn_id}:{schema}" if schema else conn_id
     block = ranges.range_block(spec)
@@ -2129,15 +2140,16 @@ def read_briefing_edition(conn_id: str, schema: str | None = None, workspace_id:
 
 
 @router.post("/exploration/{conn_id}/briefing/edition")
-def write_briefing_edition(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
-                           preset: str | None = None, start: str | None = None, end: str | None = None,
-                           reader: str = ""):
+def write_briefing_edition(conn_id: str, request: Request = None, schema: str | None = None,
+                           workspace_id: str | None = None, preset: str | None = None, start: str | None = None,
+                           end: str | None = None, reader: str | None = None):
     """Write the range's edition for ``reader``: the guide's checks measured (one statement each), then
     ONE model call — two when the first draft states a number nobody measured or claims a cause."""
     from aughor.briefing import edition as E
     from aughor.routers._shared import canonical_schema
 
     schema = canonical_schema(conn_id, schema)
+    reader = _reader_of(request, reader)
     spec = _edition_spec(conn_id, preset, start, end, workspace_id, schema)
     scope_key = f"{conn_id}:{schema}" if schema else conn_id
     try:
@@ -2145,3 +2157,30 @@ def write_briefing_edition(conn_id: str, schema: str | None = None, workspace_id
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return {**entry, "built": True, "scope_key": scope_key}
+
+
+class ReaderIn(BaseModel):
+    group_id: str
+    name: str
+    watches: str = ""
+    #: A proposed reader a person accepts carries the guide's own choice — no model call.
+    check_ids: list[str] | None = None
+
+
+@router.post("/exploration/{conn_id}/briefing/guide/readers")
+def add_briefing_reader(conn_id: str, body: ReaderIn, request: Request, schema: str | None = None):
+    """Add a reader — a function group — to the guide, as a new draft under the person's name. With the
+    proposal's checks no model is called; with only words, ONE call maps them onto the guide's checks and
+    may add up to four, each measured once before it is kept."""
+    from aughor.briefing import guide as G
+    from aughor.routers._shared import canonical_schema
+
+    schema = canonical_schema(conn_id, schema)
+    try:
+        G.add_reader(conn_id, schema, group_id=body.group_id, name=body.name, watches=body.watches,
+                     by=_person(request), check_ids=body.check_ids)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _guide_out(conn_id, schema)

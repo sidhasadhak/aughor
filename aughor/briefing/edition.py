@@ -642,3 +642,17 @@ def build(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
                            recipe=f"edition@{reader.group_id or '_organisation'}")
     entry["version"] = kept
     return entry
+
+
+def sheet_lines(entry: dict) -> list[tuple[str, list[str]]]:
+    """An edition as the sections a send departs with, each line judged at the departure gate: its prose
+    against the queries re-run at the send (`ranges.fresh_measurement` reads each figure's own SQL)."""
+    prose = [p for p in (entry.get("headline"), entry.get("lede")) if p]
+    prose += [f"{s['title']} {s['body']}".strip() for s in entry.get("stories") or []]
+    lines = [a["line"] for a in entry.get("also_unusual") or []] + [s["line"] for s in entry.get("steady") or []]
+    out = []
+    if prose:
+        out.append(("narrative", prose))
+    if lines:
+        out.append(("measured", lines))
+    return out

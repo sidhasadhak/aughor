@@ -444,3 +444,95 @@ async def submit_draft(conn_id: str, schema: Optional[str], *, fingerprint: str 
     return await kernel().submit(
         JOB_KIND, _work, conn_id=conn_id,
         idempotency_key=f"{JOB_KIND}:{conn_id}:{schema or ''}:{fingerprint or 'unfingerprinted'}")
+
+
+# ── Arc BG-4 · readers ───────────────────────────────────────────────────────────────────────
+
+def default_reader(principal: str = "") -> str:
+    """Who a person reads as when they have not said: their ``briefing_reader`` setting, else the first
+    function group they belong to, else "" — the organisation."""
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.db.user_prefs import get_preferences
+        chosen = (get_preferences().get("preferences") or {}).get("briefing_reader")
+        if isinstance(chosen, str):
+            return chosen
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the reader setting is unreadable; the reader falls back to the person's groups",
+                 counter="briefing.reader.pref")
+    if principal:
+        try:
+            from aughor.org.context import current_org_id
+            from aughor.rbac.groups import groups_of
+            mine = [g for g in groups_of(current_org_id() or "default", principal)
+                    if g in {f["id"] for f in function_groups()}]
+            if mine:
+                return sorted(mine)[0]
+        except Exception as exc:  # noqa: BLE001
+            tolerate(exc, "the person's groups are unreadable; they read as the organisation",
+                     counter="briefing.reader.groups")
+    return ""
+
+
+class _ReaderDraft(BaseModel):
+    """What the model writes for a new reader: the checks it watches, and at most four new ones."""
+    check_ids: list[str] = Field(default_factory=list, description="Ids of the guide's checks this reader watches")
+    new_checks: list[Check] = Field(default_factory=list, description="At most four checks the guide lacks")
+
+
+_READER_SYSTEM = """\
+A company's Briefing guide lists the checks its editions measure. A new reader has been added — a
+department or a team — with what they watch in their own words. Choose the guide's checks this reader
+watches (by id). When something they watch is not covered, add at most four new checks, each an
+aggregate expression over ONE table of the schema (with tables, filters and time_column table.column)
+or an approved metric by its exact name. Use only real table and column names. Say nothing about causes."""
+
+
+def add_reader(conn_id: str, schema: Optional[str], *, group_id: str, name: str, watches: str, by: str,
+               check_ids: Optional[list[str]] = None, runner=None, llm=None):
+    """Add a reader to the guide as a new draft. With ``check_ids`` (a proposed reader a person accepts)
+    no model is called; with only words, one call maps them onto the guide's checks and may add up to
+    four, each measured once before it is kept. Raises LookupError when there is no guide yet."""
+    from aughor.briefing import ranges
+    from aughor.knowledge import period_brief
+
+    guide, _rev = working_copy(conn_id, schema)
+    if guide is None:
+        raise LookupError("this dataset has no Briefing guide yet — draft it first")
+    if not group_id:
+        raise ValueError("a reader is a function group; name its id")
+    added: list[Check] = []
+    dropped: list[DroppedCheck] = []
+    if check_ids is None:
+        if llm is None:
+            from aughor.llm.provider import get_provider
+            llm = get_provider("coder")
+        from aughor.business_profile.infer import gather_context
+        schema_text, _domains = gather_context(conn_id, schema)
+        user = json.dumps({"reader": {"name": name, "watches": watches},
+                           "checks": [{"id": c.id, "label": c.label, "why": c.why} for c in guide.checks],
+                           "approved_metrics": [m.name for m in ranges.governed_metrics(conn_id, schema)]},
+                          ensure_ascii=False) + "\n\nSCHEMA:\n" + schema_text
+        got: _ReaderDraft = llm.complete(system=_READER_SYSTEM, user=user, response_model=_ReaderDraft,
+                                         temperature=0.2)
+        check_ids = list(got.check_ids)
+        if got.new_checks:
+            spec, why = ranges.resolve_for(conn_id, "last_week", schema=schema)
+            if spec is None:
+                raise ValueError(f"the last complete week could not be resolved: {why}")
+            metrics_by_name = {m.name: m for m in ranges.governed_metrics(conn_id, schema)}
+            with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+                added, dropped = verify_checks(got.new_checks[:4], metrics_by_name=metrics_by_name,
+                                               run_sql=run_sql, dialect=dialect, windows=spec.windows()[:2])
+            taken = {c.id for c in guide.checks}
+            added = [c for c in added if c.id not in taken]
+            check_ids += [c.id for c in added]
+    checks = guide.checks + added
+    known = {c.id for c in checks}
+    reader = Reader(group_id=group_id, name=name, watches=watches,
+                    check_ids=[c for c in dict.fromkeys(check_ids) if c in known])
+    updated = guide.model_copy(update={
+        "checks": checks, "dropped": guide.dropped + dropped,
+        "readers": [r for r in guide.readers if r.group_id != group_id] + [reader],
+        "proposed_readers": [r for r in guide.proposed_readers if r.name.lower() != name.lower()]})
+    return save(conn_id, schema, updated, by=by, note=f"reader added: {name}")
