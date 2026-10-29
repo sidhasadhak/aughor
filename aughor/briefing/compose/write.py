@@ -189,9 +189,14 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                 f["name"] = f["label"]
             sources: dict[str, S.Source] = {f["id"]: S.from_check(f, period_word=period) for f in figures}
             columns: dict[str, list[str]] = {}
+            from aughor.semantic.metric_statement import is_statement
             for check in guide.checks:
                 m, _why = E.measurable(check, metrics_by_name)
-                if m is not None:
+                # a whole statement cannot be cut by a segment: offer it no column to break it down by
+                stmt = m is not None and is_statement(str((m.get("sql") if isinstance(m, dict) else getattr(m, "sql", "")) or ""))
+                if m is not None and stmt:
+                    columns[check.id] = []
+                elif m is not None:
                     columns[check.id] = list(dict.fromkeys(list(check.dimensions)
                                                            + breakdown_columns(conn_id, _dated_table(m))))
             outcome: dict = {}

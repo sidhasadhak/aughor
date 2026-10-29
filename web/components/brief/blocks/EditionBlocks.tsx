@@ -269,16 +269,18 @@ function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
   const bare = block.type === "lead" || block.type === "quiet";
   const drills = drillOptions(block, ctx.sources, ctx.drillColumns);
   const decision = block.type === "decision";
+  // A block the model left untitled still says what it shows: its source's own label.
+  const title = block.title || (src && !bare && !decision && block.type !== "control" ? src.label : "");
   return (
     <section data-testid="edition-block" data-type={block.type}
       style={{ margin: "16px 0", padding: bare ? "4px 0" : "16px 18px", borderRadius: "var(--r3)",
                background: bare ? "transparent" : decision ? "var(--amb1)" : "var(--bg-1)",
                border: bare ? "none" : `1px solid ${block.kicker === "Drill" ? "var(--blue4)" : "var(--b1)"}` }}>
-      {(block.kicker || block.title) && block.type !== "control" && (
+      {(block.kicker || title) && block.type !== "control" && (
         <>
           {block.kicker && <div className="aug-fs-xs" style={{ letterSpacing: "0.08em", textTransform: "uppercase",
                                                                color: decision ? "var(--amb4)" : "var(--t3)", marginBottom: 6 }}>{block.kicker}</div>}
-          {block.title && <h3 className="aug-fs-h1" style={{ color: "var(--t1)", fontWeight: 600, margin: "0 0 8px", lineHeight: 1.3 }}>{block.title}</h3>}
+          {title && <h3 className="aug-fs-h1" style={{ color: "var(--t1)", fontWeight: 600, margin: "0 0 8px", lineHeight: 1.3 }}>{title}</h3>}
         </>
       )}
       {known ? BODY[block.type as BlockType]({ block, src, ctx })

@@ -243,3 +243,15 @@ def test_a_read_finds_the_composed_edition_and_never_an_older_one(setup, monkeyp
     _composed(setup, monkeypatch)
     got = R.read_briefing_edition("compose_c1", preset="last_week", reader="")
     assert got["built"] is True and got["blocks"][0]["type"] == "lead"
+
+
+def test_a_whole_statement_check_is_offered_no_column_to_break_it_down_by(setup, monkeypatch):
+    stmt = G.Check(id="net", label="Net sales", sql="SELECT SUM(gmv) FROM orders", tables=["orders"],
+                   time_column="orders.order_date", unit="EUR")
+    G.save("compose_c1", None, G.BriefingGuide(business="A shop.", checks=[SALES, AOV, stmt]), by="user:amit",
+           publish=True)
+    loop, seen = _loop([("compose", {"blocks": [LEAD]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+    assert entry["drill_columns"]["net"] == [] and entry["drill_columns"]["sales"] == ["platform", "is_top"]

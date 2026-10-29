@@ -107,6 +107,8 @@ describe("BriefingEdition", () => {
     expect(types).toEqual(["lead", "bridge", "control", "compare", "table", "map", "sankey", "decision"]);
     expect(screen.getByTestId("edition-bridge")).toBeTruthy();
     expect(screen.getByText(/which this page cannot draw/)).toBeTruthy();
+    const odd = screen.getAllByTestId("edition-block")[6];
+    expect(within(odd).getByRole("heading").textContent).toBe("Sales");        // untitled: its source's own label
     expect(screen.getByTestId("edition-withheld").textContent).toContain("Promotions lifted sales.");
     const spec = JSON.parse(screen.getByTestId("vega").getAttribute("data-spec") ?? "{}");
     expect(spec.transform[0].lookup).toBe("properties.name");                   // countries looked up by name
