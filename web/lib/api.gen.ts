@@ -6298,10 +6298,32 @@ export interface paths {
         put?: never;
         /**
          * Write Briefing Edition
-         * @description Write the range's edition for ``reader``: the guide's checks measured (one statement each), then
-         *     ONE model call — two when the first draft states a number nobody measured or claims a cause.
+         * @description Write the range's edition for ``reader`` (Arc BC): the guide's checks measured, then the model
+         *     investigates — breakdowns and guarded SELECTs, at most 8 — and composes the page from blocks; code checks
+         *     every number and every block before it is kept. At most 7 model steps, under the Briefer's budget.
          */
         post: operations["write_briefing_edition_exploration__conn_id__briefing_edition_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/briefing/edition/drill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drill Briefing Edition
+         * @description One level deeper on a block's source (Arc BC-4): the same check broken down by another column — within a
+         *     segment when one is named — compiled, no model call. Written into the edition under the block it came from.
+         */
+        post: operations["drill_briefing_edition_exploration__conn_id__briefing_edition_drill_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19983,6 +20005,20 @@ export interface components {
             area: string;
             /** Schema Name */
             schema_name?: string | null;
+        };
+        /** DrillIn */
+        DrillIn: {
+            /**
+             * After
+             * @default
+             */
+            after: string;
+            /** Column */
+            column: string;
+            /** Segment */
+            segment?: string | number | boolean | null;
+            /** Source Id */
+            source_id: string;
         };
         /** DrillRequest */
         DrillRequest: {
@@ -36118,6 +36154,48 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drill_briefing_edition_exploration__conn_id__briefing_edition_drill_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                reader?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DrillIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

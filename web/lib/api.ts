@@ -8078,12 +8078,48 @@ export interface EditionFigure {
   sql: string;
 }
 
-export interface EditionStory {
-  check_ids: string[];
-  reason: string;
-  title: string;
-  body: string;
-  figures: EditionFigure[];
+/** One block of an edition (Arc BC): its type decides which fields matter; it never carries a number. */
+export interface EditionBlock {
+  id: string;
+  type: string;
+  kicker?: string;
+  title?: string;
+  /** Words with citations written {words|source_id}. */
+  text?: string;
+  sub?: string;
+  source?: string;
+  chain?: string[];
+  label?: string;
+  value?: string;
+  compare?: string;
+  series?: string;
+  x?: string;
+  columns?: string[];
+  link?: string;
+  column?: string;
+  listens?: string;
+  mark?: { at: string; text: string } | null;
+  actions?: string[];
+  /** Added by code (the floor), or a drill written into the page. */
+  by_code?: boolean;
+}
+
+/** A governed query a block reads: its rows, its SQL, what the guards did. */
+export interface EditionSource {
+  id: string;
+  label: string;
+  kind: "check" | "breakdown" | "query" | "drill" | "answer";
+  columns: string[];
+  rows: unknown[][];
+  sql: string;
+  status: string;
+  facts: Record<string, unknown>;
+  receipts: Record<string, unknown>[];
+  caveats: string[];
+  note: string;
+  error: string;
+  unit: string;
+  better: "up" | "down" | "none" | string;
 }
 
 export interface BriefingEdition {
@@ -8091,21 +8127,39 @@ export interface BriefingEdition {
   scope_key: string;
   period: Omit<BriefingRangeBlock, "measured"> & { measured?: EditionFigure[] };
   reader?: { group_id: string; name: string } | string;
-  headline?: string;
-  lede?: string;
-  stories?: EditionStory[];
-  also_unusual?: { check_id: string; line: string }[];
-  steady?: { check_id: string; line: string }[];
-  coming_up?: { name: string; date: string; line: string; source: string }[];
-  not_read?: { label: string; reason: string; tables: string[] }[];
+  composed?: boolean;
+  blocks?: EditionBlock[];
+  sources?: Record<string, EditionSource>;
   /** Sentences the gates kept off the page, each with why — withheld is said, never implied. */
-  withheld?: { sentence: string; why: string }[];
+  withheld?: { block?: string; sentence: string; why: string }[];
+  /** Blocks the model wrote that could not be drawn, each with why. */
+  left_out?: string[];
+  /** Set when the model did not finish and code drew the edition from what was measured. */
+  drawn_by_code?: string;
+  drill_columns?: Record<string, string[]>;
+  not_read?: { label: string; reason: string; tables: string[] }[];
   floor?: string[];
   guide?: { version: number | null; state: string | null };
-  model_calls?: number;
+  model_steps?: number;
+  queries?: number;
+  stop_reason?: string;
   generated_at?: string;
+  /** The dataset's currency as a person confirmed it, or "" (plain amounts). */
+  currency_code?: string;
   /** Present when the dataset's Briefing is turned off — said, never an empty page. */
   off?: BriefingOff;
+}
+
+/** One level deeper on a block's source — compiled, no model — written into the edition under `after`. */
+export async function drillBriefingEdition(
+  connectionId: string, range: BriefingRange, reader: string | undefined,
+  body: { source_id: string; column: string; segment?: string | number | boolean | null; after?: string },
+  schema?: string, workspaceId?: string,
+): Promise<{ block: EditionBlock; source: EditionSource; at: number }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/drill?${editionQuery(range, reader, schema, workspaceId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await refused(res, "Drilling into this block");
+  return res.json();
 }
 
 /** The query a reader adds to an edition read or write: none = the person's own reader, "" = the organisation. */
