@@ -2135,7 +2135,8 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
     if off:
         return _off_response(off, scope_key, period=block, reader=reader)
     entry = peek_entry(E.cache_key(scope_key, spec, reader))
-    same = isinstance(entry, dict) and entry.get("edition") and all(
+    # Arc BC: only a composed edition is one; an Arc BG edition kept before it reads as not written yet
+    same = isinstance(entry, dict) and entry.get("composed") and all(
         (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
     if not same:
         return {"built": False, "period": block, "reader": reader, "scope_key": scope_key}

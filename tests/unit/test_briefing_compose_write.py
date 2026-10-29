@@ -228,3 +228,18 @@ def test_a_send_measures_a_written_querys_numbers_again_at_departure(con, setup)
     after = W.departure_measurement("compose_c1", entry, runner=setup["runner"])
     assert not any(abs(v - a_sales) < 0.01 for v in after.values)         # the old figure no longer stands
     assert any(abs(v - (a_sales + 9999.0)) < 0.01 for v in after.values)
+
+
+def test_a_read_finds_the_composed_edition_and_never_an_older_one(setup, monkeypatch):
+    from aughor.knowledge.briefing import keep_entry
+    from aughor.routers import exploration as R
+
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda conn, schema: schema)
+    monkeypatch.setattr(R, "briefing_off_for", lambda *a, **k: None)
+    block = ranges.range_block(_week())
+    keep_entry(f"compose_c1#{_week().key}@_organisation", {"edition": True, "headline": "old", "period": block})
+    assert R.read_briefing_edition("compose_c1", preset="last_week", reader="")["built"] is False   # Arc BG's shape
+    _composed(setup, monkeypatch)
+    got = R.read_briefing_edition("compose_c1", preset="last_week", reader="")
+    assert got["built"] is True and got["blocks"][0]["type"] == "lead"
