@@ -147,3 +147,46 @@ def test_the_generic_lifecycle_doors_refuse_to_write_a_guide():
 def test_the_briefer_runs_the_guide_job():
     from aughor.kernel.agents import charter_for_kind
     assert charter_for_kind(G.JOB_KIND).id == "briefer"
+
+
+# ── what the live LuxExperience draft taught (2026-10-29) ────────────────────────────────────
+
+class _Metric:
+    def __init__(self, name, label, **kw):
+        self.name, self.label = name, label
+        self.__dict__.update(kw)
+
+
+def test_a_check_may_name_an_approved_metric_by_its_label_and_is_kept_by_its_id(con):
+    """The first live draft named 16 of 18 metrics by label; every one was kept out as unknown."""
+    aov = _Metric("average_order_value_aov", "Average Order Value (AOV)")
+    assert G.approved_metric("Average Order Value (AOV)", {aov.name: aov}) is aov
+    assert G.approved_metric("average_order_value_aov", {aov.name: aov}) is aov
+    assert G.approved_metric("Basket size", {aov.name: aov}) is None
+
+
+@pytest.fixture
+def shop():
+    c = duckdb.connect()
+    c.execute("""CREATE TABLE orders AS
+        SELECT d::DATE AS order_date, p AS platform
+        FROM range(DATE '2025-09-01', DATE '2026-10-29', INTERVAL 1 DAY) t(d), (SELECT unnest(['A', 'B']) AS p)
+        UNION ALL SELECT d::DATE, 'OUT' FROM range(DATE '2025-09-01', DATE '2026-05-01', INTERVAL 1 DAY) t(d)""")
+    c.execute("CREATE TABLE corporate_events AS SELECT DATE '2026-04-30' AS day, 'divestiture' AS kind, "
+              "'OUT sold to a buyer' AS note")
+    yield c
+    c.close()
+
+
+def test_a_storefront_that_stopped_is_found_from_the_data(shop):
+    gmv = _Metric("gmv", "GMV", time_column="orders.order_date", tables=["orders"],
+                  dimensions=["platform", "no such column"])
+    ended = G.ended_segments([gmv], _run(shop), through=date(2026, 10, 28))
+    assert ended == [{"table": "orders", "column": "platform", "value": "OUT", "last": "2026-04-30", "rows": 242}]
+
+
+def test_a_small_table_is_read_in_full_for_the_drafter(shop):
+    schema_text = "TABLE: orders  (1,124 rows)\n  order_date DATE\n\nTABLE: corporate_events  (1 rows)\n  day DATE\n"
+    text = G.reference_rows(schema_text, _run(shop))
+    assert "corporate_events:" in text and "OUT sold to a buyer" in text
+    assert "orders:" not in text                                       # a large table is never dumped

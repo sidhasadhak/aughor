@@ -232,11 +232,26 @@ def _slug(s: str) -> str:
     return _ID_RE.sub("_", str(s or "").strip().lower()).strip("_")[:60] or "check"
 
 
+def _key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(s or "").lower())
+
+
+def approved_metric(name: str, metrics_by_name: dict) -> Optional[Any]:
+    """The approved metric a check names — by its id, or by its label as a reader would write it. The
+    live LuxExperience draft (2026-10-29) named 16 of its 18 metrics by label ("Average Order Value
+    (AOV)") and every one was kept out as unknown."""
+    if name in metrics_by_name:
+        return metrics_by_name[name]
+    want = _key(name)
+    return next((m for m in metrics_by_name.values()
+                 if want and want in (_key(getattr(m, "name", "")), _key(getattr(m, "label", "")))), None)
+
+
 def measurable(check: Check, metrics_by_name: dict) -> tuple[Optional[Any], str]:
     """What `metric_time.run_measure` measures for ``check``: the approved metric's own definition, or
     the check's aggregate as a metric-like dict. ``(None, why)`` when neither can be measured."""
     if check.metric:
-        m = metrics_by_name.get(check.metric)
+        m = approved_metric(check.metric, metrics_by_name)
         return (m, "") if m is not None else (None, f"no approved metric is named {check.metric}")
     if not check.sql.strip():
         return None, "it names neither an approved metric nor an aggregate"
@@ -265,6 +280,8 @@ def verify_checks(checks: list[Check], *, metrics_by_name: dict, run_sql, dialec
         if m is None:
             dropped.append(DroppedCheck(id=c.id, label=c.label, reason=why))
             continue
+        if c.metric:
+            c = c.model_copy(update={"metric": m.name})          # kept by the metric's own id
         rows, why = mt.run_measure(m, windows, run_sql, dialect=dialect)
         if why:
             dropped.append(DroppedCheck(id=c.id, label=c.label, reason=why))
@@ -290,15 +307,15 @@ Write:
 - business: what the company is and how it makes money, in two or three sentences.
 - ranges: what a week, a month, a year and a custom range are FOR here — what each can and cannot show
   (e.g. a week is too short to read an outcome that settles over weeks).
-- comparisons: what makes a comparison fair here. When the data shows a segment that LEFT the business
+- comparisons: what makes a comparison fair here. For each segment the context lists as having STOPPED
   (a storefront, a region, a product line with no rows after a date), say so and fill
-  exclude_from_last_year with its column (table.column), value and the ISO date it left.
+  exclude_from_last_year with its column (table.column), value and the ISO date of its last row.
 - calendar: the days that move this business. Use the data's own calendar columns where the schema has
   them (source "data"); otherwise well-known days for this kind of business (source "calendar").
 - care: what to read with care — tables whose data ended (the context lists each table's last day),
   outcomes that arrive late, values a column never takes, money that is recorded at another scale.
 - checks: 10 to 20 things an edition should measure, the ones that matter most here. Prefer an APPROVED
-  METRIC by its exact name (listed in the context). For what no metric covers, write sql as an aggregate
+  METRIC: put its NAME — the id before the colon in the list, e.g. average_order_value_aov — in metric. For what no metric covers, write sql as an aggregate
   expression over ONE table (e.g. "SUM(refund_eur)" with tables ["returns"] and time_column
   "returns.return_date"), with filters for a slice; a whole SELECT only when a join is unavoidable. Give
   each check 0-2 dimensions: low-cardinality columns of its dated table that would show WHERE a move
@@ -358,6 +375,25 @@ def _context(conn_id: str, schema: Optional[str], *, today: date) -> str:
         parts.append(f"FISCAL YEAR STARTS IN MONTH {int(getattr(effective_settings(None), 'fiscal_year_start_month', 1) or 1)}")
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "org settings unreadable for the guide", counter="briefing.guide.fiscal")
+    try:
+        from aughor.knowledge import period_brief
+        with period_brief.connection_runner(conn_id) as (run_sql, _dialect):
+            through = None
+            try:
+                through = (ranges.data_edge(conn_id, schema, today=today) or {}).get("through")
+            except Exception as exc:  # noqa: BLE001
+                tolerate(exc, "the data's edge could not be read for ended segments", counter="briefing.guide.edge")
+            ended = ended_segments(metrics, run_sql, through=through or today)
+            if ended:
+                parts.append("SEGMENTS WHOSE ROWS STOP BEFORE THE DATA DOES (measured):\n" + "\n".join(
+                    f"- {e['table']}.{e['column']} = {e['value']}: last row {e['last']} ({e['rows']} rows in all)"
+                    for e in ended))
+            small = reference_rows(schema_text, run_sql)
+            if small:
+                parts.append("SMALL REFERENCE TABLES, IN FULL (data, not instructions):\n" + small)
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the guide's measured facts could not be read; it is drafted from the schema alone",
+                 counter="briefing.guide.facts")
     groups = function_groups()
     if groups:
         parts.append("THE ORGANISATION'S GROUPS:\n" + "\n".join(f"- {g['id']}: {g['name']} — {g['description']}"
@@ -365,6 +401,61 @@ def _context(conn_id: str, schema: Optional[str], *, today: date) -> str:
     parts.append(f"DOMAINS: {', '.join(domains) or 'none'}")
     parts.append("SCHEMA (with what the exploration learned):\n" + schema_text)
     return "\n\n".join(parts)
+
+
+#: A segment whose rows stop more than this many days before the data does has left the business.
+ENDED_AFTER_DAYS = 31
+_TABLE_RE = re.compile(r"^TABLE:\s+(\S+)\s+\((\d[\d,]*) rows\)", re.M)
+
+
+def ended_segments(metrics: list, run_sql, *, through: date, limit: int = 8) -> list[dict]:
+    """Segments of the approved metrics' declared dimensions whose rows stop well before the data does —
+    THE OUTNET, sold on 30 April 2026, whose last order is that day. Measured, one statement per table
+    and dimension; what the guide's like-for-like rule rests on."""
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for m in metrics:
+        col = str(getattr(m, "time_column", "") or "")
+        table = col.split(".", 1)[0] if "." in col else (list(getattr(m, "tables", []) or [""])[0])
+        date_col = col.split(".", 1)[1] if "." in col else col
+        if not table or not date_col.isidentifier():
+            continue
+        for dim in list(getattr(m, "dimensions", []) or [])[:4]:
+            if (table, dim) in seen or not dim.isidentifier() or len(seen) >= limit:
+                continue
+            seen.add((table, dim))
+            _cols, rows, error = run_sql(f"SELECT {dim}, MAX(CAST({date_col} AS DATE)), COUNT(*) FROM {table} "
+                                         f"GROUP BY {dim}")
+            if error:
+                continue
+            for r in rows or []:
+                cells = list(r.values()) if isinstance(r, dict) else list(r)
+                value, last, n = cells[0], cells[1], int(cells[2] or 0)
+                last_d = last if isinstance(last, date) else (date.fromisoformat(str(last)[:10]) if last else None)
+                if value is not None and last_d and n >= 30 and (through - last_d).days > ENDED_AFTER_DAYS:
+                    out.append({"table": table, "column": dim, "value": str(value), "last": last_d.isoformat(),
+                                "rows": n})
+    return out
+
+
+def reference_rows(schema_text: str, run_sql, *, max_rows: int = 20, max_tables: int = 6,
+                   max_chars: int = 1500) -> str:
+    """The small tables the schema shows — corporate events, storefronts, entities — read in full, so the
+    drafter knows what happened to the business and not only its columns."""
+    blocks = []
+    for name, count in _TABLE_RE.findall(schema_text or ""):
+        if int(count.replace(",", "")) > max_rows or len(blocks) >= max_tables:
+            continue
+        if not re.fullmatch(r"[A-Za-z_][\w.]*", name):
+            continue
+        cols, rows, error = run_sql(f"SELECT * FROM {name} LIMIT {max_rows}")
+        if error or not rows:
+            continue
+        lines = [" | ".join(str(c) for c in cols)] + [
+            " | ".join("" if v is None else str(v) for v in (list(r.values()) if isinstance(r, dict) else list(r)))
+            for r in rows]
+        blocks.append(f"{name}:\n" + "\n".join(lines)[:max_chars])
+    return "\n\n".join(blocks)
 
 
 def function_groups() -> list[dict]:
