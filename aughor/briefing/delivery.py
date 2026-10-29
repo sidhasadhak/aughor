@@ -162,13 +162,14 @@ def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
         brief = W.compose(sub.conn_id, spec, scope_key=scope_key, schema=sub.schema_name or None,
                           reader_id=reader, runner=runner)
         sections = W.sheet_lines(brief)
+        measurement = W.departure_measurement(sub.conn_id, brief, runner=runner)
     else:
         brief = ranges.build_range_briefing(sub.conn_id, spec, scope_key=scope_key, domain_data=domain_data,
                                             profile=profile, workspace_id=sub.workspace_id or None,
                                             runner=runner)
         sections = ranges.sheet_lines(brief)
+        measurement = ranges.fresh_measurement(sub.conn_id, brief, runner=runner)
     block = brief.get("period") or {}
-    measurement = ranges.fresh_measurement(sub.conn_id, brief, runner=runner)
     kept: list = []
     held: list[str] = []
     for kind, lines in sections:

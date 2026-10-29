@@ -210,3 +210,21 @@ def test_a_question_asked_from_an_edition_reads_what_is_on_screen(setup, monkeyp
     assert "ON SCREEN, IN ORDER:" in block and "Where it came from" in block
     assert "Sales rose to €42.1k" in block and "{" not in block.split("ON SCREEN")[1].split("WHAT IT READS")[0]
     assert "sales_by_is_top: Sales by is top (drill" not in block and "sales_by_is_top" in block
+
+
+# ── BC-6 · a send is judged against its sources re-run ───────────────────────────────────────
+
+def test_a_send_measures_a_written_querys_numbers_again_at_departure(con, setup):
+    sql = ("SELECT platform, SUM(gmv) AS sales FROM orders WHERE order_date >= DATE '2026-10-19' "
+           "AND order_date < DATE '2026-10-26' GROUP BY 1 ORDER BY 1")
+    first = con.execute(sql).fetchall()
+    entry = {"period": {"label": "Weekly", "measured": [], "last_day": "2026-10-25"},
+             "sources": {"by_store": {"id": "by_store", "label": "Sales by storefront", "kind": "query",
+                                      "columns": ["platform", "sales"], "rows": [[r[0], float(r[1])] for r in first], "sql": sql}}}
+    before = W.departure_measurement("compose_c1", entry, runner=setup["runner"])
+    a_sales = float(dict(first)["A"])
+    assert any(abs(v - a_sales) < 0.01 for v in before.values)            # measured at the send
+    con.execute("INSERT INTO orders VALUES (DATE '2026-10-20', 'A', false, 9999.0)")   # late rows land
+    after = W.departure_measurement("compose_c1", entry, runner=setup["runner"])
+    assert not any(abs(v - a_sales) < 0.01 for v in after.values)         # the old figure no longer stands
+    assert any(abs(v - (a_sales + 9999.0)) < 0.01 for v in after.values)

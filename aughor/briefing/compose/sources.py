@@ -66,7 +66,8 @@ def cell(v: Any) -> Any:
     return str(v)
 
 
-def _rows(rows: list) -> list[list[Any]]:
+def json_rows(rows: list) -> list[list[Any]]:
+    """Result rows as JSON carries them, at most :data:`MAX_ROWS`."""
     out = []
     for r in rows[:MAX_ROWS]:
         cells = list(r.values()) if isinstance(r, dict) else list(r)
@@ -163,7 +164,7 @@ def query(source_id: str, label: str, conn_id: str, sql: str, *, purpose: str, s
         return Source(id=source_id, label=label, kind="query", sql=sql, status="refused", error=str(out["error"]),
                       repair=dict(out.get("repair") or {}), receipts=list(out.get("guard_receipts") or []))
     return Source(id=source_id, label=label, kind="query", columns=[str(c) for c in out.get("columns") or []],
-                  rows=_rows(list(out.get("rows") or [])), sql=str(out.get("sql") or sql),
+                  rows=json_rows(list(out.get("rows") or [])), sql=str(out.get("sql") or sql),
                   receipts=list(out.get("guard_receipts") or []), caveats=[str(c) for c in out.get("caveats") or []],
                   note=purpose + (" (more rows than shown)" if out.get("truncated") else ""))
 

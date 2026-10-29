@@ -384,3 +384,35 @@ def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
     entry = {**entry, "blocks": blocks, "sources": {**(entry.get("sources") or {}), sid: new.model_dump(mode="json")}}
     keep_entry(key, entry)
     return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json"), "at": at}
+
+
+# ── BC-6 · a send, judged against its sources re-run ─────────────────────────────────────────
+
+def departure_measurement(conn_id: str, entry: dict, *, runner=None):
+    """Law 1's basis for sending an edition: the checks' compiled statements RE-RUN uncached
+    (`ranges.fresh_measurement`), and every other source's own SQL re-run too — a line quoting the largest orders
+    is measured against those orders as they stand at the send, never against the rows the edition was written
+    from. A source that fails now contributes nothing, so a line resting only on it is held."""
+    import dataclasses
+
+    from aughor.briefing import ranges
+    from aughor.knowledge import period_brief
+
+    base = ranges.fresh_measurement(conn_id, entry, runner=runner)
+    rerun: dict[str, S.Source] = {}
+    try:
+        with (runner or (lambda: period_brief.connection_runner(conn_id, cached=False)))() as (run_sql, _dialect):
+            for sid, raw in (entry.get("sources") or {}).items():
+                src = S.Source.model_validate(raw)
+                if src.kind == "check" or not src.sql or src.status == "refused":
+                    continue
+                cols, rows, error = run_sql(src.sql)
+                if error:
+                    continue
+                rerun[sid] = src.model_copy(update={"columns": [str(c) for c in cols or []],
+                                                    "rows": S.json_rows(list(rows or [])), "facts": {}})
+    except Exception as exc:  # noqa: BLE001 — a source that cannot be re-run holds its lines; the send goes on
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an edition's sources could not be re-run at departure; their lines hold",
+                 counter="briefing.compose.remeasure")
+    return dataclasses.replace(base, values=list(base.values) + P.allowed_numbers(rerun))
