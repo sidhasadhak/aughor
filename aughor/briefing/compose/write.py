@@ -289,7 +289,9 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
              "period": {**block, "measured": figures}, "not_read": measured["not_read"], "floor": measured["floor"],
              "generated_at": datetime.now(timezone.utc).isoformat(), "currency_code": currency,
              "model_steps": counts["steps"] + counts["compose"], "queries": counts["queries"],
-             "stop_reason": stop_reason}
+             "stop_reason": stop_reason,
+             # what each check can be drilled by — the page offers these, a drill accepts no other
+             "drill_columns": columns}
     keep_entry(E.cache_key(scope_key, spec, reader.group_id), entry)
     entry["version"] = versions.record(conn_id, entry, scope_key=scope_key, range_key=spec.key,
                                        recipe=f"edition@{reader.group_id or '_organisation'}")
@@ -351,6 +353,9 @@ def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
         raise ValueError("only a check or a breakdown can be drilled; a written query is not compiled from one")
     if not column.isidentifier() or not all(str(k).isidentifier() for k in within):
         raise ValueError("a drill names a column")
+    offered = (entry.get("drill_columns") or {}).get(check_id)
+    if offered is not None and column not in offered:
+        raise ValueError(f"{check_id} is drilled by {', '.join(offered) or 'no column'}, not {column}")
     guide, _rev = G.current(conn_id, schema)
     check = guide.check(check_id) if guide else None
     if check is None:

@@ -113,6 +113,7 @@ def test_the_model_investigates_then_composes_and_code_checks_it(setup, monkeypa
     assert [b["type"] for b in entry["blocks"]] == ["lead", "bridge", "table", "figure"]
     assert {"sales_by_is_top", "top_orders", "sales", "aov"} <= set(entry["sources"])
     assert entry["model_steps"] == 4 and entry["queries"] == 1 and entry["stop_reason"] == "concluded"
+    assert entry["drill_columns"]["sales"] == ["platform", "is_top"]
     assert entry["guide"]["state"] == "published" and entry["version"]["kept"] is True
     assert peek_entry(f"compose_c1#{_week().key}@_organisation")["composed"] is True           # kept per reader
     assert "the 8 weeks before" in seen[0]["question"] or "usual" in seen[0]["question"]
@@ -193,6 +194,9 @@ def test_a_check_drills_by_any_column_and_a_written_query_cannot_be_drilled(setu
                 runner=setup["runner"])
     with _pt.raises(LookupError):
         W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="nope", column="platform",
+                runner=setup["runner"])
+    with _pt.raises(ValueError, match="drilled by platform, is_top"):
+        W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="sales", column="gmv",
                 runner=setup["runner"])
 
 
