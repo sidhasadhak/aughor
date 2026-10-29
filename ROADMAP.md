@@ -15378,7 +15378,8 @@ the browser** · **measure the premise before building.**
     - **The model may write SELECTs for follow-ups,** through the guarded door the Analyst uses; dashboards unchanged.
     - **Decisions in v1:** Investigate and Not now; *Give it to a team* is a follow-up.
     - **The canvas replaces Arc BG's edition page;** controls filter in the browser; the map is the choropleth.
-    - **Words:** canvas · block · source · drill.
+    - **Words:** edition (an *open canvas* in prose only — *Canvas* is the Data Canvas) · block · source of a
+      block · drill.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 
