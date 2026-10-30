@@ -6,11 +6,20 @@
  * its own usual — a change drawn as the change. A segment behind fewer than 30 rows is drawn grey: too
  * few to call. The model never draws; the server never sends a picture, only the numbers.
  */
+import { useMeasured } from "@/components/dashboards/cellBox";
 import type { EditionFigure } from "@/lib/api";
 import { rangeWord, toneOf } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
 
 const W = 360;
+
+/** The width a chart is shown at — so it draws at that width, its text at the size it was written. A picture drawn at
+ *  W and stretched to a block's full width doubled its labels (the live LuxExperience line chart, 2026-10-30). W until
+ *  measured, and in a test's DOM. */
+function useDrawnWidth(): [(el: HTMLDivElement | null) => void, number] {
+  const [ref, size] = useMeasured<HTMLDivElement>();
+  return [ref, size.width > 0 ? size.width : W];
+}
 
 function dayMonth(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -21,6 +30,7 @@ const TONE: Record<string, string> = { good: "var(--grn4)", bad: "var(--amb4)", 
 
 /** The figure's ranges as bars, the usual range shaded behind them. */
 export function RangeBars({ figure, period }: { figure: EditionFigure; period: string }) {
+  const [box, W] = useDrawnWidth();
   const pts = figure.series.filter(p => p.value !== null) as { label: string; start: string; value: number }[];
   if (pts.length < 2) return null;
   const u = figure.usual;
@@ -33,7 +43,7 @@ export function RangeBars({ figure, period }: { figure: EditionFigure; period: s
   const every = pts.length > 10 ? 3 : 2;
   const tone = TONE[toneOf(figure)];
   return (
-    <svg viewBox={`0 0 ${W} ${h}`} width="100%" role="img" data-testid="edition-range-bars"
+    <div ref={box}><svg viewBox={`0 0 ${W} ${h}`} width="100%" role="img" data-testid="edition-range-bars"
       aria-label={`${figure.label} by ${rangeWord(period)}, this ${rangeWord(period)} last`}>
       {u && (
         <>
@@ -60,7 +70,7 @@ export function RangeBars({ figure, period }: { figure: EditionFigure; period: s
           </g>
         );
       })}
-    </svg>
+    </svg></div>
   );
 }
 
@@ -71,6 +81,7 @@ const STEP_FILL = { base: "var(--chart-deemph)", total: "var(--blue4)", up: "var
 /** Where a total came from: a start, each step's change, the end. */
 export function Bridge({ steps, fmt }: { steps: { label: string; value: number; kind: "base" | "delta" | "total" }[];
                                          fmt: (v: number) => string }) {
+  const [box, W] = useDrawnWidth();
   if (steps.length < 2) return null;
   const H = 210, pad = { l: 8, r: 8, t: 18, b: 34 };
   let run = 0;
@@ -85,7 +96,7 @@ export function Bridge({ steps, fmt }: { steps: { label: string; value: number; 
   const Y = (v: number) => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
   const bw = (W - pad.l - pad.r) / bars.length;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="bridge" data-testid="edition-bridge">
+    <div ref={box}><svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="bridge" data-testid="edition-bridge">
       {bars.map((b, i) => {
         const x = pad.l + i * bw + bw * 0.18, w = bw * 0.64;
         const y1 = Y(Math.max(b.a, b.b)), y2 = Y(Math.max(lo, Math.min(b.a, b.b)));
@@ -98,7 +109,7 @@ export function Bridge({ steps, fmt }: { steps: { label: string; value: number; 
           </g>
         );
       })}
-    </svg>
+    </svg></div>
   );
 }
 
@@ -174,6 +185,7 @@ export function Multiples({ series, fmt }: { series: { name: string; points: { x
 /** A line over the periods read, with one mark where something changed. */
 export function LineMark({ points, fmt, mark }: { points: { x: string; v: number }[]; fmt: (v: number) => string;
                                                    mark?: { at: string; text: string } | null }) {
+  const [box, W] = useDrawnWidth();
   if (points.length < 2) return null;
   const h = 160, pad = { l: 48, r: 14, t: 14, b: 22 };
   const vals = points.map(p => p.v), lo = Math.min(...vals), hi = Math.max(...vals);
@@ -181,7 +193,7 @@ export function LineMark({ points, fmt, mark }: { points: { x: string; v: number
   const X = (i: number) => pad.l + (W - pad.l - pad.r) * i / (points.length - 1);
   const mi = mark ? points.findIndex(p => p.x === mark.at) : -1;
   return (
-    <svg viewBox={`0 0 ${W} ${h}`} width="100%" role="img" aria-label="line" data-testid="edition-line">
+    <div ref={box}><svg viewBox={`0 0 ${W} ${h}`} width="100%" role="img" aria-label="line" data-testid="edition-line">
       <text x={pad.l - 6} y={Y(hi) + 4} textAnchor="end" fontSize={10.5} fill="var(--t3)">{fmt(hi)}</text>
       <text x={pad.l - 6} y={Y(lo) + 4} textAnchor="end" fontSize={10.5} fill="var(--t3)">{fmt(lo)}</text>
       <polyline fill="none" stroke="var(--blue4)" strokeWidth={2} points={vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ")} />
@@ -199,7 +211,7 @@ export function LineMark({ points, fmt, mark }: { points: { x: string; v: number
             textAnchor={mi > (points.length - 1) / 2 ? "end" : "start"}>{mark.text}</text>
         </g>
       )}
-    </svg>
+    </svg></div>
   );
 }
 

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /** Arc BG/BC — an edition's shapes, drawn from what was measured: the range last, a step coloured by its sign. */
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EditionFigure } from "@/lib/api";
-import { Bridge, Multiples, PairRows, RangeBars } from "./EditionFigure";
+import { Bridge, LineMark, Multiples, PairRows, RangeBars } from "./EditionFigure";
 
 const FIG = { id: "aov", label: "Average order", better: "up", current: 645,
   usual: { mean: 590, low: 566, high: 614, n: 8, mean_text: "€590", low_text: "€566", high_text: "€614" },
@@ -45,5 +45,35 @@ describe("EditionFigure", () => {
                                                               { name: "Desktop", points: pts([2.0, 1.9, 2.1, 2.6]) }]} />);
     expect(screen.getByTestId("edition-multiples").textContent).toContain("App");
     expect(screen.getByTestId("edition-multiples").textContent).toContain("5.20%");
+  });
+
+  describe("drawn at the width it is shown", () => {
+    // jsdom lays nothing out: give every box the width a full block has on the page, and a ResizeObserver that reads it
+    afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+    const shownAt = (px: number) => {
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(px);
+      vi.stubGlobal("ResizeObserver", class { constructor(private cb: () => void) {} observe() { this.cb(); } disconnect() {} });
+    };
+    const POINTS = [{ x: "2026-10-05", v: 0.33 }, { x: "2026-10-12", v: 0.15 }, { x: "2026-10-19", v: 0.04 }];
+
+    it("draws a full-width line at its shown width, so its labels keep their size", () => {
+      shownAt(770);
+      render(<LineMark points={POINTS} fmt={v => `${(v * 100).toFixed(1)}%`} mark={{ at: "2026-10-12", text: "returns still arriving" }} />);
+      expect(screen.getByTestId("edition-line").getAttribute("viewBox")).toBe("0 0 770 160");
+    });
+
+    it("draws a bridge and a figure's bars at their shown widths too", () => {
+      shownAt(640);
+      render(<Bridge steps={[{ label: "Usual", value: 100, kind: "base" }, { label: "A", value: 20, kind: "delta" },
+                             { label: "This week", value: 120, kind: "total" }]} fmt={v => String(v)} />);
+      expect(screen.getByTestId("edition-bridge").getAttribute("viewBox")).toBe("0 0 640 210");
+      render(<RangeBars figure={FIG} period="week" />);
+      expect(screen.getByTestId("edition-range-bars").getAttribute("viewBox")).toBe("0 0 640 118");
+    });
+
+    it("draws at its own width until the box is measured", () => {
+      render(<LineMark points={POINTS} fmt={String} />);
+      expect(screen.getByTestId("edition-line").getAttribute("viewBox")).toBe("0 0 360 160");
+    });
   });
 });
