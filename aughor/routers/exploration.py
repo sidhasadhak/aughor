@@ -651,6 +651,8 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
         except SchemaScopeUnavailable as e:
             logger.warning("domains scope unavailable (conn=%s schema=%s): %s", conn_id, schema, e)
             return {}   # fail closed — no domains beats another schema's domains
+    from aughor.explorer.budget import domain_cap
+    _cap = domain_cap(sum(1 for k in budgets if not str(k).endswith("__cap")) or 1)
     result = {}
     for domain, insights in by_domain.items():
         result[domain] = {
@@ -659,7 +661,8 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
             "findings": insights,
             "insights": insights,
             "queries_used": budgets.get(domain, 0),
-            "budget_cap": budgets.get(f"{domain}__cap", 15),
+            # the run's own share (`explorer.budget.domain_cap`), unless a person set this domain's cap
+            "budget_cap": budgets.get(f"{domain}__cap", _cap),
             "angles_covered": coverage.get(domain, []),
         }
     # Impact-rank + plausibility for the cards (same authority as the brief). Pass the

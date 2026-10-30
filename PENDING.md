@@ -1031,9 +1031,25 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       session) on the move nothing explains — a scheduled send only where the organisation allows model work nobody
       asked for; a `context` block draws a deep analysis, a finding or a decision with a way to open it, and the page
       reads again every 30 s while a started analysis runs.
-    - [ ] The producing half, named not built (the user, 2026-10-30): the explorer "firing 200, 300 or 500 queries" to
-      cover every angle, dimension, metric and period, and Slack, Gmail and other discussions and decisions feeding the
-      same context the Briefing and the Data Canvas read.
+    - [~] The producing half (the user, 2026-10-30: "Do this task here" for both):
+      - [x] Discussions as context. Measured: outside words are kept only as said claims (Slack note:/decide:, the
+        decision email door, a Google file's comments, meeting notes) and a decision's evidence — no discussions store,
+        none read back by dataset or date. Built on that one store, read only: `sources.known_discussions` (a month
+        before a range to two months after, who / where / when, the decision it is about) feeds the edition and a
+        context block; `sources.known_context` puts the platform's latest deep analyses, decisions, discussions and
+        strongest findings in every question's context (quick answer and conversation). LuxExperience holds 4 said
+        claims (two Google Docs comments, two meeting notes). Not built: reading a Gmail mailbox — the OAuth card and
+        `gmail.messages.*` exist, nothing stores mail; it needs a person to connect an account.
+      - [x] Explorer coverage, built: a run asks up to `explorer.budget.COVERAGE_QUERIES` = 300 questions of a dataset,
+        shared across its domains (at least 15 each; it was a flat 15 per domain — LuxExperience's single-domain run
+        asked 15); one question each 1.5 s (was 5 s); a question's prompt carries the domain's newest 40 findings (all of
+        them grew tokens with the square of the run); synthesis 12 findings / 36 pairs (was 8 / 24); the Explorer's
+        charter 6M tokens / 2 h (was 200k / 10 min), still under the month's exploration budget; a period label
+        (fiscal_year, signup_fy, order_month) is no longer summed as a measure. The domains route shows the run's real
+        cap.
+      - [ ] Live run on `luxexperience` — waits on the user's word for the spend.
+      - [ ] Named, not built: approved metrics and dimension × period cells in the coverage manifest (it keeps only
+        profiled measures by design); "Explore 5 more" writes its cap under the bare connection (no caller left).
       - A breakdown's segments are re-derived at departure from its re-run rows (`sources.rerun`), so a change
         against usual departs on the change measured at the send.
       - The number gate binds a number to what it is said of (`spec.misused`): a cited number to its cited source, to

@@ -82,14 +82,26 @@ def _material_dimensions(cols: Iterable[Any], *, max_cardinality: int = _MAX_DIM
     return sorted(set(out))
 
 
+#: The last word of a column that names a period, not a quantity: summed, a fiscal year or a signup year is a number
+#: with no meaning ("Summing fiscal_year gives 133,524" was kept as a finding on LuxExperience, 2026-10-29).
+_PERIOD_WORDS = frozenset({"year", "yr", "fy", "quarter", "qtr", "month", "week", "isoweek", "dow", "doy", "season"})
+
+
+def _is_period_label(name: str) -> bool:
+    words = [w for w in str(name or "").lower().replace(".", "_").split("_") if w]
+    return bool(words) and words[-1] in _PERIOD_WORDS
+
+
 def _measures(cols: Iterable[Any]) -> list[Any]:
-    """Profiled measures worth a baseline — a numeric measure with a real unit/range, not a key."""
+    """Profiled measures worth a baseline — a numeric measure with a real unit/range, not a key, not a period label."""
     out = []
     for c in cols:
         if (getattr(c, "semantic_type", "") or "").lower() != "measure" or getattr(c, "is_fk", False):
             continue
         if _is_coordinate(getattr(c, "column", "")):
             continue                      # geo coordinate — numeric but not a business measure
+        if _is_period_label(getattr(c, "column", "")):
+            continue                      # a year, quarter or month number — a label, not a quantity
         if getattr(c, "value_range", None) or getattr(c, "unit", None) or getattr(c, "value_interpretation", None):
             out.append(c)
     return out

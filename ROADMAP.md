@@ -12885,6 +12885,9 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
 - **2026-10-30, the Briefing reads the platform's own intelligence** ("Build it straight"): its deep analyses with their
   verdicts and claim licence, the explorer's findings and the decisions in the record are sources it cites; a cause is
   said only on a causal-licensed deep analysis; it starts one deep analysis on the move nothing explains.
+- **2026-10-30, discussions and coverage**: what people said in Slack, by email and in documents (the record's said
+  claims) is read by the Briefing and put in every question's context with the platform's earlier work; an exploration
+  run now asks up to 300 questions of a dataset across its domains (it asked 15).
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

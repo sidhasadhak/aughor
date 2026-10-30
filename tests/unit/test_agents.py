@@ -71,7 +71,8 @@ class TestGovernance:
     def test_charter_defaults_when_unset(self):
         gov = effective_governance("scout")
         assert gov.enabled is True
-        assert gov.token_budget == 200_000   # the charter default
+        from aughor.kernel.agents import get_charter
+        assert gov.token_budget == get_charter("scout").default_budget.token_budget   # the charter's own default
         assert is_enabled("scout") is True
 
     def test_app_override(self):

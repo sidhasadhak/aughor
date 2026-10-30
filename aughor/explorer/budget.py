@@ -22,6 +22,21 @@ from typing import Optional
 #: intelligence a first run reads, and the model-written explanation of a watched figure's move.
 SPENDING_KINDS = ["exploration", "profile", "explain_move"]
 
+#: How many questions one exploration run asks of a dataset, across its domains — the user, 2026-10-30: "firing 200,
+#: 300 or 500 queries in order to understand connection in its absolute entirety. So any angle any dimension any
+#: metric any period of time should be covered". Measured that day: LuxExperience's run asked 15 (one domain, capped at
+#: 15). The coverage manifest's frontier decides WHICH questions; this says how many a run may ask. The month's
+#: exploration budget (below) still bounds what it spends.
+COVERAGE_QUERIES = 300
+#: The fewest a domain is given, however many domains share the run.
+MIN_DOMAIN_QUESTIONS = 15
+
+
+def domain_cap(n_domains: int) -> int:
+    """The questions each of a run's ``n_domains`` domains may ask: its share of `COVERAGE_QUERIES`, at least
+    `MIN_DOMAIN_QUESTIONS`. A person's own ``{domain}__cap`` still wins."""
+    return max(MIN_DOMAIN_QUESTIONS, COVERAGE_QUERIES // max(1, int(n_domains or 1)))
+
 
 def month_start(now: Optional[datetime] = None) -> str:
     """The first instant of this month, in the ledger's own ISO form (`kernel.ledger._now`)."""
