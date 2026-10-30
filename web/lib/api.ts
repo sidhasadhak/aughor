@@ -8031,6 +8031,291 @@ export async function readRangeBriefing(
   return res.json();
 }
 
+// ── Arc BG · an edition written from the connection's Briefing guide, for one reader ─────────
+
+/** One segment of a figure against its own usual range. */
+export interface EditionCell {
+  group: string;
+  current: number | null;
+  usual: number | null;
+  delta: number | null;
+  rel: number | null;
+  n: number;
+  /** Fewer than 30 rows: too few to call. */
+  thin: boolean;
+  current_text: string | null;
+  usual_text: string | null;
+}
+
+/** One measured check: the range, the range before, a year earlier and the usual range. */
+export interface EditionFigure {
+  id: string;
+  label: string;
+  metric: string | null;
+  unit: string;
+  better: "up" | "down" | "none";
+  why: string;
+  current: number | null;
+  previous: number | null;
+  last_year: number | null;
+  rel: number | null;
+  rel_last_year: number | null;
+  n: number;
+  status: string;
+  usual: { mean: number; low: number; high: number; n: number; mean_text: string | null;
+           low_text: string | null; high_text: string | null } | null;
+  z: number | null;
+  outside: boolean;
+  floor: boolean;
+  streak: number;
+  extreme: { which: "highest" | "lowest"; of: number } | null;
+  series: { label: string; start: string; value: number | null }[];
+  cells: Record<string, { cells: EditionCell[]; why: string }>;
+  current_text: string | null;
+  previous_text: string | null;
+  last_year_text: string | null;
+  like_for_like: string;
+  sql: string;
+}
+
+/** One block of an edition (Arc BC): its type decides which fields matter; it never carries a number. */
+export interface EditionBlock {
+  id: string;
+  type: string;
+  kicker?: string;
+  title?: string;
+  /** Words with citations written {words|source_id}. */
+  text?: string;
+  sub?: string;
+  source?: string;
+  chain?: string[];
+  label?: string;
+  value?: string;
+  compare?: string;
+  series?: string;
+  x?: string;
+  columns?: string[];
+  link?: string;
+  column?: string;
+  listens?: string;
+  mark?: { at: string; text: string } | null;
+  actions?: string[];
+  /** Added by code (the floor), or a drill written into the page. */
+  by_code?: boolean;
+}
+
+/** A governed query a block reads: its rows, its SQL, what the guards did. */
+export interface EditionSource {
+  id: string;
+  label: string;
+  /** Measured for the edition, or the platform's own work it read: an explorer finding, a deep analysis, a decision. */
+  kind: "check" | "breakdown" | "query" | "drill" | "answer" | "finding" | "analysis" | "decision" | "discussion";
+  columns: string[];
+  rows: unknown[][];
+  sql: string;
+  status: string;
+  facts: Record<string, unknown>;
+  receipts: Record<string, unknown>[];
+  caveats: string[];
+  note: string;
+  error: string;
+  unit: string;
+  better: "up" | "down" | "none" | string;
+}
+
+export interface BriefingEdition {
+  built: boolean;
+  scope_key: string;
+  period: Omit<BriefingRangeBlock, "measured"> & { measured?: EditionFigure[] };
+  reader?: { group_id: string; name: string } | string;
+  composed?: boolean;
+  blocks?: EditionBlock[];
+  sources?: Record<string, EditionSource>;
+  /** Sentences the gates kept off the page, each with why — withheld is said, never implied. */
+  withheld?: { block?: string; sentence: string; why: string }[];
+  /** Blocks the model wrote that could not be drawn, each with why. */
+  left_out?: string[];
+  /** Set when the model did not finish and code drew the edition from what was measured. */
+  drawn_by_code?: string;
+  drill_columns?: Record<string, string[]>;
+  not_read?: { label: string; reason: string; tables: string[] }[];
+  floor?: string[];
+  guide?: { version: number | null; state: string | null };
+  model_steps?: number;
+  queries?: number;
+  stop_reason?: string;
+  generated_at?: string;
+  /** The dataset's currency as a person confirmed it, or "" (plain amounts). */
+  currency_code?: string;
+  /** Present when the dataset's Briefing is turned off — said, never an empty page. */
+  off?: BriefingOff;
+  /** The decisions given to a team, each with what became of it — sent, held with why, or not sent. */
+  given?: EditionGiven[];
+  /** What the platform already knew that the edition read, and the deep analysis it started ("" = none). */
+  known?: { analyses: number; findings: number; decisions: number; discussions?: number; started: string };
+  /** Set when the learned lag has moved since the edition was written: the lag now (`period.lag_days` is the lag it
+   *  was written with). The edition is the same range's; its figures stand as they were then. */
+  lag_now?: number;
+  /** Read in a Data Canvas: the dataset's own edition (`own` false — a canvas on every table), or the canvas's own,
+   *  with which of the guide's checks read only its tables and which are left out. */
+  canvas?: EditionCanvas | null;
+}
+
+export interface EditionCanvas {
+  id: string;
+  own: boolean;
+  dataset: string;
+  tables: string[];
+  checks_inside: string[];
+  checks_outside: string[];
+}
+
+/** A decision on an edition given to a team: posted to the channel its function group binds, through the departure gate. */
+export interface EditionGiven {
+  block: string;
+  group_id: string;
+  name: string;
+  by: string;
+  at: string;
+  status: "sent" | "held" | "not_sent" | string;
+  note: string;
+  departure_id: string;
+  target: string;
+}
+
+/** Give a decision on the edition to a team — no model call; written into the edition under the decision. */
+export async function giveBriefingDecision(
+  connectionId: string, range: BriefingRange, reader: string | undefined, body: { block_id: string; group_id: string },
+  schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<EditionGiven> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/give?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await refused(res, "Giving this decision to a team");
+  return res.json();
+}
+
+/** One level deeper on a block's source — compiled, no model — written into the edition under `after`. */
+export async function drillBriefingEdition(
+  connectionId: string, range: BriefingRange, reader: string | undefined,
+  body: { source_id: string; column: string; segment?: string | number | boolean | null; after?: string },
+  schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<{ block: EditionBlock; source: EditionSource; at: number }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/drill?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await refused(res, "Drilling into this block");
+  return res.json();
+}
+
+/** The query a reader adds to an edition read or write: none = the person's own reader, "" = the organisation;
+ *  a Data Canvas's id reads and writes the canvas's own edition. */
+function editionQuery(range: BriefingRange, reader: string | undefined, schema?: string, workspaceId?: string,
+                      canvasId?: string): string {
+  const q = new URLSearchParams(rangeQuery(range, schema, workspaceId));
+  if (reader !== undefined) q.set("reader", reader);
+  if (canvasId) q.set("canvas_id", canvasId);
+  return q.toString();
+}
+
+/** A READ never writes: the range's edition for a reader as last written, or `built: false`. */
+export async function readBriefingEdition(
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<BriefingEdition> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId, canvasId)}`);
+  if (!res.ok) throw await refused(res, "Reading this edition");
+  return res.json();
+}
+
+/** Write the range's edition for a reader: the guide's checks measured, then one model call. */
+export async function writeBriefingEdition(
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<BriefingEdition> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Writing this edition");
+  return res.json();
+}
+
+export interface GuideCheck {
+  id: string; label: string; metric: string; sql: string; tables: string[]; filters: string[];
+  time_column: string; time_kind: string; unit: string; better: string; dimensions: string[]; why: string;
+  evidence: string;
+}
+
+export interface GuideReader { group_id: string; name: string; watches: string; check_ids: string[] }
+
+export interface BriefingGuideDoc {
+  business: string;
+  ranges: { week: string; month: string; year: string; custom: string; day: string };
+  news: Record<string, number>;
+  comparisons: { text: string; exclude_from_last_year: { column: string; value: string; until: string } | null;
+                 evidence: string }[];
+  calendar: { name: string; when: string; source: string; evidence: string }[];
+  care: { text: string; tables: string[]; evidence: string }[];
+  checks: GuideCheck[];
+  dropped: { id: string; label: string; reason: string }[];
+  readers: GuideReader[];
+  proposed_readers: GuideReader[];
+}
+
+export interface GuideVersion { version: number; state: string; by: string; note: string; created_at: string; published_at: string }
+
+export interface BriefingGuideResponse {
+  available: boolean;
+  guide: BriefingGuideDoc | null;
+  version: GuideVersion | null;
+  /** The version editions read: the newest published one, else the newest draft. */
+  editions_read: { version: number; state: string } | null;
+  published_version: number | null;
+  versions: GuideVersion[];
+}
+
+/** The query a guide call carries — each call spells its own path, so the route contract check can read it. */
+function guideQuery(schema?: string, extra?: Record<string, string>): string {
+  const q = new URLSearchParams(extra);
+  if (schema) q.set("schema", schema);
+  return q.toString();
+}
+
+export async function readBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide?${guideQuery(schema)}`);
+  if (!res.ok) throw await refused(res, "Reading the Briefing guide");
+  return res.json();
+}
+
+/** Draft the guide from what the exploration learned — one model call; kept as a draft. */
+export async function draftBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/draft?${guideQuery(schema)}`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "Drafting the Briefing guide");
+  return res.json();
+}
+
+/** A person's edit, kept as a new draft under their name. */
+export async function saveBriefingGuide(connectionId: string, guide: BriefingGuideDoc, note: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide?${guideQuery(schema)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guide, note }),
+  });
+  if (!res.ok) throw await refused(res, "Saving the Briefing guide");
+  return res.json();
+}
+
+export async function publishBriefingGuide(connectionId: string, schema?: string, version?: number): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/publish?${guideQuery(schema, version !== undefined ? { version: String(version) } : undefined)}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Publishing the Briefing guide");
+  return res.json();
+}
+
+/** Add a reader (a function group) to the guide: with the proposal's checks no model is called. */
+export async function addBriefingReader(
+  connectionId: string, body: { group_id: string; name: string; watches: string; check_ids?: string[] }, schema?: string,
+): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/readers?${guideQuery(schema)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await refused(res, "Adding the reader");
+  return res.json();
+}
+
 /** The range's approved metrics, measured — the Dashboard's default view. No narrative is written
  *  and no model is called; a Briefing built for the same window inside its cache age hands back
  *  its own figures (`from_briefing`), so the two pages cannot disagree about one. */
@@ -8686,6 +8971,8 @@ export interface FleetJob {
 export type JobRow = FleetJob;
 /** The kernel job kind a deep analysis runs as — the backend's frozen spelling, named here once. */
 export const DEEP_ANALYSIS_JOB_KIND = "investigation";
+/** The chat's mode for a deep analysis — the frozen wire literal the chat route reads. */
+export const DEEP_ANALYSIS_MODE = "investigate" as const;
 
 export async function getJobs(params?: {
   state?: string; conn_id?: string; kind?: string; limit?: number;

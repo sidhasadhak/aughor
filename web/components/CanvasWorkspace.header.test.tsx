@@ -3,8 +3,9 @@
 /**
  * An open Data Canvas: its header, what it is for, and the chrome around what the person made.
  *
- * The canvas is for questions and deep analysis (Arc CT, §6 item 36(l)): it has its three views. A dashboard is a
- * person's, in the Briefing. The header's give-and-take was fixed while the canvas
+ * The canvas is for questions and deep analysis (Arc CT, §6 item 36(l)): Chat, its Briefing (Arc BC, 2026-10-30 — the
+ * dataset's own edition for a canvas on every table, its own for one that names tables), History and Artifacts. A
+ * dashboard is a person's, in the Briefing page. The header's give-and-take was fixed while the canvas
  * briefly had a fourth tab, and stands on its own. Redone to CLARITY (2026-10-12): the header says the name, what it is
  * in a line and its facts as chips; the landing no longer repeats them; a question asked many times is one history row;
  * a read that failed says so instead of showing an empty list.
@@ -14,7 +15,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CanvasWorkspace } from "@/components/CanvasWorkspace";
-import type { Canvas, Connection } from "@/lib/api";
+import { DEEP_ANALYSIS_MODE, type Canvas, type Connection } from "@/lib/api";
 
 const api = vi.hoisted(() => ({
   getSystemFlags: vi.fn().mockResolvedValue({}),
@@ -35,7 +36,15 @@ vi.mock("@/lib/api", async (original) => ({
 }));
 // The board is what the person made; the test holds what the canvas hands it — the landing — and nothing it draws.
 vi.mock("@/components/ChatPanel", () => ({
-  ChatPanel: ({ capabilities }: { capabilities?: React.ReactNode }) => <div data-testid="chat">{capabilities}</div>,
+  ChatPanel: ({ capabilities, initialQuestion, initialMode }: { capabilities?: React.ReactNode; initialQuestion?: string; initialMode?: string }) =>
+    <div data-testid="chat" data-question={initialQuestion} data-mode={initialMode}>{capabilities}</div>,
+}));
+vi.mock("@/components/brief/BriefingEdition", () => ({
+  BriefingEdition: (p: { canvasId?: string; connectionId: string; workspaceId?: string; onDeepAnalysis?: (q: string) => void }) => (
+    <div data-testid="edition" data-canvas={p.canvasId} data-conn={p.connectionId} data-workspace={p.workspaceId}>
+      <span role="button" tabIndex={0} onClick={() => p.onDeepAnalysis?.("Why did returns fall?")}>Take it deeper</span>
+    </div>
+  ),
 }));
 vi.mock("@/components/HistoryDetailPanel", () => ({ HistoryDetailPanel: () => null }));
 vi.mock("@/components/ConfigurePanel", () => ({ ConfigurePanel: () => null }));
@@ -54,16 +63,29 @@ beforeEach(() => {
 });
 
 const show = (canvas: Canvas = CANVAS, connections: Connection[] = CONNECTIONS) =>
-  render(<Theme><CanvasWorkspace canvas={canvas} connections={connections} onClose={vi.fn()} onCanvasUpdate={vi.fn()} /></Theme>);
-const tabs = () => screen.getAllByRole("button").map(b => b.textContent?.trim()).filter(t => ["Chat", "History", "Artifacts", "Cockpit"].includes(t ?? ""));
+  render(<Theme><CanvasWorkspace canvas={canvas} connections={connections} onClose={vi.fn()} onCanvasUpdate={vi.fn()} workspaceId="default" /></Theme>);
+const tabs = () => screen.getAllByRole("button").map(b => b.textContent?.trim()).filter(t => ["Chat", "Briefing", "History", "Artifacts", "Cockpit"].includes(t ?? ""));
 const settle = () => new Promise(r => setTimeout(r, 10));
 
 describe("the Data Canvas", () => {
-  it("has its three views and no dashboard", async () => {
+  it("has its four views, the Briefing after Chat, and no dashboard", async () => {
     show();
     await settle();
-    expect(tabs()).toEqual(["Chat", "History", "Artifacts"]);
+    expect(tabs()).toEqual(["Chat", "Briefing", "History", "Artifacts"]);
+    expect(screen.getByRole("button", { name: "Chat" }).getAttribute("aria-pressed")).toBe("true");   // still opens on Chat
     expect(api.getSystemFlags).not.toHaveBeenCalled();      // it no longer asks
+  });
+
+  it("reads the canvas's Briefing only once the tab is opened, and takes a question from it into deep analysis", async () => {
+    show();
+    await settle();
+    expect(screen.queryByTestId("edition")).toBeNull();                                    // opening a canvas reads none
+    fireEvent.click(screen.getByRole("button", { name: "Briefing" }));
+    const edition = await screen.findByTestId("edition");
+    expect(edition.dataset).toMatchObject({ canvas: "cv1", conn: "thelook", workspace: "default" });
+    fireEvent.click(screen.getByRole("button", { name: "Take it deeper" }));
+    expect(screen.getByRole("button", { name: "Chat" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("chat").dataset).toMatchObject({ question: "Why did returns fall?", mode: DEEP_ANALYSIS_MODE });
   });
 
   it("keeps every tool in one menu, and a way back before the name", () => {

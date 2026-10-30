@@ -7,6 +7,7 @@
  * a two-line landing in place of a block that repeated the header, the history with a question asked eleven times said
  * once, and the saved artifacts — each saying when it could not be read, never showing that as empty.
  */
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { ToolsMenu, type ToolItem } from "@/components/catalog/CatalogTools";
@@ -21,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
-import type { Canvas, CanvasHistoryItem as HistoryItem, Connection } from "@/lib/api";
+import { DEEP_ANALYSIS_MODE, type Canvas, type CanvasHistoryItem as HistoryItem, type Connection } from "@/lib/api";
 import {
   deleteCanvasArtifact, deleteInvestigation, getCanvasArtifacts, getCanvasDocuments, getCanvasHistory, listDocuments,
   updateCanvas, type CanvasArtifact, type CanvasDocument, type DocumentEntry,
@@ -32,7 +33,11 @@ import {
 } from "@/lib/canvasList";
 import { countNoun, formatCount, formatTimestamp } from "@/lib/format";
 
-type WsTab = "chat" | "history" | "artifacts";
+type WsTab = "chat" | "briefing" | "history" | "artifacts";
+
+// The Briefing's module graph loads only when the tab is first opened.
+const BriefingEdition = dynamic(() => import("@/components/brief/BriefingEdition").then(m => ({ default: m.BriefingEdition })),
+  { ssr: false, loading: () => <Loading what="the Briefing" /> });
 
 /** How many runs the history reads; when it reads this many, it says they are the latest. */
 const HISTORY_LIMIT = 30;
@@ -507,13 +512,16 @@ interface Props {
   initialRestoreSessionId?: string | null;
   /** Open the global document corpus (Intelligence → Documents). */
   onOpenDocuments?: () => void;
+  /** The workspace the Briefing tab reads its range in — the same range as the Briefing page. */
+  workspaceId?: string;
 }
 
 const VIEWS: { id: WsTab; label: string }[] = [
-  { id: "chat", label: "Chat" }, { id: "history", label: "History" }, { id: "artifacts", label: "Artifacts" },
+  { id: "chat", label: "Chat" }, { id: "briefing", label: "Briefing" }, { id: "history", label: "History" },
+  { id: "artifacts", label: "Artifacts" },
 ];
 
-export function CanvasWorkspace({ canvas, connections, allConnections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId, onOpenDocuments }: Props) {
+export function CanvasWorkspace({ canvas, connections, allConnections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId, onOpenDocuments, workspaceId }: Props) {
   // A canvas reading another workspace's connection still has it: the chip and "connection gone" read every connection
   // the install has (2026-10-12, judged against this workspace's alone two live canvases read "gone").
   const known = allConnections?.length ? allConnections : connections;
@@ -528,6 +536,8 @@ export function CanvasWorkspace({ canvas, connections, allConnections, onClose, 
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate" | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
+  // The Briefing tab mounts on its first opening — opening a canvas reads no edition — and then stays mounted.
+  const [briefingOpened, setBriefingOpened] = useState(false);
 
   const connectionId = canvas.scopes[0]?.connection_id ?? "";
   const connection = known.find(c => c.id === connectionId);
@@ -538,6 +548,7 @@ export function CanvasWorkspace({ canvas, connections, allConnections, onClose, 
   useEffect(() => {
     setChatInitialQuestion(undefined);
     setChatInitialMode(undefined);
+    setBriefingOpened(false);
     if (initialOpenInvId) {
       setWsTab("history");
       setOpenInvId(initialOpenInvId);
@@ -577,7 +588,18 @@ export function CanvasWorkspace({ canvas, connections, allConnections, onClose, 
 
   const showView = (id: WsTab) => {
     setWsTab(id);
+    if (id === "briefing") setBriefingOpened(true);
     if (id !== "artifacts") setOpenInvId(null);
+  };
+
+  // A decision or a question on the Briefing taken into deep analysis: a fresh conversation in this canvas asks it.
+  const deepAnalysis = (question: string) => {
+    setOpenInvId(null);
+    setRestoreSessionId(null);
+    setChatInitialQuestion(question);
+    setChatInitialMode(DEEP_ANALYSIS_MODE);
+    setWsTab("chat");
+    setChatKey(k => k + 1);
   };
 
   const newConversation = () => {
@@ -645,6 +667,18 @@ export function CanvasWorkspace({ canvas, connections, allConnections, onClose, 
             capabilities={<CanvasLanding canvas={canvas} connection={connection} gone={gone} />}
           />
         </div>
+
+        {/* Briefing — mounted on first opening, then hidden when not active. A canvas on every table reads the
+            dataset's own edition; one that names tables, its own. */}
+        {briefingOpened && (
+          <div data-testid="canvas-briefing" style={{
+            display: wsTab === "briefing" ? "flex" : "none",
+            flex: 1, flexDirection: "column", overflow: "hidden",
+          }}>
+            <BriefingEdition connectionId={connectionId} schema={canvas.scopes[0]?.schema_name ?? connection?.schema_name ?? undefined}
+              workspaceId={workspaceId} canvasId={canvas.id} onDeepAnalysis={deepAnalysis} />
+          </div>
+        )}
 
         {/* History — always mounted, hidden when not active */}
         <div style={{

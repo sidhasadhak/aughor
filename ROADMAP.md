@@ -12812,6 +12812,83 @@ day, each as recommended — *"Yes, click = filter"*, *"Marks after; comments la
     `/object-types` and `/object-paths` describe entities outside a principal's grant, and an action on one is still
     described; the quick prompt's "connection graph" of stored findings was not measured against a row policy.
 
+### 3.66 · Arc BG — the Briefing written from a guide, for a reader (DRAFTED and ✅ ADOPTED 2026-10-29 — §6 item 58 · mockup `design-mockups/briefing-week-lux.html` · PENDING item 68)
+
+The user, 2026-10-29: *"Imagine there is no structure to it. Only the periods like the week month year and the custom
+day range. And then based on the period selected the LLM figures out which are the most critical parts or insights or
+numbers that the user is supposed to know based on their role… the current one looks very restrictive and therefore not
+very intelligent… a good prompt for each connection which will be built by the LLM itself as a part of the exploration
+phase."* The Week mockup on live LuxExperience data (19–25 Oct 2026) was approved (*"I like it"*), then readers people
+add (*"I may have Product as another department or Team"*), then *"But lets build it"*.
+
+- **Measured first (three surveys, 2026-10-29):** every range ran a fixed recipe (`briefing/recipes.py` SECTIONS and
+  GUIDANCE — Week was always what moved · the norm · why · actions) written for "a CFO", from the profile's headline
+  metrics — of LuxExperience's eight, four cannot be read for a week (prices end Apr 2024, clienteling and inventory
+  Jun 2025, marketing per fiscal year). Nothing checked the narrator's numbers on screen; the no-causes rule ran only at
+  send; opening the tab could POST a paid build; the business profile is overwritten with no history. The measuring
+  layer (`ranges.py` windows, `metric_time.run_measure`, `earlier_ranges`, `scoped_statement`) is sound and reused.
+- **The guide** (`briefing/guide.py`): per connection and dataset, the Explorer's draft of how its Briefing is written —
+  the business, what each range is for here, what counts as news (the usual range: the ranges before, mean ± sd), fair
+  comparisons, the calendar, what to read with care, the readers and what each watches, and the CHECKS an edition can
+  measure (approved metrics with the dimensions to break them by, and statements the drafter ran once). A Ledger
+  artifact through `kernel/lifecycle.py`: a draft until a person publishes it, every version kept. Judgement only —
+  the guide states no figure an edition prints.
+- **The edition** (`briefing/edition.py`): code measures every check against the range, the range before, a year
+  earlier and its usual range; ranks by distance from usual; one model call writes the headline, the lede and the
+  stories for one reader; code draws every figure, chart, source and "not read" line. A number the measurement does not
+  hold, and a sentence that claims a cause, are withheld and said. A figure more than 2 sd from usual appears for every
+  reader.
+- **Readers** are the organisation's function groups (`rbac/groups.py`); the guide proposes them, a person adds them;
+  each person reads as one (`briefing_reader`).
+- **Retires:** `recipes.py`'s sections and guidance, the morning paper's fixed columns, the Briefing switches and
+  figure choices, Day and "What we know" on the page (Day subscriptions keep sending).
+- **Built 2026-10-29** on `claude/briefing-guide` (BG-1…BG-5) and **proven live on LuxExperience** the same day
+  (PENDING item 68): the live run found what the tests could not — metrics named by label (16 of 18 checks kept out),
+  THE OUTNET invisible to a drafter that saw only columns, an ISO day read as a figure, shares printed as 0.02, the
+  page cut off at the window — each fixed with a failing test first. The Data Canvas keeps the earlier panel until
+  its editions read the canvas's own tables; until then the old range Briefing's code stays.
+
+### 3.67 · Arc BC — the Briefing as an open canvas the model composes (DRAFTED and ✅ ADOPTED 2026-10-29 — §6 item 59 · mockup `design-mockups/briefing-canvas-lux.html` · PENDING item 69)
+
+The user, 2026-10-29, on Arc BG's built page: *"still feels clunky.. like a car in 1960s.. Its a fixed pattern that
+limits the intelligence"*, then *"let the LLMs use The Briefing as an open canvas to draw any element (table, text,
+graphs, radio buttons, filters, map - everything with citations and drill down possibilities…) … The Briefing is like
+the first thing or first contact with the sheer intelligence of the platform … it should make sense right away to any
+user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next? Building it?"*).
+
+- **Measured first (three surveys):** the edition still had one skeleton and one chart grammar, and could not dig (the
+  live Leadership edition wrote *"The platform split is not shown here, so check it"*). Reusable: the chart forms
+  (waterfall, heatmap, small multiples, choropleth with `/geo/world.json`), the closed answer vocabulary
+  (`agent/present_tool.py`), the tool loop (`agent/tool_loop.run_tool_loop`, the dashboards' `ask.py`), the guarded
+  door for a model's SELECT (`sql/executor.execute_guarded`), object links (`lib/objectLinks`), the quick answer.
+  The dashboard catalog is NOT reused as is: its rules forbid a model writing SQL or adding controls.
+- **Investigate, then compose.** After Arc BG measures the guide's checks, the model asks its own follow-up questions —
+  a compiled breakdown of a check by any low-cardinality column, or a SELECT through the guarded door — within a
+  budget, then composes the page from a closed set of block types (a sentence with cited numbers, figure, bridge,
+  comparison, table, map, small multiples, heat grid, progress, line, a control other blocks listen to, a decision).
+- **Code decides what is shown:** every block names its sources; code runs them, validates the spec, and holds any
+  word stating a number no source holds or claiming a cause. A floor figure the page left out is added by code.
+- **Answerable in place:** every number opens its source (query, rows, receipts, status); a drill (compiled, no model)
+  or a question (the quick answer, in the reader's own request) writes its answer into the page.
+- **Replaces** Arc BG's edition page; the guide, the measurement, readers and the gates stay.
+- **Built 2026-10-29** on `claude/briefing-guide` (BC-1…BC-6) and **proven live on LuxExperience** the same day
+  (PENDING item 69): the Leadership and Finance editions each investigated the week's record net revenue and profit per
+  order and found returns not yet arrived — what Arc BG's edition the day before had celebrated as nine-week highs —
+  and drew their investigation (a line of return rate by order week; kept profit per order by storefront).
+- **2026-10-30, the named follow-ups built** (PENDING item 69): a decision can be given to a team (the function
+  group's channel, through the departure gate, said on the edition); the Data Canvas reads its own edition from its
+  own tables on the same page; a breakdown's change against usual is re-measured at a send; the number gate checks a
+  number against the source, segment and direction it is said of, not only that some source holds it; and a person's
+  guide edit measures its new or changed checks before it is kept.
+- **2026-10-30, a Briefing tab in the Data Canvas** (mocked, then "Build as drawn"): after Chat; a canvas on every
+  table reads the dataset's own edition, one that names tables writes its own from those tables.
+- **2026-10-30, the Briefing reads the platform's own intelligence** ("Build it straight"): its deep analyses with their
+  verdicts and claim licence, the explorer's findings and the decisions in the record are sources it cites; a cause is
+  said only on a causal-licensed deep analysis; it starts one deep analysis on the move nothing explains.
+- **2026-10-30, discussions and coverage**: what people said in Slack, by email and in documents (the record's said
+  claims) is read by the Briefing and put in every question's context with the platform's earlier work; an exploration
+  run now asks up to 300 questions of a dataset across its domains (it asked 15).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -15299,6 +15376,27 @@ the browser** · **measure the premise before building.**
     - **Experiments:** `grounding.full_schema_first` kept on its record; `judgment.shadow_treatment` stopped;
       `explore.route_wide` deleted; `federation.planner` kept (its doors, not chat's routing);
       `grounding.data_profiles` deleted by its own clean run.
+
+58. ✅ **DECIDED 2026-10-29 — the Briefing written from a guide, for a reader** (§3.66). The user approved the Week
+    mockup on LuxExperience (*"I like it"*) and the plan (*"But lets build it"*), the calls taken as recommended:
+    - **The page's ranges are Week · Month · Year · Custom;** Day and "What we know" leave the page.
+    - **Opening never spends:** an edition is written on a click or by a subscription, whose `reader` it honours.
+    - **The guide is the Explorer's draft until a person publishes it;** a rule that changes a figure (a like-for-like
+      exclusion) applies only once published.
+    - **A reader is a function group,** or the organisation; the guide proposes, a person adds.
+    - **The floor:** more than 2 sd from usual appears for every reader; the model orders, never omits.
+    - **One model call per edition per reader;** the guide plans once, at drafting.
+    - **Words:** Briefing guide · reader ("Reading as") · usual range.
+
+59. ✅ **DECIDED 2026-10-29 — the Briefing as an open canvas the model composes** (§3.67). The user accepted the
+    canvas mockup on LuxExperience (*"Whats next? Building it?"*) and the plan, the calls taken as recommended:
+    - **Sonnet investigates and composes;** opening never spends, a drill never calls a model, a question is one call.
+    - **Budget per edition:** at most 8 follow-up queries and 7 model steps under the Briefer's charter.
+    - **The model may write SELECTs for follow-ups,** through the guarded door the Analyst uses; dashboards unchanged.
+    - **Decisions in v1:** Investigate and Not now; *Give it to a team* is a follow-up.
+    - **The canvas replaces Arc BG's edition page;** controls filter in the browser; the map is the choropleth.
+    - **Words:** edition (an *open canvas* in prose only — *Canvas* is the Data Canvas) · block · source of a
+      block · drill.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

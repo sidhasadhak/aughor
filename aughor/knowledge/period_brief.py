@@ -317,6 +317,27 @@ def scope_inputs(conn_id: str, schema: Optional[str] = None) -> tuple[dict, Any]
     return domain_data, profile
 
 
+def findings_for(conn_id: str, schema: Optional[str]) -> tuple[dict, list[dict]]:
+    """by_domain findings for a (connection, schema) — the schema's own run when it has one, else the merged aggregate
+    of a connection explored per schema, else the connection's — without the ones that read a table turned off for
+    analysis, and those left out (`ontology.visibility.findings_left_out`). The one reader the domains route and the
+    Briefing share."""
+    from aughor.explorer import store as _s
+    if schema and _s.has_state(f"{conn_id}__{schema}"):
+        found = _s.get_domain_findings(f"{conn_id}__{schema}")
+    elif schema:
+        found = _s.get_domain_findings(conn_id)
+    elif _s.schema_run_keys(conn_id):
+        found = _s.get_aggregate_domain_findings(conn_id)
+    else:
+        found = _s.get_domain_findings(conn_id)
+    from aughor.ontology.visibility import connection_exclusions, findings_left_out
+    if not connection_exclusions(conn_id):
+        return found, []
+    from aughor.trust.lineage_edges import dialect_for_connection
+    return findings_left_out(conn_id, found, default_schema=schema, dialect=dialect_for_connection(conn_id))
+
+
 def connection_inputs(conn_id: str) -> tuple[dict, Any]:
     """The connection-wide scope's findings and profile — what a subscription (which has no
     schema) briefs on. The same dispatch the Briefing route makes for "no schema selected"."""

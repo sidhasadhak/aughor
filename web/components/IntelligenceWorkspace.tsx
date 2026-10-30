@@ -23,7 +23,9 @@ const loading = () => (
   </div>
 );
 
-const BriefingPanel    = dynamic(() => import("@/components/BriefingPanel").then(m => ({ default: m.BriefingPanel })),      { ssr: false, loading });
+// Arc BG — a connection's Briefing is an edition written from its guide, for a reader; a Data Canvas keeps
+// the earlier Briefing until its editions read the canvas's own tables.
+const BriefingEdition  = dynamic(() => import("@/components/brief/BriefingEdition").then(m => ({ default: m.BriefingEdition })), { ssr: false, loading });
 const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then(m => ({ default: m.OntologyPanel })),       { ssr: false, loading });
 const ProfileLayer     = dynamic(() => import("@/components/ProfileLayer").then(m => ({ default: m.ProfileLayer })),       { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
@@ -251,32 +253,29 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // content paints) → schema arrives → key change REMOUNTS the panel (blank) →
         // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
         // request issued twice under two scope keys. One settled mount, one wave.
-        if (id === "briefing") return (canvasId || schemaResolved)
-          ? (
-            // The metric drawer: a measured figure on the Briefing opens beside it (§6 item 43).
-            <MetricDetailHost connectionId={connectionId} schema={schema} workspaceId={workspaceId}
-              pageKey={`briefing:${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} onAskWhy={askAgent}>
-              <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
-            </MetricDetailHost>
-          )
+        // A Data Canvas reads its own edition — only the canvas's tables — on the same page (Arc BC).
+        if (id === "briefing" && (canvasId || schemaResolved)) return (
+          <BriefingEdition key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} schema={schema}
+            workspaceId={workspaceId} canvasId={canvasId} onDeepAnalysis={askAgent} />
+        );
+        if (id === "briefing") return (
           // PX-0 (§3.14) — never a SILENT pane while the schema resolves. This gate was
           // a bare grey div, and with no connection selected it held forever: the app's
           // default landing was a black void with no words on it. An empty state says
           // what is happening and, when nothing is coming, where the door is.
-          : (
-            <SharedEmptyState icon="brief"
-              title={connectionId ? "Reading this connection's schemas…"
-                : !contextReady ? "Finding your connections…"
-                : "No connection selected"}>
-              {connectionId
-                ? "The briefing opens once its schema scope settles — a cold catalog can take a few seconds."
-                : !contextReady
-                ? "The workspace and its connections are still loading."
-                : showConnPicker
-                ? "Briefings are per connection. Choose one in the bar above."
-                : "Briefings are per connection. Add one from the Catalog, then come back here."}
-            </SharedEmptyState>
-          );
+          <SharedEmptyState icon="brief"
+            title={connectionId ? "Reading this connection's schemas…"
+              : !contextReady ? "Finding your connections…"
+              : "No connection selected"}>
+            {connectionId
+              ? "The briefing opens once its schema scope settles — a cold catalog can take a few seconds."
+              : !contextReady
+              ? "The workspace and its connections are still loading."
+              : showConnPicker
+              ? "Briefings are per connection. Choose one in the bar above."
+              : "Briefings are per connection. Add one from the Catalog, then come back here."}
+          </SharedEmptyState>
+        );
         if (id === "dashboards") return (
           <MetricDetailHost connectionId={connectionId} schema={schema} workspaceId={workspaceId}
             pageKey={`cockpit:${connectionId}:${schema ?? ""}`} onAskWhy={askAgent}>

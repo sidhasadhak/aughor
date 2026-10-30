@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Briefing Week Lux</title>
+<!-- Mockup for discussion (2026-10-29): a Briefing with no fixed sections — the range, the reader, and a guide the
+     Explorer wrote for this connection decide what the edition carries. LuxExperience (dcc63d83, schema luxexperience),
+     week of 19–25 Oct 2026. Every figure was measured read-only on the live warehouse (lux-postgres) on 29 Oct; the
+     prose, the guide and the edition's counts are written here the way the models would write them. Not app code. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: color(display-p3 0.067 0.067 0.074); --rail: color(display-p3 0.095 0.098 0.105);
+  --bg-1: color(display-p3 0.095 0.098 0.105); --bg-2: color(display-p3 0.13 0.135 0.145);
+  --line: color(display-p3 0.2 0.21 0.228); --line-2: color(display-p3 0.265 0.28 0.302);
+  --t1: color(display-p3 0.93 0.933 0.94); --t2: color(display-p3 0.692 0.704 0.728); --t3: color(display-p3 0.52 0.53 0.555);
+  --active: color(display-p3 0.033 0.197 0.37);
+  --accent: #3e63dd; --accent-11: #9eb1ff; --accent-soft: rgba(62,99,221,.16);
+  --amber: #ffc53d; --amber-soft: rgba(255,197,61,.12); --green: #3dd68c; --green-soft: rgba(61,214,140,.12);
+  --red: #ff9592; --red-soft: rgba(255,149,146,.12); --violet: #baa7ff; --violet-soft: rgba(110,86,207,.22);
+  --band: rgba(120,132,150,.22); --bar: color(display-p3 0.33 0.36 0.4);
+  --r2: 6px; --r3: 10px;
+  --serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--t2); font: 13px/1.45 "Source Sans 3", system-ui, sans-serif; min-width: 1280px; }
+button { font: inherit; }
+.note { padding: 8px 16px; font-size: 12.5px; color: var(--t2); background: var(--accent-soft); border-bottom: 1px solid var(--line); }
+.note b { color: var(--accent-11); }
+
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); }
+.rail { background: var(--rail); border-right: 1px solid var(--line-2); min-height: 100vh; display: flex; flex-direction: column; }
+.rail .collapse { height: 45px; display: flex; align-items: center; padding: 0 14px; }
+.rail .grp { padding: 4px 0 6px; }
+.rail .head { height: 24px; padding: 4px 14px 0; font-size: 12px; font-weight: 600; }
+.rail .item { height: 28px; margin-bottom: 2px; display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.rail i.ic { width: 14px; height: 14px; border: 1.5px solid var(--t2); border-radius: 3px; opacity: .7; flex: 0 0 auto; }
+.rail .item.on { background: var(--active); color: var(--t1); }
+.rail .foot { margin-top: auto; border-top: 1px solid var(--line-2); height: 46px; display: flex; align-items: center; }
+.rail .foot .item { flex: 1; margin: 0; } .rail .ver { padding-right: 14px; font: 11px "JetBrains Mono", ui-monospace, monospace; }
+
+.connbar { display: flex; align-items: center; gap: 10px; padding: 9px 24px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.sel { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r2); padding: 3px 10px; color: var(--t1); }
+.tabs { display: flex; gap: 22px; padding: 10px 24px 0; border-bottom: 1px solid var(--line); }
+.tabs span { padding-bottom: 8px; } .tabs .on { color: var(--t1); border-bottom: 2px solid var(--accent); }
+.chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--bg-2); color: var(--t2); border: 1px solid var(--line);
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.chip.ok { background: var(--green-soft); color: var(--green); border-color: transparent; }
+.chip.violet { background: var(--violet-soft); color: var(--violet); border-color: transparent; }
+.btn { background: var(--bg-2); color: var(--t1); border: 1px solid var(--line-2); border-radius: var(--r2); padding: 4px 10px; font-size: 12px;
+  white-space: nowrap; cursor: pointer; }
+.btn.primary { background: #3358d4; border-color: #3358d4; } .btn.ghost { background: none; }
+.btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent-11); outline-offset: 1px; }
+.seg { display: inline-flex; background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--r2); padding: 2px; gap: 2px; }
+.seg button { padding: 3px 11px; border-radius: 5px; color: var(--t2); font-size: 12.5px; background: none; border: 0; cursor: pointer; }
+.seg button.on { background: var(--bg-2); color: var(--t1); box-shadow: inset 0 0 0 1px var(--line-2); }
+.seg button:hover:not(.on) { color: var(--t1); }
+
+.page { display: grid; grid-template-columns: minmax(0, 1fr) 372px; align-items: start; }
+.paper { padding: 22px 34px 40px; min-width: 0; }
+.mast { display: flex; align-items: flex-end; gap: 16px; padding-bottom: 10px; border-bottom: 2px solid var(--t1); }
+.mast h1 { font-family: var(--serif); font-weight: 600; font-size: 34px; margin: 0; letter-spacing: -.01em; line-height: 1; color: var(--t1); }
+.mast .ed { font-size: 13px; } .mast .r { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.reader { display: flex; align-items: center; gap: 10px; padding: 10px 0 9px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.reader .lbl { font-size: 12px; color: var(--t3); }
+.reader .why { font-size: 12px; color: var(--t3); margin-left: auto; }
+.inline-note { display: none; margin-top: 8px; font-size: 12px; color: var(--amber); }
+.inline-note.on { display: block; }
+.dateline { display: flex; gap: 14px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); color: var(--t3); font-size: 12px; flex-wrap: wrap; }
+.dateline b { color: var(--t2); font-weight: 500; }
+
+.lead { padding: 22px 0 18px; border-bottom: 1px solid var(--line); }
+.kicker { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-11); margin-bottom: 6px; }
+.kicker.amber { color: var(--amber); } .kicker.green { color: var(--green); } .kicker.dim { color: var(--t3); }
+.lead h2 { font-family: var(--serif); font-size: 32px; line-height: 1.14; font-weight: 600; margin: 0 0 12px; max-width: 26ch; color: var(--t1); text-wrap: balance; }
+.lead .stand { font-size: 17px; line-height: 1.55; color: var(--t1); max-width: 66ch; margin: 0; }
+.pics { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 18px; max-width: 760px; }
+.pic .t { font-size: 12.5px; color: var(--t1); margin-bottom: 2px; font-weight: 500; }
+.pic .s { font-size: 11.5px; color: var(--t3); }
+.cap { color: var(--t3); font-size: 11.5px; margin-top: 8px; max-width: 760px; }
+
+.story { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.story h3 { font-family: var(--serif); font-size: 21px; line-height: 1.25; font-weight: 600; margin: 0 0 8px; color: var(--t1); text-wrap: balance; }
+.story p { margin: 0 0 8px; font-size: 14.5px; line-height: 1.6; max-width: 62ch; }
+.story p em { font-style: normal; color: var(--t1); font-weight: 500; }
+.story .act { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.story .fig { padding-top: 22px; }
+.fig .t { font-size: 12px; color: var(--t1); font-weight: 500; }
+.fig .s { font-size: 11.5px; color: var(--t3); margin-top: 6px; line-height: 1.45; }
+sup { font-size: 10px; color: var(--accent-11); margin-left: 1px; cursor: default; }
+
+.short { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.short h4, .lines h4 { font-family: var(--serif); font-size: 17px; font-weight: 600; margin: 0 0 6px; color: var(--t1); display: flex; align-items: baseline; gap: 10px; }
+.short h4 span, .lines h4 span { font-family: "Source Sans 3", sans-serif; font-size: 12px; font-weight: 400; color: var(--t3); }
+.short div { font-size: 14px; line-height: 1.55; padding: 6px 0; border-top: 1px solid var(--line); }
+.short div:first-of-type { border-top: 0; }
+.lines { display: grid; grid-template-columns: 1fr 1fr; gap: 0 34px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.lines h4 { grid-column: 1 / -1; }
+.lines div { font-size: 13.5px; line-height: 1.5; padding: 6px 0; border-top: 1px solid var(--line); }
+.lines div b { color: var(--t1); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lines.unread div { color: var(--t2); }
+.lines.unread div b { color: var(--t2); font-weight: 600; }
+.lines.ahead div b { color: var(--t1); }
+.sources { padding: 14px 0 0; color: var(--t3); font-size: 11.5px; line-height: 1.7; columns: 2; column-gap: 34px; }
+.sources span { color: var(--accent-11); margin-right: 4px; }
+.ask { display: flex; gap: 10px; align-items: center; margin-top: 18px; padding: 10px 12px; background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--r3); }
+.ask .in { flex: 1; color: var(--t3); }
+
+.guide { position: sticky; top: 0; height: 100vh; overflow-y: auto; border-left: 1px solid var(--line-2); background: var(--bg-1); padding: 18px 20px 30px; }
+.guide .gh { display: flex; align-items: baseline; gap: 8px; }
+.guide h2 { font-family: var(--serif); font-size: 19px; font-weight: 600; margin: 0; color: var(--t1); }
+.guide .meta { font-size: 11.5px; color: var(--t3); margin: 4px 0 10px; line-height: 1.5; }
+.guide .gbtn { display: flex; gap: 6px; margin-bottom: 12px; }
+.guide h3.gs { margin: 14px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); font-weight: 600; }
+.guide p, .guide li { font-size: 12.5px; line-height: 1.5; margin: 0 0 4px; }
+.guide ul { margin: 0; padding-left: 16px; }
+.guide li { margin-bottom: 4px; }
+.guide .ev { color: var(--t3); font-size: 11.5px; }
+.guide .person { border-left: 2px solid var(--violet); padding-left: 8px; }
+.guide .readers div { display: grid; grid-template-columns: 116px 1fr; gap: 8px; font-size: 12.5px; padding: 4px 0; border-top: 1px solid var(--line); }
+.guide .readers div b { color: var(--t1); font-weight: 500; }
+.guide .readers div.on b { color: var(--accent-11); }
+.made { margin: 4px 0 8px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: var(--r3); background: var(--bg); }
+.made h3.gs { margin-top: 0; }
+.made .row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; font-size: 12.5px; padding: 4px 0; border-top: 1px solid var(--line); }
+.made .row:first-of-type { border-top: 0; }
+.made .row span:first-child { color: var(--t3); }
+.made .row span:last-child { color: var(--t2); }
+.made .row b { color: var(--t1); font-weight: 500; }
+
+svg text { font-family: "Source Sans 3", system-ui, sans-serif; }
+</style></head><body>
+<div class="note"><b>Mockup</b> · a Briefing with no fixed sections — the range, the reader, and a guide the Explorer wrote for LuxExperience decide what it carries. Every figure was measured read-only on the live warehouse on 29 Oct; the words, the guide and the edition's counts are written here the way the models would write them.</div>
+<div class="app">
+<nav class="rail" aria-label="Main">
+  <div class="collapse"><i class="ic"></i></div>
+  <div class="grp"><div class="item"><i class="ic"></i>Home</div><div class="item"><i class="ic"></i>Inbox</div><div class="item"><i class="ic"></i>Now</div><div class="item"><i class="ic"></i>Data Canvas</div></div>
+  <div class="grp"><div class="head">Intelligence</div><div class="item on"><i class="ic"></i>Briefing</div><div class="item"><i class="ic"></i>Ontology</div><div class="item"><i class="ic"></i>Agent runs</div><div class="item"><i class="ic"></i>Health</div><div class="item"><i class="ic"></i>Documents</div><div class="item"><i class="ic"></i>Record</div></div>
+  <div class="grp"><div class="head">Data</div><div class="item"><i class="ic"></i>Catalog</div><div class="item"><i class="ic"></i>SQL Editor</div><div class="item"><i class="ic"></i>Semantic Layer</div><div class="item"><i class="ic"></i>Spreadsheets</div></div>
+  <div class="grp"><div class="head">Operations</div><div class="item"><i class="ic"></i>Agent Ops</div><div class="item"><i class="ic"></i>Monitors</div><div class="item"><i class="ic"></i>Notifications</div><div class="item"><i class="ic"></i>Integrations</div><div class="item"><i class="ic"></i>Spend</div><div class="item"><i class="ic"></i>Security &amp; Audit</div><div class="item"><i class="ic"></i>Evals</div></div>
+  <div class="foot"><div class="item"><i class="ic"></i>Settings</div><span class="ver">v2 · Local</span></div>
+</nav>
+<main>
+  <div class="connbar">Connection <span class="sel">PostgreSQL · luxexperience ▾</span><span>Luxeperience GmbH</span><span class="chip ok">✓ loaded nightly · data through 28 Oct</span></div>
+  <div class="tabs"><span class="on">Briefing</span><span>Dashboards</span><span>Profile</span><span>Ontology</span><span>Evidence</span><span>Memory</span><span>Actions</span></div>
+  <div class="page">
+    <article class="paper">
+      <div class="mast">
+        <h1>The Briefing</h1><span class="ed">LuxExperience</span>
+        <span class="r">
+          <span class="seg" role="group" aria-label="Range" id="range">
+            <button class="on" data-r="week">Week</button><button data-r="month">Month</button><button data-r="year">Year</button><button data-r="custom">Custom</button>
+          </span>
+        </span>
+      </div>
+      <div class="inline-note" id="range-note">This mockup draws the Week only. A Month or a Year is written from the same guide — its "What each range is for" lines say what changes.</div>
+      <div class="reader">
+        <span class="lbl">Reading as</span>
+        <span class="seg" role="group" aria-label="Reading as" id="readers"></span>
+        <span class="why">your setting · the numbers are the same for every reader</span>
+      </div>
+      <div class="dateline"><b>Week 43 · Monday 19 – Sunday 25 October 2026</b><span>against the week before and a usual week (the eight before it)</span><span style="margin-left:auto">written Thursday 29 October · <span id="nfig">31</span> figures measured · each links to its query</span></div>
+
+      <section class="lead">
+        <div class="kicker" id="lead-kicker">The week</div>
+        <h2 id="headline"></h2>
+        <p class="stand" id="lede"></p>
+        <div id="lead-pics"></div>
+      </section>
+
+      <div id="stories"></div>
+      <div id="shorts"></div>
+
+      <section class="lines" id="steady"></section>
+
+      <section class="lines ahead">
+        <h4>Coming up<span>from the calendar the guide keeps</span></h4>
+        <div><b>Singles Day, Wednesday 11 November.</b> Last year its week sold 10.8% more than the week of 20 October, like for like<sup>15</sup>.</div>
+        <div><b>Black Friday, 27 November.</b> Last year its week sold €215.1k, 33% more than the week before<sup>15</sup>.</div>
+        <div><b>The second quarter</b> ends 31 December; the Month edition for October is written on 3 November, when October has settled.</div>
+      </section>
+
+      <section class="lines unread">
+        <h4>Not read this week<span>what the guide says cannot be read for a week, and why</span></h4>
+        <div><b>This week's own return rate.</b> 13 of its 259 orders are back so far; a return arrives about 15 days after its order, so it reads true from 16 November<sup>14</sup>.</div>
+        <div><b>Markdowns and full-price sell-through.</b> Prices end on 5 April 2024.</div>
+        <div><b>Stock cover.</b> Inventory snapshots end on 30 June 2025.</div>
+        <div><b>Clienteling's influence.</b> Stylist interactions end on 29 June 2025; the 48 orders placed through clienteling this week are counted in sales.</div>
+        <div><b>Marketing return on spend.</b> Spend is kept per fiscal year for the whole group, so no week and no storefront can be read.</div>
+        <div><b>Failed payments.</b> The data has never recorded one (0 of 146,009 payments), so a zero here would say nothing.</div>
+      </section>
+
+      <div class="sources">
+        <div><span>1</span>orders · sales, orders and average order by week and storefront, 27 Jul – 25 Oct 2026</div>
+        <div><span>2</span>orders · the same week a year earlier, 20–26 Oct 2025, without THE OUTNET (sold 30 Apr 2026, corporate_events)</div>
+        <div><span>3</span>orders · Mytheresa by top client, 24 Aug – 25 Oct</div>
+        <div><span>4</span>orders · Mytheresa's median order, this week and the eight before</div>
+        <div><span>5</span>web_sessions · visits and conversion by week, 24 Aug – 25 Oct</div>
+        <div><span>6</span>web_sessions · conversion by device and storefront, this week against the eight before</div>
+        <div><span>7</span>returns · returns received and refunds by week</div>
+        <div><span>8</span>returns · size and fit returns by category, this week against the eight before</div>
+        <div><span>9</span>returns · NET-A-PORTER's refunds by week</div>
+        <div><span>10</span>order_items × orders · gross margin by week and storefront</div>
+        <div><span>11</span>shipments · delivery days, week-long deliveries and shipping cost by week</div>
+        <div><span>12</span>customer_service · tickets and satisfaction by week</div>
+        <div><span>13</span>orders · the second quarter to 25 Oct against the same days a year earlier</div>
+        <div><span>14</span>returns × orders · days from order to return since 1 Aug (15 on average, 90% within 21)</div>
+        <div><span>15</span>orders × dim_date · last year's weeks of 20 Oct – 30 Nov 2025, without THE OUTNET</div>
+      </div>
+      <div class="ask"><span class="in">Ask a follow-up about this week…</span><button class="btn primary">Ask</button></div>
+    </article>
+
+    <aside class="guide" aria-label="Briefing guide">
+      <div class="gh"><h2>Briefing guide</h2><span class="chip violet">v4</span></div>
+      <div class="meta">How LuxExperience's Briefing is written. Drafted by the Explorer when it explored <b style="color:var(--t2);font-weight:500">luxexperience</b> on 12 Oct; its figures re-measured nightly, last on 28 Oct; one line set by a person.</div>
+      <div class="gbtn"><button class="btn">Edit</button><button class="btn ghost">History · 4 versions</button><button class="btn ghost">Hide</button></div>
+
+      <div class="made">
+        <h3 class="gs">This edition, from the guide</h3>
+        <div class="row"><span>Planned</span><span id="made-plan"></span></div>
+        <div class="row"><span>Measured</span><span><b>31</b> figures; 3 could not be — their data ends</span></div>
+        <div class="row"><span>For everyone</span><span><b>3</b> figures moved more than twice their usual spread — average order, conversion, womenswear size and fit returns. Every reader's edition carries them.</span></div>
+        <div class="row"><span>Chosen</span><span>The model ordered the stories and wrote the words; every number in them is checked against what was measured, and no sentence says what caused what.</span></div>
+        <div class="row"><span>Cost</span><span>2 model calls (plan, write) · about 30 queries</span></div>
+      </div>
+
+      <h3 class="gs">The business</h3>
+      <p>A luxury fashion group selling through four storefronts — Mytheresa, NET-A-PORTER and MR PORTER at full price, YOOX off-price. Sales are each order's GMV, in euros. <span class="ev">platforms · orders</span></p>
+
+      <h3 class="gs">What each range is for</h3>
+      <ul>
+        <li><b style="color:var(--t1);font-weight:500">Week</b> — steer: what left its usual range, and where it sits. Too short to read returns, retention or the quarter's pace as news.</li>
+        <li><b style="color:var(--t1);font-weight:500">Month</b> — review: the month before last's returns have settled; a year earlier, like for like.</li>
+        <li><b style="color:var(--t1);font-weight:500">Year</b> — strategy: storefront and category mix, margin, top clients' share.</li>
+      </ul>
+
+      <h3 class="gs">What counts as news</h3>
+      <p>A usual week is the eight before it, on the same storefronts. A figure is news when it leaves that range; inside it, one clause at most, however large the change on last week. Weekly sales usually swing about ±7%, the average order ±4%, conversion ±0.1 point. <span class="ev">re-measured 28 Oct</span></p>
+
+      <h3 class="gs">Fair comparisons</h3>
+      <ul>
+        <li>THE OUTNET was sold on 30 April 2026: a year earlier is compared without it, and says so. <span class="ev">corporate_events</span></li>
+        <li>Weeks run Monday to Sunday; a year earlier is 364 days back, so the weekdays match. The fiscal year starts on 1 July. <span class="ev">dim_date</span></li>
+      </ul>
+
+      <h3 class="gs">The calendar</h3>
+      <p>Singles Day, Black Friday to Cyber Monday, December gifting and the winter and summer sales, from the data's own peak and sale days. <span class="ev">dim_date</span></p>
+
+      <h3 class="gs">Read with care</h3>
+      <ul>
+        <li>A return arrives about 15 days after its order (90% within 21): read returns by the day they arrive; a week's own return rate is early for three weeks. <span class="ev">returns × orders</span></li>
+        <li>A storefront's week is 25–100 orders: name a storefront only when it carries the move; a cell under 30 rows is too few to call.</li>
+        <li>Top clients place about a quarter of Mytheresa's orders and half its sales: a few large orders move its basket. <span class="ev">orders</span></li>
+        <li>Payments never record a failure; prices end Apr 2024, inventory and stylist interactions Jun 2025; marketing spend is per fiscal year for the group. Say so; never read them.</li>
+      </ul>
+
+      <h3 class="gs">Readers</h3>
+      <div class="readers" id="guide-readers"></div>
+      <p class="person" style="margin-top:8px">Group leadership reads a year earlier like for like before the week before. <span class="ev">set by a person, 20 Oct</span></p>
+    </aside>
+  </div>
+</main>
+</div>
+
+<script>
+// ── Measured on the live warehouse, 29 Oct 2026 (read-only). Weeks start Monday. ──────────────────────────────
+const WEEKS13 = ["27 Jul","3 Aug","10 Aug","17 Aug","24 Aug","31 Aug","7 Sep","14 Sep","21 Sep","28 Sep","5 Oct","12 Oct","19 Oct"];
+const WEEKS9 = WEEKS13.slice(4);
+const SALES13 = [150502,145379,142671,144020,139694,156917,171862,165173,174615,154956,165649,158815,166988];
+const AOV13 = [588,593,602,637,575,586,593,558,584,574,625,623,645];
+const TOPCLIENT9 = [21818,29271,34065,36650,37880,25265,30584,23256,38840];
+const CONV9 = [2.27,2.29,2.27,2.36,2.39,2.32,2.15,2.08,2.05];
+const MARGIN9 = [43.9,43.9,43.8,44.0,44.0,45.6,47.0,47.1,47.5];
+const DEVICE = [["Desktop",2.61,2.02],["Mobile",0.58,0.88],["App",5.21,6.39]];
+const SIZEFIT = [["Womenswear",37,25.8],["Beauty",7,2.3],["Jewellery & watches",5,2.8],["Outerwear",4,3.1],["Bags",8,7.3],
+                 ["Accessories",2,3.0],["Shoes",9,10.4],["Menswear",6,10.9]];
+// the usual range: the 8 weeks before, mean ± one standard deviation
+const band = (xs) => { const m = xs.reduce((a,b)=>a+b,0)/xs.length; const sd = Math.sqrt(xs.reduce((a,b)=>a+(b-m)**2,0)/(xs.length-1)); return [m-sd, m+sd]; };
+
+const eur = v => "€" + (v >= 1000 ? (v/1000).toFixed(1) + "k" : Math.round(v));
+function bars({ values, labels, usual, fmt, w = 360, h = 120, every = 2 }) {
+  const pad = { l: 44, r: 6, t: 8, b: 18 };
+  const lo = Math.min(...values, usual[0]), hi = Math.max(...values, usual[1]);
+  const y0 = lo - (hi - lo) * 0.35, y1 = hi + (hi - lo) * 0.08;
+  const Y = v => pad.t + (h - pad.t - pad.b) * (1 - (v - y0) / (y1 - y0));
+  const bw = (w - pad.l - pad.r) / values.length;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="by week, this week last">`;
+  s += `<rect x="${pad.l}" y="${Y(usual[1])}" width="${w-pad.l-pad.r}" height="${Y(usual[0])-Y(usual[1])}" fill="var(--band)"/>`;
+  s += `<text x="${pad.l-4}" y="${Y(usual[1])+3}" text-anchor="end" font-size="10.5" fill="var(--t3)">${fmt(usual[1])}</text>`;
+  s += `<text x="${pad.l-4}" y="${Y(usual[0])+3}" text-anchor="end" font-size="10.5" fill="var(--t3)">${fmt(usual[0])}</text>`;
+  values.forEach((v, i) => {
+    const last = i === values.length - 1, x = pad.l + i * bw + bw * 0.18, bh = (h - pad.b) - Y(v);
+    s += `<rect x="${x}" y="${Y(v)}" width="${bw*0.64}" height="${bh}" rx="2" fill="${last ? 'var(--accent)' : 'var(--bar)'}"><title>${labels[i]}: ${fmt(v)}</title></rect>`;
+    if (i % every === (values.length - 1) % every) s += `<text x="${x + bw*0.32}" y="${h-5}" text-anchor="middle" font-size="10.5" fill="${last ? 'var(--t1)' : 'var(--t3)'}">${labels[i]}</text>`;
+  });
+  return s + `</svg>`;
+}
+function line({ values, labels, usual, fmt, w = 360, h = 110 }) {
+  const pad = { l: 44, r: 10, t: 10, b: 18 };
+  const lo = Math.min(...values, usual ? usual[0] : Infinity), hi = Math.max(...values, usual ? usual[1] : -Infinity);
+  const y0 = lo - (hi - lo) * 0.15, y1 = hi + (hi - lo) * 0.15;
+  const Y = v => pad.t + (h - pad.t - pad.b) * (1 - (v - y0) / (y1 - y0));
+  const X = i => pad.l + (w - pad.l - pad.r) * i / (values.length - 1);
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="by week, this week last">`;
+  if (usual) {
+    s += `<rect x="${pad.l}" y="${Y(usual[1])}" width="${w-pad.l-pad.r}" height="${Y(usual[0])-Y(usual[1])}" fill="var(--band)"/>`;
+    s += `<text x="${pad.l-4}" y="${Y(usual[1])+3}" text-anchor="end" font-size="10.5" fill="var(--t3)">${fmt(usual[1])}</text>`;
+    s += `<text x="${pad.l-4}" y="${Y(usual[0])+3}" text-anchor="end" font-size="10.5" fill="var(--t3)">${fmt(usual[0])}</text>`;
+  } else {
+    [lo, hi].forEach(v => s += `<text x="${pad.l-4}" y="${Y(v)+3}" text-anchor="end" font-size="10.5" fill="var(--t3)">${fmt(v)}</text>`);
+  }
+  s += `<polyline fill="none" stroke="var(--t2)" stroke-width="1.6" points="${values.map((v,i)=>`${X(i)},${Y(v)}`).join(" ")}"/>`;
+  values.forEach((v, i) => {
+    const last = i === values.length - 1;
+    s += `<circle cx="${X(i)}" cy="${Y(v)}" r="${last ? 4 : 2.4}" fill="${last ? 'var(--accent)' : 'var(--t2)'}"><title>${labels[i]}: ${fmt(v)}</title></circle>`;
+    if (i % 2 === 0) s += `<text x="${X(i)}" y="${h-4}" text-anchor="middle" font-size="10.5" fill="${last ? 'var(--t1)' : 'var(--t3)'}">${labels[i]}</text>`;
+  });
+  return s + `</svg>`;
+}
+// a change drawn as the change: signed bars against the usual week; `good` is the direction the guide calls good
+function signed({ rows, unit, good, w = 360, minRows = null }) {
+  const rowH = 20, h = rows.length * rowH + 8, lab = 118, room = 48, half = (w - lab - 2 * room) / 2, mid = lab + room + half;
+  const span = Math.max(...rows.map(r => Math.abs(r[1] - r[2])));
+  const sx = half / span;
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="change against a usual week">`;
+  s += `<line x1="${mid}" x2="${mid}" y1="2" y2="${h-4}" stroke="var(--line-2)"/>`;
+  rows.forEach(([name, now, usual], i) => {
+    const d = now - usual, y = 4 + i * rowH, few = minRows !== null && now < minRows;
+    const col = few ? 'var(--bar)' : ((d >= 0) === (good === "up") ? 'var(--green)' : 'var(--amber)');
+    const x = d >= 0 ? mid : mid + d * sx;
+    s += `<text x="${lab-8}" y="${y+12}" text-anchor="end" font-size="11" fill="${few ? 'var(--t3)' : 'var(--t2)'}">${name}</text>`;
+    s += `<rect x="${x}" y="${y+3}" width="${Math.max(1.5, Math.abs(d) * sx)}" height="11" rx="2" fill="${col}"><title>${name}: ${now} this week, ${usual} usually</title></rect>`;
+    const tx = d >= 0 ? mid + d * sx + 5 : mid + d * sx - 5;
+    s += `<text x="${tx}" y="${y+12}" text-anchor="${d >= 0 ? 'start' : 'end'}" font-size="10.5" fill="var(--t3)">${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(unit === 'pt' ? 2 : 1)}${unit === 'pt' ? ' pt' : ''}</text>`;
+  });
+  return s + `</svg>`;
+}
+
+// ── The stories: one measured block each. Readers change which lead, in what order — never a number. ───────────
+const STORIES = {
+  basket: {
+    kicker: ["amber", "Furthest from a usual week"],
+    title: "Mytheresa's top clients carried the basket",
+    body: `<p>Mytheresa's average order was <em>€960</em>, against €861 in a usual week<sup>3</sup>. Its top clients placed 24 orders worth <em>€38.8k</em> — their best of the nine weeks, 30% above their usual €29.8k — and the eight largest orders of the week were all theirs.</p>
+           <p>The typical Mytheresa order moved far less: the median rose 6%, to €733<sup>4</sup>. This is a handful of large orders, not every basket growing.</p>`,
+    act: `<button class="btn">Ask about these 24 orders</button><button class="btn ghost">Open Mytheresa's top clients</button>`,
+    fig: () => `<div class="t">Mytheresa top clients' sales, by week</div>` +
+      bars({ values: TOPCLIENT9, labels: WEEKS9, usual: band(TOPCLIENT9.slice(0, 8)), fmt: eur }) +
+      `<div class="s">Shaded: their usual week — the eight before, give or take their usual spread.</div>`,
+  },
+  conversion: {
+    kicker: ["amber", "Unusual · the third week down"],
+    title: "Fewer visits are turning into orders",
+    body: `<p><em>2.05%</em> of visits ended in an order, the lowest of the nine weeks and the third fall in a row — while visits held at 9,873, as many as any week<sup>5</sup>.</p>
+           <p>The app and mobile carry the fall: app visits converted at 5.21% against 6.39% usually, mobile at 0.58% against 0.88%; desktop rose, to 2.61%<sup>6</sup>. At the usual rate, the week's visits would have made about 21 more orders.</p>`,
+    act: `<button class="btn">Investigate</button><span class="chip">proposed, not run</span><button class="btn ghost">Not now</button>`,
+    fig: () => `<div class="t">Conversion by week</div>` +
+      line({ values: CONV9, labels: WEEKS9, usual: band(CONV9.slice(0, 8)), fmt: v => v.toFixed(2) + "%" }) +
+      `<div class="t" style="margin-top:12px">By device, this week against a usual week</div>` +
+      signed({ rows: DEVICE, unit: "pt", good: "up" }),
+  },
+  returns: {
+    kicker: ["amber", "Unusual · 43% above a usual week"],
+    title: "More womenswear came back for not fitting",
+    body: `<p>Returns arriving rose to <em>192</em>, refunding €66.2k — inside their usual swing overall<sup>7</sup>. The part that is not usual: <em>37 womenswear items</em> came back for size and fit, against 26 in a usual week<sup>8</sup>, and NET-A-PORTER refunded €27.3k, its most in nine weeks<sup>9</sup>.</p>
+           <p>These are returns of orders placed in late September and early October; a return arrives about 15 days after its order<sup>14</sup>.</p>`,
+    act: `<button class="btn">Ask about these 37 items</button><button class="btn ghost">Open the size and fit returns</button>`,
+    fig: () => `<div class="t">Size and fit returns by category, against a usual week</div>` +
+      signed({ rows: SIZEFIT, unit: "items", good: "down", minRows: 30 }) +
+      `<div class="s">Grey: under 30 items this week — too few to call.</div>`,
+  },
+  margin: {
+    kicker: ["green", "Holding a new level · the fourth week"],
+    title: "Gross margin stays near 47%",
+    body: `<p>Margin was <em>47.5%</em> on the week's sales, its fourth week above 45% after holding at 44% through August and September<sup>10</sup>.</p>
+           <p>Mytheresa ran highest, at 52.0% against 46.3% in its usual week; YOOX's 40.4% is its best of the nine weeks.</p>`,
+    act: `<button class="btn ghost">Open margin by storefront</button>`,
+    fig: () => `<div class="t">Gross margin by week</div>` +
+      line({ values: MARGIN9, labels: WEEKS9, usual: null, fmt: v => v.toFixed(1) + "%" }),
+  },
+  delivery: {
+    kicker: ["dim", "Your watch · getting orders out"],
+    title: "Deliveries held their usual time",
+    body: `<p>247 shipments left in the week and took <em>5.36 days</em> on average to arrive — a usual week is 5.37. 69 took a week or more, against 77 usually; shipping cost €5.7k<sup>11</sup>.</p>
+           <p>Service tickets fell to 20, from a usual 26, and satisfaction read 3.20 of 5, against 3.07<sup>12</sup>.</p>`,
+    act: `<button class="btn ghost">Open shipments</button>`,
+    fig: () => "",
+  },
+};
+const SHORT = {   // the one line a story keeps when it is not this reader's
+  basket: `The average order reached <b>€645</b>, the highest in thirteen weeks; Mytheresa's top clients carried it<sup>1</sup><sup>3</sup>.`,
+  conversion: `Conversion fell to <b>2.05%</b> of visits, the third weekly fall; the app and mobile carry it<sup>5</sup><sup>6</sup>.`,
+  returns: `<b>37 womenswear items</b> came back for size and fit, against a usual 26<sup>8</sup>.`,
+};
+const FLOOR = ["basket", "conversion", "returns"];   // beyond twice their usual spread: every reader gets them
+const STEADY = {
+  margin: `<b>Gross margin 47.5%</b>, its fourth week near 47%<sup>10</sup>.`,
+  delivery: `<b>Deliveries</b> took 5.36 days on average, a usual week<sup>11</sup>.`,
+  service: `<b>Service</b>: 20 tickets, satisfaction 3.20 of 5 — usually 26 and 3.07<sup>12</sup>.`,
+  nap: `<b>NET-A-PORTER</b> sold €49.5k, inside its usual range; its average order slipped to €799 from €860<sup>1</sup>.`,
+  yoox: `<b>YOOX</b> sold €22.7k, inside its usual range, though 8.8% below a year earlier on the same 100 orders<sup>1</sup><sup>2</sup>.`,
+  mrp: `<b>MR PORTER</b> sold €25.7k, at the top of its usual range<sup>1</sup>.`,
+};
+
+const READERS = {
+  leadership: {
+    label: "Group leadership", watches: "sales, the basket, storefront mix, a year earlier like for like",
+    plan: "34 checks — the guide's for a week, and Group leadership's",
+    headline: "A bigger basket, not more orders, made an ordinary week",
+    lede: `LuxExperience sold <b>€167.0k</b> in the week of 19–25 October: 11.8% more than the same week last year, like for like, and 5.1% more than the week before<sup>1</sup><sup>2</sup>. That is an ordinary week — inside the usual range of the eight before it. How it was made is not: the average order reached €645, the highest in thirteen weeks, on 259 orders, 5% fewer than a usual week<sup>1</sup>.`,
+    pics: true, order: ["basket", "conversion", "returns", "margin"], steady: ["delivery", "service", "nap", "yoox", "mrp"],
+  },
+  finance: {
+    label: "Finance", watches: "margin, refunds paid, the quarter to date",
+    plan: "33 checks — the guide's for a week, and Finance's: the quarter to date, refunds by storefront",
+    headline: "The quarter runs ahead, and margin holds its new level",
+    lede: `The second quarter has sold <b>€575.9k</b> from 1 to 25 October — 9.5% more than the same days last year without THE OUTNET, and 1.6% more with it<sup>13</sup>. The week of 19–25 October added €167.0k, an ordinary week by its usual range<sup>1</sup>. Margin held at its new level and refunds stayed inside their usual swing; one storefront's refunds did not.`,
+    pics: false, order: ["margin", "returns", "basket"], steady: ["delivery", "service", "nap", "yoox", "mrp"],
+  },
+  buying: {
+    label: "Buying & merchandising", watches: "categories, brands, returns by reason, margin by storefront",
+    plan: "35 checks — the guide's for a week, and Buying's: returns by reason and category, margin by storefront and tier",
+    headline: "Womenswear is coming back for not fitting",
+    lede: `In the week of 19–25 October more womenswear came back for size and fit than in any usual week, and NET-A-PORTER's refunds were its most in nine weeks<sup>8</sup><sup>9</sup>. Margin held at its new, higher level, led by Mytheresa. Sales made an ordinary week: bigger baskets made up for fewer orders<sup>1</sup>.`,
+    pics: false, order: ["returns", "margin", "basket"], steady: ["nap", "yoox", "mrp", "delivery", "service"],
+  },
+  ecommerce: {
+    label: "E-commerce & marketing", watches: "visits, conversion by device and channel, top clients",
+    plan: "33 checks — the guide's for a week, and E-commerce's: conversion by device, channel and storefront",
+    headline: "Visits held; fewer of them became orders, for a third week",
+    lede: `The week of 19–25 October brought as many visits as any of the last nine, and fewer of them ended in an order — the third week running<sup>5</sup>. Sales still made an ordinary week by their usual range, because baskets grew: Mytheresa's top clients bought more<sup>1</sup><sup>3</sup>.`,
+    pics: false, order: ["conversion", "basket", "returns"], steady: ["margin", "nap", "yoox", "mrp", "delivery"],
+  },
+  operations: {
+    label: "Operations & client care", watches: "shipments, delivery days, returns arriving, service tickets",
+    plan: "32 checks — the guide's for a week, and Operations': delivery by service level, returns arriving, tickets",
+    headline: "Deliveries held their time; returns came back heavier",
+    lede: `In the week of 19–25 October shipments left and arrived on their usual times, and fewer clients needed service<sup>11</sup><sup>12</sup>. What came back did not hold: returns arriving ran heavier, led by womenswear that did not fit, and NET-A-PORTER's refunds were its most in nine weeks<sup>7</sup><sup>9</sup>.`,
+    pics: false, order: ["returns", "delivery", "conversion"], steady: ["margin", "nap", "yoox", "mrp"],
+  },
+};
+
+const sups = h => h.replace(/<\/sup><sup>/g, ", ");   // [1][2] reads "1, 2", never "12"
+function render(key) {
+  const R = READERS[key];
+  document.querySelectorAll("#readers button").forEach(b => b.classList.toggle("on", b.dataset.k === key));
+  document.querySelectorAll("#guide-readers div").forEach(d => d.classList.toggle("on", d.dataset.k === key));
+  document.getElementById("headline").textContent = R.headline;
+  document.getElementById("lede").innerHTML = sups(R.lede);
+  document.getElementById("made-plan").innerHTML = R.plan.replace(/^(\d+) checks/, "<b>$1</b> checks");
+  document.getElementById("lead-pics").innerHTML = !R.pics ? "" : `
+    <div class="pics">
+      <div class="pic"><div class="t">Sales by week</div><div class="s">inside its usual range</div>
+        ${bars({ values: SALES13, labels: WEEKS13, usual: band(SALES13.slice(4, 12)), fmt: eur, every: 3 })}</div>
+      <div class="pic"><div class="t">Average order by week</div><div class="s">above its usual range</div>
+        ${bars({ values: AOV13, labels: WEEKS13, usual: band(AOV13.slice(4, 12)), fmt: v => "€" + Math.round(v), every: 3 })}</div>
+    </div>
+    <div class="cap">Shaded: a usual week — the average of the eight weeks before, give or take their usual spread. The two pictures are the week's whole story in brief: the same sales, made from bigger baskets.</div>`;
+  document.getElementById("stories").innerHTML = R.order.map(id => {
+    const s = STORIES[id], f = s.fig();
+    return `<section class="story" style="${f ? '' : 'grid-template-columns:minmax(0,1fr)'}"><div>
+        <div class="kicker ${s.kicker[0]}">${s.kicker[1]}</div><h3>${s.title}</h3>${s.body}<div class="act">${s.act}</div></div>
+        ${f ? `<div class="fig">${f}</div>` : ""}</section>`;
+  }).join("");
+  const owed = FLOOR.filter(id => !R.order.includes(id));
+  document.getElementById("shorts").innerHTML = !owed.length ? "" :
+    `<section class="short"><h4>Also unusual this week<span>carried for every reader</span></h4>${owed.map(id => `<div>${sups(SHORT[id])}</div>`).join("")}</section>`;
+  document.getElementById("steady").innerHTML = `<h4>Held steady<span>inside their usual range — one line each</span></h4>` +
+    R.steady.filter(id => !R.order.includes(id)).map(id => `<div>${sups(STEADY[id])}</div>`).join("");
+  try { localStorage.setItem("mock.reader", key); } catch (e) {}
+}
+
+document.getElementById("readers").innerHTML = Object.entries(READERS).map(([k, r]) => `<button data-k="${k}">${r.label}</button>`).join("");
+document.getElementById("guide-readers").innerHTML = Object.entries(READERS).map(([k, r]) => `<div data-k="${k}"><b>${r.label}</b><span>${r.watches}</span></div>`).join("");
+document.getElementById("readers").addEventListener("click", e => { const b = e.target.closest("button"); if (b) render(b.dataset.k); });
+document.getElementById("range").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.getElementById("range-note").classList.toggle("on", b.dataset.r !== "week");
+});
+let start = "leadership";
+try { const k = localStorage.getItem("mock.reader"); if (k && READERS[k]) start = k; } catch (e) {}
+render(start);
+</script>
+</body></html>

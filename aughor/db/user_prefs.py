@@ -56,6 +56,19 @@ def _connection_id(v: Any) -> str:
     return s
 
 
+def _function_group(v: Any) -> str:
+    """Arc BG-4 — who a person reads the Briefing as: one of the organisation's function groups, or ""
+    for the organisation itself."""
+    s = str(v or "").strip()
+    if not s:
+        return ""
+    from aughor.org.context import current_org_id
+    from aughor.rbac.groups import list_groups
+    if s not in {g.id for g in list_groups(current_org_id() or "default")}:
+        raise ValueError(f"no function group is named '{s}'")
+    return s
+
+
 #: How many ontology maps one person's arrangement is kept for, and how many cards on one map. Caps, because
 #: this value is the one key here that a UI writes on every drag rather than a person choosing from a list.
 MAX_MAPS = 24
@@ -221,6 +234,9 @@ ALLOWED_KEYS: dict[str, tuple] = {
     # Which approved figures sit on the Briefing's front and which are hidden, per dataset. Cosmetic and self-scoped
     # like the switches: every approved figure is still measured, and a send carries the platform's Briefing.
     "briefing_figures": (_briefing_figures, "which figures sit on your Briefing's front, and which you hide, per dataset"),
+    # Arc BG-4 — the reader a person's Briefing is written for. It changes which stories lead, in what
+    # order and in what words, never a number; "" reads as the organisation.
+    "briefing_reader": (_function_group, "who your Briefing is written for: a function group, or the organisation"),
     # SP-13 — the clock drafts and new schedules speak. Cosmetic-plus: it changes what
     # NEW drafts default to, never what any existing chain does.
     "timezone": (_timezone, "the timezone drafts and new schedules speak (IANA name)"),

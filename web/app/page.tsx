@@ -1973,6 +1973,7 @@ export default function Home() {
                   onCanvasUpdate={updated => setActiveCanvas(updated)}
                   initialOpenInvId={initialCanvasInvId}
                   initialRestoreSessionId={initialCanvasChatId}
+                  workspaceId={selectedWorkspace}
                 />
               </ErrorBoundary>
             )}

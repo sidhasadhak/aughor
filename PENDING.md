@@ -960,3 +960,100 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     may do* (Jev on through the environment, said so), the object and SQL doors read 124,669 orders, and the alert
     summary — serving for the first time — names theLook's one declared impact, "not measured to hold". Open: the
     named gaps in §3.65.
+
+68. [~] **The Briefing written from a guide, for a reader — Arc BG** (the user, 2026-10-29: *"Imagine there is no
+    structure to it. Only the periods like the week month year and the custom day range… based on their role… a good
+    prompt for each connection which will be built by the LLM itself as a part of the exploration phase"*) — mocked on
+    live LuxExperience data (`design-mockups/briefing-week-lux.html`, Week 43, five readers), approved (*"I like it"*),
+    then *"But lets build it"*; calls taken as recommended (ROADMAP §6 item 58, §3.66). Branch `claude/briefing-guide`.
+    - [x] BG-1 the guide: model, lifecycle kind `briefing_guide`, drafter, check verification, routes, drafted at an
+      exploration's end — `aughor/briefing/guide.py`
+    - [x] BG-2 measure: every check against the range, the one before, a year earlier and its usual range; the floor
+    - [x] BG-3 write: one call per reader; number and claims gates; cached and kept per reader
+    - [x] BG-4 readers: function groups, `briefing_reader`, a reader's watch list drafted from plain words; a
+      subscription sends its reader's edition
+    - [x] BG-5 the page: Week · Month · Year · Custom, Reading as, the guide panel (`web/components/brief/BriefingEdition.tsx`)
+    - [~] BG-6 live on LuxExperience (2026-10-29, `~/dev/aughor` detached on the branch, API restarted three times):
+      the first draft kept 16 of 18 checks out (metrics named by label) and missed THE OUTNET — fixed; the second
+      measured 17 of 17 and wrote THE OUTNET's like-for-like rule from the data. Three readers added from its
+      proposals (Leadership, Finance, Digital and growth); the Week of 19–25 Oct written for each, one model call each,
+      nothing withheld, every figure equal to the mockup's measurement (AOV €645, usual €566–613; conversion 2.05%, the
+      lowest of nine weeks). 7 model calls in all. **Open: the guide is still a draft — publishing it is the user's.**
+    - [ ] Follow-ups, named not done: a Data Canvas still mounts the earlier panel, so the morning paper's code and the
+      `briefing_sections` / `briefing_figures` keys stay until it reads editions; `recipes.py` still writes the old
+      range Briefing for a dataset without a guide; the departure gate re-measures window values, not band edges;
+      "Not read" lists every care note, not only the ones this edition touched; a count's usual prints "115.75".
+
+69. [~] **The Briefing as an open canvas the model composes — Arc BC** (the user, 2026-10-29: *"let the LLMs use The
+    Briefing as an open canvas to draw any element … everything with citations and drill down possibilities … it
+    should make sense right away to any user!"*) — mocked on live LuxExperience data
+    (`design-mockups/briefing-canvas-lux.html`), accepted, plan approved; calls in ROADMAP §6 item 59, §3.67. Branch
+    `claude/briefing-guide`, on top of Arc BG.
+    - [x] BC-1 sources: a measured check, a compiled breakdown by any column, a guarded SELECT — rows, SQL, receipts
+      (`aughor/briefing/compose/sources.py`)
+    - [x] BC-2 the edition's blocks: a closed vocabulary, validated, with the number and claims gates over every word
+      (`compose/spec.py`)
+    - [x] BC-3 investigate and compose: the tool loop under the Briefer's budget; the floor; kept per reader
+      (`compose/write.py`); Arc BG's writer retired, its gates kept
+    - [x] BC-4 drill (compiled, only the columns the edition offers) and a question that reads the edition on screen
+    - [x] BC-5 the page: blocks, the Sources/Guide panel, controls, the choropleth (`web/components/brief/blocks/`)
+    - [x] BC-6 a sent edition judged against every source re-run at departure
+    - [~] BC-7 live on LuxExperience (2026-10-29, `~/dev/aughor` detached on the branch): the user published the guide
+      (v8, 15:53 UTC). Week of 19–25 Oct written for Leadership and Finance, 4–5 model steps and 2 queries each. Both
+      investigated the record net revenue and profit per order and found returns not yet arrived (item return rate by
+      order week falling to near 0 for the newest weeks) — "reported profit looks far better than it is" — and asked
+      whether to re-read before Singles' Day; Finance drew kept profit per order by storefront as small multiples.
+      The live runs found and fixed: query numbers returned as text, five figure blocks and no breakdown, breakdowns
+      tried on whole-statement metrics, untitled blocks, a rate axis reading 0.336, a mark label off the edge.
+      14 Sonnet calls for the proof.
+    - [x] The five follow-ups, built 2026-10-30 (the user: "Do this now"):
+      - *Give it to a team* on every decision (`compose/write.give`, `POST …/briefing/edition/give`): posted to the
+        channel the function group binds, through the departure gate (origin person, the edition's sources re-run),
+        written into the edition under the decision — sent, held with why, or not sent because the group binds no
+        channel; given once per group. A decision's three choices are offered by code, never chosen by the model.
+      - The Data Canvas mounts the edition page (`canvas_id` on every edition route): only the guide's checks that
+        read the canvas's tables are measured, the model is shown and queries only those tables, and the checks left
+        out are said on the page. The earlier `BriefingPanel` component is mounted nowhere now; its exported pieces
+        (`DossierTrace`, `EvidenceDrawer`, `FindingActions`) stay in use. The premise was wrong: no screen opened a
+        canvas's Briefing at all (the canvas workspace had Chat · History · Artifacts) — so it was mocked
+        (`design-mockups/canvas-briefing-tab.html`) and the user took its four calls as drawn ("Build as drawn"):
+        the tab sits after Chat and a canvas still opens on Chat; a canvas on every table reads the dataset's own
+        edition (written once); only a canvas that names tables writes its own, and says before writing which checks
+        it measures and which it leaves out; no Schedule in a canvas; Reading as is the person's own reader.
+    - [x] The Briefing reads the platform's own intelligence (2026-10-30, the user: "where is the intelligence … where is
+      all the effort spent in building AN AGENTIC DATA INTELLIGENCE", then "Build it straight"). Measured first: the
+      Finance September edition took 3 model steps and 0 queries of its own and said "an in-range month", while the
+      platform held 22 explorer findings, 16 deep analyses and 21 decisions on LuxExperience it never read. Now each
+      edition reads them as sources (`sources.known_findings` · `known_analyses` · `known_decisions`), the model is told
+      to read them first and lead with what is learned and what to do; a sentence may repeat a cited deep analysis's
+      numbers, and may say a cause only by citing a finished deep analysis whose claim licence is causal; it may start
+      ONE deep analysis (`deep_analysis` tool → `runners.run_investigation`, background only, filed under the edition's
+      session) on the move nothing explains — a scheduled send only where the organisation allows model work nobody
+      asked for; a `context` block draws a deep analysis, a finding or a decision with a way to open it, and the page
+      reads again every 30 s while a started analysis runs.
+    - [~] The producing half (the user, 2026-10-30: "Do this task here" for both):
+      - [x] Discussions as context. Measured: outside words are kept only as said claims (Slack note:/decide:, the
+        decision email door, a Google file's comments, meeting notes) and a decision's evidence — no discussions store,
+        none read back by dataset or date. Built on that one store, read only: `sources.known_discussions` (a month
+        before a range to two months after, who / where / when, the decision it is about) feeds the edition and a
+        context block; `sources.known_context` puts the platform's latest deep analyses, decisions, discussions and
+        strongest findings in every question's context (quick answer and conversation). LuxExperience holds 4 said
+        claims (two Google Docs comments, two meeting notes). Not built: reading a Gmail mailbox — the OAuth card and
+        `gmail.messages.*` exist, nothing stores mail; it needs a person to connect an account.
+      - [x] Explorer coverage, built: a run asks up to `explorer.budget.COVERAGE_QUERIES` = 300 questions of a dataset,
+        shared across its domains (at least 15 each; it was a flat 15 per domain — LuxExperience's single-domain run
+        asked 15); one question each 1.5 s (was 5 s); a question's prompt carries the domain's newest 40 findings (all of
+        them grew tokens with the square of the run); synthesis 12 findings / 36 pairs (was 8 / 24); the Explorer's
+        charter 6M tokens / 2 h (was 200k / 10 min), still under the month's exploration budget; a period label
+        (fiscal_year, signup_fy, order_month) is no longer summed as a measure. The domains route shows the run's real
+        cap.
+      - [ ] Live run on `luxexperience` — waits on the user's word for the spend.
+      - [ ] Named, not built: approved metrics and dimension × period cells in the coverage manifest (it keeps only
+        profiled measures by design); "Explore 5 more" writes its cap under the bare connection (no caller left).
+      - A breakdown's segments are re-derived at departure from its re-run rows (`sources.rerun`), so a change
+        against usual departs on the change measured at the send.
+      - The number gate binds a number to what it is said of (`spec.misused`): a cited number to its cited source, to
+        the segment the clause around it names, moving the way that segment moved; an uncited number to a source the
+        block reads. Measured on the two kept live editions first: 0 of 29 sentences newly held.
+      - A person's guide edit measures each new or changed check once before it is kept (`guide.verify_edit`) and is
+        refused with why when one cannot be; ids must be snake_case and unique and readers must watch real checks.

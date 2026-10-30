@@ -113,8 +113,10 @@ AGENTS: tuple[AgentCharter, ...] = (
         lane="background", job_kinds=("exploration", "explain_move"),
         tools=("schema profiling", "grounded SQL", "finding synthesis"),
         icon="telescope",
-        # runs continuously at volume, so the budget is the lever that matters
-        default_budget=Budget(token_budget=200_000, time_budget_s=600),
+        # runs continuously at volume, so the budget is the lever that matters. Sized 2026-10-30 for a run that asks
+        # hundreds of questions of a dataset (`explorer.budget.COVERAGE_QUERIES`) — 200k tokens and 10 minutes stopped
+        # LuxExperience's at 15; the month's exploration budget still bounds what runs spend in all.
+        default_budget=Budget(token_budget=6_000_000, time_budget_s=7200),
     ),
     AgentCharter(
         id="analyst", name="Analyst", role="Deep analysis reasoner",
@@ -156,7 +158,7 @@ AGENTS: tuple[AgentCharter, ...] = (
     AgentCharter(
         id="briefer", name="Briefer", role="Verdict synthesizer",
         goal="Synthesize the briefing — the state of the business in one read.",
-        lane="background", job_kinds=("brief",), tools=("tree-reduce", "grounding"),
+        lane="background", job_kinds=("brief", "briefing_guide"), tools=("tree-reduce", "grounding"),
         icon="newspaper",
         # WP-7: a briefing runs real tree-reduce synthesis (LLM) over the workspace findings.
         # scheduled, so latency-tolerant; briefing prose quality is user-visible

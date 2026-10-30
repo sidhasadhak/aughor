@@ -1,0 +1,245 @@
+"""Arc BG-1 (ROADMAP §3.66) — the Briefing guide.
+
+A guide is judgement kept as versions: the Explorer's draft, a person's edit, a published version
+that a later draft never replaces. Its checks are measured once before they are kept — one that
+cannot be measured is kept out WITH why. A redraft keeps the readers a person already has and only
+proposes the rest.
+"""
+from __future__ import annotations
+
+import contextlib
+from datetime import date
+
+import duckdb
+import pytest
+
+from aughor.briefing import guide as G
+from aughor.briefing import ranges
+
+OCT29 = date(2026, 10, 29)
+
+
+@pytest.fixture
+def con():
+    """Returns arriving every day: 6 a day refunding 50 each, two reasons, two categories."""
+    c = duckdb.connect()
+    c.execute("""CREATE TABLE returns AS
+        SELECT d::DATE AS return_date, 50.0 AS refund_eur,
+               CASE WHEN i % 2 = 0 THEN 'size_fit' ELSE 'changed_mind' END AS reason,
+               CASE WHEN i % 3 = 0 THEN 'womenswear' ELSE 'shoes' END AS category
+        FROM range(DATE '2026-08-01', DATE '2026-10-29', INTERVAL 1 DAY) t(d), range(6) k(i)""")
+    yield c
+    c.close()
+
+
+def _run(con):
+    def run(sql):
+        try:
+            cur = con.execute(sql)
+            return [d[0] for d in cur.description], cur.fetchall(), None
+        except Exception as exc:  # noqa: BLE001
+            return [], [], str(exc)
+    return run
+
+
+def _week():
+    spec, why = ranges.resolve_range("last_week", today=OCT29, lag_days=1, lag_source="learned")
+    assert spec is not None, why
+    return spec
+
+
+def _guide(**kw) -> G.BriefingGuide:
+    return G.BriefingGuide(**{"business": "A shop.", **kw})
+
+
+def test_a_version_needs_who_wrote_it():
+    with pytest.raises(ValueError):
+        G.save("guide_c1", None, _guide(), by="")
+
+
+def test_a_published_version_stays_what_editions_read_after_a_later_draft():
+    G.save("guide_c1", "s", _guide(business="first draft"), by="explorer")
+    used, rev = G.current("guide_c1", "s")
+    assert used.business == "first draft" and rev.state == "draft"      # a draft is read until one is published
+
+    G.publish("guide_c1", "s", by="user:amit")
+    G.save("guide_c1", "s", _guide(business="the explorer's redraft"), by="explorer")
+
+    used, rev = G.current("guide_c1", "s")
+    assert used.business == "first draft" and rev.state == "published" and rev.by == "user:amit"
+    working, wrev = G.working_copy("guide_c1", "s")
+    assert working.business == "the explorer's redraft" and wrev.state == "draft"
+    assert [r.version for r in G.versions("guide_c1", "s")] == sorted(
+        (r.version for r in G.versions("guide_c1", "s")), reverse=True)        # every version kept, newest first
+    assert len(G.versions("guide_c1", "s")) == 3
+
+
+def test_a_check_that_cannot_be_measured_is_kept_out_with_why(con):
+    spec = _week()
+    checks = [
+        G.Check(id="refunds", label="Refunds paid", sql="SUM(refund_eur)", tables=["returns"],
+                time_column="returns.return_date", dimensions=["reason"]),
+        G.Check(id="aov", label="Average order", metric="average_order_value"),
+        G.Check(id="undated", label="Undated", sql="COUNT(*)", tables=["returns"]),
+        G.Check(id="broken", label="Broken", sql="SUM(no_such_column)", tables=["returns"],
+                time_column="returns.return_date"),
+        G.Check(id="empty", label="Nothing", sql="COUNT(*)", tables=["returns"], filters=["reason = 'none'"],
+                time_column="returns.return_date"),
+    ]
+    kept, dropped = G.verify_checks(checks, metrics_by_name={}, run_sql=_run(con), dialect="duckdb",
+                                    windows=spec.windows()[:2])
+    assert [c.id for c in kept] == ["refunds"]
+    why = {d.id: d.reason for d in dropped}
+    assert "no approved metric" in why["aov"]
+    assert "no date" in why["undated"]
+    assert "query failed" in why["broken"]
+    assert "no rows" in why["empty"]
+
+
+class _LLM:
+    def __init__(self, draft):
+        self.draft, self.calls = draft, 0
+
+    def complete(self, *, system, user, response_model, temperature):
+        self.calls += 1
+        assert response_model is G._Draft
+        return self.draft
+
+
+def test_a_redraft_keeps_a_persons_readers_and_proposes_the_rest(con, monkeypatch):
+    monkeypatch.setattr(G, "_context", lambda conn_id, schema, today: "context")
+    monkeypatch.setattr(G, "function_groups", lambda: [{"id": "finance", "name": "Finance", "description": ""},
+                                                        {"id": "product", "name": "Product", "description": ""}])
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
+    # a person already added Finance, watching one check
+    G.save("guide_c2", None, _guide(readers=[G.Reader(group_id="finance", name="Finance", watches="cash",
+                                                check_ids=["refunds"])]), by="user:amit", publish=True)
+    draft = G._Draft(
+        business="A returns-heavy shop.", ranges=G.RangeNotes(week="steer"),
+        checks=[G.Check(id="Refunds", label="Refunds paid", sql="SUM(refund_eur)", tables=["returns"],
+                        time_column="returns.return_date"),
+                G.Check(id="ghost", label="Ghost", metric="nope")],
+        readers=[G.Reader(group_id="finance", name="Finance", watches="the model's words", check_ids=["ghost"]),
+                 G.Reader(group_id="product", name="Product", watches="pages", check_ids=["refunds", "ghost"]),
+                 G.Reader(group_id="buying", name="Buying", watches="categories")])
+    llm = _LLM(draft)
+    rev = G.draft_guide("guide_c2", None, today=OCT29, llm=llm,
+                        runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
+
+    assert llm.calls == 1 and rev.state == "draft" and rev.by == "explorer"
+    body = G.BriefingGuide.model_validate(rev.body)
+    assert [c.id for c in body.checks] == ["refunds"]                       # slugged, measured
+    assert [d.id for d in body.dropped] == ["ghost"]                         # said, not silent
+    by_group = {r.group_id: r for r in body.readers}
+    assert by_group["finance"].watches == "cash"                             # the person's reader kept as it was
+    assert by_group["product"].check_ids == ["refunds"]                      # an existing group: a reader
+    assert [r.name for r in body.proposed_readers] == ["Buying"]             # no such group: a proposal
+    used, used_rev = G.current("guide_c2", None)
+    assert used_rev.state == "published" and used.readers[0].watches == "cash"   # the redraft replaces nothing
+
+
+def test_the_generic_lifecycle_doors_refuse_to_write_a_guide():
+    from aughor.routers.lifecycle import _own_doors
+    assert G.KIND in _own_doors()
+
+
+def test_the_briefer_runs_the_guide_job():
+    from aughor.kernel.agents import charter_for_kind
+    assert charter_for_kind(G.JOB_KIND).id == "briefer"
+
+
+# ── what the live LuxExperience draft taught (2026-10-29) ────────────────────────────────────
+
+class _Metric:
+    def __init__(self, name, label, **kw):
+        self.name, self.label = name, label
+        self.__dict__.update(kw)
+
+
+def test_a_check_may_name_an_approved_metric_by_its_label_and_is_kept_by_its_id(con):
+    """The first live draft named 16 of 18 metrics by label; every one was kept out as unknown."""
+    aov = _Metric("average_order_value_aov", "Average Order Value (AOV)")
+    assert G.approved_metric("Average Order Value (AOV)", {aov.name: aov}) is aov
+    assert G.approved_metric("average_order_value_aov", {aov.name: aov}) is aov
+    assert G.approved_metric("Basket size", {aov.name: aov}) is None
+
+
+@pytest.fixture
+def shop():
+    c = duckdb.connect()
+    c.execute("""CREATE TABLE orders AS
+        SELECT d::DATE AS order_date, p AS platform
+        FROM range(DATE '2025-09-01', DATE '2026-10-29', INTERVAL 1 DAY) t(d), (SELECT unnest(['A', 'B']) AS p)
+        UNION ALL SELECT d::DATE, 'OUT' FROM range(DATE '2025-09-01', DATE '2026-05-01', INTERVAL 1 DAY) t(d)""")
+    c.execute("CREATE TABLE corporate_events AS SELECT DATE '2026-04-30' AS day, 'divestiture' AS kind, "
+              "'OUT sold to a buyer' AS note")
+    yield c
+    c.close()
+
+
+def test_a_storefront_that_stopped_is_found_from_the_data(shop):
+    gmv = _Metric("gmv", "GMV", time_column="orders.order_date", tables=["orders"],
+                  dimensions=["platform", "no such column"])
+    ended = G.ended_segments([gmv], _run(shop), through=date(2026, 10, 28))
+    assert ended == [{"table": "orders", "column": "platform", "value": "OUT", "last": "2026-04-30", "rows": 242}]
+
+
+def test_a_small_table_is_read_in_full_for_the_drafter(shop):
+    schema_text = "TABLE: orders  (1,124 rows)\n  order_date DATE\n\nTABLE: corporate_events  (1 rows)\n  day DATE\n"
+    text = G.reference_rows(schema_text, _run(shop))
+    assert "corporate_events:" in text and "OUT sold to a buyer" in text
+    assert "orders:" not in text                                       # a large table is never dumped
+
+
+# ── a person's edit is checked before it is kept ─────────────────────────────────────────────
+
+_REFUNDS = G.Check(id="refunds", label="Refunds paid", sql="SUM(refund_eur)", tables=["returns"],
+                   time_column="returns.return_date")
+
+
+def _no_query():
+    raise AssertionError("an unchanged check must run no query")
+
+
+def test_an_edit_that_leaves_every_check_as_it_was_runs_no_query(monkeypatch):
+    G.save("guide_e1", None, _guide(checks=[_REFUNDS]), by="explorer")
+    edited = _guide(business="A shop that sells shoes.", checks=[_REFUNDS])
+    assert G.verify_edit("guide_e1", None, edited, runner=_no_query) == edited
+
+
+def test_a_changed_check_that_cannot_be_measured_refuses_the_edit_and_says_which(con, monkeypatch):
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
+    G.save("guide_e2", None, _guide(checks=[_REFUNDS]), by="explorer")
+    broken = _REFUNDS.model_copy(update={"sql": "SUM(no_such_column)"})
+    empty = G.Check(id="none", label="No reason given", sql="COUNT(*)", tables=["returns"],
+                    filters=["reason = 'none'"], time_column="returns.return_date")
+    with pytest.raises(ValueError) as why:
+        G.verify_edit("guide_e2", None, _guide(checks=[broken, empty]),
+                      runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
+    assert "“Refunds paid” its query failed" in str(why.value) and "“No reason given”" in str(why.value)
+    assert "no rows" in str(why.value)
+
+
+def test_a_new_check_that_measures_is_kept(con, monkeypatch):
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
+    G.save("guide_e3", None, _guide(checks=[_REFUNDS]), by="explorer")
+    sizing = G.Check(id="size_fit_refunds", label="Size-fit refunds", sql="SUM(refund_eur)", tables=["returns"],
+                     filters=["reason = 'size_fit'"], time_column="returns.return_date")
+    kept = G.verify_edit("guide_e3", None, _guide(checks=[_REFUNDS, sizing]),
+                         runner=lambda: contextlib.nullcontext((_run(con), "duckdb")))
+    assert [c.id for c in kept.checks] == ["refunds", "size_fit_refunds"]
+
+
+def test_an_edit_with_a_bad_id_or_a_reader_watching_nothing_is_refused():
+    G.save("guide_e4", None, _guide(checks=[_REFUNDS]), by="explorer")
+    with pytest.raises(ValueError, match="snake_case and unique in the guide: Refunds Paid"):
+        G.verify_edit("guide_e4", None, _guide(checks=[_REFUNDS.model_copy(update={"id": "Refunds Paid"})]),
+                      runner=_no_query)
+    with pytest.raises(ValueError, match="snake_case and unique in the guide: refunds"):
+        G.verify_edit("guide_e4", None, _guide(checks=[_REFUNDS, _REFUNDS]), runner=_no_query)
+    reader = G.Reader(group_id="finance", name="Finance", watches="cash", check_ids=["refunds", "cash_out"])
+    with pytest.raises(ValueError, match="Finance watches cash_out"):
+        G.verify_edit("guide_e4", None, _guide(checks=[_REFUNDS], readers=[reader]), runner=_no_query)

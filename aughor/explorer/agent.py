@@ -88,7 +88,7 @@ FIGURE_STYLE = ("Write a rate, share or ratio as a percentage with one decimal (
 
 
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
-_RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
+_RATE_SECONDS_INTEL  = 1.5   # domain intel phase: at most one question each 1.5 s (was 5 s — 300 questions spent 25 minutes asleep)
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
 #: Table layers whose tables are never offered to the question generator — raw and integration copies
 #: (findings come from the business copy), uploads (only when a person asks) and system. A reference table
@@ -110,6 +110,9 @@ _NO_MORE_QUESTIONS = object()
 # A job is one of structure · questions · full (`self._job`); the log and every surface say these
 # words, never a phase number. docs/GLOSSARY.md › The explorer's passes.
 SYNTH_RESERVE_FRACTION = 0.80  # stop the questions pass at this share of the token budget, leaving the rest for synthesis
+#: The findings a question's prompts carry for context — the domain's newest, not all of them: every finding in every
+#: prompt grew a run's tokens with the square of its length, and a run now asks hundreds of questions.
+CONTEXT_FINDINGS = 40
 # (0.80 not 0.85: a single questions-pass iteration can overshoot the threshold by a few %, and
 #  the now-higher-yield the questions pass + synthesis was crossing 100% and getting heartbeat-cancelled
 #  at the very end — 20% headroom lets synthesis finish cleanly.)
@@ -1338,6 +1341,21 @@ class SchemaExplorer:
                 from aughor.kernel.errors import tolerate
                 tolerate(_alert_exc, "alert proposals are best-effort after an exploration",
                          counter="explorer.alert_proposals")
+            # Arc BG-1 — the Briefing guide, drafted from what this run learned: the Briefer's job,
+            # keyed on the schema fingerprint. Never for a structure-only run (no model call may
+            # follow it) or a canvas; a re-run nobody started drafts only when the organisation
+            # lets Aughor make model calls nobody pressed for.
+            if not self._structure_only and not self.canvas_id:
+                try:
+                    from aughor.orgsettings.allows import allows
+                    if not self._gaps_only or allows("scheduled_model_work"):
+                        from aughor.briefing.guide import submit_draft
+                        await submit_draft(self.connection_id, self.schema_name,
+                                           fingerprint=str(self._state.get("schema_fingerprint") or ""))
+                except Exception as _guide_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_guide_exc, "the Briefing guide's draft is best-effort after an exploration",
+                             counter="explorer.briefing_guide")
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
                 f"{self._status.queries_executed}q, "
@@ -2598,7 +2616,6 @@ class SchemaExplorer:
         }
         DEFAULT_ANGLES = ["volume", "value", "patterns", "anomalies", "trends"]
 
-        HARD_BUDGET = 15
 
         llm = get_provider("coder")
         sql_writer = SqlWriter(self._conn)
@@ -2660,6 +2677,9 @@ class SchemaExplorer:
             return _C(dss).most_common(1)[0][0] if dss else ""
 
         passes, _pass_splits = _build_domain_passes(domain_entities, multi_dataset, _entity_ds)
+        # each domain's share of the run's questions (`explorer.budget.COVERAGE_QUERIES`); a person's `{domain}__cap` wins
+        from aughor.explorer.budget import domain_cap
+        HARD_BUDGET = domain_cap(len(passes))
         for _split_domain, _split_datasets in _pass_splits:
             logger.info(
                 "[explorer:%s] questions: %s domain spans %s — splitting into one pass per dataset",
@@ -3056,7 +3076,7 @@ class SchemaExplorer:
 
                 existing_findings = "\n".join(
                     f"  • [{i.get('angle','')}] {i.get('finding','')}"
-                    for i in domain_insights
+                    for i in domain_insights[-CONTEXT_FINDINGS:]
                 ) or "  (none yet)"
                 # The ONE shared sentence for interrupted work — same constant the
                 # kernel stamps on an orphaned job and the web client shows on a
@@ -4385,7 +4405,7 @@ class SchemaExplorer:
                     _drill_parent = None
                     _chain_depth = 0
 
-    async def _pass_synthesis(self, cp, tp, *, max_findings: int = 8, max_pairs: int = 24) -> int:
+    async def _pass_synthesis(self, cp, tp, *, max_findings: int = 12, max_pairs: int = 36) -> int:
         """synthesis — cross-finding SYNTHESIS. Compose pairs of existing findings that
         share a join key into emergent claims neither parent holds (the five operators
         in ``explorer/synthesis.py``). This is where Scout *builds on what it knows*:

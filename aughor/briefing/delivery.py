@@ -152,14 +152,29 @@ def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
     if spec is None:
         raise ValueError(f"the range cannot be read: {why}")
     scope_key = f"{sub.conn_id}:{sub.schema_name}" if sub.schema_name else sub.conn_id
-    brief = ranges.build_range_briefing(sub.conn_id, spec, scope_key=scope_key, domain_data=domain_data,
-                                        profile=profile, workspace_id=sub.workspace_id or None,
-                                        runner=runner)
+    # Arc BG-4 — a dataset with a Briefing guide sends the edition written for the subscription's
+    # reader ("group:<id>"; none = the organisation), judged line by line exactly as before.
+    from aughor.briefing import guide as G
+    from aughor.briefing.compose import write as W
+    guide, _rev = G.current(sub.conn_id, sub.schema_name or None)
+    if guide is not None:
+        reader = sub.reader.split(":", 1)[1] if (sub.reader or "").startswith("group:") else ""
+        from aughor.orgsettings.allows import allows
+        # a scheduled send is model work nobody asked for: it starts a deep analysis only where the organisation allows
+        brief = W.compose(sub.conn_id, spec, scope_key=scope_key, schema=sub.schema_name or None,
+                          reader_id=reader, runner=runner, may_start_analysis=allows("scheduled_model_work"))
+        sections = W.sheet_lines(brief)
+        measurement = W.departure_measurement(sub.conn_id, brief, runner=runner)
+    else:
+        brief = ranges.build_range_briefing(sub.conn_id, spec, scope_key=scope_key, domain_data=domain_data,
+                                            profile=profile, workspace_id=sub.workspace_id or None,
+                                            runner=runner)
+        sections = ranges.sheet_lines(brief)
+        measurement = ranges.fresh_measurement(sub.conn_id, brief, runner=runner)
     block = brief.get("period") or {}
-    measurement = ranges.fresh_measurement(sub.conn_id, brief, runner=runner)
     kept: list = []
     held: list[str] = []
-    for kind, lines in ranges.sheet_lines(brief):
+    for kind, lines in sections:
         passing = []
         for line in lines:
             why_held = line_holds(line, conn_id=sub.conn_id, declared=kind == "alerts",

@@ -192,6 +192,13 @@ def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str
     return schema, domains
 
 
+def gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str, list[str]]:
+    """The schema text the profile is inferred from — glossary applied, the exploration's annotations
+    in it, capped — and the ontology's domain labels. Public for the Briefing guide (Arc BG-1), which
+    is drafted from the same reading of the data."""
+    return _gather_context(connection_id, schema_name)
+
+
 _ROWS_RE = re.compile(r"\((\d[\d,]*)\s+rows\)")
 _LIMIT_LABEL = "Business profile · schema chars per prompt"
 

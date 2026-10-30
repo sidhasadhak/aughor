@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Briefing Canvas Lux</title>
+<!-- Mockup for discussion (2026-10-29): the Briefing as an open canvas the model composes — any element (sentence,
+     bridge, control, comparison, table, map, small multiples, heat grid, decision), every number cited, every block
+     drillable. LuxExperience (dcc63d83), week of 19–25 Oct 2026. Every figure was measured read-only on the live
+     warehouse on 29 Oct; the compositions (which blocks, in what order, with what words) are written here the way the
+     model would write them. The page renders from the two SPECS below — the model's output — by one renderer. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<style>
+:root {
+  --bg: #0E0F11; --bg-1: #15171A; --bg-2: #1C1F23; --bg-3: #23272C; --line: #262A30; --line-2: #333941;
+  --t1: #ECEDEF; --t2: #B2B7BF; --t3: #7E8691; --t4: #5A616B;
+  --blue: #4BA3F5; --blue-soft: rgba(75,163,245,.14); --green: #2EC87B; --green-soft: rgba(46,200,123,.13);
+  --amber: #E0AD00; --amber-soft: rgba(224,173,0,.13); --red: #F07167; --deemph: #4E5A6A; --band: rgba(126,134,145,.16);
+  --active: #0A2540; --r: 8px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--t2); font: 14px/1.5 "Source Sans 3", system-ui, sans-serif; min-width: 1280px;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+button { font: inherit; cursor: pointer; }
+.note { padding: 8px 16px; font-size: 12.5px; background: var(--blue-soft); border-bottom: 1px solid var(--line); }
+.note b { color: var(--blue); }
+.app { display: grid; grid-template-columns: 236px minmax(0,1fr); flex: 1; min-height: 0; }
+.rail { background: var(--bg-1); border-right: 1px solid var(--line-2); padding-top: 10px; font-size: 13px; overflow: hidden; }
+.rail .head { padding: 10px 14px 4px; font-size: 12px; font-weight: 600; color: var(--t3); }
+.rail .item { height: 28px; display: flex; align-items: center; gap: 10px; padding: 0 14px; color: var(--t2); }
+.rail .item i { width: 13px; height: 13px; border: 1.5px solid var(--t3); border-radius: 3px; }
+.rail .item.on { background: var(--active); color: var(--t1); }
+main { display: grid; grid-template-rows: auto auto minmax(0,1fr); min-width: 0; min-height: 0; overflow: hidden; }
+.connbar { display: flex; gap: 10px; align-items: center; padding: 8px 22px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.pill { padding: 2px 9px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line-2); color: var(--t1); font-size: 12.5px; }
+.tabs { display: flex; gap: 22px; padding: 9px 22px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.tabs span { padding-bottom: 8px; } .tabs .on { color: var(--t1); border-bottom: 2px solid var(--blue); }
+.work { display: grid; grid-template-columns: minmax(0,1fr) 340px; min-height: 0; }
+.canvas { overflow-y: auto; padding: 22px 40px 60px; min-height: 0; }
+.canvas-in { max-width: 920px; margin: 0 auto; }
+.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.top h1 { font-size: 15px; font-weight: 600; color: var(--t1); margin: 0; letter-spacing: .01em; }
+.top .when { font-size: 13px; color: var(--t3); }
+.seg { display: inline-flex; background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--r); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: none; color: var(--t2); padding: 3px 11px; border-radius: 6px; font-size: 12.5px; }
+.seg button.on { background: var(--bg-3); color: var(--t1); box-shadow: inset 0 0 0 1px var(--line-2); }
+.first { margin: 14px 0 6px; font-size: 12.5px; color: var(--t3); }
+.first b { color: var(--t2); font-weight: 500; }
+
+.block { position: relative; margin: 18px 0; padding: 18px 20px; background: var(--bg-1); border: 1px solid var(--line); border-radius: 12px; }
+.block.bare { background: none; border: 0; padding: 4px 0; }
+.block.drill { border-color: var(--blue); border-style: dashed; }
+.block .k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+.block .k .tag { color: var(--amber); }
+.block .k .tag.good { color: var(--green); }
+.block .k .tag.blue { color: var(--blue); }
+.block h2 { font-size: 19px; line-height: 1.3; color: var(--t1); margin: 0 0 6px; font-weight: 600; }
+.block p { margin: 0 0 8px; max-width: 72ch; }
+.lead { font-size: 27px; line-height: 1.28; font-weight: 600; color: var(--t1); letter-spacing: -.01em; max-width: 30ch; margin: 6px 0 10px; }
+.lead-sub { font-size: 16px; line-height: 1.55; color: var(--t2); max-width: 66ch; }
+.c { color: var(--t1); border-bottom: 1px dotted var(--t3); cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.c:hover, .c.sel { color: var(--blue); border-bottom-color: var(--blue); }
+.c sup { font-size: 9.5px; color: var(--blue); margin-left: 1px; }
+.drills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.drills button, .btn { background: var(--bg-2); color: var(--t1); border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 10px; font-size: 12.5px; }
+.drills button::before { content: "↳ "; color: var(--t3); }
+.btn.primary { background: #2F5BD3; border-color: #2F5BD3; }
+.btn.ghost { background: none; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.ctrl { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ctrl .lbl { font-size: 12.5px; color: var(--t3); }
+table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.t th { text-align: left; font-weight: 500; color: var(--t3); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line-2); }
+table.t td { padding: 8px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+table.t tr.dim td { opacity: .35; }
+table.t td.num { text-align: right; color: var(--t1); }
+table.t a { color: var(--blue); text-decoration: none; font-size: 12px; }
+.tablebar { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 4px; }
+.tablebar button { background: none; border: 0; color: var(--t3); font-size: 12px; }
+.decision { border-color: rgba(224,173,0,.45); background: linear-gradient(var(--amber-soft), var(--amber-soft)), var(--bg-1); }
+.decision .acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.quiet { font-size: 13.5px; color: var(--t3); }
+.quiet b { color: var(--t2); font-weight: 500; }
+.ask { display: flex; gap: 8px; margin: 26px 0 8px; }
+.ask input { flex: 1; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 10px; color: var(--t1); padding: 10px 12px; font: inherit; }
+.made { margin-top: 20px; font-size: 12.5px; color: var(--t3); }
+.made summary { cursor: pointer; }
+.made pre { white-space: pre-wrap; font: 11.5px/1.45 ui-monospace, Menlo, monospace; background: var(--bg-1); border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--t2); max-height: 320px; overflow: auto; }
+
+.evidence { border-left: 1px solid var(--line-2); background: var(--bg-1); overflow-y: auto; padding: 18px 18px 40px; font-size: 13px; }
+.evidence h3 { font-size: 13px; color: var(--t1); margin: 0 0 4px; font-weight: 600; }
+.evidence .muted { color: var(--t3); font-size: 12.5px; }
+.evidence .src { border-top: 1px solid var(--line); padding: 10px 0; }
+.evidence .src b { color: var(--t1); font-weight: 500; }
+.evidence pre { white-space: pre-wrap; font: 11.5px/1.45 ui-monospace, Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0; color: var(--t2); }
+.evidence .kv { display: grid; grid-template-columns: 96px 1fr; gap: 3px 8px; font-size: 12.5px; margin: 6px 0; }
+.evidence .kv span:nth-child(odd) { color: var(--t3); }
+svg text { font-family: "Source Sans 3", system-ui, sans-serif; }
+</style></head><body>
+<div class="note"><b>Mockup</b> · the Briefing as an open canvas the model composes. Every figure measured live on 29 Oct; the compositions are written here as the model would write them, and drawn by one renderer from its spec. Click any underlined number; try the storefront control, the drill buttons, “Reading as”, and the question at the bottom.</div>
+<div class="app">
+  <nav class="rail">
+    <div class="item"><i></i>Home</div><div class="item"><i></i>Inbox</div><div class="item"><i></i>Now</div><div class="item"><i></i>Data Canvas</div>
+    <div class="head">Intelligence</div><div class="item on"><i></i>Briefing</div><div class="item"><i></i>Ontology</div><div class="item"><i></i>Agent runs</div><div class="item"><i></i>Health</div><div class="item"><i></i>Documents</div><div class="item"><i></i>Record</div>
+    <div class="head">Data</div><div class="item"><i></i>Catalog</div><div class="item"><i></i>SQL Editor</div><div class="item"><i></i>Semantic Layer</div><div class="item"><i></i>Spreadsheets</div>
+    <div class="head">Operations</div><div class="item"><i></i>Agent Ops</div><div class="item"><i></i>Monitors</div><div class="item"><i></i>Notifications</div><div class="item"><i></i>Integrations</div><div class="item"><i></i>Spend</div><div class="item"><i></i>Security &amp; Audit</div><div class="item"><i></i>Evals</div>
+  </nav>
+  <main>
+    <div class="connbar"><span class="pill">Luxeperience GmbH ▾</span><span class="pill">luxexperience</span><span style="color:var(--green);font-size:12.5px">● loaded nightly · data through 28 Oct</span></div>
+    <div class="tabs"><span class="on">Briefing</span><span>Dashboards</span><span>Profile</span><span>Ontology</span><span>Evidence</span><span>Memory</span><span>Actions</span></div>
+    <div class="work">
+      <div class="canvas" id="canvas"><div class="canvas-in">
+        <div class="top">
+          <h1>The Briefing</h1><span class="when">Week of 19–25 October 2026</span>
+          <span style="margin-left:auto" class="seg" id="range"><button class="on">Week</button><button>Month</button><button>Year</button><button>Custom</button></span>
+        </div>
+        <div class="top" style="margin-top:10px"><span style="font-size:12.5px;color:var(--t3)">Reading as</span><span class="seg" id="readers"></span></div>
+        <div class="first" id="first"></div>
+        <div id="blocks"></div>
+        <div class="ask"><input id="askin" value="Which brands did the top clients buy?" aria-label="Ask about this week"><button class="btn primary" id="askbtn">Ask</button></div>
+        <details class="made"><summary id="madesum"></summary><p>The model returns a spec — blocks, each naming its type, the queries it reads and the control it listens to. Code runs every query, checks every number in the words against them, and draws each block from the platform's own components. This is that spec, as the page was drawn from it:</p><pre id="spec"></pre></details>
+      </div></div>
+      <aside class="evidence" id="evidence"></aside>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── What was measured (live, read-only, 29 Oct 2026). Each source is one governed query. ─────────────────
+const SRC = {
+  sales: { label: "Sales by week", tables: "orders", rows: 9, sql: "SELECT date_trunc('week', order_date) AS week, SUM(gmv_eur), COUNT(*)\nFROM orders WHERE order_date BETWEEN '2026-08-24' AND '2026-10-25'\nGROUP BY 1", note: "approved metric gmv · final" },
+  topclients: { label: "Sales by top client, against the usual week", tables: "orders", rows: 2, sql: "SELECT is_top_customer, SUM(gmv_eur) FILTER (WHERE order_date >= '2026-10-19'),\n       SUM(gmv_eur) FILTER (WHERE order_date < '2026-10-19') / 8.0\nFROM orders WHERE order_date BETWEEN '2026-08-24' AND '2026-10-25'\nGROUP BY 1", note: "a usual week = the 8 before · investigation the model asked for" },
+  topstore: { label: "Top clients by storefront", tables: "orders", rows: 8, sql: "SELECT platform, is_top_customer, SUM(gmv_eur) …  GROUP BY 1, 2", note: "investigation the model asked for" },
+  orders: { label: "The week's largest orders", tables: "orders", rows: 10, sql: "SELECT order_id, platform, order_date, channel, is_top_customer, gmv_eur, ship_country\nFROM orders WHERE order_date BETWEEN '2026-10-19' AND '2026-10-25'\nORDER BY gmv_eur DESC LIMIT 10", note: "each row opens the order's own page" },
+  country: { label: "Sales by ship country, against the usual week", tables: "orders", rows: 14, sql: "SELECT ship_country, SUM(gmv_eur) FILTER (WHERE …week), SUM(gmv_eur) FILTER (WHERE …usual)/8.0\nFROM orders … GROUP BY 1", note: "countries under 6 orders this week left off" },
+  device: { label: "Session conversion by device and week", tables: "web_sessions", rows: 27, sql: "SELECT date_trunc('week', session_start::timestamp), device, AVG(converted::int)\nFROM web_sessions WHERE session_start >= '2026-08-24' AND session_start < '2026-10-26'\nGROUP BY 1, 2", note: "approved metric session_conversion_rate, broken down by device" },
+  storeconv: { label: "Conversion by storefront, against the usual week", tables: "web_sessions", rows: 4, sql: "SELECT platform, AVG(converted::int) FILTER (…week), AVG(converted::int) FILTER (…usual) … GROUP BY 1", note: "drill the reader asked for" },
+  brands: { label: "Top clients' brands, against the usual week", tables: "order_items · orders", rows: 8, sql: "SELECT oi.brand, oi.brand_tier, SUM(oi.unit_price_eur * oi.quantity) …\nFROM order_items oi JOIN orders o USING (order_id)\nWHERE o.is_top_customer … GROUP BY 1, 2", note: "asked in the box below — written into the page" },
+  margin: { label: "Gross margin on items by week", tables: "order_items · orders", rows: 9, sql: "SELECT date_trunc('week', o.order_date), 1 - SUM(cost_eur*quantity)/SUM(unit_price_eur*quantity) …", note: "approved metric item_gross_margin_pct · final" },
+  marginstore: { label: "Gross margin by storefront", tables: "order_items · orders", rows: 4, sql: "… GROUP BY o.platform", note: "approved metric, broken down by storefront" },
+  returns: { label: "Returns received by category and reason", tables: "returns", rows: 16, sql: "SELECT category, reason, COUNT(*) FILTER (…week), COUNT(*) FILTER (…usual)/8.0\nFROM returns … GROUP BY 1, 2", note: "returns arrive about 15 days after their order" },
+  bridge: { label: "Sales, net revenue and contribution margin", tables: "orders · returns · order_items · shipments", rows: 3, sql: "approved metrics gmv, net_revenue_eur, contribution_margin_eur for 2026-10-19..25", note: "approved metrics · final" },
+  quarter: { label: "Second quarter to date, against last year like for like", tables: "orders", rows: 2, sql: "SELECT SUM(gmv_eur) … '2026-10-01'..'2026-10-25'  vs  '2025-10-01'..'2025-10-25' AND platform <> 'THE OUTNET'", note: "like for like: without THE OUTNET, sold 30 Apr 2026" },
+};
+const WEEKS = ["24 Aug","31 Aug","7 Sep","14 Sep","21 Sep","28 Sep","5 Oct","12 Oct","19 Oct"];
+const eur = v => "€" + (Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v).toLocaleString("en-GB"));
+const pct = v => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(0) + "%";
+
+// ── The model's output: one spec per reader. Words cite sources as {text|source}. ─────────────────────────
+const SPECS = {
+  leadership: {
+    first: "What changed in LuxExperience last week, written for <b>Leadership</b>. Every underlined number opens where it came from.",
+    blocks: [
+      { type: "lead", text: "Sales were an ordinary {€167.0k|sales} — but top clients spent {€9.4k more|topclients} than in a usual week, while everyone else spent {€3.4k less|topclients}.",
+        sub: "Fewer orders, bigger baskets: the week's total sits inside its usual range, so the news is who bought, not how much." },
+      { type: "bridge", kicker: "Where the week's sales came from", title: "A usual week, then what each group of customers added", source: "topclients",
+        steps: [["A usual week", 160960, "base"], ["Top clients", 9417, "delta"], ["Everyone else", -3388, "delta"], ["This week", 166988, "total"]],
+        drills: [["By storefront", "topstore"], ["Top clients' brands", "brands"]] },
+      { type: "control", id: "store", label: "Look at one storefront", options: ["All", "Mytheresa", "NET-A-PORTER", "MR PORTER", "YOOX"] },
+      { type: "compare", kicker: "Top clients, by storefront", title: "Mytheresa and MR PORTER clients spent more; NET-A-PORTER's and YOOX's spent less", source: "topstore", listens: "store",
+        rows: [["Mytheresa", 38840, 29849], ["MR PORTER", 14802, 10948], ["NET-A-PORTER", 21862, 24084], ["YOOX", 9845, 11051]] },
+      { type: "table", kicker: "The ten largest orders", title: "Every one of the week's ten largest orders came from a top client", source: "orders", listens: "store",
+        cols: ["Order", "Storefront", "Day", "Channel", "Ship to", "Value"],
+        rows: [["MYT-O00145747","Mytheresa","Fri 23","app","United Kingdom",3459],["MYT-O00145593","Mytheresa","Mon 19","web","United States",2914],["MR -O00145725","MR PORTER","Thu 22","iOS app","Netherlands",2560],["MR -O00145760","MR PORTER","Fri 23","web","Turkey",2517],["NET-O00145683","NET-A-PORTER","Wed 21","web","Kuwait",2505],["NET-O00145609","NET-A-PORTER","Mon 19","clienteling","Canada",2368],["NET-O00145720","NET-A-PORTER","Thu 22","web","Italy",2355],["NET-O00145792","NET-A-PORTER","Sat 24","iOS app","Canada",2270],["MYT-O00145743","Mytheresa","Fri 23","web","United States",2263],["MYT-O00145639","Mytheresa","Tue 20","web","Spain",2175]] },
+      { type: "map", kicker: "Where the orders went", title: "The UK, Greece, Japan and Hong Kong ordered well above usual; the US and Ireland below", source: "country",
+        rows: [["Canada",27222,26481,-106.3,56.1],["United States",20364,23639,-98.6,39.8],["United Kingdom",14597,10304,-2.5,54],["Greece",9733,5519,22.9,39.1],["Ireland",8580,10478,-8,53.4],["Spain",7419,4778,-3.7,40.4],["Taiwan",6278,3824,121,23.7],["Italy",5891,4111,12.6,42.8],["Japan",4935,2317,138.3,36.2],["Netherlands",4903,3835,5.3,52.1],["Hong Kong",4143,1954,114.2,22.3],["Thailand",3983,3377,100.9,15.9],["France",3510,3079,2.2,46.2],["Norway",3285,2299,8.5,60.5]] },
+      { type: "multiples", kicker: "Visits that became orders", tag: "Third week down", title: "The app and mobile converted less; desktop more", source: "device", fmt: v => v.toFixed(2) + "%",
+        series: [["App", [6.77,6.57,6.34,6.79,6.59,6.69,6.07,5.38,5.21], "bad"], ["Mobile", [0.52,0.96,0.88,1.00,0.98,0.91,0.85,0.90,0.58], "bad"], ["Desktop", [2.47,1.79,2.16,1.87,2.05,2.00,1.80,2.02,2.61], "good"]],
+        drills: [["By storefront", "storeconv"]] },
+      { type: "decision", text: "App conversion has fallen four weeks running, and Singles Day is <b>13 days</b> away. Look into it before the traffic arrives?",
+        acts: [["Investigate now", "primary"], ["Give it to Digital and growth", ""], ["Not now", "ghost"]] },
+      { type: "quiet", text: "<b>Held steady:</b> deliveries 5.4 days · refunds inside their usual range · gross margin at its new level, {47.5%|margin}." },
+    ] },
+  finance: {
+    first: "What changed in LuxExperience last week, written for <b>Finance</b>. Every underlined number opens where it came from.",
+    blocks: [
+      { type: "lead", text: "The quarter is running {9.5% ahead|quarter} of last year like for like, and this week kept more of every sale: net revenue was {€150.8k|bridge}, the highest in nine weeks.",
+        sub: "Margin has held a new, higher level for four weeks; refunds paid stayed inside their usual range, but size-and-fit refunds on womenswear did not." },
+      { type: "progress", kicker: "Second quarter, 1–25 October", title: "Ahead of last year without THE OUTNET; level with it, counting THE OUTNET", source: "quarter",
+        now: 575949, then: 526106, thenAll: 567113 },
+      { type: "bridge", kicker: "This week, from sales to contribution", title: "What each step kept", source: "bridge",
+        steps: [["Sales", 166988, "base"], ["Returns and refunds", -16215, "delta"], ["Net revenue", 150773, "total"], ["Costs to serve and sell", -71373, "delta"], ["Contribution margin", 79400, "total"]] },
+      { type: "line", kicker: "Gross margin on items", tag: "good", tagText: "A new level, fourth week", title: "Margin stepped up at the end of September and has stayed there", source: "margin", fmt: v => v.toFixed(1) + "%",
+        values: [43.9,43.9,43.8,44.0,44.0,45.6,47.0,47.1,47.5], mark: 5, markText: "stepped up" },
+      { type: "control", id: "store", label: "Margin for one storefront", options: ["All", "Mytheresa", "NET-A-PORTER", "MR PORTER", "YOOX"] },
+      { type: "compare", kicker: "Margin by storefront", title: "Mytheresa's margin rose most; NET-A-PORTER and MR PORTER slipped", source: "marginstore", listens: "store", unit: "%",
+        rows: [["Mytheresa", 52.0, 46.3], ["YOOX", 40.4, 35.9], ["MR PORTER", 45.6, 46.6], ["NET-A-PORTER", 45.6, 46.7]] },
+      { type: "heat", kicker: "Returns received", title: "Womenswear came back for size and fit 43% more than usual", source: "returns",
+        rows: [["womenswear","size_fit",37,25.8],["womenswear","changed_mind",19,13.9],["womenswear","not_as_expected",18,13.6],["womenswear","quality",10,7.5],["shoes","size_fit",9,10.4],["shoes","not_as_expected",8,5.3],["bags","size_fit",8,7.3],["bags","changed_mind",7,4.1],["beauty","size_fit",7,2.3],["menswear","size_fit",6,10.9],["menswear","not_as_expected",7,4.0]] },
+      { type: "decision", text: "Size-and-fit refunds on womenswear are running <b>43% above</b> a usual week. Ask Merchandising whether this season's sizing changed?",
+        acts: [["Send to Merchandising", "primary"], ["Open the returns", ""], ["Not now", "ghost"]] },
+    ] },
+};
+
+// ── Drill-downs and asked questions: blocks the model appends where they were asked for. ──────────────────
+const DRILLS = {
+  topstore: { type: "compare", kicker: "Drill · top clients by storefront", title: "The lift sits with Mytheresa's and MR PORTER's clients", source: "topstore",
+    rows: [["Mytheresa", 38840, 29849], ["MR PORTER", 14802, 10948], ["NET-A-PORTER", 21862, 24084], ["YOOX", 9845, 11051]] },
+  brands: { type: "compare", kicker: "Answer · top clients' brands", title: "Spread across many houses — no single brand or launch carried it", source: "brands",
+    rows: [["Anita Ko", 3835, 1419], ["Celine", 3494, 1050], ["Tod's", 3421, 1123], ["Jil Sander", 3292, 1667], ["Aquazzura", 3025, 1057], ["Van Cleef & Arpels", 2791, 1385], ["Mulberry", 2485, 972], ["Rick Owens", 2352, 1874]] },
+  storeconv: { type: "compare", kicker: "Drill · conversion by storefront", title: "NET-A-PORTER and YOOX converted least against their usual", source: "storeconv", unit: "%2",
+    rows: [["MR PORTER", 1.98, 1.77], ["Mytheresa", 1.99, 2.01], ["NET-A-PORTER", 1.55, 1.79], ["YOOX", 2.70, 3.03]] },
+};
+
+// ── The renderer: code's, never the model's. ──────────────────────────────────────────────────────────────
+let reader = "leadership";
+const state = { store: "All" };
+let selected = null;
+
+function cite(text) {
+  return text.replace(/\{([^|}]+)\|([a-z]+)\}/g, (_, t, s) => `<span class="c" data-src="${s}">${t}</span>`);
+}
+const kicker = b => `<div class="k">${b.kicker || ""}${b.tag ? ` <span class="tag ${b.tag === "good" ? "good" : ""}">· ${b.tagText || b.tag}</span>` : ""}</div>`;
+const srcLink = s => `<span class="c" data-src="${s}" style="font-size:12px">source</span>`;
+// which deeper questions each source can answer — offered beside its evidence
+const DRILLS_OF = { topclients: ["topstore", "brands"], topstore: ["brands"], device: ["storeconv"], sales: ["topstore"] };
+const drills = b => b.drills ? `<div class="drills">${b.drills.map(([l, d]) => `<button data-drill="${d}">${l}</button>`).join("")}</div>` : "";
+
+function svgBridge(steps) {
+  const W = 860, H = 220, pad = { l: 8, r: 8, t: 16, b: 34 };
+  let run = 0; const bars = [];
+  steps.forEach(([label, v, kind]) => {
+    if (kind === "base" || kind === "total") { bars.push({ label, a: 0, b: v, kind, v }); run = v; }
+    else { bars.push({ label, a: run, b: run + v, kind: v >= 0 ? "up" : "down", v }); run += v; }
+  });
+  const max = Math.max(...bars.map(b => Math.max(b.a, b.b)));
+  const min = Math.min(...bars.map(b => Math.min(b.a, b.b)).filter(x => x > 0)) * 0.9;
+  const lo = Math.max(0, min - (max - min) * 0.6);
+  const Y = v => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (max - lo));
+  const bw = (W - pad.l - pad.r) / bars.length;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="bridge">`;
+  bars.forEach((b, i) => {
+    const x = pad.l + i * bw + bw * 0.22, w = bw * 0.56;
+    const fill = b.kind === "up" ? "var(--green)" : b.kind === "down" ? "var(--amber)" : b.kind === "total" ? "var(--blue)" : "var(--deemph)";
+    const y1 = Y(Math.max(b.a, b.b)), y2 = Y(Math.max(lo, Math.min(b.a, b.b)));   // a bar from zero stops at the floor
+    s += `<rect x="${x}" y="${y1}" width="${w}" height="${Math.max(2, y2 - y1)}" rx="3" fill="${fill}"/>`;
+    const txt = b.kind === "up" || b.kind === "down" ? (b.v >= 0 ? "+" : "−") + eur(Math.abs(b.v)) : eur(b.v);
+    s += `<text x="${x + w / 2}" y="${y1 - 5}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--t1)">${txt}</text>`;
+    s += `<text x="${x + w / 2}" y="${H - 12}" text-anchor="middle" font-size="12.5" fill="var(--t2)">${b.label}</text>`;
+    if (i < bars.length - 1) { const nb = bars[i + 1]; const yy = Y(b.kind === "base" || b.kind === "total" ? b.b : b.b); s += `<line x1="${x + w}" x2="${pad.l + (i + 1) * bw + bw * 0.22}" y1="${yy}" y2="${yy}" stroke="var(--line-2)" stroke-dasharray="3 3"/>`; }
+  });
+  return s + `</svg>`;
+}
+
+function compareRows(b) {
+  const pctUnit = b.unit === "%" || b.unit === "%2";
+  const fmt = v => b.unit === "%2" ? v.toFixed(2) + "%" : pctUnit ? v.toFixed(1) + "%" : eur(v);
+  const max = Math.max(...b.rows.map(r => Math.max(r[1], r[2])));
+  return `<table class="t"><thead><tr><th>${b.rowLabel || ""}</th><th style="width:46%">This week against its usual</th><th class="num">This week</th><th class="num">Usual</th><th class="num">Change</th></tr></thead><tbody>` +
+    b.rows.map(([name, now, usual]) => {
+      const dim = b.listens && state[b.listens] !== "All" && state[b.listens] !== name;
+      const ch = pctUnit ? (now - usual) : (now / usual - 1);
+      const chTxt = pctUnit ? `${ch >= 0 ? "+" : "−"}${Math.abs(ch).toFixed(b.unit === "%2" ? 2 : 1)} pt` : pct(ch);
+      const good = ch >= 0;
+      return `<tr class="${dim ? "dim" : ""}"><td style="color:var(--t1)">${name}</td><td><svg viewBox="0 0 300 18" width="100%"><rect x="0" y="3" width="${300 * usual / max}" height="12" rx="2" fill="var(--bg-3)"/><rect x="0" y="6" width="${300 * now / max}" height="6" rx="2" fill="${good ? "var(--green)" : "var(--amber)"}"/></svg></td><td class="num">${fmt(now)}</td><td class="num" style="color:var(--t3)">${fmt(usual)}</td><td class="num" style="color:${good ? "var(--green)" : "var(--amber)"}">${chTxt}</td></tr>`;
+    }).join("") + `</tbody></table>`;
+}
+
+function svgMultiples(b) {
+  const W = 280, H = 96, pad = { l: 6, r: 40, t: 10, b: 16 };
+  return `<div style="display:grid;grid-template-columns:repeat(${b.series.length},1fr);gap:16px">` + b.series.map(([name, vals, tone]) => {
+    const usual = vals.slice(0, 8); const m = usual.reduce((a, c) => a + c, 0) / usual.length;
+    const sd = Math.sqrt(usual.reduce((a, c) => a + (c - m) ** 2, 0) / (usual.length - 1));
+    const lo = Math.min(...vals, m - sd), hi = Math.max(...vals, m + sd);
+    const Y = v => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
+    const X = i => pad.l + (W - pad.l - pad.r) * i / (vals.length - 1);
+    const last = vals[vals.length - 1];
+    const col = tone === "good" ? "var(--green)" : "var(--amber)";
+    return `<div><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">${name}</span><span style="color:${col};font-weight:600">${b.fmt(last)}</span></div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%"><rect x="${pad.l}" y="${Y(m + sd)}" width="${W - pad.l - pad.r}" height="${Y(m - sd) - Y(m + sd)}" fill="var(--band)"/>
+      <polyline fill="none" stroke="var(--t3)" stroke-width="1.6" points="${vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ")}"/>
+      <circle cx="${X(vals.length - 1)}" cy="${Y(last)}" r="4" fill="${col}"/>
+      <text x="${W - pad.r + 6}" y="${Y(m) + 4}" font-size="11" fill="var(--t3)">usual</text>
+      <text x="${pad.l}" y="${H - 2}" font-size="10.5" fill="var(--t3)">${WEEKS[0]}</text><text x="${W - pad.r}" y="${H - 2}" text-anchor="end" font-size="10.5" fill="var(--t1)">${WEEKS[8]}</text></svg>
+      <div style="font-size:12px;color:var(--t3)">usual ${b.fmt(m - sd)}–${b.fmt(m + sd)}</div></div>`;
+  }).join("") + `</div>`;
+}
+
+function svgLine(b) {
+  const W = 860, H = 170, pad = { l: 46, r: 16, t: 14, b: 22 };
+  const vals = b.values, lo = Math.min(...vals) - 0.6, hi = Math.max(...vals) + 0.6;
+  const Y = v => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (hi - lo));
+  const X = i => pad.l + (W - pad.l - pad.r) * i / (vals.length - 1);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%"><polyline fill="none" stroke="var(--green)" stroke-width="2.2" points="${vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ")}"/>`;
+  vals.forEach((v, i) => { s += `<circle cx="${X(i)}" cy="${Y(v)}" r="${i === vals.length - 1 ? 4.5 : 2.6}" fill="${i === vals.length - 1 ? "var(--green)" : "var(--t3)"}"/><text x="${X(i)}" y="${H - 4}" text-anchor="middle" font-size="11" fill="var(--t3)">${WEEKS[i]}</text>`; });
+  s += `<text x="${pad.l - 6}" y="${Y(hi - 0.6) + 4}" text-anchor="end" font-size="11" fill="var(--t3)">${b.fmt(hi - 0.6)}</text><text x="${pad.l - 6}" y="${Y(lo + 0.6) + 4}" text-anchor="end" font-size="11" fill="var(--t3)">${b.fmt(lo + 0.6)}</text>`;
+  s += `<line x1="${X(b.mark) - 18}" x2="${X(b.mark) - 18}" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--line-2)" stroke-dasharray="3 3"/><text x="${X(b.mark) - 12}" y="${pad.t + 10}" font-size="11.5" fill="var(--t2)">${b.markText}</text>`;
+  return s + `</svg>`;
+}
+
+function heat(b) {
+  const cats = [...new Set(b.rows.map(r => r[0]))], reasons = [...new Set(b.rows.map(r => r[1]))];
+  const cell = (c, r) => b.rows.find(x => x[0] === c && x[1] === r);
+  return `<table class="t"><thead><tr><th></th>${reasons.map(r => `<th style="text-align:center">${r.replace("_", " ")}</th>`).join("")}</tr></thead><tbody>` +
+    cats.map(c => `<tr><td style="color:var(--t1)">${c}</td>${reasons.map(r => {
+      const x = cell(c, r); if (!x) return `<td style="text-align:center;color:var(--t4)">·</td>`;
+      const ch = x[2] / x[3] - 1, thin = x[2] < 30;
+      const a = Math.min(Math.abs(ch), 1.2) / 1.2 * 0.55;
+      const bg = thin ? "transparent" : ch > 0 ? `rgba(224,173,0,${a})` : `rgba(46,200,123,${a})`;
+      return `<td style="text-align:center;background:${bg};color:${thin ? "var(--t3)" : "var(--t1)"}" title="${x[2]} this week, ${x[3]} usually${thin ? " — too few to call" : ""}">${x[2]} <span style="color:var(--t3);font-size:11.5px">${pct(ch)}</span></td>`; }).join("")}</tr>`).join("") +
+    `</tbody></table><div style="font-size:12px;color:var(--t3);margin-top:6px">Shaded only where a cell holds 30 returns or more — fewer are too few to call. Returns arrive about 15 days after their order.</div>`;
+}
+
+function progress(b) {
+  const max = Math.max(b.now, b.thenAll) * 1.05;
+  const bar = (label, v, col) => `<div style="display:grid;grid-template-columns:260px 1fr 90px;gap:10px;align-items:center;margin:6px 0"><span>${label}</span><svg viewBox="0 0 400 14" width="100%"><rect width="${400 * v / max}" height="14" rx="3" fill="${col}"/></svg><span style="text-align:right;color:var(--t1);font-variant-numeric:tabular-nums">${eur(v)}</span></div>`;
+  return bar("This year, 1–25 Oct", b.now, "var(--blue)") + bar("Last year, without THE OUTNET", b.then, "var(--deemph)") + bar("Last year, with THE OUTNET", b.thenAll, "var(--bg-3)");
+}
+
+let world = null;
+function mapBlock(b, el) {
+  const holder = el.querySelector(".mapholder");
+  const draw = () => {
+    const W = 860, H = 330;
+    const proj = d3.geoNaturalEarth1().fitExtent([[0, 0], [W, H]], { type: "Sphere" });
+    const path = d3.geoPath(proj);
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="100%"><path d="${path(world)}" fill="var(--bg-3)" stroke="var(--line-2)" stroke-width=".5"/>`;
+    const max = Math.max(...b.rows.map(r => r[1]));
+    b.rows.forEach(([name, now, usual, lon, lat]) => {
+      const [x, y] = proj([lon, lat]); const ch = now / usual - 1; const r = 5 + 20 * Math.sqrt(now / max);
+      s += `<circle cx="${x}" cy="${y}" r="${r}" fill="${ch >= 0 ? "rgba(46,200,123,.55)" : "rgba(224,173,0,.6)"}" stroke="${ch >= 0 ? "var(--green)" : "var(--amber)"}"><title>${name}: ${eur(now)} this week, ${eur(usual)} usually (${pct(ch)})</title></circle>`;
+    });
+    // labels beside the map, not on it: Europe's and East Asia's circles sit too close to name
+    const ranked = [...b.rows].sort((a, c) => (c[1] / c[2]) - (a[1] / a[2]));
+    const list = ranked.slice(0, 6).concat(ranked.slice(-2)).map(([name, now, usual]) => {
+      const ch = now / usual - 1;
+      return `<div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:13px">
+        <span style="color:var(--t1)">${name}</span><span style="color:var(--t3);font-variant-numeric:tabular-nums">${eur(now)}</span>
+        <span style="color:${ch >= 0 ? "var(--green)" : "var(--amber)"};font-variant-numeric:tabular-nums;min-width:44px;text-align:right">${pct(ch)}</span></div>`;
+    }).join("");
+    holder.innerHTML = `<div style="display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:22px;align-items:center">
+      <div>${s}</svg></div><div><div style="font-size:12px;color:var(--t3);margin-bottom:4px">Furthest above and below a usual week</div>${list}</div></div>
+      <div style="font-size:12px;color:var(--t3)">Circle size: this week's sales · green above a usual week, amber below · hover a circle for its figures</div>`;
+  };
+  if (world) return draw();
+  if (!(window.d3 && window.topojson)) { holder.innerHTML = fallbackList(b); return; }
+  fetch("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json").then(r => r.json())
+    .then(t => { world = topojson.feature(t, t.objects.land); draw(); })
+    .catch(() => { holder.innerHTML = fallbackList(b); });
+}
+const fallbackList = b => compareRows({ rows: b.rows.map(r => [r[0], r[1], r[2]]) });
+
+function render() {
+  const spec = SPECS[reader];
+  document.getElementById("first").innerHTML = spec.first;
+  document.getElementById("readers").innerHTML = [["leadership", "Leadership"], ["finance", "Finance"], ["digital", "Digital and growth"], ["org", "The organisation"]]
+    .map(([k, l]) => `<button data-reader="${k}" class="${k === reader ? "on" : ""}" ${SPECS[k] ? "" : 'title="Not mocked — written from the same measurements"'}>${l}</button>`).join("");
+  const host = document.getElementById("blocks");
+  host.innerHTML = "";
+  spec.blocks.forEach((b, i) => host.appendChild(blockEl(b, i)));
+  document.getElementById("madesum").textContent = `How this page was made — ${spec.blocks.length} elements the model chose for ${reader === "finance" ? "Finance" : "Leadership"}, from 41 measurements and 3 follow-up questions it asked; 1 model call; every number checked`;
+  document.getElementById("spec").textContent = JSON.stringify(spec.blocks.map(b => {
+    const o = { type: b.type }; if (b.source) o.reads = b.source; if (b.listens) o.listens = b.listens; if (b.id) o.control = b.id;
+    if (b.title) o.title = b.title; if (b.text) o.words = b.text.replace(/<[^>]+>/g, ""); if (b.drills) o.drill = b.drills.map(d => d[1]); return o;
+  }), null, 1);
+  showEvidence(null);
+}
+
+function blockEl(b, i) {
+  const el = document.createElement("section");
+  el.className = "block" + (b.type === "lead" || b.type === "quiet" ? " bare" : "") + (b.type === "decision" ? " decision" : "") + (b.drilled ? " drill" : "");
+  el.dataset.i = i;
+  const head = b.title ? `${kicker(b)}<h2>${b.title}</h2>` : "";
+  const foot = b.source ? `<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px">${drills(b) || "<span></span>"}${srcLink(b.source)}</div>` : drills(b);
+  if (b.type === "lead") el.innerHTML = `<div class="lead">${cite(b.text)}</div><div class="lead-sub">${cite(b.sub)}</div>`;
+  else if (b.type === "bridge") el.innerHTML = head + svgBridge(b.steps) + foot;
+  else if (b.type === "control") el.innerHTML = `<div class="ctrl"><span class="lbl">${b.label}</span><span class="seg">${b.options.map(o => `<button data-ctrl="${b.id}" data-val="${o}" class="${state[b.id] === o ? "on" : ""}">${o}</button>`).join("")}</span><span class="lbl">— the model put this here: the next elements listen to it</span></div>`;
+  else if (b.type === "compare") el.innerHTML = head + compareRows(b) + foot;
+  else if (b.type === "table") {
+    const rows = b.rows.map(r => ({ r, dim: state[b.listens] !== "All" && r[1] !== state[b.listens] }));
+    el.innerHTML = head + `<div class="tablebar"><button>Copy</button><button>CSV</button></div><table class="t"><thead><tr>${b.cols.map((c, j) => `<th class="${j === b.cols.length - 1 ? "num" : ""}">${c}</th>`).join("")}<th></th></tr></thead><tbody>` +
+      rows.map(({ r, dim }) => `<tr class="${dim ? "dim" : ""}">${r.map((c, j) => `<td class="${j === r.length - 1 ? "num" : ""}" style="${j === 0 ? "font-family:ui-monospace,Menlo,monospace;font-size:12px" : ""}">${j === r.length - 1 ? "€" + c.toLocaleString("en-GB") : c}</td>`).join("")}<td><a href="#" onclick="return false">Open order →</a></td></tr>`).join("") + `</tbody></table>` + foot;
+  }
+  else if (b.type === "map") { el.innerHTML = head + `<div class="mapholder">Drawing the map…</div>` + foot; setTimeout(() => mapBlock(b, el)); }
+  else if (b.type === "multiples") el.innerHTML = head + svgMultiples(b) + foot;
+  else if (b.type === "line") el.innerHTML = head + svgLine(b) + foot;
+  else if (b.type === "heat") el.innerHTML = head + heat(b) + foot;
+  else if (b.type === "progress") el.innerHTML = head + progress(b) + foot;
+  else if (b.type === "decision") el.innerHTML = `<div class="k"><span class="tag">Worth a decision</span></div><p style="font-size:15.5px;color:var(--t1);margin:0">${b.text}</p><div class="acts">${b.acts.map(([l, k]) => `<button class="btn ${k}">${l}</button>`).join("")}</div>`;
+  else if (b.type === "quiet") el.innerHTML = `<div class="quiet">${cite(b.text)}</div>`;
+  return el;
+}
+
+function showEvidence(src) {
+  const ev = document.getElementById("evidence");
+  document.querySelectorAll(".c").forEach(c => c.classList.toggle("sel", !!src && c.dataset.src === src));
+  if (!src) {
+    const used = [...new Set(SPECS[reader].blocks.map(b => b.source).filter(Boolean))];
+    ev.innerHTML = `<h3>Where this page comes from</h3><div class="muted">Click any underlined number or a “source” mark to see its query here. Nothing on this page was written without one.</div>` +
+      used.map((s, i) => `<div class="src"><b>${i + 1}. ${SRC[s].label}</b><div class="muted">${SRC[s].tables} · ${SRC[s].rows} rows · ${SRC[s].note}</div></div>`).join("") +
+      `<div class="src"><b>The guide</b><div class="muted">LuxExperience's Briefing guide, v5 — a draft no person has published. A year earlier is compared without THE OUTNET once it is.</div></div>`;
+    return;
+  }
+  const s = SRC[src];
+  ev.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h3>${s.label}</h3><button class="btn ghost" id="evclose">All sources</button></div>
+    <div class="kv"><span>Reads</span><span>${s.tables}</span><span>Rows</span><span>${s.rows}</span><span>Measured</span><span>29 Oct 2026, 08:45 · final</span><span>Status</span><span>${s.note}</span></div>
+    <pre>${s.sql}</pre>
+    <div class="drills">${(DRILLS_OF[src] || []).map(d => `<button data-drill="${d}">${DRILLS[d].kicker.replace(/^(Drill|Answer) · /, "")}</button>`).join("")}<button>Open in the SQL editor</button></div>
+    <div class="muted" style="margin-top:10px">A drill writes its answer into the page, under the element it came from — measured the same way, checked the same way.</div>`;
+  document.getElementById("evclose").onclick = () => showEvidence(null);
+}
+
+function addDrill(key, afterEl) {
+  const b = { ...DRILLS[key], drilled: true };
+  const el = blockEl(b, -1);
+  (afterEl || document.getElementById("blocks").lastElementChild).after(el);
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+document.addEventListener("click", e => {
+  const c = e.target.closest(".c"); if (c) { showEvidence(c.dataset.src); return; }
+  const r = e.target.closest("[data-reader]"); if (r && SPECS[r.dataset.reader]) { reader = r.dataset.reader; state.store = "All"; render(); return; }
+  const ctl = e.target.closest("[data-ctrl]"); if (ctl) { state[ctl.dataset.ctrl] = ctl.dataset.val; const keep = document.getElementById("canvas").scrollTop; render(); document.getElementById("canvas").scrollTop = keep; return; }
+  const d = e.target.closest("[data-drill]"); if (d) { addDrill(d.dataset.drill, d.closest(".block")); return; }
+  if (e.target.id === "askbtn") addDrill("brands", null);
+  if (e.target.closest("#range button")) { /* only the Week is mocked */ }
+});
+render();
+</script>
+</body></html>

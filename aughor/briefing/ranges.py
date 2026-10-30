@@ -919,6 +919,12 @@ def _figure_text(value: Optional[float], name: str, unit: str, currency: Optiona
     return period_brief._fmt(value, name, unit, currency)
 
 
+def figure_text(value: Optional[float], name: str, unit: str, currency: Optional[str]) -> Optional[str]:
+    """One figure worded as every Briefing words it — public for the edition (Arc BG-2), so a band's
+    edges and a segment's value print exactly as the figure beside them does."""
+    return _figure_text(value, name, unit, currency)
+
+
 def say_figures(measured: list[dict], currency: Optional[str]) -> None:
     """Each measured figure worded once, in place: the screen shows the SAME text the lines and the
     narrator read, whichever door measured it."""
