@@ -661,8 +661,9 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
             "findings": insights,
             "insights": insights,
             "queries_used": budgets.get(domain, 0),
-            # the run's own share (`explorer.budget.domain_cap`), unless a person set this domain's cap
-            "budget_cap": budgets.get(f"{domain}__cap", _cap),
+            # the run's own share (`explorer.budget.domain_cap`), unless a person set this domain's cap; a label the
+            # questions pass never budgets (Key Questions, Synthesis) has none
+            "budget_cap": budgets.get(f"{domain}__cap", _cap if domain in budgets else 0),
             "angles_covered": coverage.get(domain, []),
         }
     # Impact-rank + plausibility for the cards (same authority as the brief). Pass the
