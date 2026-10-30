@@ -205,6 +205,14 @@ describe("BriefingEdition", () => {
       "This canvas reads every table of luxexperience, so its Briefing is the dataset's own edition");
   });
 
+  it("says when the data's lag has moved since the edition was written, and draws it still", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, lag_now: 1 });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByTestId("edition-lead");
+    expect(screen.getByTestId("edition-lag-moved").textContent).toContain(
+      "Written when this data's rows arrived within 3 days; they now arrive within 1 day");
+  });
+
   it("with no guide, says so and drafts one only on a click", async () => {
     api.readBriefingGuide.mockResolvedValue({ ...GUIDE, available: false, guide: null, version: null, editions_read: null });
     api.readBriefingEdition.mockResolvedValue({ built: false, scope_key: "c", period: PERIOD, reader: "" });

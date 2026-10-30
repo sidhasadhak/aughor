@@ -28,7 +28,7 @@ import {
   readBriefingGuide, writeBriefingEdition,
   type AccessGroup, type BriefingEdition as Edition, type BriefingGuideResponse, type BriefingRange, type EditionBlock,
 } from "@/lib/api";
-import { formatTimestamp } from "@/lib/format";
+import { countNoun, formatTimestamp } from "@/lib/format";
 import { ORGANISATION, fromServerReader, readerOptions, toServerReader, writeLabel } from "@/lib/briefingEdition";
 
 const PRESETS = ["last_week", "last_month", "last_year"] as const;
@@ -200,6 +200,13 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
               What changed in {period.covers}, written for <b style={{ color: "var(--t2)", fontWeight: 500 }}>{readerName}</b>, against{" "}
               {period.compared_with}. Every underlined number opens where it came from.
               {edition.guide?.state === "draft" ? " Written from a draft guide no person has published." : ""}
+            </p>
+          )}
+          {edition?.built && period && edition.lag_now !== undefined && edition.lag_now !== period.lag_days && (
+            <p className="aug-fs-xs" data-testid="edition-lag-moved" style={{ color: "var(--amb4)", margin: "0 0 4px" }}>
+              Written when this data&apos;s rows arrived within {countNoun(period.lag_days, "day")}; they now arrive within{" "}
+              {countNoun(edition.lag_now, "day")}, so a figure marked provisional may have settled since. Write it again to read
+              them as they stand.
             </p>
           )}
           {edition?.canvas && (

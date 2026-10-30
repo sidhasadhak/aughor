@@ -8150,6 +8150,9 @@ export interface BriefingEdition {
   off?: BriefingOff;
   /** The decisions given to a team, each with what became of it — sent, held with why, or not sent. */
   given?: EditionGiven[];
+  /** Set when the learned lag has moved since the edition was written: the lag now (`period.lag_days` is the lag it
+   *  was written with). The edition is the same range's; its figures stand as they were then. */
+  lag_now?: number;
   /** Read in a Data Canvas: the dataset's own edition (`own` false — a canvas on every table), or the canvas's own,
    *  with which of the guide's checks read only its tables and which are left out. */
   canvas?: EditionCanvas | null;

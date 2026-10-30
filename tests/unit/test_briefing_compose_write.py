@@ -261,7 +261,23 @@ def test_a_read_finds_the_composed_edition_and_never_an_older_one(setup, monkeyp
     assert R.read_briefing_edition("compose_c1", preset="last_week", reader="")["built"] is False   # Arc BG's shape
     _composed(setup, monkeypatch)
     got = R.read_briefing_edition("compose_c1", preset="last_week", reader="")
-    assert got["built"] is True and got["blocks"][0]["type"] == "lead"
+    assert got["built"] is True and got["blocks"][0]["type"] == "lead" and "lag_now" not in got
+
+
+def test_an_edition_is_still_read_when_only_the_learned_lag_has_moved_and_the_move_is_said(setup, monkeypatch):
+    from aughor.routers import exploration as R
+
+    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda conn, schema: schema)
+    monkeypatch.setattr(R, "briefing_off_for", lambda *a, **k: None)
+    written = _week()                                                              # lag 1 when it was written
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (written, ""))
+    _composed(setup, monkeypatch)
+    later, _ = ranges.resolve_range("last_week", today=OCT29, lag_days=2, lag_source="learned")
+    assert later.key == written.key and later.lag_days != written.lag_days          # the same week, the lag moved
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (later, ""))
+    got = R.read_briefing_edition("compose_c1", preset="last_week", reader="")
+    assert got["built"] is True and got["blocks"][0]["type"] == "lead"            # still the week's edition
+    assert got["lag_now"] == 2 and got["period"]["lag_days"] == 1                  # the move said, the figures as written
 
 
 def test_a_whole_statement_check_is_offered_no_column_to_break_it_down_by(setup, monkeypatch):

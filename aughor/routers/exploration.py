@@ -2193,14 +2193,18 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
     if off:
         return _off_response(off, scope_key, period=block, reader=reader)
     entry = peek_entry(E.cache_key(scope_key, spec, reader))
-    # Arc BC: only a composed edition is one; an Arc BG edition kept before it reads as not written yet
-    same = isinstance(entry, dict) and entry.get("composed") and all(
-        (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
+    # Arc BC: only a composed edition is one; an Arc BG edition kept before it reads as not written yet. The same
+    # range is the same edition however the learned lag has moved since — on 30 Oct it moved 2 → 1 overnight and
+    # the week's editions read as never written; the move is said instead (`lag_now`), the figures as they stood.
+    kept = (entry.get("period") or {}) if isinstance(entry, dict) else {}
+    same = isinstance(entry, dict) and entry.get("composed") and all(kept.get(k) == block.get(k)
+                                                                     for k in ("start", "end"))
     canvas = _canvas_said(conn_id, schema, canvas_id, tables) if canvas_id else None
     if not same:
         return {"built": False, "period": block, "reader": reader, "scope_key": scope_key,
                 **({"canvas": canvas} if canvas else {})}
-    return {**entry, "built": True, "scope_key": scope_key, **({"canvas": canvas} if canvas else {})}
+    moved = {"lag_now": block.get("lag_days")} if kept.get("lag_days") != block.get("lag_days") else {}
+    return {**entry, "built": True, "scope_key": scope_key, **moved, **({"canvas": canvas} if canvas else {})}
 
 
 @router.post("/exploration/{conn_id}/briefing/edition")
