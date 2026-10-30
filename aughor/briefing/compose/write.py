@@ -36,35 +36,51 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", s.lower()).strip("_") or "query"
 
 _SYSTEM = """\
-You write one edition of a company's Briefing for ONE reader — the first thing they read about how the business did
-in the range. It must make sense to them at once.
+You write one edition of a company's Briefing for ONE reader — their first contact with everything this platform knows
+about how the business did in the range. Not a dashboard with sentences: what happened, what the platform's agents
+have already found about it, what was decided, and what to do now. It must make sense to them at once.
+
+What you are given:
+- every check the platform measured for the range: its value, the range before, a year earlier, its usual range (the
+  ranges before, mean give or take one standard deviation), how far outside usual it sits (z), its streak;
+- WHAT THE PLATFORM ALREADY KNOWS: its deep analyses — each a question it investigated, with a verdict, a confidence
+  and a claim licence; the explorer's findings about this dataset; the decisions in the record that were in force in
+  the range or are due for review, with what their reviews found.
 
 First LOOK INTO the range, then COMPOSE.
-- You are given every check the platform measured for the range: its value, the range before, a year earlier, its
-  usual range (the ranges before, mean give or take one standard deviation), how far outside usual it sits (z), its
-  streak. News is what left its usual range; a figure inside it is not news, whatever its change on last range.
+- Read what the platform already knows FIRST. A move a deep analysis explains is explained: cite the analysis. A move
+  in a range where a decision was in force sits beside that decision: say so and cite it (beside, not because). A
+  finding that gives a move its context (how big this segment is, what share of revenue it carries) belongs beside it.
 - For the two or three moves that matter most to this reader, find WHERE and WHO. Start with breakdown — a check by
   one of its breakdown_columns, each segment against its own usual, no SQL — and go one level deeper by breaking a
-  check down again. Use query (a SELECT you write, on the schema given) for what breakdown cannot answer: the
-  largest orders, two columns at once, a join, a timing question. Stop when you can say it plainly. You may call tools at most {queries}
-  times for queries and {steps} steps in all.
+  check down again. Use query (a SELECT you write, on the schema given) for what breakdown cannot answer: the largest
+  orders, two columns at once, a join, a timing question. You may call tools at most {queries} times for queries and
+  {steps} steps in all.
+- When the move that matters most has no deep analysis that answers it, start ONE with deep_analysis — a whole
+  question, as a person would ask it ("Why did refunds on returns fall to a seven-month low in September 2026 against
+  the six months before, by reason, category and storefront?"). It runs in the background; draw it as a context block
+  so the reader sees it is being looked into. Never start one a finished analysis already answers.
 - Then call compose ONCE with the blocks.
 
 How to compose:
-- The first block is the lead: the range's answer in one or two sentences a newcomer understands.
-- Then choose, for each finding, the block whose SHAPE fits it — and draw what you looked into, not only the figure
-  it explains: a bridge for where a total came from (a breakdown), a comparison for segments against their usual (a
-  breakdown or a query with a usual column), a table for the specific orders or items, a map for countries, small multiples
-  for the same measure across devices or channels, a heat grid for two-way breakdowns, a line for a level shift, a
-  control when the reader will want to look at one segment at a time, a decision only when one is warranted, a
-  quiet line for what held steady. A figure block is for one number that stands alone: use at most three, and
-  never a figure where a comparison, bridge or line would show more. A quiet range gets a short edition. At most 14
-  blocks.
+- The first block is the lead: what the reader most needs to know about the range, in one or two sentences a
+  newcomer understands — the move and what it means (what explains it, what was decided about it, what to watch),
+  never a list of figures that sat inside their usual range. A quiet range still has a lead: what the platform knows
+  that matters now — a decision due for review, an analysis that changes how a figure should be read.
+- Then, for each story, the block whose SHAPE fits it — and draw what you looked into, not only the figure it
+  explains: a context block for a deep analysis, a finding or a decision; a bridge for where a total came from (a
+  breakdown); a comparison for segments against their usual; a table for the specific orders or items; a map for
+  countries; small multiples for the same measure across devices or channels; a heat grid for two-way breakdowns; a
+  line for a level shift; a control when the reader will want one segment at a time; a decision block when a decision
+  is warranted; a quiet line for what held steady. A figure block is for one number that stands alone: use at most
+  three, never where a comparison, bridge or line shows more. At most 14 blocks.
 - Every number in your words must come from a source, written as given (rounding allowed), and cited as
-  {{words|source_id}} in lead, quiet and decision text — cited to the source it comes from, said of the segment it
-  belongs to, and moving the way it was measured to move (a segment below its usual never "rose"). Never compute a
-  new number.
-- Never write that one thing caused, drove, lifted or was behind another, and never predict.
+  {{words|source_id}} — cited to the source it comes from, said of the segment it belongs to, and moving the way it
+  was measured to move (a segment below its usual never "rose"). A deep analysis's or a finding's numbers may be
+  repeated when you cite it. Never compute a new number.
+- Say that one thing caused, drove or lifted another ONLY by citing a finished deep analysis whose licence is causal
+  — and say it as the analysis's finding. Otherwise describe where the move sits and what it sits beside. Never
+  predict.
 - Every figure marked floor must appear in a block (a figure block reading it is enough).
 
 Block types (fields per type):
@@ -106,6 +122,19 @@ def _dated_table(m: Any) -> str:
     return tables[0] if tables else ""
 
 
+def _known_for_model(src: S.Source) -> dict:
+    f = src.facts
+    if src.kind == "analysis":
+        return {"id": src.id, "question": f.get("question"), "verdict": f.get("headline"), "summary": f.get("summary"),
+                "closing": f.get("closing"), "confidence": f.get("confidence"), "licence": f.get("licence"),
+                "what_it_cannot_say": f.get("gaps"), "recommends": f.get("recommendations"), "finished": f.get("completed")}
+    if src.kind == "finding":
+        return {"id": src.id, "question": f.get("question"), "finding": f.get("finding"), "domain": f.get("domain"),
+                "confidence": f.get("confidence")}
+    return {"id": src.id, "decision": f.get("question"), "chosen": f.get("chosen"), "decided": f.get("decided"),
+            "review": f.get("state")}
+
+
 def _question(guide, reader, block: dict, figures: list[dict], sources: dict, columns: dict, floor: list[str],
               schema_text: str, period: str, coming: list[dict]) -> str:
     from aughor.briefing.edition import score
@@ -124,6 +153,11 @@ def _question(guide, reader, block: dict, figures: list[dict], sources: dict, co
         "coming_up": [c["line"] for c in coming],
         "checks": [{**S.for_model(sources[f["id"]], max_rows=12), "why_it_matters": f.get("why") or "",
                     "better": f.get("better"), "breakdown_columns": columns.get(f["id"], [])} for f in ranked],
+        "what_the_platform_already_knows": {
+            "deep_analyses": [_known_for_model(s) for s in sources.values() if s.kind == "analysis"],
+            "explorer_findings": [_known_for_model(s) for s in sources.values() if s.kind == "finding"],
+            "decisions": [_known_for_model(s) for s in sources.values() if s.kind == "decision"],
+        },
     }
     return json.dumps(payload, default=str, ensure_ascii=False) + "\n\nSCHEMA (for query):\n" + schema_text
 
@@ -163,8 +197,43 @@ def inside(check, metrics_by_name: dict, tables) -> bool:
     return all(bare_name(str(t)).lower() in own for t in read if t)
 
 
+def _known(conn_id: str, schema: Optional[str], spec, tables) -> list[S.Source]:
+    """What the platform already knows that the edition reads — each kind on its own, an unreadable one said and
+    left out rather than stopping the edition."""
+    from aughor.kernel.errors import tolerate
+    from aughor.knowledge import period_brief
+
+    out: list[S.Source] = []
+    for what, read in (("findings", lambda: S.known_findings(period_brief.scope_inputs(conn_id, schema)[0],
+                                                               tables=tables)),
+                       ("deep analyses", lambda: S.known_analyses(conn_id)),
+                       ("decisions", lambda: S.known_decisions(conn_id, spec))):
+        try:
+            out += read()
+        except Exception as exc:  # noqa: BLE001
+            tolerate(exc, f"the edition could not read the platform's {what}; it is written without them",
+                     counter="briefing.compose.known")
+    return out
+
+
+def _start_analysis(conn_id: str, schema: Optional[str], question: str, session: str):
+    """One deep analysis, in the background — never inline: with no background loop it is not started, and says so."""
+    import hashlib
+
+    from aughor.kernel.jobs import main_loop
+    from aughor.runners import InvestigationRequest, InvestigationRun, run_investigation
+
+    loop = main_loop()
+    if loop is None or not loop.is_running():
+        return InvestigationRun("refused", "there is no background runner here to start a deep analysis on")
+    return run_investigation(
+        InvestigationRequest(question=question, connection_id=conn_id, schema_name=schema, session_id=session),
+        idempotency_key=f"{session}:{hashlib.sha1(question.encode()).hexdigest()[:12]}", caller="briefing")
+
+
 def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, reader_id: str = "",
-            canvas_id: Optional[str] = None, tables=(), llm=None, runner=None, run_query=None) -> dict:
+            canvas_id: Optional[str] = None, tables=(), may_start_analysis: bool = True, llm=None, runner=None,
+            run_query=None, known=None, start_analysis=None) -> dict:
     """Measure, investigate, compose, check — and keep the edition per reader. In a Data Canvas (``canvas_id``,
     its ``tables``) only the checks that read the canvas's tables are measured, the model is shown only those
     tables and its queries run in the canvas's scope; the checks left out are listed on the edition. Raises
@@ -211,6 +280,10 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
             for f in figures:
                 f["name"] = f["label"]
             sources: dict[str, S.Source] = {f["id"]: S.from_check(f, period_word=period) for f in figures}
+            for k in (known(conn_id, schema, spec, tables) if known else _known(conn_id, schema, spec, tables)):
+                sources[k.id] = k
+            session = f"briefing:{E.cache_key(scope_key, spec, reader.group_id)}"
+            started: list[str] = []
             columns: dict[str, list[str]] = {}
             from aughor.semantic.metric_statement import is_statement
             for check in guide.checks:
@@ -252,6 +325,24 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                 sources[sid] = src
                 return S.for_model(src)
 
+            def t_deep(args: dict) -> dict:
+                counts["steps"] += 1
+                if not may_start_analysis:
+                    return {"error": "this edition may not start a deep analysis: the organisation has not allowed "
+                                     "model work nobody asked for"}
+                if started:
+                    return {"error": "this edition has started its one deep analysis already"}
+                question = " ".join(str(args.get("question") or "").split())
+                if len(question) < 20:
+                    return {"error": "ask a whole question, as a person would"}
+                run = (start_analysis or (lambda q, s: _start_analysis(conn_id, schema, q, s)))(question, session)
+                if run.status == "refused":
+                    return {"error": run.message}
+                sources["analysis_started"] = S.started_analysis("analysis_started", question, session)
+                started.append("analysis_started")
+                return {"started": True, "source_id": "analysis_started",
+                        "draw": "a context block reading analysis_started, so the reader sees it is being looked into"}
+
             def t_compose(args: dict) -> dict:
                 counts["compose"] += 1
                 try:
@@ -278,6 +369,10 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                       "answer: the largest orders, two columns at once, a join.",
                       {"type": "object", "required": ["id", "label", "sql", "purpose"],
                        "properties": {k: {"type": "string"} for k in ("id", "label", "sql", "purpose")}}, t_query),
+                _tool("deep_analysis", "Start ONE deep analysis in the background on the move that matters most "
+                      "when no finished deep analysis answers it. A whole question, as a person would ask it.",
+                      {"type": "object", "required": ["question"], "properties": {"question": {"type": "string"}}},
+                      t_deep),
                 _tool("compose", "Write the edition: the blocks, in order. Ends the work.", _compose_params(),
                       t_compose, concludes=True),
             ]
@@ -317,7 +412,11 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
     entry = {"edition": True, "composed": True, "spec_version": P.VERSION,
              "blocks": [b.model_dump(mode="json") for b in composed["blocks"]],
              "sources": {sid: src.model_dump(mode="json") for sid, src in sources.items()
-                         if sid in used or src.kind != "check"},
+                         if sid in used or src.kind not in ("check", *S.KNOWN) or sid in started},
+             "known": {"analyses": sum(s.kind == "analysis" for s in sources.values()),
+                       "findings": sum(s.kind == "finding" for s in sources.values()),
+                       "decisions": sum(s.kind == "decision" for s in sources.values()),
+                       "started": started[0] if started else ""},
              "withheld": composed.get("withheld", []), "left_out": composed.get("left_out", []),
              "drawn_by_code": composed.get("drawn_by_code", ""),
              "reader": {"group_id": reader.group_id, "name": reader.name},
@@ -497,6 +596,27 @@ def give(conn_id: str, spec, *, scope_key: str, reader_id: str = "", block_id: s
     return record
 
 
+def refreshed(src: S.Source) -> S.Source:
+    """A source as it stands now — a deep analysis an edition started, finished or still running. A read."""
+    try:
+        return S.refreshed(src)
+    except Exception as exc:  # noqa: BLE001 — an unreadable run reads as still running, as it last stood
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a started deep analysis could not be read; it reads as still running",
+                 counter="briefing.compose.refresh")
+        return src
+
+
+def as_it_stands(entry: dict) -> dict:
+    """An edition with every deep analysis it started read as it stands now — for a read, which keeps nothing."""
+    srcs = entry.get("sources") or {}
+    if not any((raw or {}).get("kind") == "analysis" and (raw or {}).get("status") == "running" for raw in srcs.values()):
+        return entry
+    return {**entry, "sources": {sid: (refreshed(S.Source.model_validate(raw)).model_dump(mode="json")
+                                       if (raw or {}).get("kind") == "analysis" else raw)
+                                 for sid, raw in srcs.items()}}
+
+
 # ── BC-6 · a send, judged against its sources re-run ─────────────────────────────────────────
 
 def departure_measurement(conn_id: str, entry: dict, *, runner=None):
@@ -516,6 +636,10 @@ def departure_measurement(conn_id: str, entry: dict, *, runner=None):
         with (runner or (lambda: period_brief.connection_runner(conn_id, cached=False)))() as (run_sql, _dialect):
             for sid, raw in (entry.get("sources") or {}).items():
                 src = S.Source.model_validate(raw)
+                if src.kind in S.KNOWN:
+                    # the platform's own work departs as the record it is: a deep analysis's numbers, dated by it
+                    rerun[sid] = refreshed(src)
+                    continue
                 if src.kind == "check":
                     continue
                 again = S.rerun(src, run_sql)

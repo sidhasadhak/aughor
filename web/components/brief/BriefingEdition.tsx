@@ -97,6 +97,19 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
     return () => { alive = false; };
   }, [connectionId, schema, workspaceId, canvasId, range, asked]);
 
+  // A deep analysis the edition started finishes in the background: while one runs, the page reads the edition again
+  // every 30 seconds (a read — nothing is written or spent) and draws its verdict when it lands.
+  const running = useMemo(() => Object.values(edition?.sources ?? {}).some(s => s.kind === "analysis" && s.status === "running"),
+    [edition]);
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => {
+      readBriefingEdition(connectionId, range, toServerReader(reader ?? ORGANISATION), schema, workspaceId, canvasId)
+        .then(e => { if (e.built) setEdition(e); }).catch(() => { /* the next read tries again */ });
+    }, 30_000);
+    return () => clearInterval(t);
+  }, [running, connectionId, range, reader, schema, workspaceId, canvasId]);
+
   const chooseReader = (v: string) => {
     setReader(v);
     setAsked(v);
@@ -252,9 +265,10 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
               )}
               <p className="aug-fs-sm" style={{ margin: "0 0 12px" }}>
                 {ownCanvas ? `The ${ownCanvas.checks_inside.length}` : `The guide's ${guide?.guide?.checks.length ?? 0}`} checks are measured for{" "}
-                {period?.covers ?? "this range"}; then the model looks into what moved — at most 8 queries of its own
-                {ownCanvas ? ", on these tables only" : ""} — and composes the page for {readerName}. Every number it writes is checked
-                against what was measured. It takes about a minute.
+                {period?.covers ?? "this range"}; then the model reads what the platform already knows — its deep analyses, the
+                explorer&apos;s findings and the decisions in the record — looks into what moved (at most 8 queries of its own
+                {ownCanvas ? ", on these tables only" : ""}), may start one deep analysis on the move nothing explains yet, and
+                composes the page for {readerName}. Every number it writes is checked against its source. It takes about a minute.
               </p>
               <Button disabled={!!busy} onClick={() => void write()}>{busy === "write" ? "Looking into it and writing…" : writeLabel(periodWord, custom)}</Button>
             </section>
@@ -288,7 +302,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                 </Button>
                 <span>
                   written {when(edition.generated_at)} · {edition.model_steps ?? 0} model steps · {edition.queries ?? 0} queries
-                  of its own · guide v{edition.guide?.version ?? "?"}
+                  of its own{edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")} and ${countNoun(edition.known.decisions, "decision")}` : ""}
+                  {edition.known?.started ? " · started a deep analysis" : ""} · guide v{edition.guide?.version ?? "?"}
                 </span>
               </div>
             </>

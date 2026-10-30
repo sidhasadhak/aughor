@@ -161,3 +161,40 @@ def test_a_number_outside_a_citation_must_come_from_a_source_the_block_reads():
     held = _held({"type": "figure", "source": "sales", "text": "Top clients bought 9,417 more. Sales were 166,988."})
     assert held == {"Top clients bought 9,417 more.":
                     "it states 9,417, which none of the sources it reads (Sales) holds"}
+
+
+# ── what the platform already knows, cited ───────────────────────────────────────────────────
+
+ANALYSIS = Source(id="analysis_a1", label="Revenue rose on volume", kind="analysis", status="final",
+                  columns=["headline", "question", "completed"], rows=[["Revenue rose €93,820 on order volume", "Why?", ""]],
+                  facts={"headline": "Revenue rose €93,820 (+14.9%) on order volume", "summary": "Orders rose 16.8%.",
+                         "licence": "descriptive"})
+CAUSAL = ANALYSIS.model_copy(update={"id": "analysis_c1", "facts": {**ANALYSIS.facts, "licence": "causal"}})
+KNOWN_SRC = {**SOURCES, ANALYSIS.id: ANALYSIS, CAUSAL.id: CAUSAL}
+
+
+def _held_known(*blocks) -> dict[str, str]:
+    validated, refusals = P.validate(_spec(LEAD, *blocks), KNOWN_SRC)
+    assert refusals == [], refusals
+    _kept, withheld, _ = P.gate(validated, KNOWN_SRC)
+    return {w["sentence"]: w["why"] for w in withheld if w["sentence"]}
+
+
+def test_a_deep_analysiss_numbers_may_be_repeated_when_it_is_cited():
+    assert _held_known({"type": "context", "source": "analysis_a1",
+                        "text": "A deep analysis found {revenue rose €93,820, or 14.9%|analysis_a1}."}) == {}
+
+
+def test_a_cause_stands_only_on_a_deep_analysis_licensed_to_say_it():
+    held = _held_known({"type": "quiet", "text": "Order volume drove the rise, a deep analysis found {€93,820|analysis_a1}. "
+                                                 "Order volume drove revenue, another found {€93,820|analysis_c1}."})
+    assert list(held) == ["Order volume drove the rise, a deep analysis found €93,820."]      # descriptive: held
+    assert "cause" in held["Order volume drove the rise, a deep analysis found €93,820."]
+
+
+def test_a_context_block_draws_only_the_platforms_own_work_and_its_work_only_in_a_context_block():
+    _blocks, refusals = P.validate(_spec(LEAD, {"type": "context", "source": "sales"},
+                                         {"type": "table", "source": "analysis_a1"}), KNOWN_SRC)
+    said = " | ".join(refusals)
+    assert "(context) reads a deep analysis, a finding or a decision; 'sales' is a check" in said
+    assert "(table) cannot draw 'analysis_a1', the platform's own work — use a context block" in said

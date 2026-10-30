@@ -8108,7 +8108,8 @@ export interface EditionBlock {
 export interface EditionSource {
   id: string;
   label: string;
-  kind: "check" | "breakdown" | "query" | "drill" | "answer";
+  /** Measured for the edition, or the platform's own work it read: an explorer finding, a deep analysis, a decision. */
+  kind: "check" | "breakdown" | "query" | "drill" | "answer" | "finding" | "analysis" | "decision";
   columns: string[];
   rows: unknown[][];
   sql: string;
@@ -8150,6 +8151,8 @@ export interface BriefingEdition {
   off?: BriefingOff;
   /** The decisions given to a team, each with what became of it — sent, held with why, or not sent. */
   given?: EditionGiven[];
+  /** What the platform already knew that the edition read, and the deep analysis it started ("" = none). */
+  known?: { analyses: number; findings: number; decisions: number; started: string };
   /** Set when the learned lag has moved since the edition was written: the lag now (`period.lag_days` is the lag it
    *  was written with). The edition is the same range's; its figures stand as they were then. */
   lag_now?: number;

@@ -1020,6 +1020,20 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
         the tab sits after Chat and a canvas still opens on Chat; a canvas on every table reads the dataset's own
         edition (written once); only a canvas that names tables writes its own, and says before writing which checks
         it measures and which it leaves out; no Schedule in a canvas; Reading as is the person's own reader.
+    - [x] The Briefing reads the platform's own intelligence (2026-10-30, the user: "where is the intelligence … where is
+      all the effort spent in building AN AGENTIC DATA INTELLIGENCE", then "Build it straight"). Measured first: the
+      Finance September edition took 3 model steps and 0 queries of its own and said "an in-range month", while the
+      platform held 22 explorer findings, 16 deep analyses and 21 decisions on LuxExperience it never read. Now each
+      edition reads them as sources (`sources.known_findings` · `known_analyses` · `known_decisions`), the model is told
+      to read them first and lead with what is learned and what to do; a sentence may repeat a cited deep analysis's
+      numbers, and may say a cause only by citing a finished deep analysis whose claim licence is causal; it may start
+      ONE deep analysis (`deep_analysis` tool → `runners.run_investigation`, background only, filed under the edition's
+      session) on the move nothing explains — a scheduled send only where the organisation allows model work nobody
+      asked for; a `context` block draws a deep analysis, a finding or a decision with a way to open it, and the page
+      reads again every 30 s while a started analysis runs.
+    - [ ] The producing half, named not built (the user, 2026-10-30): the explorer "firing 200, 300 or 500 queries" to
+      cover every angle, dimension, metric and period, and Slack, Gmail and other discussions and decisions feeding the
+      same context the Briefing and the Data Canvas read.
       - A breakdown's segments are re-derived at departure from its re-run rows (`sources.rerun`), so a change
         against usual departs on the change measured at the send.
       - The number gate binds a number to what it is said of (`spec.misused`): a cited number to its cited source, to

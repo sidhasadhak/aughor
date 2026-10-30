@@ -20,6 +20,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeo
 vi.mock("@/components/brief/BriefSchedule", () => ({ BriefSchedule: () => null }));
 vi.mock("@/lib/useAughorChat", () => ({ useAughorChat: () => ({ messages: [], sendMessage: vi.fn(), status: "ready" }) }));
 vi.mock("@/lib/objects", () => ({ getObjectCatalog: vi.fn(async () => ({ types: [] })) }));
+const nav = vi.hoisted(() => ({ requestTab: vi.fn() }));
+vi.mock("@/lib/navigate", () => nav);
 vi.mock("@/components/charts/vega/VegaChart", () => ({
   VegaChart: ({ spec }: { spec: unknown }) => <div data-testid="vega" data-spec={JSON.stringify(spec)} />,
 }));
@@ -211,6 +213,49 @@ describe("BriefingEdition", () => {
     await screen.findByTestId("edition-lead");
     expect(screen.getByTestId("edition-lag-moved").textContent).toContain(
       "Written when this data's rows arrived within 3 days; they now arrive within 1 day");
+  });
+
+  const KNOWN: Record<string, EditionSource> = {
+    analysis_a1: S({ id: "analysis_a1", label: "Revenue rose on volume", kind: "analysis",
+      facts: { inv_id: "fb1b7a55", headline: "September revenue rose €93,820 on order volume", closing: "Volume, not basket.",
+               confidence: "HIGH", completed: "2026-10-28", licence: "descriptive" } }),
+    analysis_started: S({ id: "analysis_started", label: "Why did refunds fall?", kind: "analysis", status: "running",
+      facts: { question: "Why did refunds on returns fall to a seven-month low in September?", session: "briefing:k" } }),
+    decision_d1: S({ id: "decision_d1", label: "A return fee", kind: "decision",
+      facts: { decision_id: "d1-full-id", question: "Introduce a 9.90 EUR return fee", chosen: "introduce it",
+               state: "due for review 2026-11-01" } }),
+  };
+  const WITH_KNOWN: Edition = { ...WRITTEN, sources: { ...SOURCES, ...KNOWN },
+    blocks: [WRITTEN.blocks![0], { id: "k1", type: "context", source: "analysis_a1", text: "It explains September's rise." },
+             { id: "k2", type: "context", source: "analysis_started" }, { id: "k3", type: "context", source: "decision_d1" }],
+    known: { analyses: 3, findings: 4, decisions: 2, started: "analysis_started" } };
+
+  it("draws what the platform already knew — a deep analysis, one being looked into, a decision — each to open", async () => {
+    api.readBriefingEdition.mockResolvedValue(WITH_KNOWN);
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    const cards = await screen.findAllByTestId("edition-context");
+    expect(cards.map(c => c.getAttribute("data-kind"))).toEqual(["analysis", "analysis", "decision"]);
+    expect(cards[0].textContent).toContain("Deep analysis · 2026-10-28 · high confidence");
+    expect(cards[0].textContent).toContain("September revenue rose €93,820 on order volume");
+    expect(cards[1].textContent).toContain("Being looked into — a deep analysis this edition started");
+    expect(cards[2].textContent).toContain("Decision · due for review 2026-11-01");
+    fireEvent.click(within(cards[0]).getByRole("button", { name: "Open the deep analysis" }));
+    expect(nav.requestTab).toHaveBeenCalledWith("chat", { run: "fb1b7a55" });
+    fireEvent.click(within(cards[2]).getByRole("button", { name: "Open the decision" }));
+    expect(nav.requestTab).toHaveBeenCalledWith("decisions", { id: "d1-full-id" });
+    expect(screen.getByText(/read 3 deep analyses, 4 findings and 2 decisions/)).toBeTruthy();
+  });
+
+  it("reads the edition again while a deep analysis it started is still running", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      api.readBriefingEdition.mockResolvedValue(WITH_KNOWN);
+      render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+      await screen.findAllByTestId("edition-context");
+      expect(api.readBriefingEdition).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(30_000);
+      await waitFor(() => expect(api.readBriefingEdition).toHaveBeenCalledTimes(2));
+    } finally { vi.useRealTimers(); }
   });
 
   it("with no guide, says so and drafts one only on a click", async () => {

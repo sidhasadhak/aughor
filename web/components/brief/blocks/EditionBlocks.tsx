@@ -18,11 +18,12 @@ import { Segmented } from "@/components/ui/segmented";
 import type { EditionBlock, EditionFigure, EditionGiven, EditionSource } from "@/lib/api";
 import { bridgeSteps, drillOptions, fmtChange, fmtValue, parseCited } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
+import { requestTab } from "@/lib/navigate";
 import { getObjectCatalog } from "@/lib/objects";
 import { objectHref, objectKeyColumns } from "@/lib/objectLinks";
 
 export const BLOCK_TYPES = ["lead", "figure", "bridge", "compare", "table", "map", "multiples", "heat", "progress",
-                            "line", "control", "decision", "quiet"] as const;
+                            "line", "control", "decision", "quiet", "context"] as const;
 type BlockType = typeof BLOCK_TYPES[number];
 
 const MONEY_COL = /(eur|usd|gbp|gmv|revenue|sales|amount|value|price|cost|refund|spend)/i;
@@ -100,6 +101,39 @@ function pairRows(block: EditionBlock, src: EditionSource) {
 }
 
 type BodyProps = { block: EditionBlock; src?: EditionSource; ctx: Ctx };
+
+/** What the platform already knew, drawn as the work it is — a deep analysis (or one this edition started, still
+ *  being looked into), an explorer finding, a decision in the record — with a way to open it. */
+function ContextBody({ block, src, ctx }: BodyProps) {
+  if (!src) return <Missing what="This block's source is not in the edition." />;
+  const f = src.facts as Record<string, unknown>;
+  const s = (k: string): string => (typeof f[k] === "string" ? (f[k] as string) : "");
+  const running = src.kind === "analysis" && src.status === "running";
+  const kicker = src.kind === "analysis"
+    ? (running ? "Being looked into — a deep analysis this edition started"
+       : ["Deep analysis", s("completed"), s("confidence") && `${s("confidence").toLowerCase()} confidence`].filter(Boolean).join(" · "))
+    : src.kind === "finding" ? ["Explorer finding", s("domain")].filter(Boolean).join(" · ")
+    : ["Decision", s("state")].filter(Boolean).join(" · ");
+  const head = src.kind === "analysis" ? (running ? s("question") : s("headline")) : src.kind === "finding" ? s("finding") : s("question");
+  const more = src.kind === "analysis" && !running ? (s("closing") || s("summary"))
+    : src.kind === "decision" && s("chosen") ? `Chosen: ${s("chosen")}` : "";
+  const open = src.kind === "analysis" && s("inv_id") ? () => requestTab("chat", { run: s("inv_id") })
+    : src.kind === "decision" && s("decision_id") ? () => requestTab("decisions", { id: s("decision_id") }) : undefined;
+  return (
+    <div data-testid="edition-context" data-kind={src.kind}>
+      <div className="aug-fs-xs" style={{ textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6,
+                                          color: running ? "var(--amb4)" : "var(--t3)" }}>{kicker}</div>
+      <p className="aug-fs-h2" style={{ color: "var(--t1)", margin: 0 }}>{head}</p>
+      {more && <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "6px 0 0" }}>{more}</p>}
+      {block.text && <p className="aug-fs-sm" style={{ margin: "8px 0 0" }}><CitedText text={block.text} onCite={ctx.onCite} /></p>}
+      {open && (
+        <Button size="xs" variant="secondary" style={{ marginTop: 10 }} onClick={open}>
+          {src.kind === "analysis" ? "Open the deep analysis" : "Open the decision"}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 const NO_TEAMS: { id: string; name: string }[] = [];
 const NONE_GIVEN: EditionGiven[] = [];
@@ -299,6 +333,7 @@ const BODY: Record<BlockType, (p: BodyProps) => React.ReactNode> = {
     );
   },
   decision: p => <DecisionBody {...p} />,
+  context: p => <ContextBody {...p} />,
   quiet: ({ block, ctx }) => <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}><CitedText text={block.text} onCite={ctx.onCite} /></p>,
 };
 
@@ -309,7 +344,7 @@ function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
   const drills = drillOptions(block, ctx.sources, ctx.drillColumns);
   const decision = block.type === "decision";
   // A block the model left untitled still says what it shows: its source's own label.
-  const title = block.title || (src && !bare && !decision && block.type !== "control" ? src.label : "");
+  const title = block.title || (src && !bare && !decision && block.type !== "control" && block.type !== "context" ? src.label : "");
   return (
     <section data-testid="edition-block" data-type={block.type}
       style={{ margin: "16px 0", padding: bare ? "4px 0" : "16px 18px", borderRadius: "var(--r3)",

@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from aughor.briefing.compose.sources import Source
+from aughor.briefing.compose.sources import KNOWN, KNOWN_TEXT, Source
 
 VERSION = 1
 MAX_BLOCKS = 14
@@ -51,6 +51,9 @@ TYPES: dict[str, str] = {
     "decision": "text (required): one sentence asking for a decision. The reader is offered what to do with it: "
                 "take it into deep analysis, give it to a team, or put it away.",
     "quiet": "text: one line of what held steady, numbers cited.",
+    "context": "source: one of what the platform already knows — a deep analysis (analysis_*), an explorer finding "
+               "(finding_*) or a decision in the record (decision_*); text: what it means for this range, cited. Draws "
+               "that work with a way to open it — a deep analysis this edition started reads as being looked into.",
 }
 #: What a reader may do with a decision — offered by code on every decision, never chosen by the model.
 ACTIONS = ("deep_analysis", "give_to_team", "not_now")
@@ -141,7 +144,8 @@ def validate(spec: Spec, sources: dict[str, Source]) -> tuple[list[Block], list[
             continue
         if b.type in ("lead", "decision"):
             why += _need(b, n, "text")
-        if b.type in ("figure", "compare", "table", "map", "multiples", "heat", "progress", "line", "control"):
+        if b.type in ("figure", "compare", "table", "map", "multiples", "heat", "progress", "line", "control",
+                      "context"):
             why += _need(b, n, "source")
         if b.type == "bridge" and not (b.source or len(b.chain) >= 2):
             why.append(f"block {n} (bridge) needs a breakdown source or a chain of at least two check sources")
@@ -160,6 +164,11 @@ def validate(spec: Spec, sources: dict[str, Source]) -> tuple[list[Block], list[
                 why.append(f"block {n} ({b.type}) names column {c!r}; {b.source!r} has {', '.join(src.columns)}")
             if b.type == "figure" and src.kind != "check":
                 why.append(f"block {n} (figure) must read a check; {b.source!r} is a {src.kind}")
+            if b.type == "context" and src.kind not in KNOWN:
+                why.append(f"block {n} (context) reads a deep analysis, a finding or a decision; {b.source!r} is a "
+                           f"{src.kind}")
+            if b.type != "context" and src.kind in KNOWN and b.type not in ("lead", "quiet", "decision"):
+                why.append(f"block {n} ({b.type}) cannot draw {b.source!r}, the platform's own work — use a context block")
             if b.type == "bridge" and b.source and src.kind not in ("breakdown", "drill"):
                 why.append(f"block {n} (bridge) reads a breakdown; {b.source!r} is a {src.kind}")
             if b.type in ("compare", "map", "heat", "progress") and not (b.label and b.value) \
@@ -224,6 +233,13 @@ def allowed_numbers(sources: dict[str, Source]) -> list[float]:
 
     for src in sources.values():
         if src.status == "refused":
+            continue
+        if src.kind in KNOWN:
+            # the platform's own work: a sentence citing it may repeat the numbers it states, and no others of its
+            from aughor.briefing.edition import numbers_in
+            for k in KNOWN_TEXT:
+                for v in numbers_in(str(src.facts.get(k) or "")):
+                    add(v)
             continue
         add(float(len(src.rows)))
         share = "ratio" in (src.unit or "") or "%" in (src.unit or "")
@@ -361,6 +377,14 @@ def _clause(sentence: str, at: int, end: int) -> str:
     return plain(sentence[(before[-1] if before else 0):(after.start() if after else len(sentence))])
 
 
+def licensed(sentence: str, sources: dict[str, Source]) -> bool:
+    """Whether a sentence that claims a cause cites a finished deep analysis whose claims were licensed causal — the
+    one ground a cause stands on here (`agent/claim_type`: the analysis earned it, the edition only repeats it)."""
+    return any(sources[sid].kind == "analysis" and sources[sid].status == "final"
+               and sources[sid].facts.get("licence") == "causal"
+               for _w, sid in cites(sentence) if sid in sources)
+
+
 def misused(sentence: str, b: Block, sources: dict[str, Source], pool: list[float]) -> str:
     """Why a sentence (citation marks intact) uses a measured number wrongly, or "". Each cited number must come
     from the source its citation names — and from the segment the clause around it names, moving the way it says;
@@ -408,6 +432,8 @@ def gate(blocks: list[Block], sources: dict[str, Source]) -> tuple[list[Block], 
             held = dict(held_sentences(words, allowed))
             for sentence in _SENTENCE_RE.split(raw):
                 said = plain(sentence).strip()
+                if said in held and held[said].startswith("it claims a cause") and licensed(sentence, sources):
+                    del held[said]
                 if said and said not in held:
                     why = misused(sentence, b, sources, allowed)
                     if why:

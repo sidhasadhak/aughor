@@ -448,3 +448,60 @@ def test_a_canvas_that_names_no_schema_reads_its_connections_default_dataset(set
     _canvas(monkeypatch, "cv_lux", "compose_c1", [])
     got = R.read_briefing_edition("compose_c1", preset="last_week", reader="", canvas_id="cv_lux")
     assert got["scope_key"] == "compose_c1:lux" and got["canvas"]["dataset"] == "lux"
+
+
+# ── what the platform already knows, read and cited; one deep analysis started ──────────────
+
+def _known_stub(conn_id, schema, spec, tables):
+    from aughor.briefing.compose import sources as S
+    return S.known_analyses("compose_c1", list_runs=lambda: [
+        {"id": "a1", "connection_id": "compose_c1", "kind": "investigation", "status": "complete",
+         "completed_at": "2026-10-28", "question": "Why did sales rise?", "headline": "Top clients carried €9,417 more"}],
+        get_run=lambda i: {"report": {"headline": "Top clients carried €9,417 more", "confidence": "HIGH",
+                                      "causal_checks": {"licence": "descriptive"}}})
+
+
+class _Run:
+    def __init__(self, status="executed", message=""):
+        self.status, self.message = status, message
+
+
+def test_the_writer_reads_what_the_platform_knows_and_starts_one_deep_analysis(setup, monkeypatch):
+    asked = []
+    blocks = [{"type": "lead", "text": "Sales rose to {€42.1k|sales}; {top clients carried €9,417 more|analysis_a1}."},
+              {"type": "context", "source": "analysis_a1"}, {"type": "context", "source": "analysis_started"}]
+    loop, seen = _loop([("deep_analysis", {"question": "Why did average order value rise in the week of 19 October?"}),
+                        ("deep_analysis", {"question": "And why did refunds fall in the same week, by reason?"}),
+                        ("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders, known=_known_stub,
+                      start_analysis=lambda q, s: asked.append((q, s)) or _Run())
+    payload = seen[0]["question"]
+    assert '"deep_analyses"' in payload and "Top clients carried" in payload        # shown to the model
+    assert seen[1]["deep_analysis"]["started"] is True
+    assert "already" in seen[2]["deep_analysis"]["error"]                           # one per edition
+    assert len(asked) == 1 and asked[0][1] == f"briefing:compose_c1#{_week().key}@_organisation"
+    assert [b["type"] for b in entry["blocks"]][:3] == ["lead", "context", "context"]   # then the floor, by code
+    assert entry["sources"]["analysis_started"]["status"] == "running"
+    assert entry["known"] == {"analyses": 2, "findings": 0, "decisions": 0, "started": "analysis_started"}
+
+
+def test_a_scheduled_send_starts_no_deep_analysis_unless_the_organisation_allows_it(setup, monkeypatch):
+    asked = []
+    loop, seen = _loop([("deep_analysis", {"question": "Why did average order value rise in the week of 19 October?"}),
+                        ("compose", {"blocks": [LEAD]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+              run_query=_top_orders, known=lambda *a: [], may_start_analysis=False,
+              start_analysis=lambda q, s: asked.append(q) or _Run())
+    assert "has not allowed" in seen[1]["deep_analysis"]["error"] and asked == []
+
+
+def test_a_read_shows_a_started_deep_analysis_as_it_stands(setup, monkeypatch):
+    from aughor.briefing.compose import sources as S
+
+    entry = {"sources": {"analysis_started": S.started_analysis("analysis_started", "Why?", "briefing:k").model_dump()}}
+    monkeypatch.setattr(S, "refreshed", lambda src, **kw: src.model_copy(update={"status": "final"}))
+    assert W.as_it_stands(entry)["sources"]["analysis_started"]["status"] == "final"
+    assert entry["sources"]["analysis_started"]["status"] == "running"             # a read keeps nothing

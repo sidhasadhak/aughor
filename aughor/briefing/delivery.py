@@ -159,8 +159,10 @@ def build_period_departure(sub: BriefSubscription, *, runner=None) -> dict:
     guide, _rev = G.current(sub.conn_id, sub.schema_name or None)
     if guide is not None:
         reader = sub.reader.split(":", 1)[1] if (sub.reader or "").startswith("group:") else ""
+        from aughor.orgsettings.allows import allows
+        # a scheduled send is model work nobody asked for: it starts a deep analysis only where the organisation allows
         brief = W.compose(sub.conn_id, spec, scope_key=scope_key, schema=sub.schema_name or None,
-                          reader_id=reader, runner=runner)
+                          reader_id=reader, runner=runner, may_start_analysis=allows("scheduled_model_work"))
         sections = W.sheet_lines(brief)
         measurement = W.departure_measurement(sub.conn_id, brief, runner=runner)
     else:

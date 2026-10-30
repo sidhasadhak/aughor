@@ -12882,6 +12882,9 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   guide edit measures its new or changed checks before it is kept.
 - **2026-10-30, a Briefing tab in the Data Canvas** (mocked, then "Build as drawn"): after Chat; a canvas on every
   table reads the dataset's own edition, one that names tables writes its own from those tables.
+- **2026-10-30, the Briefing reads the platform's own intelligence** ("Build it straight"): its deep analyses with their
+  verdicts and claim licence, the explorer's findings and the decisions in the record are sources it cites; a cause is
+  said only on a causal-licensed deep analysis; it starts one deep analysis on the move nothing explains.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

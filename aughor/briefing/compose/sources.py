@@ -35,7 +35,9 @@ MAX_SEGMENTS = 12
 class Source(BaseModel):
     id: str
     label: str
-    kind: Literal["check", "breakdown", "query", "drill", "answer"]
+    #: check · breakdown · query · drill · answer are measured for the edition; finding · analysis · decision are the
+    #: platform's own work it reads — an explorer finding, a deep analysis and its verdict, a decision in the record.
+    kind: Literal["check", "breakdown", "query", "drill", "answer", "finding", "analysis", "decision"]
     columns: list[str] = Field(default_factory=list)
     rows: list[list[Any]] = Field(default_factory=list)
     sql: str = ""
@@ -238,3 +240,150 @@ def for_model(src: Source, *, max_rows: int = 25) -> dict:
     if src.note:
         out["note"] = src.note
     return out
+
+
+# ── what the platform already knows ──────────────────────────────────────────────────────────
+
+#: The kinds of source that are the platform's own work, read — never measured for the edition.
+KNOWN = ("finding", "analysis", "decision")
+#: The text a known source carries, by field — what the model reads and what a sentence citing it may quote.
+KNOWN_TEXT = ("headline", "summary", "closing", "finding", "question", "chosen")
+_PREAMBLE_RE = re.compile(r"^\[Scheduled-run context[^\]]*\].*?\n\s*\n", re.S)
+
+
+def _short(text: Any, n: int) -> str:
+    s = " ".join(str(text or "").split())
+    return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+
+def known_findings(by_domain: dict, *, tables=(), limit: int = 6) -> list[Source]:
+    """The explorer's strongest findings for the dataset — confident, of some impact, a synthesis first — each its own
+    source. In a Data Canvas that names tables, only those that read its tables."""
+    from aughor.semantic.metric_time import bare_name
+
+    own = {bare_name(str(t)).lower() for t in tables}
+    picked = []
+    for domain, items in (by_domain or {}).items():
+        for f in items or []:
+            if not isinstance(f, dict) or not f.get("finding"):
+                continue
+            if float(f.get("confidence") or 0) < 0.6 or float(f.get("impact") or 0) < 0.3:
+                continue
+            read = {bare_name(str(t)).lower() for t in (f.get("signature") or {}).get("tables") or []}
+            if own and not (read and read <= own):
+                continue
+            picked.append((domain == "Synthesis", float(f.get("impact") or 0), domain, f))
+    picked.sort(key=lambda x: (not x[0], -x[1]))
+    out = []
+    for n, (_syn, impact, domain, f) in enumerate(picked[:limit]):
+        text = _short(f["finding"], 420)
+        out.append(Source(id=f"finding_{n + 1}", label=_short(f.get("question") or text, 90), kind="finding",
+                          columns=["finding", "domain", "found"], rows=[[text, domain, str(f.get("generated_at") or "")[:10]]],
+                          facts={"finding": text, "question": _short(f.get("question"), 200), "domain": domain,
+                                 "confidence": f.get("confidence"), "impact": impact, "finding_id": f.get("id")},
+                          note="a finding the explorer kept, with the query it rests on", sql=str(f.get("sql") or "")))
+    return out
+
+
+def _analysis_source(source_id: str, run: dict, report: dict) -> Source:
+    causal = report.get("causal_checks") if isinstance(report.get("causal_checks"), dict) else {}
+    recs = [_short(r.get("action"), 200) for r in report.get("recommendations") or [] if isinstance(r, dict) and r.get("action")]
+    question = _short(_PREAMBLE_RE.sub("", str(run.get("question") or "")), 220)
+    headline = _short(report.get("headline") or run.get("headline"), 220)
+    done = str(run.get("completed_at") or "")[:10]
+    return Source(id=source_id, label=headline or question, kind="analysis",
+                  columns=["headline", "question", "completed"], rows=[[headline, question, done]],
+                  facts={"inv_id": run.get("id"), "question": question, "headline": headline,
+                         "summary": _short(report.get("executive_summary"), 700),
+                         "closing": _short(report.get("closing_summary"), 400),
+                         "confidence": str(report.get("confidence") or ""),
+                         "licence": str(causal.get("licence") or ""),
+                         "recommendations": recs[:3], "gaps": _short(report.get("gaps"), 300), "completed": done},
+                  status="final" if run.get("status") == "complete" else str(run.get("status") or ""),
+                  note="a deep analysis the platform ran: its verdict, its confidence and what it can and cannot say")
+
+
+def known_analyses(conn_id: str, *, limit: int = 6, list_runs=None, get_run=None) -> list[Source]:
+    """The connection's latest completed deep analyses, one question each (a question asked again keeps its newest
+    answer), each its own source with its verdict, confidence and claim licence."""
+    if list_runs is None or get_run is None:
+        from aughor.db.history import get_investigation, list_investigations
+        list_runs, get_run = list_runs or (lambda: list_investigations(limit=300)), get_run or get_investigation
+    seen: set[str] = set()
+    out: list[Source] = []
+    for run in list_runs():
+        if run.get("connection_id") != conn_id or run.get("kind", "investigation") != "investigation":
+            continue
+        if run.get("status") != "complete" or not run.get("headline"):
+            continue
+        q = _PREAMBLE_RE.sub("", str(run.get("question") or "")).strip().lower()[:120]
+        if q in seen:
+            continue
+        seen.add(q)
+        full = get_run(run["id"]) or {}
+        out.append(_analysis_source(f"analysis_{run['id']}", run, full.get("report") or {}))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def known_decisions(conn_id: str, spec, *, limit: int = 6, list_fn=None) -> list[Source]:
+    """Decisions in the record that bear on the range — taken by its end and not reviewed and closed before it began —
+    one per decision (the record keeps every version), the soonest review first. Each its own source."""
+    from datetime import timedelta
+
+    if list_fn is None:
+        from aughor.record.decisions import list_decisions
+        list_fn = lambda: [d.model_dump(mode="json") for d in list_decisions(conn_id=conn_id)]  # noqa: E731
+    start, end = spec.start.isoformat(), (spec.end - timedelta(days=1)).isoformat()
+    picked: dict[tuple, dict] = {}
+    for d in list_fn():
+        if d.get("superseded_by") or (d.get("source") or {}).get("kind") == "approval":
+            continue
+        decided, review = str(d.get("decided_at") or "")[:10], str(d.get("review_on") or "")[:10]
+        if not decided or decided > end or (review and review < start and d.get("outcome")):
+            continue
+        picked.setdefault((d.get("question"), d.get("chosen")), d)
+    rows = sorted(picked.values(), key=lambda d: str(d.get("review_on") or ""))[:limit]
+    out = []
+    for d in rows:
+        review = str(d.get("review_on") or "")[:10]
+        state = ("reviewed: " + str(d.get("outcome_verdict"))) if d.get("outcome_verdict") else (
+            "due for review " + review if review else "no review date")
+        out.append(Source(id=f"decision_{str(d.get('id') or '')[:12]}", label=_short(d.get("question"), 120),
+                          kind="decision", columns=["decision", "chosen", "decided", "review"],
+                          rows=[[_short(d.get("question"), 200), _short(d.get("chosen"), 160),
+                                 str(d.get("decided_at") or "")[:10], state]],
+                          facts={"decision_id": d.get("id"), "question": _short(d.get("question"), 240),
+                                 "chosen": _short(d.get("chosen"), 200), "decided": str(d.get("decided_at") or "")[:10],
+                                 "review_on": review, "outcome": str(d.get("outcome_verdict") or ""), "state": state},
+                          note="a decision in the record: what was chosen, when it is reviewed, and what the review found"))
+    return out
+
+
+def started_analysis(source_id: str, question: str, session: str) -> Source:
+    """A deep analysis this edition started — running until a read finds it finished (`refreshed`)."""
+    return Source(id=source_id, label=_short(question, 120), kind="analysis", status="running",
+                  columns=["headline", "question", "completed"], rows=[["", _short(question, 220), ""]],
+                  facts={"question": _short(question, 220), "session": session, "headline": "", "summary": "",
+                         "licence": "", "started_by_edition": True},
+                  note="a deep analysis this edition started; it runs in the background")
+
+
+def refreshed(src: Source, *, runs_for=None, get_run=None) -> Source:
+    """A running deep analysis as it stands now: finished — with its verdict — or still running. A read: nothing kept."""
+    if src.kind != "analysis" or src.status != "running" or not src.facts.get("session"):
+        return src
+    if runs_for is None or get_run is None:
+        from aughor.db.history import get_investigation, list_investigations_for_session
+        runs_for, get_run = runs_for or list_investigations_for_session, get_run or get_investigation
+    runs = runs_for(src.facts["session"])
+    if not runs:
+        return src
+    run = runs[0]
+    if run.get("status") != "complete":
+        return src.model_copy(update={"facts": {**src.facts, "inv_id": run.get("id"),
+                                                 "state": str(run.get("status") or "running")}})
+    done = _analysis_source(src.id, run, (get_run(run["id"]) or {}).get("report") or {})
+    return done.model_copy(update={"facts": {**done.facts, "started_by_edition": True}})
+

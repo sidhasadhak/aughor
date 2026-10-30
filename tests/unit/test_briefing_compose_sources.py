@@ -140,3 +140,77 @@ def test_a_query_source_carries_typed_numbers():
         return {"columns": ["platform", "orders"], "rows": [("Mytheresa", "72"), ("YOOX", "100")], "guard_receipts": []}
     src = S.query("q", "Q", "c1", "SELECT 1", purpose="p", run=run)
     assert src.rows == [["Mytheresa", 72], ["YOOX", 100]]
+
+
+# ── what the platform already knows ──────────────────────────────────────────────────────────
+
+def test_the_explorers_confident_findings_are_read_a_synthesis_first_and_only_the_canvas_tables_in_a_canvas():
+    by_domain = {
+        "General": [{"id": "g1", "finding": "AOV is 387 EUR.", "confidence": 0.7, "impact": 0.5,
+                     "signature": {"tables": ["orders"]}},
+                    {"id": "g2", "finding": "Summing fiscal_year gives 133,524.", "confidence": 0.5, "impact": 0.1,
+                     "signature": {"tables": ["events"]}}],
+        "Synthesis": [{"id": "s1", "finding": "Repeat customers carry 95.0% of GMV.", "confidence": 0.8, "impact": 0.6,
+                       "signature": {"tables": ["orders", "customers"]}}],
+    }
+    got = S.known_findings(by_domain)
+    assert [s.facts["finding_id"] for s in got] == ["s1", "g1"]            # weak one out; the synthesis first
+    assert got[0].kind == "finding" and got[0].id == "finding_1"
+    assert [s.facts["finding_id"] for s in S.known_findings(by_domain, tables=("orders",))] == ["g1"]
+
+
+def _runs():
+    return [
+        {"id": "a2", "connection_id": "c1", "kind": "investigation", "status": "complete", "completed_at": "2026-10-28",
+         "question": "[Scheduled-run context — written by code, not inferred]\nweekly\n\nWhy did revenue rise in September?",
+         "headline": "Revenue rose €93,820 on order volume"},
+        {"id": "a1", "connection_id": "c1", "kind": "investigation", "status": "complete", "completed_at": "2026-10-20",
+         "question": "Why did revenue rise in September?", "headline": "an older answer"},
+        {"id": "x", "connection_id": "c2", "kind": "investigation", "status": "complete", "headline": "another dataset"},
+        {"id": "c", "connection_id": "c1", "kind": "chat", "status": "complete", "headline": "a quick answer"},
+        {"id": "r", "connection_id": "c1", "kind": "investigation", "status": "running", "headline": ""},
+    ]
+
+
+def _report(inv_id):
+    return {"report": {"headline": "Revenue rose €93,820 on order volume", "executive_summary": "Orders rose 16.8%.",
+                       "closing_summary": "Volume, not basket.", "confidence": "HIGH",
+                       "causal_checks": {"licence": "causal"}, "recommendations": [{"action": "Watch Mytheresa"}]}}
+
+
+def test_the_latest_finished_deep_analyses_are_read_one_per_question_with_their_licence():
+    got = S.known_analyses("c1", list_runs=_runs, get_run=_report)
+    assert [s.id for s in got] == ["analysis_a2"]                          # the question asked again: newest answer
+    a = got[0]
+    assert a.facts["question"] == "Why did revenue rise in September?"     # the scheduled preamble is not the question
+    assert a.facts["licence"] == "causal" and a.facts["confidence"] == "HIGH" and a.status == "final"
+    assert a.facts["recommendations"] == ["Watch Mytheresa"]
+
+
+def test_decisions_in_force_in_the_range_are_read_once_each_and_an_approval_is_not_a_decision(week):
+    rows = [
+        {"id": "d_fee", "question": "A 9.90 EUR return fee", "chosen": "introduce it", "decided_at": "2026-08-01",
+         "review_on": "2026-11-01", "source": {"kind": "declared"}},
+        {"id": "d_fee2", "question": "A 9.90 EUR return fee", "chosen": "introduce it", "decided_at": "2026-08-01",
+         "review_on": "2026-11-01", "source": {"kind": "declared"}},
+        {"id": "d_old", "question": "Raise safety stock", "chosen": "raise it", "decided_at": "2025-03-01",
+         "review_on": "2025-04-01", "outcome": "o1", "outcome_verdict": "cannot_tell", "source": {"kind": "declared"}},
+        {"id": "d_later", "question": "Extend the edit", "chosen": "extend", "decided_at": "2026-10-27",
+         "review_on": "2026-11-27", "source": {"kind": "declared"}},
+        {"id": "d_ui", "question": "A dashboard of customer metrics", "chosen": "approve", "decided_at": "2026-10-20",
+         "review_on": "2026-11-20", "source": {"kind": "approval"}},
+    ]
+    got = S.known_decisions("c1", week, list_fn=lambda: rows)
+    assert [s.facts["decision_id"] for s in got] == ["d_fee"]              # once; not the closed one, the later one, a UI approval
+    assert got[0].facts["state"] == "due for review 2026-11-01"
+
+
+def test_a_started_deep_analysis_reads_as_running_until_it_finishes():
+    src = S.started_analysis("analysis_started", "Why did refunds fall in September?", "briefing:k")
+    assert src.status == "running"
+    assert S.refreshed(src, runs_for=lambda s: [], get_run=_report) is src
+    running = S.refreshed(src, runs_for=lambda s: [{"id": "n1", "status": "running"}], get_run=_report)
+    assert running.status == "running" and running.facts["inv_id"] == "n1"
+    done = S.refreshed(src, runs_for=lambda s: [{"id": "n1", "status": "complete", "completed_at": "2026-10-30",
+                                                  "question": "Why did refunds fall?"}], get_run=_report)
+    assert done.status == "final" and done.facts["headline"].startswith("Revenue rose") and done.facts["started_by_edition"]

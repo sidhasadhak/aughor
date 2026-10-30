@@ -2204,7 +2204,9 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
         return {"built": False, "period": block, "reader": reader, "scope_key": scope_key,
                 **({"canvas": canvas} if canvas else {})}
     moved = {"lag_now": block.get("lag_days")} if kept.get("lag_days") != block.get("lag_days") else {}
-    return {**entry, "built": True, "scope_key": scope_key, **moved, **({"canvas": canvas} if canvas else {})}
+    from aughor.briefing.compose.write import as_it_stands
+    return {**as_it_stands(entry), "built": True, "scope_key": scope_key, **moved,
+            **({"canvas": canvas} if canvas else {})}
 
 
 @router.post("/exploration/{conn_id}/briefing/edition")

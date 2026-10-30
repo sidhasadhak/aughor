@@ -322,6 +322,17 @@ def _read_number(token: str) -> tuple[Optional[float], float]:
     return v * mult, 0.5 * (10 ** -decimals) * mult
 
 
+def numbers_in(text: str) -> list[float]:
+    """Every number ``text`` states, dates and years excepted — what a sentence quoting it may say (a deep analysis's
+    report, an explorer finding: their numbers are theirs, and a line citing them may repeat them)."""
+    out = []
+    for m in _NUM_RE.finditer(_DATE_RE.sub(" ", text or "")):
+        v, _tol = _read_number(m.group(0))
+        if v is not None:
+            out.append(v)
+    return out
+
+
 def unmeasured_numbers(text: str, allowed: list[float]) -> list[str]:
     """Every number in ``text`` that no measured figure, band edge, change or count accounts for —
     dates and years excepted. A number is accounted for when it rounds to one (within its own last
