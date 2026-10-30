@@ -256,9 +256,11 @@ def _short(text: Any, n: int) -> str:
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
 
 
-def known_findings(by_domain: dict, *, tables=(), limit: int = 6) -> list[Source]:
-    """The explorer's strongest findings for the dataset — confident, of some impact, a synthesis first — each its own
-    source. In a Data Canvas that names tables, only those that read its tables."""
+def known_findings(by_domain: dict, *, tables=(), north_star=(), limit: int = 6) -> list[Source]:
+    """The explorer's strongest findings for the dataset — confident, plausible, of some impact by the Briefing's own
+    ranking (`knowledge.triage`), a synthesis first — each its own source. In a Data Canvas that names tables, only
+    those that read its tables."""
+    from aughor.knowledge.triage import impact_score, plausibility
     from aughor.semantic.metric_time import bare_name
 
     own = {bare_name(str(t)).lower() for t in tables}
@@ -267,12 +269,18 @@ def known_findings(by_domain: dict, *, tables=(), limit: int = 6) -> list[Source
         for f in items or []:
             if not isinstance(f, dict) or not f.get("finding"):
                 continue
-            if float(f.get("confidence") or 0) < 0.6 or float(f.get("impact") or 0) < 0.3:
+            impact = f.get("impact")
+            if impact is None:
+                impact = impact_score(f["finding"], f.get("novelty", 0), f.get("confidence", 0), north_star)
+            if float(f.get("confidence") or 0) < 0.6 or float(impact or 0) < 0.3:
+                continue
+            seems = plausibility(f["finding"], f.get("sql", ""), None)
+            if not seems.ok and seems.severity == "implausible":
                 continue
             read = {bare_name(str(t)).lower() for t in (f.get("signature") or {}).get("tables") or []}
             if own and not (read and read <= own):
                 continue
-            picked.append((domain == "Synthesis", float(f.get("impact") or 0), domain, f))
+            picked.append((domain == "Synthesis", float(impact or 0), domain, f))
     picked.sort(key=lambda x: (not x[0], -x[1]))
     out = []
     for n, (_syn, impact, domain, f) in enumerate(picked[:limit]):

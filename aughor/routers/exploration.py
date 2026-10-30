@@ -241,18 +241,8 @@ def _load_state(conn_id: str, schema: str | None) -> dict:
 def findings_and_left_out(conn_id: str, schema: str | None) -> tuple[dict, list[dict]]:
     """by_domain findings for a (connection, schema) — per-schema, aggregate, or conn-level — without the ones that
     read a table turned off for analysis, and those left out (`ontology.visibility.findings_left_out`)."""
-    from aughor.explorer import store as _s
-    if schema:
-        found = _s.get_domain_findings(_store_key(conn_id, schema))
-    elif _s.schema_run_keys(conn_id):
-        found = _s.get_aggregate_domain_findings(conn_id)
-    else:
-        found = _s.get_domain_findings(conn_id)
-    from aughor.ontology.visibility import connection_exclusions, findings_left_out
-    if not connection_exclusions(conn_id):
-        return found, []
-    from aughor.trust.lineage_edges import dialect_for_connection
-    return findings_left_out(conn_id, found, default_schema=schema, dialect=dialect_for_connection(conn_id))
+    from aughor.knowledge.period_brief import findings_for
+    return findings_for(conn_id, schema)
 
 
 def domain_findings_for(conn_id: str, schema: str | None) -> dict:

@@ -204,8 +204,13 @@ def _known(conn_id: str, schema: Optional[str], spec, tables) -> list[S.Source]:
     from aughor.knowledge import period_brief
 
     out: list[S.Source] = []
-    for what, read in (("findings", lambda: S.known_findings(period_brief.scope_inputs(conn_id, schema)[0],
-                                                               tables=tables)),
+    def findings() -> list[S.Source]:
+        from aughor.knowledge.triage import north_star_tokens
+        _data, profile = period_brief.scope_inputs(conn_id, schema)
+        ns = north_star_tokens([getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])])
+        return S.known_findings(period_brief.findings_for(conn_id, schema)[0], tables=tables, north_star=ns)
+
+    for what, read in (("findings", findings),
                        ("deep analyses", lambda: S.known_analyses(conn_id)),
                        ("decisions", lambda: S.known_decisions(conn_id, spec))):
         try:
