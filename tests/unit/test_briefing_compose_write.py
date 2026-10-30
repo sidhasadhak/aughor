@@ -484,7 +484,7 @@ def test_the_writer_reads_what_the_platform_knows_and_starts_one_deep_analysis(s
     assert len(asked) == 1 and asked[0][1] == f"briefing:compose_c1#{_week().key}@_organisation"
     assert [b["type"] for b in entry["blocks"]][:3] == ["lead", "context", "context"]   # then the floor, by code
     assert entry["sources"]["analysis_started"]["status"] == "running"
-    assert entry["known"] == {"analyses": 2, "findings": 0, "decisions": 0, "started": "analysis_started"}
+    assert entry["known"] == {"analyses": 2, "findings": 0, "decisions": 0, "discussions": 0, "started": "analysis_started"}
 
 
 def test_a_scheduled_send_starts_no_deep_analysis_unless_the_organisation_allows_it(setup, monkeypatch):

@@ -2278,6 +2278,17 @@ def _answer_core(
             from aughor.kernel.errors import tolerate
             tolerate(exc, "brief grounding is best-effort; answering without the brief",
                      counter="chat.brief_section")
+        # The platform's own work — deep analyses, decisions, what people said, the explorer's findings — as the
+        # question's context (the user, 2026-10-30: "these pieces become the whole context"). Empty when it knows nothing.
+        try:
+            from aughor.briefing.compose.sources import known_context
+            _known_sec = known_context(connection_id, canvas_scope_schema)
+            if _known_sec:
+                prompt = _known_sec + "\n" + prompt
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the platform's earlier work is best-effort context; answering without it",
+                     counter="chat.known_section")
         # Playbook context — when org playbook items match this question, give them
         # to the model AND surface them to the user (emitted below) so they can
         # keep / modify / remove them.
@@ -3770,6 +3781,16 @@ async def _stream_converse(
                 _brief_sec = ""
             if _brief_sec:
                 _memory = _brief_sec + "\n" + _memory if _memory else _brief_sec
+        try:
+            from aughor.briefing.compose.sources import known_context
+            _known_sec = known_context(connection_id, schema_scope)
+        except Exception as _known_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_known_exc, "the platform's earlier work is best-effort context; answering without it",
+                     counter="converse.known_section")
+            _known_sec = ""
+        if _known_sec:
+            _memory = _known_sec + "\n" + _memory if _memory else _known_sec
         # VA-9c — the agent record, so its GRANTS decide whether a write tool exists at
         # all on this turn. Resolved here rather than passed as an id: the tool roster is
         # bound by closure precisely so the model cannot name an agent it was not given.

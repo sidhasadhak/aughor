@@ -52,7 +52,8 @@ TYPES: dict[str, str] = {
                 "take it into deep analysis, give it to a team, or put it away.",
     "quiet": "text: one line of what held steady, numbers cited.",
     "context": "source: one of what the platform already knows — a deep analysis (analysis_*), an explorer finding "
-               "(finding_*) or a decision in the record (decision_*); text: what it means for this range, cited. Draws "
+               "(finding_*), a decision in the record (decision_*) or what someone said outside the platform "
+               "(discussion_*); text: what it means for this range, cited. Draws "
                "that work with a way to open it — a deep analysis this edition started reads as being looked into.",
 }
 #: What a reader may do with a decision — offered by code on every decision, never chosen by the model.
@@ -165,8 +166,8 @@ def validate(spec: Spec, sources: dict[str, Source]) -> tuple[list[Block], list[
             if b.type == "figure" and src.kind != "check":
                 why.append(f"block {n} (figure) must read a check; {b.source!r} is a {src.kind}")
             if b.type == "context" and src.kind not in KNOWN:
-                why.append(f"block {n} (context) reads a deep analysis, a finding or a decision; {b.source!r} is a "
-                           f"{src.kind}")
+                why.append(f"block {n} (context) reads a deep analysis, a finding, a decision or a discussion; "
+                           f"{b.source!r} is a {src.kind}")
             if b.type != "context" and src.kind in KNOWN and b.type not in ("lead", "quiet", "decision"):
                 why.append(f"block {n} ({b.type}) cannot draw {b.source!r}, the platform's own work — use a context block")
             if b.type == "bridge" and b.source and src.kind not in ("breakdown", "drill"):

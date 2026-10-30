@@ -214,3 +214,36 @@ def test_a_started_deep_analysis_reads_as_running_until_it_finishes():
     done = S.refreshed(src, runs_for=lambda s: [{"id": "n1", "status": "complete", "completed_at": "2026-10-30",
                                                   "question": "Why did refunds fall?"}], get_run=_report)
     assert done.status == "final" and done.facts["headline"].startswith("Revenue rose") and done.facts["started_by_edition"]
+
+
+def test_what_people_said_outside_the_platform_is_read_with_who_where_and_when(week):
+    claims = [
+        {"statement": {"text": "Small CA/US returns dropped since the fee."}, "author": "ana@lux.com",
+         "warrants": [{"ref": "email:<m1@lux>"}], "as_of": "2026-10-20", "extra": {"decision": "d_fee"}},
+        {"statement": {"text": "Way before the range."}, "author": "bo", "warrants": [{"ref": "slack:C9:1.2"}],
+         "as_of": "2025-01-01"},
+        {"statement": {"text": "Old version"}, "author": "x", "as_of": "2026-10-20", "superseded_by": "v2"},
+    ]
+    decisions = [{"id": "d_pause", "decided_at": "2026-10-21", "extra": {"evidence": [
+        {"ref": "slack:C7:1729.5", "excerpt": "Pause paid social on Mytheresa for October", "detail": "said in Slack by Cleo"}]}}]
+    got = S.known_discussions("c1", week, claims_fn=lambda: claims, decisions_fn=lambda: decisions)
+    assert [s.facts["said"] for s in got] == ["Pause paid social on Mytheresa for October",
+                                              "Small CA/US returns dropped since the fee."]          # newest first
+    assert got[0].facts["where"] == "Slack #C7" and got[0].facts["who"] == "Cleo" and got[0].kind == "discussion"
+    assert got[1].facts["where"] == "Email" and got[1].facts["decision_id"] == "d_fee"
+
+
+def test_a_questions_context_names_what_the_platform_knows_as_its_earlier_work(monkeypatch):
+    read = S.known_analyses
+    monkeypatch.setattr(S, "known_analyses", lambda conn_id, limit: read(conn_id, list_runs=_runs, get_run=_report,
+                                                                         limit=limit))
+    monkeypatch.setattr(S, "known_decisions", lambda conn_id, window, limit: [])
+    monkeypatch.setattr(S, "known_discussions", lambda conn_id, window, limit: [])
+    monkeypatch.setattr(S, "known_findings", lambda *a, **k: [])
+    monkeypatch.setattr("aughor.knowledge.period_brief.findings_for", lambda c, s: ({}, []))
+    block = S.known_context("c1", today=OCT29)
+    assert block.startswith("WHAT THE PLATFORM ALREADY KNOWS")
+    assert "None of it is a measurement of this question" in block
+    assert "Deep analysis (2026-10-28, high confidence, claims licensed causal)" in block
+    monkeypatch.setattr(S, "known_analyses", lambda conn_id, limit: [])
+    assert S.known_context("c1", today=OCT29) == ""                             # knows nothing: says nothing

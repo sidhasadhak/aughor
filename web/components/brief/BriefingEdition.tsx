@@ -266,7 +266,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
               <p className="aug-fs-sm" style={{ margin: "0 0 12px" }}>
                 {ownCanvas ? `The ${ownCanvas.checks_inside.length}` : `The guide's ${guide?.guide?.checks.length ?? 0}`} checks are measured for{" "}
                 {period?.covers ?? "this range"}; then the model reads what the platform already knows — its deep analyses, the
-                explorer&apos;s findings and the decisions in the record — looks into what moved (at most 8 queries of its own
+                explorer&apos;s findings, the decisions in the record and what people said in Slack, by email and in documents —
+                looks into what moved (at most 8 queries of its own
                 {ownCanvas ? ", on these tables only" : ""}), may start one deep analysis on the move nothing explains yet, and
                 composes the page for {readerName}. Every number it writes is checked against its source. It takes about a minute.
               </p>
@@ -302,7 +303,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                 </Button>
                 <span>
                   written {when(edition.generated_at)} · {edition.model_steps ?? 0} model steps · {edition.queries ?? 0} queries
-                  of its own{edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")} and ${countNoun(edition.known.decisions, "decision")}` : ""}
+                  of its own{edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")}, ${countNoun(edition.known.decisions, "decision")} and ${countNoun(edition.known.discussions ?? 0, "discussion")}` : ""}
                   {edition.known?.started ? " · started a deep analysis" : ""} · guide v{edition.guide?.version ?? "?"}
                 </span>
               </div>

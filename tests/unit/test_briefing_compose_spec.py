@@ -196,5 +196,5 @@ def test_a_context_block_draws_only_the_platforms_own_work_and_its_work_only_in_
     _blocks, refusals = P.validate(_spec(LEAD, {"type": "context", "source": "sales"},
                                          {"type": "table", "source": "analysis_a1"}), KNOWN_SRC)
     said = " | ".join(refusals)
-    assert "(context) reads a deep analysis, a finding or a decision; 'sales' is a check" in said
+    assert "(context) reads a deep analysis, a finding, a decision or a discussion; 'sales' is a check" in said
     assert "(table) cannot draw 'analysis_a1', the platform's own work — use a context block" in said

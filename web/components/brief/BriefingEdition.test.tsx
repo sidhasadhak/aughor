@@ -224,17 +224,23 @@ describe("BriefingEdition", () => {
     decision_d1: S({ id: "decision_d1", label: "A return fee", kind: "decision",
       facts: { decision_id: "d1-full-id", question: "Introduce a 9.90 EUR return fee", chosen: "introduce it",
                state: "due for review 2026-11-01" } }),
+    discussion_1: S({ id: "discussion_1", label: "Slack #C1 · Ana", kind: "discussion",
+      facts: { said: "Small CA/US returns dropped since the fee", who: "Ana", where: "Slack #C1", when: "2026-10-20",
+               decision_id: "d1-full-id" } }),
   };
   const WITH_KNOWN: Edition = { ...WRITTEN, sources: { ...SOURCES, ...KNOWN },
     blocks: [WRITTEN.blocks![0], { id: "k1", type: "context", source: "analysis_a1", text: "It explains September's rise." },
-             { id: "k2", type: "context", source: "analysis_started" }, { id: "k3", type: "context", source: "decision_d1" }],
-    known: { analyses: 3, findings: 4, decisions: 2, started: "analysis_started" } };
+             { id: "k2", type: "context", source: "analysis_started" }, { id: "k3", type: "context", source: "decision_d1" },
+             { id: "k4", type: "context", source: "discussion_1" }],
+    known: { analyses: 3, findings: 4, decisions: 2, discussions: 1, started: "analysis_started" } };
 
   it("draws what the platform already knew — a deep analysis, one being looked into, a decision — each to open", async () => {
     api.readBriefingEdition.mockResolvedValue(WITH_KNOWN);
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     const cards = await screen.findAllByTestId("edition-context");
-    expect(cards.map(c => c.getAttribute("data-kind"))).toEqual(["analysis", "analysis", "decision"]);
+    expect(cards.map(c => c.getAttribute("data-kind"))).toEqual(["analysis", "analysis", "decision", "discussion"]);
+    expect(cards[3].textContent).toContain("Slack #C1 · Ana · 2026-10-20");
+    expect(cards[3].textContent).toContain("“Small CA/US returns dropped since the fee”");
     expect(cards[0].textContent).toContain("Deep analysis · 2026-10-28 · high confidence");
     expect(cards[0].textContent).toContain("September revenue rose €93,820 on order volume");
     expect(cards[1].textContent).toContain("Being looked into — a deep analysis this edition started");
@@ -243,7 +249,7 @@ describe("BriefingEdition", () => {
     expect(nav.requestTab).toHaveBeenCalledWith("chat", { run: "fb1b7a55" });
     fireEvent.click(within(cards[2]).getByRole("button", { name: "Open the decision" }));
     expect(nav.requestTab).toHaveBeenCalledWith("decisions", { id: "d1-full-id" });
-    expect(screen.getByText(/read 3 deep analyses, 4 findings and 2 decisions/)).toBeTruthy();
+    expect(screen.getByText(/read 3 deep analyses, 4 findings, 2 decisions and 1 discussion/)).toBeTruthy();
   });
 
   it("reads the edition again while a deep analysis it started is still running", async () => {

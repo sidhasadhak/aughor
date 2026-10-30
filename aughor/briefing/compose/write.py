@@ -45,12 +45,15 @@ What you are given:
   ranges before, mean give or take one standard deviation), how far outside usual it sits (z), its streak;
 - WHAT THE PLATFORM ALREADY KNOWS: its deep analyses — each a question it investigated, with a verdict, a confidence
   and a claim licence; the explorer's findings about this dataset; the decisions in the record that were in force in
-  the range or are due for review, with what their reviews found.
+  the range or are due for review, with what their reviews found; and what people said about it outside the platform
+  — in Slack, by email, in a document's comments — with who said it, where and when.
 
 First LOOK INTO the range, then COMPOSE.
 - Read what the platform already knows FIRST. A move a deep analysis explains is explained: cite the analysis. A move
   in a range where a decision was in force sits beside that decision: say so and cite it (beside, not because). A
   finding that gives a move its context (how big this segment is, what share of revenue it carries) belongs beside it.
+  What people said is theirs: quote it as theirs (who, where, when) and set it beside the figures — never as a fact
+  the data showed.
 - For the two or three moves that matter most to this reader, find WHERE and WHO. Start with breakdown — a check by
   one of its breakdown_columns, each segment against its own usual, no SQL — and go one level deeper by breaking a
   check down again. Use query (a SELECT you write, on the schema given) for what breakdown cannot answer: the largest
@@ -131,6 +134,9 @@ def _known_for_model(src: S.Source) -> dict:
     if src.kind == "finding":
         return {"id": src.id, "question": f.get("question"), "finding": f.get("finding"), "domain": f.get("domain"),
                 "confidence": f.get("confidence")}
+    if src.kind == "discussion":
+        return {"id": src.id, "said": f.get("said"), "who": f.get("who"), "where": f.get("where"), "when": f.get("when"),
+                "about_decision": f.get("decision_id") or None}
     return {"id": src.id, "decision": f.get("question"), "chosen": f.get("chosen"), "decided": f.get("decided"),
             "review": f.get("state")}
 
@@ -157,6 +163,7 @@ def _question(guide, reader, block: dict, figures: list[dict], sources: dict, co
             "deep_analyses": [_known_for_model(s) for s in sources.values() if s.kind == "analysis"],
             "explorer_findings": [_known_for_model(s) for s in sources.values() if s.kind == "finding"],
             "decisions": [_known_for_model(s) for s in sources.values() if s.kind == "decision"],
+            "discussions": [_known_for_model(s) for s in sources.values() if s.kind == "discussion"],
         },
     }
     return json.dumps(payload, default=str, ensure_ascii=False) + "\n\nSCHEMA (for query):\n" + schema_text
@@ -212,7 +219,8 @@ def _known(conn_id: str, schema: Optional[str], spec, tables) -> list[S.Source]:
 
     for what, read in (("findings", findings),
                        ("deep analyses", lambda: S.known_analyses(conn_id)),
-                       ("decisions", lambda: S.known_decisions(conn_id, spec))):
+                       ("decisions", lambda: S.known_decisions(conn_id, spec)),
+                       ("discussions", lambda: S.known_discussions(conn_id, spec))):
         try:
             out += read()
         except Exception as exc:  # noqa: BLE001
@@ -421,6 +429,7 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
              "known": {"analyses": sum(s.kind == "analysis" for s in sources.values()),
                        "findings": sum(s.kind == "finding" for s in sources.values()),
                        "decisions": sum(s.kind == "decision" for s in sources.values()),
+                       "discussions": sum(s.kind == "discussion" for s in sources.values()),
                        "started": started[0] if started else ""},
              "withheld": composed.get("withheld", []), "left_out": composed.get("left_out", []),
              "drawn_by_code": composed.get("drawn_by_code", ""),

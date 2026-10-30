@@ -113,12 +113,15 @@ function ContextBody({ block, src, ctx }: BodyProps) {
     ? (running ? "Being looked into — a deep analysis this edition started"
        : ["Deep analysis", s("completed"), s("confidence") && `${s("confidence").toLowerCase()} confidence`].filter(Boolean).join(" · "))
     : src.kind === "finding" ? ["Explorer finding", s("domain")].filter(Boolean).join(" · ")
+    : src.kind === "discussion" ? [s("where") || "Said", s("who"), s("when")].filter(Boolean).join(" · ")
     : ["Decision", s("state")].filter(Boolean).join(" · ");
-  const head = src.kind === "analysis" ? (running ? s("question") : s("headline")) : src.kind === "finding" ? s("finding") : s("question");
+  const head = src.kind === "analysis" ? (running ? s("question") : s("headline")) : src.kind === "finding" ? s("finding")
+    : src.kind === "discussion" ? `“${s("said")}”` : s("question");
   const more = src.kind === "analysis" && !running ? (s("closing") || s("summary"))
     : src.kind === "decision" && s("chosen") ? `Chosen: ${s("chosen")}` : "";
   const open = src.kind === "analysis" && s("inv_id") ? () => requestTab("chat", { run: s("inv_id") })
-    : src.kind === "decision" && s("decision_id") ? () => requestTab("decisions", { id: s("decision_id") }) : undefined;
+    : (src.kind === "decision" || src.kind === "discussion") && s("decision_id") ? () => requestTab("decisions", { id: s("decision_id") })
+    : undefined;
   return (
     <div data-testid="edition-context" data-kind={src.kind}>
       <div className="aug-fs-xs" style={{ textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6,
@@ -128,7 +131,7 @@ function ContextBody({ block, src, ctx }: BodyProps) {
       {block.text && <p className="aug-fs-sm" style={{ margin: "8px 0 0" }}><CitedText text={block.text} onCite={ctx.onCite} /></p>}
       {open && (
         <Button size="xs" variant="secondary" style={{ marginTop: 10 }} onClick={open}>
-          {src.kind === "analysis" ? "Open the deep analysis" : "Open the decision"}
+          {src.kind === "analysis" ? "Open the deep analysis" : src.kind === "discussion" ? "Open the decision it is about" : "Open the decision"}
         </Button>
       )}
     </div>

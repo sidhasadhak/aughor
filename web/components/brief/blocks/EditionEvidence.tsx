@@ -28,6 +28,7 @@ const KIND: Record<string, string> = {
   analysis: "a deep analysis the platform ran: its verdict, confidence and what it can and cannot say",
   finding: "a finding the explorer kept, with the query it rests on",
   decision: "a decision in the record: what was chosen, when it is reviewed, what the review found",
+  discussion: "words a person said outside Aughor — in Slack, by email, in a document's comments — with who, where and when",
 };
 const RULE = "1px solid var(--b1)";
 

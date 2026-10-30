@@ -36,8 +36,9 @@ class Source(BaseModel):
     id: str
     label: str
     #: check · breakdown · query · drill · answer are measured for the edition; finding · analysis · decision are the
-    #: platform's own work it reads — an explorer finding, a deep analysis and its verdict, a decision in the record.
-    kind: Literal["check", "breakdown", "query", "drill", "answer", "finding", "analysis", "decision"]
+    #: platform's own work it reads — an explorer finding, a deep analysis and its verdict, a decision in the record — and
+    #: discussion: words people said outside Aughor (Slack, email, a document's comments), kept as said claims.
+    kind: Literal["check", "breakdown", "query", "drill", "answer", "finding", "analysis", "decision", "discussion"]
     columns: list[str] = Field(default_factory=list)
     rows: list[list[Any]] = Field(default_factory=list)
     sql: str = ""
@@ -245,9 +246,9 @@ def for_model(src: Source, *, max_rows: int = 25) -> dict:
 # ── what the platform already knows ──────────────────────────────────────────────────────────
 
 #: The kinds of source that are the platform's own work, read — never measured for the edition.
-KNOWN = ("finding", "analysis", "decision")
+KNOWN = ("finding", "analysis", "decision", "discussion")
 #: The text a known source carries, by field — what the model reads and what a sentence citing it may quote.
-KNOWN_TEXT = ("headline", "summary", "closing", "finding", "question", "chosen")
+KNOWN_TEXT = ("headline", "summary", "closing", "finding", "question", "chosen", "said")
 _PREAMBLE_RE = re.compile(r"^\[Scheduled-run context[^\]]*\].*?\n\s*\n", re.S)
 
 
@@ -369,6 +370,60 @@ def known_decisions(conn_id: str, spec, *, limit: int = 6, list_fn=None) -> list
     return out
 
 
+_CHANNEL = {"slack": "Slack", "email": "Email", "gdrive": "A document's comments", "meeting": "A meeting"}
+
+
+def known_discussions(conn_id: str, spec, *, limit: int = 8, claims_fn=None, decisions_fn=None) -> list[Source]:
+    """What people said outside Aughor about the dataset, around the range — in Slack, by email, in a document's
+    comments — as the record keeps it: said claims (`record/claims`, warranted by the thread, the mail or the
+    comment) and the words a decision was taken on. Each its own source, newest first, with who said it, where and
+    when. One store: nothing new is kept here, only read."""
+    from datetime import timedelta
+
+    if claims_fn is None:
+        from aughor.record.claims import list_claims
+        claims_fn = lambda: [c.model_dump(mode="json") for c in list_claims(kind="said", conn_id=conn_id, limit=500)]  # noqa: E731
+    if decisions_fn is None:
+        from aughor.record.decisions import list_decisions
+        decisions_fn = lambda: [d.model_dump(mode="json") for d in list_decisions(conn_id=conn_id)]  # noqa: E731
+    # what was said about a range is often said weeks after it: a month before it began to two months after it ended
+    first, last = (spec.start - timedelta(days=30)).isoformat(), (spec.end + timedelta(days=60)).isoformat()
+    said: list[dict] = []
+    for c in claims_fn():
+        if c.get("superseded_by"):
+            continue
+        ref = next((str(w.get("ref") or "") for w in c.get("warrants") or [] if w.get("ref")), "")
+        said.append({"said": (c.get("statement") or {}).get("text"), "who": c.get("author") or c.get("owner"),
+                     "ref": ref, "when": str(c.get("as_of") or c.get("recorded_at") or "")[:10],
+                     "decision_id": (c.get("extra") or {}).get("decision") or ""})
+    for d in decisions_fn():
+        if d.get("superseded_by"):
+            continue
+        for w in (d.get("extra") or {}).get("evidence") or []:
+            if isinstance(w, dict) and w.get("excerpt") and w.get("ref"):
+                said.append({"said": w["excerpt"], "who": str(w.get("detail") or "").replace("said in Slack by ", ""),
+                             "ref": w["ref"], "when": str(d.get("decided_at") or "")[:10], "decision_id": d.get("id")})
+    seen: set[str] = set()
+    picked = []
+    for s in sorted(said, key=lambda s: s["when"], reverse=True):
+        text = _short(s["said"], 400)
+        if not text or not s["when"] or not (first <= s["when"] <= last) or text.lower() in seen:
+            continue
+        seen.add(text.lower())
+        picked.append({**s, "said": text})
+    out = []
+    for n, s in enumerate(picked[:limit]):
+        channel = _CHANNEL.get(s["ref"].split(":", 1)[0], "Said")
+        where = channel + (f" #{s['ref'].split(':')[1]}" if s["ref"].startswith("slack:") and s["ref"].count(":") >= 2 else "")
+        who = _short(s["who"] or "someone", 60)
+        out.append(Source(id=f"discussion_{n + 1}", label=f"{where} · {who}", kind="discussion",
+                          columns=["said", "who", "where", "when"], rows=[[s["said"], who, where, s["when"]]],
+                          facts={"said": s["said"], "who": who, "where": where, "when": s["when"],
+                                 "ref": s["ref"], "decision_id": s["decision_id"]},
+                          note="words a person said outside Aughor, kept with who said them, where and when"))
+    return out
+
+
 def started_analysis(source_id: str, question: str, session: str) -> Source:
     """A deep analysis this edition started — running until a read finds it finished (`refreshed`)."""
     return Source(id=source_id, label=_short(question, 120), kind="analysis", status="running",
@@ -394,4 +449,49 @@ def refreshed(src: Source, *, runs_for=None, get_run=None) -> Source:
                                                  "state": str(run.get("status") or "running")}})
     done = _analysis_source(src.id, run, (get_run(run["id"]) or {}).get("report") or {})
     return done.model_copy(update={"facts": {**done.facts, "started_by_edition": True}})
+
+
+def known_context(conn_id: str, schema: Optional[str] = None, *, today: Optional[date] = None, limit: int = 4) -> str:
+    """What the platform already knows about a dataset, as a question's context — its latest deep analyses (verdict,
+    confidence, licence), the decisions in force or due, what people said outside the platform in the last 90 days,
+    and the explorer's strongest findings — each labelled as what it is, never as a measurement. "" when it knows
+    nothing. Each kind is read on its own; one that cannot be read is left out, the rest stand."""
+    from datetime import timedelta
+    from types import SimpleNamespace
+
+    from aughor.kernel.errors import tolerate
+
+    today = today or date.today()
+    window = SimpleNamespace(start=today - timedelta(days=90), end=today + timedelta(days=1))
+    lines: list[str] = []
+
+    def read(what: str, fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            tolerate(exc, f"a question's context could not read the platform's {what}", counter="known.context")
+            return []
+
+    for a in read("deep analyses", lambda: known_analyses(conn_id, limit=limit)):
+        f = a.facts
+        lines.append(f"- Deep analysis ({f.get('completed')}, {str(f.get('confidence') or '?').lower()} confidence, "
+                     f"claims licensed {f.get('licence') or 'descriptive'}): \"{f.get('question')}\" — {f.get('headline')}")
+    for d in read("decisions", lambda: known_decisions(conn_id, window, limit=limit)):
+        f = d.facts
+        lines.append(f"- Decision (decided {f.get('decided')}, {f.get('state')}): {f.get('question')} — chosen: {f.get('chosen')}")
+    for s in read("discussions", lambda: known_discussions(conn_id, window, limit=limit)):
+        f = s.facts
+        lines.append(f"- Said in {f.get('where')} by {f.get('who')} on {f.get('when')}: \"{f.get('said')}\"")
+
+    def findings():
+        from aughor.knowledge.period_brief import findings_for
+        return known_findings(findings_for(conn_id, schema)[0], limit=limit)
+    for fd in read("findings", findings):
+        lines.append(f"- Explorer finding: {fd.facts.get('finding')}")
+    if not lines:
+        return ""
+    return ("WHAT THE PLATFORM ALREADY KNOWS about this dataset — its earlier work and what people said, to read before "
+            "answering and to name as such when it bears on the question. None of it is a measurement of this "
+            "question: numbers in the answer come from the query it runs; a cause only from a deep analysis licensed "
+            "causal.\n" + "\n".join(lines))
 
