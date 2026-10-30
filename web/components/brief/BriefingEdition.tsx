@@ -178,8 +178,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
     // scroll on their own, the panel staying beside whatever block is in view.
     <div data-testid="briefing-edition" style={{ display: "grid", gridTemplateColumns: side ? "minmax(0,1fr) 380px" : "minmax(0,1fr)",
                                                   height: "100%", minHeight: 0 }}>
-      <article style={{ padding: "20px 34px 48px", minWidth: 0, height: "100%", overflowY: "auto" }}>
-        <div style={{ maxWidth: 960, margin: "0 auto" }}>
+      <article style={{ padding: "16px 22px 48px", minWidth: 0, height: "100%", overflowY: "auto" }}>
+        <div style={{ width: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <h1 className="aug-fs-h2" style={{ fontWeight: 600, margin: 0, color: "var(--t1)" }}>The Briefing</h1>
             {period && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{period.covers}</span>}
@@ -229,7 +229,7 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           : !hasGuide && guide ? (
             <section data-testid="edition-no-guide" style={{ padding: "26px 0" }}>
               <h2 className="aug-fs-display" style={{ margin: "0 0 8px", color: "var(--t1)" }}>This dataset has no Briefing guide yet</h2>
-              <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 12px" }}>
+              <p className="aug-fs-sm" style={{ margin: "0 0 12px" }}>
                 The guide says how this dataset&apos;s Briefing is written — what matters here, what counts as news, who reads
                 it. The Explorer drafts it at the end of an exploration; draft it now from what was learned (one model call).
               </p>
@@ -240,17 +240,17 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
               <h2 className="aug-fs-display" style={{ margin: "0 0 8px", color: "var(--t1)" }}>Not written yet for {readerName}</h2>
               {ownCanvas && (
                 <>
-                  <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 10px" }}>
+                  <p className="aug-fs-sm" style={{ margin: "0 0 10px" }}>
                     <b style={{ color: "var(--t1)", fontWeight: 500 }}>Measured here:</b> {ownCanvas.checks_inside.join(", ") || "none of the guide's checks"}.
                   </p>
                   {ownCanvas.checks_outside.length > 0 && (
-                    <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 10px" }}>
+                    <p className="aug-fs-sm" style={{ margin: "0 0 10px" }}>
                       <b style={{ color: "var(--t1)", fontWeight: 500 }}>Left out, because they read other tables:</b> {ownCanvas.checks_outside.join(", ")}.
                     </p>
                   )}
                 </>
               )}
-              <p className="aug-fs-sm" style={{ maxWidth: "62ch", margin: "0 0 12px" }}>
+              <p className="aug-fs-sm" style={{ margin: "0 0 12px" }}>
                 {ownCanvas ? `The ${ownCanvas.checks_inside.length}` : `The guide's ${guide?.guide?.checks.length ?? 0}`} checks are measured for{" "}
                 {period?.covers ?? "this range"}; then the model looks into what moved — at most 8 queries of its own
                 {ownCanvas ? ", on these tables only" : ""} — and composes the page for {readerName}. Every number it writes is checked

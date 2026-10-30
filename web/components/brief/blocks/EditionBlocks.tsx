@@ -150,10 +150,10 @@ const BODY: Record<BlockType, (p: BodyProps) => React.ReactNode> = {
   lead: ({ block, ctx }) => (
     <>
       <p data-testid="edition-lead" className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 600, lineHeight: 1.28,
-                                                                        maxWidth: "32ch", margin: "4px 0 10px" }}>
+                                                                        margin: "4px 0 10px" }}>
         <CitedText text={block.text} onCite={ctx.onCite} />
       </p>
-      {block.sub && <p className="aug-fs-h2" style={{ maxWidth: "66ch", margin: 0, lineHeight: 1.55 }}>
+      {block.sub && <p className="aug-fs-h2" style={{ margin: 0, lineHeight: 1.55 }}>
         <CitedText text={block.sub} onCite={ctx.onCite} /></p>}
     </>
   ),

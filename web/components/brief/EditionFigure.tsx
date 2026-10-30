@@ -26,6 +26,9 @@ function dayMonth(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
+/** The usual range, and a comparison bar: a light tint over the card, in either theme — a dark token read as a hole. */
+const USUAL = "color-mix(in srgb, var(--t3) 16%, transparent)";
+
 const TONE: Record<string, string> = { good: "var(--grn4)", bad: "var(--amb4)", neutral: "var(--blue4)" };
 
 /** The figure's ranges as bars, the usual range shaded behind them. */
@@ -48,7 +51,8 @@ export function RangeBars({ figure, period }: { figure: EditionFigure; period: s
       {u && (
         <>
           <rect x={pad.l} y={Y(u.high)} width={W - pad.l - pad.r} height={Math.max(1, Y(u.low) - Y(u.high))}
-            fill="var(--bg-3)" data-testid="edition-usual-band" />
+            fill={USUAL} data-testid="edition-usual-band" />
+          <text x={W - pad.r - 4} y={Y(u.high) + 12} textAnchor="end" fontSize={10.5} fill="var(--t3)">usual range</text>
           <text x={pad.l - 4} y={Y(u.high) + 3} textAnchor="end" fontSize={10.5} fill="var(--t3)">{u.high_text}</text>
           <text x={pad.l - 4} y={Y(u.low) + 3} textAnchor="end" fontSize={10.5} fill="var(--t3)">{u.low_text}</text>
         </>
@@ -133,7 +137,7 @@ export function PairRows({ rows, fmt, change, better, dim }: {
                      padding: "5px 0", borderTop: "1px solid var(--b1)", opacity: faded ? 0.35 : 1 }}>
             <span style={{ color: "var(--t1)" }}>{r.label}{r.thin ? <span style={{ color: "var(--t3)" }}> · too few</span> : null}</span>
             <svg viewBox="0 0 300 16" width="100%" aria-hidden>
-              <rect x={0} y={2} width={300 * Math.abs(r.base ?? 0) / max} height={12} rx={2} fill="var(--bg-3)" />
+              <rect x={0} y={2} width={300 * Math.abs(r.base ?? 0) / max} height={12} rx={2} fill={USUAL} />
               <rect x={0} y={5} width={300 * Math.abs(r.now ?? 0) / max} height={6} rx={2} fill={col} />
             </svg>
             <span style={{ textAlign: "right", color: "var(--t1)" }}>{fmt(r.now)}</span>
@@ -169,7 +173,7 @@ export function Multiples({ series, fmt }: { series: { name: string; points: { x
               <span style={{ color: "var(--t1)" }}>{s.name}</span><span style={{ color: col }}>{fmt(last)}</span>
             </div>
             <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label={`${s.name} by period`}>
-              {usual.length > 1 && <rect x={pad.l} y={Y(m + sd)} width={w - pad.l - pad.r} height={Math.max(1, Y(m - sd) - Y(m + sd))} fill="var(--bg-3)" />}
+              {usual.length > 1 && <rect x={pad.l} y={Y(m + sd)} width={w - pad.l - pad.r} height={Math.max(1, Y(m - sd) - Y(m + sd))} fill={USUAL} />}
               <polyline fill="none" stroke="var(--t3)" strokeWidth={1.6} points={vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ")} />
               <circle cx={X(vals.length - 1)} cy={Y(last)} r={4} fill={col} />
               <text x={w - pad.r + 4} y={Y(m) + 4} fontSize={10.5} fill="var(--t3)">usual</text>
