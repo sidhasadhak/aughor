@@ -189,6 +189,10 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
                     "Model it in FakeLLM, or neutralise its call site (see get_or_infer above).")
 
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
+        # the run's question budget and pace are not what this test is about: a few slots, no pause — a run now asks
+        # up to `explorer.budget.COVERAGE_QUERIES` questions, which this 120 s deadlock guard was never sized for
+        monkeypatch.setattr("aughor.explorer.budget.domain_cap", lambda n: 4)
+        monkeypatch.setattr("aughor.explorer.agent._RATE_SECONDS_INTEL", 0.0)
         asyncio.run(asyncio.wait_for(ex._pass_questions(), timeout=120))
     finally:
         lg.removeHandler(handler)

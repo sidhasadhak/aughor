@@ -8269,29 +8269,29 @@ export interface BriefingGuideResponse {
   versions: GuideVersion[];
 }
 
-function guideUrl(connectionId: string, tail: string, schema?: string, extra?: Record<string, string>): string {
+/** The query a guide call carries — each call spells its own path, so the route contract check can read it. */
+function guideQuery(schema?: string, extra?: Record<string, string>): string {
   const q = new URLSearchParams(extra);
   if (schema) q.set("schema", schema);
-  const qs = q.toString();
-  return `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide${tail}${qs ? `?${qs}` : ""}`;
+  return q.toString();
 }
 
 export async function readBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
-  const res = await fetch(guideUrl(connectionId, "", schema));
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide?${guideQuery(schema)}`);
   if (!res.ok) throw await refused(res, "Reading the Briefing guide");
   return res.json();
 }
 
 /** Draft the guide from what the exploration learned — one model call; kept as a draft. */
 export async function draftBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
-  const res = await fetch(guideUrl(connectionId, "/draft", schema), { method: "POST" });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/draft?${guideQuery(schema)}`, { method: "POST" });
   if (!res.ok) throw await refused(res, "Drafting the Briefing guide");
   return res.json();
 }
 
 /** A person's edit, kept as a new draft under their name. */
 export async function saveBriefingGuide(connectionId: string, guide: BriefingGuideDoc, note: string, schema?: string): Promise<BriefingGuideResponse> {
-  const res = await fetch(guideUrl(connectionId, "", schema), {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide?${guideQuery(schema)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guide, note }),
   });
   if (!res.ok) throw await refused(res, "Saving the Briefing guide");
@@ -8299,7 +8299,7 @@ export async function saveBriefingGuide(connectionId: string, guide: BriefingGui
 }
 
 export async function publishBriefingGuide(connectionId: string, schema?: string, version?: number): Promise<BriefingGuideResponse> {
-  const res = await fetch(guideUrl(connectionId, "/publish", schema, version !== undefined ? { version: String(version) } : undefined),
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/publish?${guideQuery(schema, version !== undefined ? { version: String(version) } : undefined)}`,
     { method: "POST" });
   if (!res.ok) throw await refused(res, "Publishing the Briefing guide");
   return res.json();
@@ -8309,7 +8309,7 @@ export async function publishBriefingGuide(connectionId: string, schema?: string
 export async function addBriefingReader(
   connectionId: string, body: { group_id: string; name: string; watches: string; check_ids?: string[] }, schema?: string,
 ): Promise<BriefingGuideResponse> {
-  const res = await fetch(guideUrl(connectionId, "/readers", schema), {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/readers?${guideQuery(schema)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) throw await refused(res, "Adding the reader");
