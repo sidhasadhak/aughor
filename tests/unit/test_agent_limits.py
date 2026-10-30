@@ -281,7 +281,7 @@ def test_platform_limits_reports_values_where_they_bite_and_the_act():
     assert "12 tables (default 60)" in out["summary"] and "60,000 chars (the default)" in out["summary"]
     assert out["how_to_change"]["tool"] == "set_agent_limit"
     # The per-run budgets ride along — the whole "what is where" of spend in one read.
-    assert "Explorer 200,000" in out["summary"]
+    assert "Explorer 6,000,000" in out["summary"]          # the charter default (sized for hundreds of questions, 2026-10-30)
 
 
 def test_set_agent_limit_refuses_in_the_registrys_words():
