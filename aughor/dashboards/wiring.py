@@ -64,8 +64,9 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
     from aughor.dashboards.pieces import check_query, served_graph
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
-        # values a reader sets read nothing of an ontology: a dashboard made from a file has them, and has none
-        if not any(wiring.get(k) for k in ("sets", "buttons", "choices", "drawers")):
+        # values alone read nothing of an ontology: a dashboard made from a file has them, and has none. What the spec holds
+        # decides it, not the read: a read that came back empty must not excuse a dashboard that does hold sets.
+        if wired(spec) == ["values"]:
             return []
         return ["The dashboard reads sets, and no ontology is built for this connection."]
     from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
