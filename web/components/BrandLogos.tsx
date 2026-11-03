@@ -25,7 +25,7 @@ export function BrandLogo({ type, size = 20 }: { type: string; size?: number }) 
   const mark = brandMark(type);
   if (mark) {
     return (
-      <svg {...p} aria-hidden="true" style={{ display: "block" }}>
+      <svg {...p} viewBox={"viewBox" in mark && mark.viewBox ? mark.viewBox : p.viewBox} aria-hidden="true" style={{ display: "block" }}>
         {"parts" in mark ? mark.parts.map(x => <path key={x.d} fill={x.fill} d={x.d} />) : <path fill={mark.color} d={mark.d} />}
       </svg>
     );

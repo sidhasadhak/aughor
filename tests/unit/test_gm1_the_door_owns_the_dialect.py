@@ -26,6 +26,7 @@ import aughor.connectors
 import aughor.db.connection as dbc
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.db.connection import DatabaseConnection
+from aughor.db.dialects import native_sql
 
 #: Platform SQL as the probes write it: double-quoted identifiers, a DuckDB cast, the `::` operator.
 PLATFORM = 'SELECT "user_id", CAST("created_at" AS VARCHAR) AS d, "sale_price"::DOUBLE AS p FROM "orders"'
@@ -57,7 +58,8 @@ def test_the_census_of_doors_found_them_all():
     from aughor.connectors.declarations import ENGINES
     declared_native = {e.connector.rsplit(":", 1)[1] for e in ENGINES if e.connector and e.native_sql}
     assert {c.__name__ for c in NATIVE} == declared_native == {
-        "BigQueryConnection", "SnowflakeConnection", "MySQLConnection", "ExasolConnection", "TrinoConnection"}
+        "BigQueryConnection", "SnowflakeConnection", "MySQLConnection", "MySQLWireConnection", "ExasolConnection", "TrinoConnection",
+        "MSSQLConnection", "OracleConnection", "ClickHouseConnection", "DatabricksConnection", "AthenaConnection"}
 
 
 @pytest.mark.parametrize("cls", CLASSES, ids=lambda c: c.__name__)
@@ -93,7 +95,7 @@ def test_a_native_engine_hands_its_first_gate_the_translated_statement(cls, entr
     conn._connection_id = "gm1"
     args = ("__gm1__", PLATFORM) + ((10,) if entry == "execute_bounded" else ())
     getattr(conn, entry)(*args, sql_dialect="duckdb")
-    assert seen == [sqlglot.transpile(PLATFORM, read="duckdb", write=cls.dialect)[0]]
+    assert seen == [native_sql(conn, PLATFORM)] and seen != [PLATFORM]
     if cls.dialect in ("bigquery", "mysql"):
         assert '"' not in seen[0], f"a double-quoted identifier is a string literal on {cls.dialect}: {seen[0]}"
 

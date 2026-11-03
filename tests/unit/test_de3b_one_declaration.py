@@ -92,7 +92,8 @@ def test_writer_rules_capabilities_and_engine_names_are_derived():
     from aughor.db.dialects import _DIALECT_RULES, rules_for_dialect
 
     assert _DIALECT_RULES == D.derive_writer_rules()
-    assert set(_DIALECT_RULES) == {"bigquery", "snowflake", "mysql", "exasol", "postgres", "trino"}
+    assert set(_DIALECT_RULES) == {"bigquery", "snowflake", "mysql", "exasol", "postgres", "trino", "tsql", "oracle", "clickhouse",
+                                   "databricks", "athena"}
     for dialect, (functions, features) in D.derive_refusals().items():
         caps = for_dialect(dialect)
         assert caps.unsupported_functions == functions and caps.unsupported_features == features, dialect

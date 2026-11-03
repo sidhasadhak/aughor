@@ -23,6 +23,8 @@ class MySQLConnection(Connector):
     connector_category = "warehouse"
     dialect = "mysql"
     writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    reads_one_schema = True   # its database, and `routers._shared.schemas_of_connection` lists no other
+    _SESSION_INIT: str | None = "SET SESSION TRANSACTION READ ONLY"
 
     def __init__(
         self,
@@ -61,7 +63,7 @@ class MySQLConnection(Connector):
             # does: every statement in this session runs in a read-only transaction and the server refuses a write
             # (error 1792) the door did not. An `init_command` runs again on every reconnect — `ping(reconnect=True)`
             # in `_execute` — so a dropped connection cannot come back writable.
-            init_command="SET SESSION TRANSACTION READ ONLY",
+            init_command=self._SESSION_INIT,
             **ssl_opts,
         )
         self.engine_read_only = True
@@ -162,8 +164,9 @@ class MySQLConnection(Connector):
         lines: list[str] = []
         try:
             with self._conn.cursor() as cur:
+                # Named twice because MySQL 8 hands these keys back in upper case, whatever the statement wrote.
                 cur.execute("""
-                    SELECT table_name, column_name, column_type
+                    SELECT table_name AS table_name, column_name AS column_name, column_type AS column_type
                     FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE table_schema = %s
                     ORDER BY table_name, ordinal_position

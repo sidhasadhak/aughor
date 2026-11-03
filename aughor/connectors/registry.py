@@ -81,6 +81,11 @@ PROVIDED_BY: dict[str, str] = {
     "pymysql": "PyMySQL",
     "pyexasol": "pyexasol",
     "trino": "trino",
+    "pymssql": "pymssql",
+    "oracledb": "oracledb",
+    "clickhouse_connect": "clickhouse-connect",
+    "databricks.sql": "databricks-sql-connector",
+    "pyathena": "PyAthena",
     "ibis": "ibis-framework",
     "connectorx": "connectorx",
     "requests": "requests",
@@ -183,4 +188,6 @@ def build_connector(
             f"Unknown connector type {conn_type!r}. "
             f"Registered types: {REGISTRY.supported_types()}"
         )
-    return cls(dsn=dsn, schema_name=schema_name, connection_id=connection_id, meta=meta or {})
+    conn = cls(dsn=dsn, schema_name=schema_name, connection_id=connection_id, meta=meta or {})
+    conn.engine_type = conn_type    # a class several tiles share answers as the tile that opened it (`db.metadata`)
+    return conn

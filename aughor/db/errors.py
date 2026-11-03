@@ -51,7 +51,9 @@ _CONNECTION_TEXT = re.compile(
     r"server has gone away|lost connection|connection (?:was |is |has been )?(?:closed|reset|refused|lost|aborted|broken)|"
     r"could not connect|not connected|no connection to the server|broken pipe|ssl syscall|terminating connection|"
     r"connection already closed|failed to get the response|connection timed out|network (?:error|is unreachable)|"
-    r"name or service not known|temporary failure in name resolution|server closed the connection|socket (?:closed|error)",
+    r"name or service not known|temporary failure in name resolution|closed the connection|socket (?:closed|error)|"
+    # SQL Server's and Oracle's, read off a server restarted under an open connection.
+    r"unexpected eof from the server|write to the server failed|DPY-4011|DPY-1001|ORA-03113|ORA-03114|ORA-03135",
     re.I)
 
 

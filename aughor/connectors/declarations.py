@@ -21,7 +21,7 @@ This module imports nothing from the rest of the package, so anything may import
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, Optional
 
 Category = Literal["built-in", "file", "warehouse", "api", "federation", "knowledge"]
@@ -472,6 +472,173 @@ ENGINES: tuple[EngineDeclaration, ...] = (
                 _f("database_ids", "Database IDs", "id1,id2 (optional)", optional=True)),
         drivers=("requests",), connector=None, dialect=None, metadata_strategy="none",
         brand_color="#c4c4cc", metadata_facts=_META_NONE, metadata_detail="not a SQL connector",
+    ),
+)
+
+# ── engines that speak another's protocol: one declaration each, no new driver ──────────
+# The tile is what a person looks for; the wire is what connects. `badge="Preview"` until its server has passed
+# `tests/integration/test_connectors_on_real_servers.py`, which is what `proven=True` says (and, on the two written out below,
+# no badge). Run on 2026-11-03 against CockroachDB, TimescaleDB, MySQL, MariaDB, TiDB, ClickHouse, SQL Server and Oracle.
+
+_POSTGRES = next(e for e in ENGINES if e.type == "postgres")
+_MYSQL = next(e for e in ENGINES if e.type == "mysql")
+_TRINO = next(e for e in ENGINES if e.type == "trino")
+
+
+def _postgres_wire(type_: str, label: str, blurb: str, example: str, color: str, *, proven: bool = False,
+                   schema: str = "public") -> EngineDeclaration:
+    return replace(_POSTGRES, type=type_, label=label, category="warehouse", blurb=blurb,
+                   dsn_preview=f"{type_}://***", brand_color=color,
+                   fields=(_f("dsn", "Connection string", example, secret=True), _f("schema_name", "Schema", schema)),
+                   connector="aughor.connectors.warehouse.wire:PostgresWireConnection",
+                   badge=None if proven else "Preview", support_tier="supported" if proven else "preview")
+
+
+def _mysql_wire(type_: str, label: str, blurb: str, port: str, color: str, *, proven: bool = False,
+                read_only: Optional[bool] = None) -> EngineDeclaration:
+    """``read_only`` is what its server was seen to do. The connection measures it again each time it opens (`wire.py`)."""
+    return replace(_MYSQL, type=type_, label=label, blurb=blurb, dsn_preview=f"{type_}://host:{port}/db", brand_color=color,
+                   connector="aughor.connectors.warehouse.wire:MySQLWireConnection", engine_read_only=read_only,
+                   fields=(_f("host", "Host", "localhost"), _f("port", "Port", port), _f("user", "Username", "root"),
+                           _f("password", "Password", "", secret=True), _f("database", "Database", "mydb")),
+                   badge=None if proven else "Preview", support_tier="supported" if proven else "preview")
+
+
+_TSQL_RULES = """
+T-SQL (MICROSOFT SQL SERVER) DIALECT RULES (violations cause query errors):
+- Row limit: SELECT TOP n ...; there is no LIMIT. With OFFSET: ORDER BY x OFFSET m ROWS FETCH NEXT n ROWS ONLY.
+- Date bucketing: DATEFROMPARTS(YEAR(d), MONTH(d), 1) for a month, CAST(ts AS DATE) for a day; DATETRUNC exists only from SQL Server 2022.
+- Date differences: DATEDIFF(day, d1, d2) (unit unquoted, FIRST arg, and the result is d2 minus d1).
+- Division: integer/integer truncates: multiply one side by 1.0 and guard zero with NULLIF(b, 0).
+- Type casting: CAST(x AS BIGINT | DECIMAL(38,6) | FLOAT | NVARCHAR(4000) | DATE | DATETIME2). TRY_CAST returns NULL on failure. No ::TYPE.
+- String aggregation: STRING_AGG(col, ','). Concatenate with + or CONCAT().
+- No QUALIFY and no ILIKE. An ORDER BY in a subquery needs TOP. Filter a window function in an outer query.
+- Identifiers: [bracket-quote]; tables are schema.table. You CANNOT reference SELECT aliases in WHERE/HAVING/GROUP BY.
+""".strip()
+
+_ORACLE_RULES = """
+ORACLE DIALECT RULES (violations cause query errors):
+- Row limit: FETCH FIRST n ROWS ONLY after ORDER BY; there is no LIMIT.
+- Date bucketing: TRUNC(d, 'MM') for a month, TRUNC(d) for a day, TRUNC(d, 'YYYY') for a year.
+- Date differences: d1 - d2 is a number of days; MONTHS_BETWEEN(a, b) for months. A literal needs DATE '2026-01-31'.
+- Division: guard zero with NULLIF(b, 0). An empty string IS NULL.
+- Type casting: CAST(x AS NUMBER(38,6) | VARCHAR2(4000) | DATE | TIMESTAMP). No ::TYPE.
+- String aggregation: LISTAGG(col, ',') WITHIN GROUP (ORDER BY col). Concatenate with ||.
+- A SELECT with no table reads FROM DUAL. No QUALIFY and no ILIKE; a table alias takes no AS.
+- Identifiers fold to UPPERCASE unless double-quoted. You CANNOT reference SELECT aliases in WHERE/HAVING/GROUP BY.
+""".strip()
+
+_CLICKHOUSE_RULES = """
+CLICKHOUSE DIALECT RULES (violations cause query errors):
+- Date bucketing: toStartOfMonth(d), toStartOfWeek(d), toDate(ts), toStartOfYear(d); function names are case-sensitive.
+- Date differences: dateDiff('day', d1, d2) (unit quoted, FIRST arg).
+- Division: a / b is always a Float; guard zero with nullIf(b, 0). intDiv(a, b) for integers.
+- Type casting: toInt64(x), toFloat64(x), toString(x), toDate(x), toDateTime(x); CAST(x AS Int64) also works. Types are case-sensitive.
+- String aggregation: arrayStringConcat(groupArray(col), ','). Approximate counts: uniq(col).
+- Filter by a window function: QUALIFY is supported. You CAN reference SELECT aliases in WHERE/GROUP BY/HAVING. ILIKE is supported.
+- Identifiers are case-sensitive; tables are database.table. A column is non-nullable unless declared Nullable.
+""".strip()
+
+_DATABRICKS_RULES = """
+DATABRICKS SQL (SPARK) DIALECT RULES (violations cause query errors):
+- Date bucketing: DATE_TRUNC('MONTH', ts) (grain quoted, FIRST arg); TO_DATE(ts) for a day.
+- Date differences: DATEDIFF(d2, d1) for days (end first); TIMESTAMPDIFF(SECOND, a, b).
+- Division: a / b is a Double; TRY_DIVIDE(a, b) returns NULL on zero.
+- Type casting: CAST(x AS BIGINT | DOUBLE | DECIMAL(38,6) | STRING | DATE | TIMESTAMP); x::BIGINT also works; TRY_CAST returns NULL on failure.
+- String aggregation: ARRAY_JOIN(COLLECT_LIST(col), ','). Approximate counts: APPROX_COUNT_DISTINCT(col).
+- Filter by a window function: QUALIFY is supported. ILIKE is supported. You CAN reference SELECT aliases in GROUP BY.
+- Identifiers: backtick-quote; tables are catalog.schema.table.
+""".strip()
+
+_ATHENA_RULES = _TRINO_RULES.replace("TRINO DIALECT RULES", "AMAZON ATHENA (TRINO ENGINE) DIALECT RULES") + """
+- Every statement scans and bills its tables' bytes: filter on the partition columns and name only the columns you need.
+""".rstrip()
+
+_MSSQL = EngineDeclaration(
+    type="mssql", label="Microsoft SQL Server", category="warehouse",
+    blurb="Connect to a SQL Server database. It cannot refuse writes itself: give it a read-only login",
+    rerun_cost="compute", dsn_preview="mssql://host:1433/db",
+    fields=(_f("host", "Host", "localhost"), _f("port", "Port", "1433"), _f("user", "Username", "sa"),
+            _f("password", "Password", "", secret=True), _f("database", "Database", "mydb"), _f("schema_name", "Schema", "dbo")),
+    drivers=("pymssql",), connector="aughor.connectors.warehouse.mssql:MSSQLConnection",
+    dialect="tsql", native_sql=True, param_style="pyformat", engine_read_only=False, writer_rules=_TSQL_RULES,
+    refuses_functions=frozenset({"DATE_TRUNC", "DATE_DIFF", "SAFE_DIVIDE", "DIV0", "IFF"}), refuses_features=frozenset({"qualify", "ilike"}),
+    brand_color="#CC2927", metadata_facts=_META_NOT_READ_YET, metadata_detail="INFORMATION_SCHEMA.COLUMNS; keys and comments are not read yet",
+)
+
+ENGINES = ENGINES + (
+    _postgres_wire("cockroachdb", "CockroachDB", "Distributed SQL on Postgres's protocol",
+                   "postgresql://user:pass@host:26257/db?sslmode=require", "#6933FF", proven=True),
+    _postgres_wire("timescaledb", "TimescaleDB", "Time series on Postgres", "postgresql://user:pass@host:5432/db", "#FDB515", proven=True),
+    _postgres_wire("redshift", "Amazon Redshift", "AWS data warehouse",
+                   "postgresql://user:pass@cluster.region.redshift.amazonaws.com:5439/dev", "#8C4FFF"),
+    _postgres_wire("yugabytedb", "YugabyteDB", "Distributed Postgres", "postgresql://user:pass@host:5433/yugabyte", "#FF6E42"),
+    _postgres_wire("greenplum", "Greenplum", "Massively parallel Postgres", "postgresql://user:pass@host:5432/db", "#00A65E"),
+    _postgres_wire("aurora_postgres", "Aurora PostgreSQL", "AWS managed Postgres",
+                   "postgresql://user:pass@cluster.region.rds.amazonaws.com:5432/db", "#4169E1"),
+    _postgres_wire("alloydb", "Google AlloyDB", "Google Cloud managed Postgres", "postgresql://user:pass@host:5432/db", "#4285F4"),
+    _postgres_wire("neon", "Neon", "Serverless Postgres; use its direct endpoint, not the pooled one",
+                   "postgresql://user:pass@ep-name.region.aws.neon.tech/db?sslmode=require", "#00E599"),
+    _postgres_wire("supabase", "Supabase", "Hosted Postgres; use its direct connection string",
+                   "postgresql://postgres:pass@db.project.supabase.co:5432/postgres", "#3ECF8E"),
+    _mysql_wire("mariadb", "MariaDB", "Connect to a MariaDB database", "3306", "#C0765A", proven=True, read_only=True),
+    _mysql_wire("tidb", "TiDB", "Distributed SQL on MySQL's protocol. It cannot refuse writes itself: give it a read-only login",
+                "4000", "#E30C33", proven=True, read_only=False),
+    _mysql_wire("aurora_mysql", "Aurora MySQL", "AWS managed MySQL", "3306", "#4479A1"),
+    _mysql_wire("singlestore", "SingleStore", "Real-time distributed SQL", "3306", "#AA00FF"),
+    _mysql_wire("starrocks", "StarRocks", "Analytical database on MySQL's protocol", "9030", "#1F4FFF"),
+    _mysql_wire("doris", "Apache Doris", "Analytical database on MySQL's protocol", "9030", "#5B5FE3"),
+    replace(_TRINO, type="starburst", label="Starburst", blurb="Trino, managed", dsn_preview="starburst://host:443", brand_color="#00A7E1"),
+    _MSSQL,
+    replace(_MSSQL, type="synapse", label="Azure Synapse", blurb="Azure's analytics warehouse, through SQL Server's driver",
+            dsn_preview="synapse://server.sql.azuresynapse.net:1433/db", brand_color="#0078D4", badge="Preview", support_tier="preview",
+            fields=(_f("host", "Host", "server.sql.azuresynapse.net"), _f("port", "Port", "1433"), _f("user", "Username", "sqladmin"),
+                    _f("password", "Password", "", secret=True), _f("database", "Database", "db"), _f("schema_name", "Schema", "dbo"))),
+    EngineDeclaration(
+        type="oracle", label="Oracle", category="warehouse", blurb="Connect to an Oracle database",
+        rerun_cost="compute", dsn_preview="oracle://host:1521/service",
+        fields=(_f("host", "Host", "localhost"), _f("port", "Port", "1521"), _f("user", "Username", "analyst"),
+                _f("password", "Password", "", secret=True), _f("service_name", "Service name", "ORCLPDB1"),
+                _f("schema_name", "Schema (the login's own when blank)", "", optional=True)),
+        drivers=("oracledb",), connector="aughor.connectors.warehouse.oracle:OracleConnection",
+        dialect="oracle", native_sql=True, param_style="named", engine_read_only=True, writer_rules=_ORACLE_RULES,
+        refuses_functions=frozenset({"DATE_TRUNC", "DATE_DIFF", "DATEDIFF", "SAFE_DIVIDE", "DIV0", "IFF"}), refuses_features=frozenset({"qualify", "ilike"}),
+        brand_color="#F80000", metadata_facts=_META_NOT_READ_YET, metadata_detail="ALL_TAB_COLUMNS; keys and comments are not read yet",
+    ),
+    EngineDeclaration(
+        type="clickhouse", label="ClickHouse", category="warehouse", blurb="Column-oriented analytics database",
+        rerun_cost="compute", dsn_preview="clickhouse://host:8123/db",
+        fields=(_f("host", "Host", "localhost"), _f("port", "Port", "8123"), _f("user", "Username", "default"),
+                _f("password", "Password", "", secret=True, optional=True), _f("database", "Database", "default"),
+                _f("secure", "Use HTTPS (true or false)", "false", optional=True)),
+        drivers=("clickhouse_connect",), connector="aughor.connectors.warehouse.clickhouse:ClickHouseConnection",
+        dialect="clickhouse", native_sql=True, param_style="pyformat", engine_read_only=True, writer_rules=_CLICKHOUSE_RULES,
+        refuses_functions=frozenset({"DATE_TRUNC", "SAFE_DIVIDE", "DIV0", "IFF", "STRING_AGG"}),
+        brand_color="#FFCC01", metadata_facts=_META_NOT_READ_YET, metadata_detail="system.columns; keys and comments are not read yet",
+    ),
+    EngineDeclaration(
+        type="databricks", label="Databricks", category="warehouse", blurb="Lakehouse SQL warehouses and clusters", badge="Preview",
+        rerun_cost="compute", dsn_preview="databricks://workspace.cloud.databricks.com",
+        fields=(_f("host", "Server hostname", "dbc-1234.cloud.databricks.com"), _f("http_path", "HTTP path", "/sql/1.0/warehouses/abc"),
+                _f("access_token", "Access token", "", secret=True), _f("catalog", "Catalog", "main", optional=True),
+                _f("schema_name", "Schema", "default")),
+        drivers=("databricks.sql",), connector="aughor.connectors.warehouse.databricks:DatabricksConnection",
+        dialect="databricks", native_sql=True, param_style=None, engine_read_only=False, writer_rules=_DATABRICKS_RULES,
+        refuses_functions=frozenset({"SAFE_DIVIDE", "DIV0", "IFF"}), support_tier="preview",
+        brand_color="#FF3621", metadata_facts=_META_NOT_READ_YET, metadata_detail="INFORMATION_SCHEMA.COLUMNS; keys and comments are not read yet",
+    ),
+    EngineDeclaration(
+        type="athena", label="Amazon Athena", category="warehouse", blurb="Query S3 with SQL; every statement bills its scan", badge="Preview",
+        rerun_cost="bytes_scanned", dsn_preview="athena://region",
+        fields=(_f("region", "Region", "us-east-1"), _f("s3_staging_dir", "Results bucket", "s3://my-athena-results/"),
+                _f("access_key", "Access key (blank for the AWS default chain)", "", optional=True),
+                _f("secret_key", "Secret key", "", secret=True, optional=True), _f("work_group", "Workgroup", "primary", optional=True),
+                _f("schema_name", "Database", "default")),
+        drivers=("pyathena",), connector="aughor.connectors.warehouse.athena:AthenaConnection",
+        dialect="athena", native_sql=True, param_style=None, engine_read_only=False, writer_rules=_ATHENA_RULES,
+        refuses_functions=_TRINO.refuses_functions, refuses_features=_TRINO.refuses_features, support_tier="preview",
+        brand_color="#8C4FFF", metadata_facts=_facts("supported", "unsupported", "unsupported", "unknown"),
+        metadata_detail="INFORMATION_SCHEMA.COLUMNS; Athena declares no primary or foreign keys",
     ),
 )
 

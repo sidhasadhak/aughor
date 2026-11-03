@@ -61,7 +61,7 @@ def test_mysql_native_rules():
 
 
 def test_unknown_dialect_ansi_fallback():
-    r = rules_for_dialect("clickhouse")
+    r = rules_for_dialect("teradata")
     assert "ANSI" in r
     assert "NULLIF" in r
 

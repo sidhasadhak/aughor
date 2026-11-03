@@ -559,6 +559,9 @@ def schemas_of_connection(conn_id: str) -> list[str]:
     try:
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
+        # A connector scoped to one schema: exploring the rest would read the server's own (mysql, sys, system), and spend on them.
+        if getattr(db, "reads_one_schema", False) and getattr(db, "_schema_name", None):
+            return [str(db._schema_name)]
         res = db.execute(
             "__schemas__",
             # Uppercase INFORMATION_SCHEMA: required by BigQuery, folded by Postgres.
@@ -566,7 +569,8 @@ def schemas_of_connection(conn_id: str) -> list[str]:
             "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
             "('information_schema', 'pg_catalog', 'temp') ORDER BY 1",
          internal=True)
-        return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0]]
+        server_schema = getattr(db, "is_server_schema", lambda _schema: False)
+        return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0] and not server_schema(str(r[0]))]
     except Exception:
         return []
 

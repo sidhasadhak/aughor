@@ -92,6 +92,10 @@ def native_sql(db: object, sql: str) -> str:
         return sql
     try:
         import sqlglot
+
+        from aughor.sql.engine_fit import FITTED_DIALECTS, translate_for
+        if dialect in FITTED_DIALECTS:
+            return translate_for(sql, dialect)
         return sqlglot.transpile(sql, read="duckdb", write=dialect)[0]
     except Exception:  # noqa: BLE001 — the engine's refusal names what it could not run
         return sql

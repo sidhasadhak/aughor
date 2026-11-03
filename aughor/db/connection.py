@@ -1148,7 +1148,9 @@ class DatabaseConnection(ABC):
         if self.dialect == "duckdb":
             return sql
         try:
-            out = sqlglot.transpile(sql, read="duckdb", write=self.dialect)[0]
+            from aughor.sql.engine_fit import FITTED_DIALECTS, translate_for
+            out = (translate_for(sql, self.dialect) if self.dialect in FITTED_DIALECTS
+                   else sqlglot.transpile(sql, read="duckdb", write=self.dialect)[0])
         except Exception:
             return sql  # best-effort — fall back to original
         if out != sql:
