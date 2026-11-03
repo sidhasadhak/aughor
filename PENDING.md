@@ -1066,4 +1066,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     like buttons everywhere · uppercase labels stay · Needs you takes an amber edge · six ledgers lose the figure row.
     Built on `claude/visible-buttons`, the same day. Home's 60-day line reads through a new `count` on the trend door, so it
     needs an API restart to be live.
+    Found on the way: the Daily Briefing had not finished since 28 Oct. A job submitted from a worker thread's own event loop
+    died when the kernel's cap was full, its row PENDING and its automation waiting for good. Fixed in `kernel/jobs.py`; live at
+    the next API restart.
 
