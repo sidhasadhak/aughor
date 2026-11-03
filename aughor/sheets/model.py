@@ -162,7 +162,7 @@ class Change(BaseModel):
 class Sheet(BaseModel):
     id: str
     name: str
-    #: The table the Sheets connection names this sheet by.
+    #: The table the Sheets connection names this sheet by: set when it is made, and no rename moves it.
     table: str
     source: Source = Field(default_factory=Source)
     columns: list[Column] = Field(default_factory=list)
@@ -216,7 +216,8 @@ def valid_id(sheet_id: str) -> bool:
 
 
 def table_name(name: str, taken: set[str]) -> str:
-    """The table a sheet is read by: its name in lower case, words joined by underscores, unique among the sheets."""
+    """The table a sheet is read by: the name it is made with in lower case, words joined by underscores, unique among
+    the sheets."""
     base = re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_") or "sheet"
     if base[0].isdigit():
         base = f"sheet_{base}"
@@ -225,6 +226,12 @@ def table_name(name: str, taken: set[str]) -> str:
     while candidate in taken:
         candidate, n = f"{base}_{n}", n + 1
     return candidate
+
+
+def named_for(sheet: "Sheet") -> bool:
+    """Whether a sheet's table still says its name, as it does until the sheet is renamed ("Orders" is orders, or orders_2
+    beside another of that name)."""
+    return bool(re.fullmatch(rf"{re.escape(table_name(sheet.name, set()))}(_\d+)?", sheet.table))
 
 
 def _org() -> str:

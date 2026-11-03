@@ -6,7 +6,7 @@ Read from what already names a sheet — nothing new is stored:
   stays and what it read goes empty, never a figure (`projection._derive`); `removed_reads` says so on those columns.
 * **a dashboard's card** names its table in its query, on the Sheets connection (SH-6). Removed, the statement has
   nothing to read; the connection's door answers with `removed_words` instead of the engine's "Table with name … does
-  not exist! Did you mean "sqlite_master"?". A new sheet of that name takes the table's name, and the card reads it.
+  not exist! Did you mean "sqlite_master"?". A new sheet that makes that table again is what the card reads.
 
 What the asker is told follows the sharing's rule, that a thing not shared with someone is listed and said, never read: a
 sheet not shared with them by its name and maker, a dashboard not reaching them by its owner and how many cards.
@@ -114,7 +114,9 @@ def removed_words(error: str) -> str:
     gone: Optional[Sheet] = model.removed_with_table(found.group(1)) if found else None
     if gone is None:
         return ""
-    return (f'{_removal_words(gone)}, so this has nothing to read. A new sheet named "{gone.name}" with the same columns '
+    # a table keeps the name its sheet was made with: the name said is one that makes this table again
+    again = gone.name if model.table_name(gone.name, set()) == gone.table else gone.table.replace("_", " ")
+    return (f'{_removal_words(gone)}, so this has nothing to read. A new sheet named "{again}" with the same columns '
             "would be read in its place.")
 
 

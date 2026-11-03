@@ -297,13 +297,13 @@ def rows(sheet_id: str, request: Request, view: str = "", filter: str = "", sort
 
 @router.get("/{sheet_id}/csv")
 def csv(sheet_id: str, request: Request, view: str = "", filter: str = "", sort: str = "", search: str = "") -> Response:
-    from aughor.sheets import projection
+    from aughor.sheets import model, projection
     sheet = _sheet(sheet_id, request, VIEW)
     args = _view_args(sheet, view, filter, sort, search, _who(request))
     text = projection.to_csv(sheet, conditions=args["conditions"], sort=args["sort"], search=args["search"],
                              hidden=args["hidden"])
     return Response(content=text, media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{sheet.table}.csv"'})
+                    headers={"Content-Disposition": f'attachment; filename="{model.table_name(sheet.name, set())}.csv"'})
 
 
 @router.get("/{sheet_id}/check")

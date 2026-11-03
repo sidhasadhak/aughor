@@ -12630,7 +12630,8 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   exercised on the live sheet: it would take two changes to its definition and their undoing in the user's history.
 - **Not built, and said.** The rest of SH-6: the breakdown piece and the Briefing over sheets, a sheet backing an
   entity. A dashboard's card names the sheet's table, so renaming the sheet leaves its cards reading a table that is gone
-  — said by the card, not followed.
+  — said by the card, not followed. *2026-11-04: no longer so. A rename changes a sheet's name and leaves its table, this
+  file's own rule (API names are stable; display names are free), so a card has nothing to follow.*
 
 **SH-8, built 2026-10-28 — a sheet shared with chosen people, and a stale write that says who** (branch
 `claude/sheets-sharing` off main `1abf194f`, local, not pushed; the user: *"Build SH-8: share a sheet with chosen people

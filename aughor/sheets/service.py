@@ -29,8 +29,8 @@ def change_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _taken_tables(but: str = "") -> set[str]:
-    return {s.table for s in model.list_sheets() if s.id != but}
+def _taken_tables() -> set[str]:
+    return {s.table for s in model.list_sheets()}
 
 
 def unique_name(name: str, sheet: Sheet, but: str = "") -> str:
@@ -590,15 +590,15 @@ def remove_rule(sheet: Sheet, rule_id: str, *, by: str, cid: str = "") -> Sheet:
 
 
 def rename(sheet: Sheet, name: str, *, by: str, cid: str = "") -> Sheet:
+    """A new name for a sheet. Its table keeps the name it was made with: a sheet's name is free and its table is what
+    everything else reads, so every card and statement that names it goes on reading it, and a new sheet of the old name
+    takes a table of its own rather than this one's readers."""
     name = " ".join((name or "").split())[:80]
     if not name or name == sheet.name:
         return sheet
-    old_table = sheet.table
     old = sheet.name
     sheet.name = name
-    sheet.table = model.table_name(name, _taken_tables(but=sheet.id))
     model.save(sheet, what=f"renamed from {old}", by=by, change_id=cid or change_id())
-    projection.rename(sheet, old_table)
     return sheet
 
 
@@ -742,6 +742,7 @@ def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> 
         restored = Sheet(**definition.model_dump(exclude={"version", "state", "change"}))
         restored = model.save(restored, what=what, by=by, origin=origin, change_id=cid)
         if restored.table != sheet.table:
+            # a version kept before a rename stopped moving the table
             projection.rename(restored, sheet.table)
         else:
             projection.rebuild(restored)
