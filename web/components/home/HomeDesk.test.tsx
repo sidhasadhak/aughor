@@ -74,7 +74,7 @@ describe("HomeDesk", () => {
       figure: { metric: "Revenue", day: "2026-10-02", value: "$19,087.76", change: "+$209.55", pct: 0.0111,
                 verdict: "within normal range", unusual: false } });
     render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} />);
-    expect(await screen.findByTestId("home-lead-value")).toHaveTextContent("$19,087.76");
+    await waitFor(() => expect(screen.getByTestId("home-lead-value")).toHaveTextContent("$19,087.76"));
     const lead = screen.getByTestId("home-lead");
     expect(lead).toHaveTextContent("Revenue · Fri 2 Oct");
     expect(lead).toHaveTextContent("+$209.55 · +1.1%");

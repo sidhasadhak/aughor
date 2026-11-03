@@ -227,6 +227,8 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
   const low = detail?.confidence && detail.confidence.toUpperCase() !== "HIGH";
   // What the day reads now wins over what the analysis reported; a difference is said, never smoothed over.
   const reading = fig && trend ? leadReading(fig, trend.points) : null;
+  // Until today's reading is in, no number stands at this size: the reported one may be the wrong one.
+  const readingDay = !!fig?.metric && !trend;
   const looked = dayWords(lead.run.started_at);
   const verdict = fig?.verdict ? fig.verdict.charAt(0).toUpperCase() + fig.verdict.slice(1) : "";
   return (
@@ -243,9 +245,9 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
         <>
           <div className="aug-fs-chrome" style={{ color: "var(--t2)" }} title={headline}>{fig.metric} · {dayWords(fig.day)}</div>
           <div className="aug-fs-lead" data-testid="home-lead-value"
-            style={{ color: "var(--t1)", fontWeight: 500, fontVariantNumeric: "tabular-nums", margin: "2px 0 6px" }}>{reading?.value ?? fig.value}</div>
+            style={{ color: readingDay ? "var(--t3)" : "var(--t1)", fontWeight: 500, fontVariantNumeric: "tabular-nums", margin: "2px 0 6px" }}>{readingDay ? "—" : reading?.value ?? fig.value}</div>
           <div style={row}>
-            {reading ? (
+            {readingDay ? null : reading ? (
               reading.change && <span className="aug-fs-chrome" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>{reading.change}</span>
             ) : fig.change && (
               <Chip tone={up ? "up" : "down"}><Icon name={up ? "trendup" : "trenddown"} size={12} />{plainDays(fig.change)}{pct ? ` · ${pct}` : ""}</Chip>
@@ -262,7 +264,7 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
               reported={reading?.reported ? { value: Number(fig.value.replace(/[^0-9.-]/g, "")), text: reading.reported, on: dayMonth(lead.run.started_at) } : null} />
           ) : trend?.why ? (
             <div className="aug-fs-xs" style={{ ...muted, marginTop: 10 }}>The line behind this figure could not be read · {trend.why}</div>
-          ) : !trend ? (
+          ) : readingDay ? (
             <div aria-hidden style={{ height: 272, marginTop: 12 }} />
           ) : (
             <div className="aug-fs-xs" data-testid="home-lead-as-reported" style={{ ...muted, marginTop: 10 }}>As the analysis reported it · not read again here</div>
