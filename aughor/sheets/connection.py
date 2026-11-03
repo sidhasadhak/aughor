@@ -11,7 +11,7 @@ would be handed to the next request whatever its organisation.
 A sheet shared with chosen people (SH-8) is read here only by them: a statement reading one not shared with the person
 it runs for is refused, saying so and who to ask, before the engine runs it; and the schema a model is handed carries no
 sample values of such a sheet, for anyone (``sharing.py``). No profile or ontology is built over it at all
-(`build_intelligence`).
+(`build_intelligence`). A statement reading a removed sheet's table is told who removed it and when (``dependents.py``).
 """
 from __future__ import annotations
 
@@ -41,7 +41,14 @@ class SheetsConnection(DuckDBConnection):
         refused = refusal_for_statement(sql)
         if refused:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=refused)
-        return super()._run(hypothesis_id, sql, max_rows, params)
+        result = super()._run(hypothesis_id, sql, max_rows, params)
+        if result.error:
+            # a table that is not there because its sheet was removed: said, never the engine's "did you mean"
+            from aughor.sheets.dependents import REMOVED, removed_words
+            said = removed_words(result.error)
+            if said:
+                result.error, result.error_kind = said, REMOVED
+        return result
 
     def get_schema(self) -> str:
         from aughor.sheets.sharing import without_samples

@@ -138,9 +138,9 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
   const reader = sheet?.access === "view";
   const editable = !reader;
   const [failed, setFailed] = useState<string | null>(null);
-  // the read was refused because the sheet was not shared with the reader (a 403): said, with the way back — not a
-  // failure to retry (SH-8)
-  const [closed, setClosed] = useState(false);
+  // the read was refused because the sheet was not shared with the reader (a 403, SH-8), or the sheet is removed (a 404):
+  // said, with the way back — not a failure to retry
+  const [closed, setClosed] = useState(0);
   const [query, setQuery] = useState<Query | null>(null);
   // nothing opens beside the sheet until the person opens it — the chat too (the user, 2026-10-27: "Chat window shall
   // remain collapsed by default")
@@ -162,7 +162,7 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
     return s;
   }).catch(e => {
     setFailed(e instanceof Error ? e.message : String(e));
-    setClosed((e as { status?: number } | null)?.status === 403);
+    setClosed((e as { status?: number } | null)?.status ?? 0);
     return null;
   }), [sheetId]);
 
@@ -264,11 +264,11 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
 
   const hidden = useMemo(() => new Set(query?.hidden ?? []), [query]);
 
-  if (failed && closed) {
+  if (failed && (closed === 403 || closed === 404)) {
     return (
       <div style={{ padding: "24px 22px", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
         <span className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--t1)" }}>
-          <Icon name="lock" size={14} /> {failed}
+          <Icon name={closed === 403 ? "lock" : "info"} size={14} /> {failed}
         </span>
         <Button variant="outline" size="sm" onClick={onBack}>Back to Spreadsheets</Button>
       </div>

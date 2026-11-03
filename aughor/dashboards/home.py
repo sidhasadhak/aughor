@@ -60,6 +60,12 @@ def prefix(connection_id: str, owner: str) -> str:
     return f"cockpit:person:{connection_id}:{owner}:"
 
 
+def owner_of(key: str, connection_id: str) -> str:
+    """Whose dashboard a natural key names, or ``""`` for one no person owns (a canvas's)."""
+    head = prefix(connection_id, "")[:-1]
+    return key[len(head):].rpartition(":")[0] if key.startswith(head) else ""
+
+
 def valid_id(cockpit_id: str) -> bool:
     return bool(_ID.match(cockpit_id or ""))
 

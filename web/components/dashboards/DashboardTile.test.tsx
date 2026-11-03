@@ -121,6 +121,25 @@ describe("a figure", () => {
   });
 });
 
+describe("a card that lost its sheet", () => {
+  const lost = (error_kind: string | null, error: string) => ({ columns: [], rows: [], row_count: 0, caveats: [], error, error_kind, value: null,
+    refresh: { cadence: "daily", last_run: "", last_value: null, prev_value: null, history: [] } }) as unknown as CardRunResult;
+  const draw = (run: CardRunResult) => tile(card({ made_from: undefined, provenance: { insight_id: "", origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } }), run);
+
+  it("says why in the sheet's words", () => {
+    draw(lost("sheet_removed", 'The sheet "Customers" was removed by ana on 2026-11-03, so this has nothing to read.'));
+    expect(screen.getByTestId("tile-sheet-removed")).toHaveTextContent('The sheet "Customers" was removed by ana on 2026-11-03');
+    expect(screen.getByText("Could not be read")).toBeInTheDocument();
+  });
+
+  it("any other failure draws what it always did, never the engine's words", () => {
+    draw(lost("sql", "Catalog Error: Table with name x does not exist!"));
+    expect(screen.getByText("Could not be read")).toBeInTheDocument();
+    expect(screen.queryByTestId("tile-sheet-removed")).toBeNull();
+    expect(document.body).not.toHaveTextContent("Catalog Error");
+  });
+});
+
 describe("an empty figure", () => {
   it("is a figure that says the period has none — never a one-cell table reading NULL", () => {
     const empty = { ...ranged(0), rows: [[null]], value: null } as unknown as CardRunResult;

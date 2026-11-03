@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  asksForAChange, filterWords, isStale, isWithheld, lastChangeWords, monthWeeks, monthWords, opsFor, rowNoun, rowsQuery,
-  rowsWord, sharedWords, shiftMonth, showDate, showValue, totalWords, typedValue, valueCondition, viewCount, whenWords,
+  asksForAChange, dependentWords, filterWords, isStale, isWithheld, lastChangeWords, monthWeeks, monthWords, opsFor, rowNoun, rowsQuery,
+  rowsWord, sharedWords, shiftMonth, showDate, showValue, totalWords, typedValue, valueCondition, viewCount, whatStays, whenWords,
   type SheetColumn, type SheetSummary, type WithheldSheet,
 } from "./sheets";
 
@@ -147,5 +147,59 @@ describe("who a sheet is shared with (SH-8)", () => {
     expect(isStale(Object.assign(new Error("cy changed it"), { status: 409 }))).toBe(true);
     expect(isStale(Object.assign(new Error("not shared"), { status: 403 }))).toBe(false);
     expect(isStale(null)).toBe(false);
+  });
+});
+
+describe("what is said before a sheet is removed", () => {
+  const nothing = { sheets: [], dashboards: [], cards: [] };
+  const sheetBy = (over: object) => ({ id: "s", name: "Orders", maker: "ana", empties: [], links: [], withheld: false, ...over });
+  const boardBy = (over: object) => ({ title: "Sales", yours: true, owner: "", cards: ["A"], count: 1, withheld: false, ...over });
+
+  it("says nothing when nothing reads it", () => {
+    expect(dependentWords(nothing)).toEqual([]);
+  });
+
+  it("says what goes empty and what only stops linking, in one or several", () => {
+    expect(dependentWords({ ...nothing, sheets: [sheetBy({ empties: ["city"] })] })).toEqual(["The sheet Orders: city goes empty."]);
+    expect(dependentWords({ ...nothing, sheets: [sheetBy({ empties: ["city", "paid"], links: ["customer_id", "other"] })] })).toEqual(
+      ["The sheet Orders: city, paid go empty; customer_id, other keep their values and link to nothing."]);
+    expect(dependentWords({ ...nothing, sheets: [sheetBy({ links: ["customer_id"] })] })).toEqual(
+      ["The sheet Orders: customer_id keeps its values and links to nothing."]);
+  });
+
+  it("says a sheet not shared with them by its name and maker, never its columns", () => {
+    expect(dependentWords({ ...nothing, sheets: [sheetBy({ name: "Private", maker: "bo", withheld: true })] })).toEqual(
+      ["The sheet Private, made by bo and not shared with you: what it reads from this one goes empty."]);
+  });
+
+  it("says whose dashboard, and only counts one not shared with them", () => {
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({})] })).toEqual(["Your dashboard Sales: A will say the sheet was removed."]);
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({ yours: false, owner: "bo" })] })).toEqual(
+      ["bo's dashboard Sales: A will say the sheet was removed."]);
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({ yours: false, owner: "bo", title: "", cards: [], count: 2, withheld: true })] })).toEqual(
+      ["A dashboard of bo's not shared with you: 2 cards will say the sheet was removed."]);
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({ yours: false, title: "", cards: [], withheld: true })] })).toEqual(
+      ["A dashboard not shared with you: 1 card will say the sheet was removed."]);
+  });
+
+  it("says the cards on no dashboard, a long list cut with how many more", () => {
+    expect(dependentWords({ ...nothing, cards: [{ title: "A", yours: true }, { title: "", yours: false }, { title: "", yours: false }] })).toEqual([
+      "On no dashboard yet, your card A: will say the sheet was removed.",
+      "2 cards of other people's, on no dashboard: will say the sheet was removed.",
+    ]);
+    const many = Array.from({ length: 8 }, (_, i) => ({ title: `c${i}`, yours: true }));
+    expect(dependentWords({ ...nothing, cards: many })[0]).toContain("c5 and 2 more");
+  });
+
+  it("says a file stays only when it is in the Workspace still", () => {
+    const from = (source: object) => ({ source }) as Pick<SheetSummary, "source">;
+    const upload = { schema: "olist", file: "orders.csv" };
+    const uploads = [upload];
+    expect(whatStays(from({ kind: "file", file: "orders.csv", upload }), uploads)).toBe(
+      "The uploaded file orders.csv stays and can make a new sheet, though not with those edits.");
+    expect(whatStays(from({ kind: "file", file: "orders.csv", upload }), [])).toContain("The copy of orders.csv kept with it goes too.");
+    expect(whatStays(from({ kind: "file", file: "orders.csv", upload: {} }), uploads)).toContain("The copy of orders.csv kept with it goes too.");
+    expect(whatStays(from({ kind: "rows" }), uploads)).toContain("Running the query again");
+    expect(whatStays(from({ kind: "blank" }), uploads)).toBe("It was made blank here, so nothing else holds its rows.");
   });
 });

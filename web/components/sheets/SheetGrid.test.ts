@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  NUMBER_WIDTH, cellOrigin, edgeStep, layoutColumns, navTarget, planClear, planPaste, rangeOf, rangeWords, width,
+  NUMBER_WIDTH, aboutColumn, cellOrigin, edgeStep, layoutColumns, navTarget, planClear, planPaste, rangeOf, rangeWords, width,
 } from "./SheetGrid";
 import type { Sheet, SheetColumn } from "@/lib/sheets";
 
@@ -14,6 +14,30 @@ const SHEET = {
   me: "user:ana", source: { kind: "file", file: "olist_orders_dataset.csv", rows: 99441 },
   columns: [col({ id: "c2", name: "customer_id", source: "customer_id", kind: "link" })],
 } as unknown as Sheet;
+
+describe("a column that read a removed sheet says why", () => {
+  it("in the cell bar, for what went empty, and never for a value the link keeps", () => {
+    expect(cellOrigin(SHEET, col({ role: "lookup", via: "c2", reads_removed: "Customers" }), 1))
+      .toBe("It read Customers, which was removed, so it is empty.");
+    expect(cellOrigin(SHEET, col({ role: "total", description: "the sum", reads_removed: "Payments" }), 1))
+      .toBe("It read Payments, which was removed, so it is empty.");
+    expect(cellOrigin(SHEET, col({ kind: "link", reads_removed: "Customers" }), 7)).toBe("Imported from olist_orders_dataset.csv, row 7 · not changed since");
+  });
+
+  it("in what the column is, first, before what it was", () => {
+    const about = aboutColumn(SHEET, col({ role: "total", description: "the sum of payment_value in Payments", reads_removed: "Payments" }));
+    expect(about[1]).toBe("It read Payments, which was removed, so it is empty.");
+    expect(aboutColumn(SHEET, col({ kind: "link", reads_removed: "Customers" }))[1])
+      .toBe("It linked to Customers, which was removed: it keeps its own values and links to nothing.");
+    expect(aboutColumn(SHEET, col({ role: "lookup", via: "c2" })).join(" ")).not.toContain("removed");
+    // never still saying it follows a sheet that is gone
+    expect(aboutColumn(SHEET, col({ role: "lookup", via: "c2", reads_removed: "Customers" })).join(" ")).not.toContain("follows");
+  });
+
+  it("has room for it in the header", () => {
+    expect(width(col({ role: "total", reads_removed: "Payments" }))).toBeGreaterThan(width(col({ role: "total" })));
+  });
+});
 
 describe("the cell bar says where a value came from, from what the grid holds", () => {
   it("names the file's row for a value as imported", () => {

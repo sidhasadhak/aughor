@@ -464,6 +464,8 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         "row_count": result.row_count,
         "caveats": result.caveats or [],
         "error": result.error,
+        # a card that lost its sheet is told why in a person's words, and only then is the sentence drawn on the tile
+        "error_kind": result.error_kind,
         "value": value,
         "refresh": card.refresh.model_dump(),
         "scoped": scoped,

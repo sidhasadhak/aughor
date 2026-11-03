@@ -281,8 +281,11 @@ def _derive(con, sheet: Sheet, org: str, *, target: str = "") -> None:
             okey = o.column(c.key) if o else None
             oval = o.column(c.of) if o and c.of else None
             mine = sheet.column(c.by)
-            con.execute(f"UPDATE {name} SET {ident(c.name)} = {'0' if c.how == 'count' else 'NULL'}")
-            if o and okey and mine and (oval or c.how == "count"):
+            counted = o and okey and mine and (oval or c.how == "count")
+            # none is zero rows only of a sheet still there to count: of a removed one it is not known, and 0 would read
+            # as a fact
+            con.execute(f"UPDATE {name} SET {ident(c.name)} = {'0' if counted and c.how == 'count' else 'NULL'}")
+            if counted:
                 agg = aggregate(c.how, oval)
                 con.execute(
                     f"UPDATE {name} SET {ident(c.name)} = TRY_CAST(x.v AS {_type(c)}) FROM ("

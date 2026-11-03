@@ -310,7 +310,10 @@ function FigureTile({ cs, status, sym, doors, place }: { cs: CardState & { card:
       doors={<Doors card={card} doors={doors} place={place} onAlert={value !== null && !alerting ? () => setAlertOpen(o => !o) : undefined} />}>
       <Title title={card.title} />
       {errored ? (
-        <div className="aug-fs-ui" style={{ color: "var(--amb4)" }}>Could not be read</div>
+        <>
+          <div className="aug-fs-ui" style={{ color: "var(--amb4)" }}>Could not be read</div>
+          {run?.error_kind === "sheet_removed" && <div className="aug-fs-sm" data-testid="tile-sheet-removed" style={{ color: "var(--t2)" }}>{run.error}</div>}
+        </>
       ) : shown ? (
         <div className="aug-fs-display" data-testid="tile-figure" data-size={place.size} title={shown.outside ? `Outside what its unit states (${card.unit})` : undefined}
           style={{ fontWeight: 600, lineHeight: 1.15, color: over ? "var(--red4)" : "var(--t1)", fontVariantNumeric: "tabular-nums",

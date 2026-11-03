@@ -273,6 +273,17 @@ def list_sheets(*, org_id: str = "") -> list[Sheet]:
     return out
 
 
+def removed_with_table(table: str, *, org_id: str = "") -> Optional[Sheet]:
+    """The sheet last removed that was read by this table's name, from its tombstone, or None."""
+    from aughor.kernel.ledger import Ledger
+    low = (table or "").lower()
+    gone = [Sheet(**art["payload"]["_body"])
+            for art in Ledger.default().artifacts_of_kind(KIND, conn_id=SHEETS_CONNECTION, org_id=org_id or _org(), limit=1000)
+            if lifecycle.state_of(art.get("payload") or {}) == "archived"
+            and str(((art.get("payload") or {}).get("_body") or {}).get("table") or "").lower() == low]
+    return max(gone, key=lambda s: s.change.at, default=None)
+
+
 def save(sheet: Sheet, *, what: str, by: str, origin: str = "", change_id: str = "",
          state: lifecycle.PublicationState = "published") -> Sheet:
     """Keep the next version of a sheet's definition, recorded with what changed, who changed it and what made it."""
