@@ -232,7 +232,7 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
           </div>
           {asPage
             ? <Button size="xs" variant="ghost" onClick={onClose}>Open Aughor →</Button>
-            : <Button size="xs" variant="ghost" onClick={onClose} aria-label="Close">✕</Button>}
+            : <Button size="xs" variant="plain" onClick={onClose} aria-label="Close">✕</Button>}
         </div>
 
         {/* Body */}

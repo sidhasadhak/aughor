@@ -100,7 +100,7 @@ function FindingRow({ finding, ctx, first }: { finding: RecordedFinding; ctx: Ac
   if (dismissed) return null;   // gone at once; the store leaves it out of the next read
   return (
     <div style={first ? undefined : RULE}>
-      <Button variant="ghost" aria-expanded={open} onClick={() => setOpen(o => !o)} className="aug-fs-ui select-text"
+      <Button variant="plain" aria-expanded={open} onClick={() => setOpen(o => !o)} className="aug-fs-ui select-text"
         style={{ ...ROW_BUTTON, background: open ? "var(--bg-sel)" : undefined }}>
         <span style={open ? undefined : CLAMP_2}>{finding.finding}</span>
         <span style={{ color: "var(--t3)", paddingTop: 3 }}><Icon name={open ? "chevd" : "chevr"} size={12} /></span>
@@ -163,7 +163,7 @@ function PatternRow({ pattern, domain, first, showKind }: { pattern: Pattern; do
   const examples = withUniqueKeys(pattern.example_findings.filter(Boolean), f => f);
   return (
     <div style={first ? undefined : RULE}>
-      <Button variant="ghost" aria-expanded={open} onClick={() => setOpen(o => !o)} className="select-text"
+      <Button variant="plain" aria-expanded={open} onClick={() => setOpen(o => !o)} className="select-text"
         style={{ ...ROW_BUTTON, gridTemplateColumns: "minmax(0, 1fr) auto auto", alignItems: "center",
           background: open ? "var(--bg-sel)" : undefined }}>
         <span style={{ minWidth: 0 }}>
@@ -358,7 +358,7 @@ function ColumnRow({ name, count, max, on, meta, title, onClick }: {
   name: string; count?: number; max?: number; on: boolean; meta?: string; title?: string; onClick: () => void;
 }) {
   return (
-    <Button variant="ghost" aria-current={on ? "true" : undefined} title={title} onClick={onClick} className="aug-fs-sm"
+    <Button variant="plain" aria-current={on ? "true" : undefined} title={title} onClick={onClick} className="aug-fs-sm"
       style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "2px 8px", alignItems: "center", width: "100%",
         height: "auto", margin: 0, padding: "5px 8px", borderRadius: "var(--r2)", textAlign: "left", whiteSpace: "normal",
         fontWeight: on ? 500 : 400, color: "var(--t1)", background: on ? "var(--bg-sel)" : undefined }}>

@@ -147,7 +147,7 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
         {standing.length === 0 ? (
           <div className="aug-fs-sm" style={muted}>No question asked three times yet.</div>
         ) : standing.map((s, i) => (
-          <Button key={s.latest.id} variant="ghost" title={s.question} onClick={() => onOpenAnalysis(s.latest.id, s.latest.kind)}
+          <Button key={s.latest.id} variant="plain" title={s.question} onClick={() => onOpenAnalysis(s.latest.id, s.latest.kind)}
             style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.1fr) 40px", alignItems: "center", gap: 14,
               width: "100%", height: "auto", padding: "9px 2px", borderRadius: 0, textAlign: "left", whiteSpace: "normal",
               borderTop: i ? "1px solid var(--b1)" : undefined }}>

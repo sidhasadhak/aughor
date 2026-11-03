@@ -81,7 +81,7 @@ export function ValueViewer({ value, column, declaredType, row, onClose }: {
         <Button size="xs" variant="ghost" onClick={copy}>
           <Icon name="copy" size={12} /> Copy value
         </Button>
-        <Button size="xs" variant="ghost" onClick={onClose} aria-label="Close">
+        <Button size="xs" variant="plain" onClick={onClose} aria-label="Close">
           <Icon name="close" size={12} />
         </Button>
       </div>

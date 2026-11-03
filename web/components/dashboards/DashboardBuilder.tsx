@@ -289,9 +289,9 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
                 <span style={{ flex: 1 }} />
                 {movable && (
                   <>
-                    <Button size="xs" variant="ghost" aria-label="Move earlier" disabled={!canMove(spec, selected!, -1)}
+                    <Button size="xs" variant="plain" aria-label="Move earlier" disabled={!canMove(spec, selected!, -1)}
                       onClick={() => apply(moveWithin(spec, selected!, -1), "moved by hand")}><Icon name="chevu" size={13} /></Button>
-                    <Button size="xs" variant="ghost" aria-label="Move later" disabled={!canMove(spec, selected!, 1)}
+                    <Button size="xs" variant="plain" aria-label="Move later" disabled={!canMove(spec, selected!, 1)}
                       onClick={() => apply(moveWithin(spec, selected!, 1), "moved by hand")}><Icon name="chevd" size={13} /></Button>
                     <Rule />
                     {section && (
@@ -409,7 +409,7 @@ function ChecksChip({ spec, checks, onChoose, cardTitle, entityTitle }: {
           display: "flex", flexDirection: "column", gap: 2, padding: 6, background: "var(--bg-1)", border: "1px solid var(--b1)",
           borderRadius: "var(--r3)", boxShadow: "var(--shadow-md)" }}>
           {withUniqueKeys(fix, ([k]) => k).map(([id, [key, c]]) => (
-            <Button key={id} role="listitem" variant="ghost" data-testid="builder-checks-item" onClick={() => { setOpen(false); onChoose(key); }}
+            <Button key={id} role="listitem" variant="plain" data-testid="builder-checks-item" onClick={() => { setOpen(false); onChoose(key); }}
               style={{ height: "auto", justifyContent: "flex-start", textAlign: "left", whiteSpace: "normal", padding: "6px 8px" }}>
               <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                 <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{lineOf(spec.elements, key, cardTitle, entityTitle, setTitles(spec))}</span>

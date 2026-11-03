@@ -79,7 +79,7 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
   if (!open) {
     return (
       <Button variant="ghost" size="xs" onClick={openPicker}
-        className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+        className="aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         title="Capture this question + executed SQL as an eval test case">
         Add as eval case
       </Button>
@@ -105,12 +105,12 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
           aria-label="New suite name"
         />
       )}
-      <Button variant="ghost" size="xs" onClick={add} disabled={busy}
+      <Button variant="plain" size="xs" onClick={add} disabled={busy}
         className="h-auto px-2 py-0.5 aug-text-xs font-normal border border-zinc-700 rounded-md text-zinc-300 hover:text-zinc-100 hover:bg-transparent dark:hover:bg-transparent">
         {busy ? "Adding…" : "Add"}
       </Button>
       <Button variant="ghost" size="xs" onClick={() => { setOpen(false); setError(null); }}
-        className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+        className="aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
         Cancel
       </Button>
       {error && <span className="aug-text-xs text-red-400/90">{error}</span>}

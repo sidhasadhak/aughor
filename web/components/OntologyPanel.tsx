@@ -132,7 +132,7 @@ function OntologySettings({
           </p>
           <div className="grid grid-cols-2 gap-1.5">
             {REFRESH_OPTIONS.map(opt => (
-              <Button variant="ghost" size="xs"
+              <Button variant="plain" size="xs"
                 key={String(opt.value)}
                 onClick={() => saveRefresh(opt.value)}
                 disabled={saving}
@@ -171,7 +171,7 @@ function OntologySettings({
           <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
             Manual rebuild
           </p>
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={handleRebuild}
             disabled={rebuilding}
             className={cn(
@@ -293,7 +293,7 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
               <span className="aug-fs-xs text-zinc-500">Merge all into (the others become its parts):</span>
               <div className="flex flex-wrap gap-1">
                 {c.entities.map(e => (
-                  <Button variant="ghost" size="xs" key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}
+                  <Button variant="plain" size="xs" key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}
                     className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
                     {merging === e.id ? "Merging…" : e.display_name}
                   </Button>
@@ -526,11 +526,11 @@ function SkillsDrawer({ connId, schema, onClose }: { connId: string; schema?: st
               </div>
             )}
             <div className="flex gap-1 pt-0.5">
-              <Button variant="ghost" size="xs" onClick={() => doUse(sk.id)} disabled={busy !== null}
+              <Button variant="plain" size="xs" onClick={() => doUse(sk.id)} disabled={busy !== null}
                 className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
                 {busy === sk.id ? "…" : "Use"}
               </Button>
-              <Button variant="ghost" size="xs" onClick={() => doDelete(sk.id)} disabled={busy !== null}
+              <Button variant="plain" size="xs" onClick={() => doDelete(sk.id)} disabled={busy !== null}
                 className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 hover:text-red-300 hover:border-red-500/40 transition disabled:opacity-40">
                 Delete
               </Button>

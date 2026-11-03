@@ -137,7 +137,7 @@ export function PlaybookPanel() {
         <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid var(--b2)" }}>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-[13px] font-medium" style={{ color: "var(--t1)" }}>Playbook</h2>
-            <Button variant="ghost" size="xs"
+            <Button variant="plain" size="xs"
               onClick={handleReseed}
               disabled={seeding}
               className="aug-fs-xs px-2 py-1 rounded-[4px] transition-colors"
@@ -154,7 +154,7 @@ export function PlaybookPanel() {
             {provenCount > 0 && <span><span style={{ color: "var(--blue4)" }}>{provenCount}</span> proven</span>}
           </div>
           {ruleOutCount > 0 && (
-            <Button variant="ghost" size="xs"
+            <Button variant="plain" size="xs"
               onClick={() => setShowRuleOuts(v => !v)}
               data-testid="playbook-ruleouts-toggle"
               className="aug-fs-xs mb-2 text-left"
@@ -174,7 +174,7 @@ export function PlaybookPanel() {
           />
           <div className="flex gap-1">
             {(["all", "active", "draft", "deprecated"] as const).map(s => (
-              <Button variant="ghost" size="xs"
+              <Button variant="plain" size="xs"
                 key={s}
                 onClick={() => setStatusFilter(s)}
                 className="text-[11px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-colors"
@@ -205,7 +205,7 @@ export function PlaybookPanel() {
             </p>
           )}
           {filtered.map(e => (
-            <Button variant="ghost" size="xs"
+            <Button variant="plain" size="xs"
               key={e.id}
               onClick={() => setSelected(selected === e.id ? null : e.id)}
               className="w-full text-left px-4 py-2.5 transition-colors"
@@ -338,7 +338,7 @@ function PlaybookDetail({
       {/* Promote / deprecate */}
       <div className="flex gap-2 pt-2" style={{ borderTop: "0.5px solid var(--b2)" }}>
         {entry.status !== "active" && (
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={() => onStatusChange("active")}
             className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}
@@ -349,7 +349,7 @@ function PlaybookDetail({
           </Button>
         )}
         {entry.status !== "deprecated" && (
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={() => onStatusChange("deprecated")}
             className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
@@ -360,7 +360,7 @@ function PlaybookDetail({
           </Button>
         )}
         {entry.status === "deprecated" && (
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={() => onStatusChange("draft")}
             className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}

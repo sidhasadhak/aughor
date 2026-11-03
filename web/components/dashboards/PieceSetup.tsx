@@ -473,9 +473,9 @@ function FiltersSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch:
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {f.label}{f.via && <span style={{ color: "var(--vio4)" }}> via {f.via}</span>}
               </span>
-              <Button size="xs" variant="ghost" aria-label={`Move ${f.label} up`} disabled={i === 0} onClick={() => move(i, -1)}><Icon name="chevu" size={12} /></Button>
-              <Button size="xs" variant="ghost" aria-label={`Move ${f.label} down`} disabled={i === list.length - 1} onClick={() => move(i, 1)}><Icon name="chevd" size={12} /></Button>
-              <Button size="xs" variant="ghost" aria-label={`Take ${f.label} off`} disabled={list.length === 1}
+              <Button size="xs" variant="plain" aria-label={`Move ${f.label} up`} disabled={i === 0} onClick={() => move(i, -1)}><Icon name="chevu" size={12} /></Button>
+              <Button size="xs" variant="plain" aria-label={`Move ${f.label} down`} disabled={i === list.length - 1} onClick={() => move(i, 1)}><Icon name="chevd" size={12} /></Button>
+              <Button size="xs" variant="plain" aria-label={`Take ${f.label} off`} disabled={list.length === 1}
                 onClick={() => put(list.filter(x => x.path !== f.path), "a filter taken off by hand")}><Icon name="close" size={12} /></Button>
             </li>
           ))}

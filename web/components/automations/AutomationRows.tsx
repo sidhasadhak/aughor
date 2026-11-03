@@ -320,14 +320,14 @@ function ExpectationRows({ e, set }: {
               <option value="error">if not met: block publishing</option>
             </SelectField>
             {shown.length > 1 && (
-              <Button variant="ghost" size="sm" className="h-auto font-normal" aria-label="Remove expectation"
+              <Button variant="plain" size="sm" className="h-auto font-normal" aria-label="Remove expectation"
                 style={{ ...ghostBtn, color: "var(--red3)", padding: "3px 6px" }}
                 onClick={() => write(table, shown.filter((_x, j) => j !== i))}>✕</Button>
             )}
           </div>
         );
       })}
-      <Button variant="ghost" size="sm" className="h-auto font-normal" style={{ ...ghostBtn, alignSelf: "flex-start" }}
+      <Button variant="ghost" size="sm" className="font-normal" style={{ ...ghostBtn, alignSelf: "flex-start" }}
         onClick={() => write(table, [...shown, blankRow()])}>
         Add an expectation
       </Button>
@@ -421,7 +421,7 @@ export function GuardRows({ e, siblings, index, onChange }: {
             <option value="any">any</option>
           </SelectField>
         )}
-        <Button variant="ghost" className="h-auto font-normal" style={{ ...ghostBtn, padding: 0 }}
+        <Button variant="ghost" className="font-normal" style={{ ...ghostBtn }}
           onClick={() => put([...clauses, { left: { $from: upstream[0].ref }, op: ops[0].op }])}>
           + condition
         </Button>
@@ -449,7 +449,7 @@ export function GuardRows({ e, siblings, index, onChange }: {
               aria-label="Only if value" placeholder="value"
               onChange={ev => patch(i, { right: ev.target.value })} />
           )}
-          <Button variant="ghost" className="h-auto font-normal" aria-label="Remove condition"
+          <Button variant="plain" className="h-auto font-normal" aria-label="Remove condition"
             onClick={() => put(clauses.filter((_, n) => n !== i))}
             style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
         </div>
@@ -558,19 +558,19 @@ export function ForEachRows({ e, onChange }: {
         <span style={{ flex: 1 }} />
         {e.for_each ? (
           <>
-            <Button variant="ghost" className="h-auto font-normal"
-              style={{ ...ghostBtn, padding: 0 }}
+            <Button variant="ghost" className="font-normal"
+              style={{ ...ghostBtn }}
               disabled={items.length >= vocab.maxItems}
               title={items.length >= vocab.maxItems
                 ? `${vocab.maxItems} items is the cap` : undefined}
               onClick={() => put([...items, ""])}>+ item</Button>
-            <Button variant="ghost" className="h-auto font-normal"
-              style={{ ...ghostBtn, padding: 0, color: "var(--red3)" }}
+            <Button variant="ghost" className="font-normal"
+              style={{ ...ghostBtn, color: "var(--red3)" }}
               onClick={() => put(null)}>runs once</Button>
           </>
         ) : (
-          <Button variant="ghost" className="h-auto font-normal"
-            style={{ ...ghostBtn, padding: 0 }}
+          <Button variant="ghost" className="font-normal"
+            style={{ ...ghostBtn }}
             onClick={() => put([""])}>+ list</Button>
         )}
       </div>
@@ -580,7 +580,7 @@ export function ForEachRows({ e, onChange }: {
             value={String(item ?? "")}
             aria-label={`For each item ${i + 1}`} placeholder="one item — e.g. EMEA"
             onChange={ev => put(items.map((v, n) => (n === i ? ev.target.value : v)))} />
-          <Button variant="ghost" className="h-auto font-normal" aria-label="Remove item"
+          <Button variant="plain" className="h-auto font-normal" aria-label="Remove item"
             onClick={() => put(items.filter((_, n) => n !== i))}
             style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
         </div>
@@ -614,7 +614,7 @@ export function ConditionRow({ c, onChange, onRemove, timezone }: {
           style={{ ...inputStyle, flex: 1 }}>
           {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
         </SelectField>
-        {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
+        {onRemove && <Button variant="plain" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
       </div>
       <div>
         {c.kind === "schedule" && (
@@ -1065,7 +1065,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
           onChange={onChange} />
         <ForEachRows e={e} onChange={onChange} />
       </div>
-      {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove action" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
+      {onRemove && <Button variant="plain" onClick={onRemove} className="h-auto font-normal" aria-label="Remove action" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>
   );
 }

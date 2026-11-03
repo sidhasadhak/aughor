@@ -683,7 +683,7 @@ export function SqlMode({
                   }}>
                     <div className="aug-label" style={{ padding: "3px 7px" }}>Row limit</div>
                     {LIMIT_PRESETS.map(n => (
-                      <Button key={n} variant="ghost" size="xs" className="aug-fs-ui"
+                      <Button key={n} variant="plain" size="xs" className="aug-fs-ui"
                         style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
                         onClick={() => { patchActive({ limit: n }); setShowRunMenu(false); }}>
                         <span style={{ width: 14, flexShrink: 0 }}>
@@ -693,7 +693,7 @@ export function SqlMode({
                       </Button>
                     ))}
                     <div style={{ borderTop: "1px solid var(--b1)", margin: "5px 0" }} />
-                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    <Button variant="plain" size="xs" className="aug-fs-ui"
                       style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
                       title="When on, Run and ⌘↵ run every statement in the tab, in order, stopping at the first error"
                       onClick={() => patchActive({ runAll: !runAllPref })}>

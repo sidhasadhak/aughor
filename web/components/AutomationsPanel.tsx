@@ -602,13 +602,13 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns,
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <Button variant="ghost" onClick={onCanvas} className="h-auto p-0 font-normal"
+          <Button variant="ghost" onClick={onCanvas} className="font-normal"
                   style={ghostBtn}>Design</Button>
           <Button variant="ghost" onClick={onRun} className="h-auto" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>Run now</Button>
-          <Button variant="ghost" onClick={onRuns} className="h-auto p-0 font-normal" style={ghostBtn}>History</Button>
-          <Button variant="ghost" onClick={onPause} className="h-auto p-0 font-normal" style={ghostBtn}>{muted ? "Unmute" : "Mute"}</Button>
-          <Button variant="ghost" onClick={onEdit} className="h-auto p-0 font-normal" style={ghostBtn}>Edit</Button>
-          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
+          <Button variant="ghost" onClick={onRuns} className="font-normal" style={ghostBtn}>History</Button>
+          <Button variant="ghost" onClick={onPause} className="font-normal" style={ghostBtn}>{muted ? "Unmute" : "Mute"}</Button>
+          <Button variant="ghost" onClick={onEdit} className="font-normal" style={ghostBtn}>Edit</Button>
+          <Button variant="ghost" onClick={onDelete} className="font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
         </div>
       </div>
 
@@ -832,7 +832,7 @@ function InboxView({ conn, proposals, grants, onReload, flash, onOpenInEditor }:
               <span style={{ fontSize: 12 }}><b>{g.action_id}</b> → {g.target_arg}=<code>{g.target_value}</code></span>
               <span style={{ fontSize: 11, color: "var(--t3)" }}>used {g.use_count}× · by {g.created_by || g.owner_kind}</span>
               <div style={{ flex: 1 }} />
-              <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => revoke(g)} style={{ ...ghostBtn, color: "var(--red3)" }}>Revoke</Button>
+              <Button variant="ghost" className="font-normal" onClick={() => revoke(g)} style={{ ...ghostBtn, color: "var(--red3)" }}>Revoke</Button>
             </div>
           ))}
         </>
@@ -901,7 +901,7 @@ function EmptyState({ onAdd, elsewhere }: {
     <SharedEmptyState icon="flow"
       title={hidden ? "No automations on this connection" : "No automations yet"}
       action={
-        <Button variant="ghost" className="h-auto" onClick={onAdd}>
+        <Button variant="ghost" className="" onClick={onAdd}>
           {hidden ? "Create one here" : "Create first automation"}
         </Button>
       }>

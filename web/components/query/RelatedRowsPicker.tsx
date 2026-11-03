@@ -66,7 +66,7 @@ export function RelatedRowsPicker({ table, column, value, fetchJoins, onOpen, on
           <span style={{ color: "var(--t2)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
             Related rows · {column} = {brief(value)}
           </span>
-          <Button variant="ghost" size="xs" aria-label="Close" onClick={onClose}><Icon name="close" size={12} /></Button>
+          <Button variant="plain" size="xs" aria-label="Close" onClick={onClose}><Icon name="close" size={12} /></Button>
         </div>
         <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "0 8px 8px" }}>
           {state === "loading" && (
@@ -86,7 +86,7 @@ export function RelatedRowsPicker({ table, column, value, fetchJoins, onOpen, on
           )}
           {state === "ready" && joins.map(j => (
             <div key={`${j.other_table}.${j.other_column}`} data-testid="related-join" style={{ padding: "3px 0" }}>
-              <Button variant="ghost" size="xs" className="aug-fs-ui" data-testid="related-open"
+              <Button variant="plain" size="xs" className="aug-fs-ui" data-testid="related-open"
                 disabled={!j.openable}
                 title={j.openable ? "Open these rows through the same door as the query, with the value bound" : j.sentence}
                 style={{ width: "100%", justifyContent: "flex-start" }}

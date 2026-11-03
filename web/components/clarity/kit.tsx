@@ -136,7 +136,7 @@ export function Figure({ label, value, sub, tone, title, onOpen, testId }: {
   );
   if (!onOpen) return <div data-testid={testId} title={title} style={CARD}>{body}</div>;
   return (
-    <Button variant="ghost" data-testid={testId} title={title} onClick={onOpen}
+    <Button variant="plain" data-testid={testId} title={title} onClick={onOpen}
       style={{ ...CARD, display: "block", height: "auto", margin: 0, textAlign: "left", whiteSpace: "normal",
         width: "100%", fontWeight: 400, cursor: "pointer" }}>
       {body}

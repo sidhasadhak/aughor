@@ -762,7 +762,7 @@ export function IntegrationsPanel() {
               onClick={() => saveBot(b, { enabled: !b.enabled })}>
               {b.enabled ? "Pause" : "Resume"}
             </Button>
-            <Button variant="ghost" size="xs" disabled={busy === b.id} aria-label={`Delete ${b.name}`} title="Delete"
+            <Button variant="plain" size="xs" disabled={busy === b.id} aria-label={`Delete ${b.name}`} title="Delete"
               style={{ color: "var(--red4)" }} onClick={() => removeBot(b)}>
               <Icon name="trash" size={12} />
             </Button>

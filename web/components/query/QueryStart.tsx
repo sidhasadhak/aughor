@@ -109,7 +109,7 @@ export function QueryStart({
               const words = titles[r.sql];
               return (
                 // Two lines a run: what it does, in words, with what it returned at the right; then the statement.
-                <Button key={r.last.id} variant="ghost" className={ROW_BTN} style={i ? RULE : undefined}
+                <Button key={r.last.id} variant="plain" className={ROW_BTN} style={i ? RULE : undefined}
                   title="Open this statement in a new tab" onClick={() => onOpenRun(r.sql)}>
                   <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <span className="aug-fs-ui" data-testid="query-start-run-words"
@@ -145,7 +145,7 @@ export function QueryStart({
                     gap: "4px 10px", alignItems: "center" }}>
                     {withUniqueKeys(top, t => t.name).map(([key, t]) => (
                       <div key={key} style={{ display: "contents" }}>
-                        <Button variant="ghost" size="xs" className="justify-start px-1 font-normal"
+                        <Button variant="plain" size="xs" className="justify-start px-1 font-normal"
                           title={`Insert ${t.name} at the cursor`} onClick={() => onInsert(t.name)}
                           style={{ minWidth: 0 }}>
                           <span className="aug-fs-sm" style={{ ...ONE_LINE, fontFamily: "var(--font-mono)", color: "var(--t1)" }}>
@@ -171,7 +171,7 @@ export function QueryStart({
                 : saved === null ? <Empty>The saved queries could not be read.</Empty>
                 : saved.length === 0 ? <Empty>None saved for this connection yet.</Empty>
                 : saved.slice(0, 5).map((q, i) => (
-                  <Button key={q.id} variant="ghost" className={ROW_BTN} style={i ? RULE : undefined}
+                  <Button key={q.id} variant="plain" className={ROW_BTN} style={i ? RULE : undefined}
                     title="Open this saved query — Save updates it" onClick={() => onOpenSaved(q)}>
                     <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                       <span className="aug-fs-sm" style={{ ...ONE_LINE, flex: "1 1 0%", color: "var(--t1)" }}>{q.name}</span>

@@ -32,7 +32,7 @@ export function Beside({ kind, top = 0, onClose, focusKey, testId, foot, childre
       <div className="aug-beside-head">
         <span className="aug-label">{kind}</span>
         <span style={{ flex: 1 }} />
-        <Button ref={closeRef} size="xs" variant="ghost" onClick={onClose} aria-label="Close" title="Close (Esc)">
+        <Button ref={closeRef} size="xs" variant="plain" onClick={onClose} aria-label="Close" title="Close (Esc)">
           <Icon name="close" size={14} />
         </Button>
       </div>

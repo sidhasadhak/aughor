@@ -93,7 +93,7 @@ export function SheetCalendar({ sheet, query, column, card, tick, onOpenRow }: {
             const n = counts[d] ?? 0;
             const chosen = d === day;
             return (
-              <Button key={d} variant="ghost" role="gridcell" aria-selected={chosen} disabled={n === 0}
+              <Button key={d} variant="plain" role="gridcell" aria-selected={chosen} disabled={n === 0}
                 aria-label={`${showDate(d, false)}: ${rowsWord(n, sheet.name)}`}
                 onClick={() => setDay(chosen ? "" : d)}
                 style={{ minHeight: 64, height: "auto", display: "flex", flexDirection: "column", alignItems: "flex-start",
@@ -116,7 +116,7 @@ export function SheetCalendar({ sheet, query, column, card, tick, onOpenRow }: {
                 {dayRows.rows.map(r => {
                   const rowNo = Number(r[0]);
                   return (
-                    <Button key={rowNo} variant="ghost" onClick={() => onOpenRow(rowNo)}
+                    <Button key={rowNo} variant="plain" onClick={() => onOpenRow(rowNo)}
                       style={{ height: "auto", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2,
                         padding: "7px 9px", textAlign: "left", fontWeight: 400, background: "var(--bg-2)",
                         border: "1px solid var(--card-edge)", borderRadius: "var(--r2)" }}>

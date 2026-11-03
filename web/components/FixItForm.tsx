@@ -48,7 +48,7 @@ export function FixItForm({
           variant="ghost"
           size="xs"
           onClick={() => setShowSql(true)}
-          className="h-auto self-start p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+          className="self-start aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         >
           + add corrected SQL
         </Button>
@@ -64,7 +64,7 @@ export function FixItForm({
       )}
       <div className="flex items-center gap-2">
         <Button
-          variant="ghost"
+          variant="plain"
           size="xs"
           disabled={busy || !note.trim()}
           onClick={() => onSubmit(note.trim(), sql.trim())}
@@ -77,7 +77,7 @@ export function FixItForm({
           size="xs"
           disabled={busy}
           onClick={onCancel}
-          className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+          className="aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         >
           Cancel
         </Button>

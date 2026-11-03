@@ -146,7 +146,7 @@ export function WorkspaceSwitcher({
         title="Switch workspace"
         aria-label="Switch workspace"
         aria-expanded={open}
-        variant="ghost"
+        variant="plain"
         size="sm"
         /* The design's pill: the workspace's name in mono on --bg-3 and a caret. No status
            dot — the switcher has no health signal to report, and a hue that encodes
@@ -242,7 +242,7 @@ export function WorkspaceSwitcher({
                   >
                     <Button
                       onClick={() => { onWorkspaceChange(w.id); setOpen(false); }}
-                      variant="ghost"
+                      variant="plain"
                       size="sm"
                       /* `h-auto`: `size="sm"` is a 28px single-line box and this row
                          stacks a name over a count — constrained, the second line
@@ -321,7 +321,7 @@ export function WorkspaceSwitcher({
               ) : (
                 <Button
                   onClick={() => setCreating(true)}
-                  variant="ghost"
+                  variant="plain"
                   size="sm"
                   className="h-auto font-normal"
                   style={{

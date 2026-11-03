@@ -169,7 +169,7 @@ export function TabsBar({
             )}
             {tabs.length > 1 && (
               <Button
-                variant="ghost"
+                variant="plain"
                 size="xs"
                 className="aug-fs-ui"
                 title="Close tab"
@@ -184,7 +184,7 @@ export function TabsBar({
       })}
       {onOpenExisting ? (
         <div style={{ position: "relative", flexShrink: 0 }}>
-          <Button variant="ghost" size="xs" className="aug-fs-ui"
+          <Button variant="plain" size="xs" className="aug-fs-ui"
             onClick={() => setPlusMenu(v => !v)} title="New tab" style={{ color: "var(--t3)" }}>
             <Icon name="plus" size={13} />
           </Button>
@@ -196,12 +196,12 @@ export function TabsBar({
                 minWidth: 170, padding: 5, background: "var(--bg-2)",
                 border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
               }}>
-                <Button variant="ghost" size="xs" className="aug-fs-ui"
+                <Button variant="plain" size="xs" className="aug-fs-ui"
                   style={{ width: "100%", justifyContent: "flex-start" }}
                   onClick={() => { setPlusMenu(false); onNew(); }}>
                   New query
                 </Button>
-                <Button variant="ghost" size="xs" className="aug-fs-ui"
+                <Button variant="plain" size="xs" className="aug-fs-ui"
                   style={{ width: "100%", justifyContent: "flex-start" }}
                   onClick={() => { setPlusMenu(false); onOpenExisting(); }}>
                   Open existing…
@@ -211,7 +211,7 @@ export function TabsBar({
           )}
         </div>
       ) : (
-        <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
+        <Button variant="plain" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
           <Icon name="plus" size={13} />
         </Button>
       )}

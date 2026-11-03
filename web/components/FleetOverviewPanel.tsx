@@ -617,7 +617,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                 const off = shownHidden.has(s.key);
                 const name = s.label || "(unattributed)";
                 return (
-                  <Button key={s.key} variant="ghost" size="xs" aria-pressed={!off}
+                  <Button key={s.key} variant="plain" size="xs" aria-pressed={!off}
                     title={off ? `Show ${name}` : `Hide ${name}`}
                     onClick={() => toggleSeries(s.key)}
                     style={{ height: "auto", padding: "1px 6px", margin: 0, color: "var(--t2)", opacity: off ? 0.45 : 1,
@@ -764,7 +764,7 @@ function AgentRow({ row, first, live, expanded, onToggle, onPause, busy, onOpen,
       <div style={{ display: "grid", alignItems: "center", gap: 12,
         gridTemplateColumns: "minmax(0, 1fr) 96px 84px 56px auto" }}>
         <div style={{ minWidth: 0 }}>
-          <Button variant="ghost" size="xs" aria-expanded={expanded} onClick={onToggle}
+          <Button variant="plain" size="xs" aria-expanded={expanded} onClick={onToggle}
             title={expanded ? "Hide the details" : "Details"}
             style={{ height: "auto", padding: 0, margin: 0, gap: 7, color: "var(--t1)", fontWeight: 600, maxWidth: "100%" }}>
             <span aria-hidden style={{ width: 9, height: 9, borderRadius: 2, flex: "0 0 auto",

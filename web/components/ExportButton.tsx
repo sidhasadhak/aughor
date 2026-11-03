@@ -44,7 +44,7 @@ export function ExportButton({ invId }: { invId: string }) {
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <Button variant="ghost" size="xs"
+      <Button variant="plain" size="xs"
         onClick={() => setOpen(v => !v)}
         title="Download this analysis as PDF or PowerPoint"
         style={{

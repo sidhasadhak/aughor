@@ -237,7 +237,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values = NO_VA
             {tables === null ? <span className="aug-fs-xs" style={{ padding: 6, color: "var(--t3)" }}>Reading the tables…</span>
               : tables.length === 0 ? <span className="aug-fs-xs" style={{ padding: 6, color: "var(--t3)" }}>No tables are listed for this connection.</span>
                 : withUniqueKeys(tables, t => t).map(([k, t]) => (
-                  <Button key={k} role="listitem" size="xs" variant="ghost" onClick={() => insert(t)} style={{ justifyContent: "flex-start", fontFamily: "var(--font-mono)" }}>{t}</Button>
+                  <Button key={k} role="listitem" size="xs" variant="plain" onClick={() => insert(t)} style={{ justifyContent: "flex-start", fontFamily: "var(--font-mono)" }}>{t}</Button>
                 ))}
           </div>
         )}
@@ -370,7 +370,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values = NO_VA
                   only={!setup.summed || setup.as === "scatter" || ["sum", "avg"].includes(s.agg) ? ["number"] : undefined}
                   onPick={v => put({ series: setup.series.map((x, j) => (j === i ? { ...x, column: v } : x)) })} />
                 {setup.series.length > 1 && (
-                  <Button size="xs" variant="ghost" aria-label={`Take off series ${i + 1}`} onClick={() => put({ series: setup.series.filter((_, j) => j !== i) })}><Icon name="close" size={12} /></Button>
+                  <Button size="xs" variant="plain" aria-label={`Take off series ${i + 1}`} onClick={() => put({ series: setup.series.filter((_, j) => j !== i) })}><Icon name="close" size={12} /></Button>
                 )}
               </div>
             ))}

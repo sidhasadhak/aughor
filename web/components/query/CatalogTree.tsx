@@ -250,7 +250,7 @@ export function CatalogTree({
           />
           {search && (
             <Button
-              variant="ghost" size="xs" onClick={() => setSearch("")}
+              variant="plain" size="xs" onClick={() => setSearch("")}
               className="h-auto p-0 font-normal leading-none hover:bg-transparent dark:hover:bg-transparent" style={{ color: "var(--t3)" }}
             >
               ✕
@@ -279,7 +279,7 @@ export function CatalogTree({
             — the same word at two levels meaning two different things. */}
         {catalogName && !multiConn && (
           <Button
-            variant="ghost"
+            variant="plain"
             onClick={() => setCatalogOpen(o => !o)}
             className="h-auto w-full justify-start gap-2 px-2 py-1.5 font-normal hover:bg-[var(--bg-hover)]"
           >
@@ -306,7 +306,7 @@ export function CatalogTree({
         <div key={conn.cid || "(one)"}>
         {multiConn && (
           <Button
-            variant="ghost"
+            variant="plain"
             onClick={() => toggle(openConns, conn.cid, cFallback, setOpenConns)}
             className={`h-auto w-full justify-start gap-2 py-1.5 pr-2 font-normal hover:bg-[var(--bg-hover)] ${catalogName ? "pl-6" : "pl-3"}`}
             title={`${conn.label} — ${conn.count} table${conn.count === 1 ? "" : "s"}`}
@@ -325,7 +325,7 @@ export function CatalogTree({
             <div key={`${conn.cid}:${schema || "(root)"}`}>
               {schema !== "" && (
                 <Button
-                  variant="ghost"
+                  variant="plain"
                   onClick={() => toggle(openSchemas, `${conn.cid}\u0000${schema}`, sFallback, setOpenSchemas)}
                   className={`h-auto w-full justify-start gap-2 py-1.5 pr-2 font-normal hover:bg-[var(--bg-hover)] ${multiConn ? "pl-9" : catalogName ? "pl-6" : "pl-3"}`}
                 >
@@ -354,7 +354,7 @@ export function CatalogTree({
                   <div key={t.name} style={active ? { background: "var(--bg-2)" } : undefined}>
                     <div className={`group/tbl flex w-full items-center gap-2 py-1.5 pr-2 transition hover:bg-[var(--bg-hover)] ${multiConn ? "pl-14" : catalogName ? "pl-11" : "pl-7"}`}>
                       <Button
-                        variant="ghost"
+                        variant="plain"
                         onClick={() => toggle(openTables, t.name, active, setOpenTables)}
                         title={tOpen ? "Collapse columns" : "Expand columns"}
                         className="h-auto p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
@@ -362,7 +362,7 @@ export function CatalogTree({
                         <Chevron open={tOpen} />
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="plain"
                         onClick={() => onSelectTable?.(t.name)}
                         title={onSelectTable ? actionLabel(t.name, "table") : t.name}
                         className="h-auto min-w-0 flex-1 justify-start gap-2 p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
@@ -383,7 +383,7 @@ export function CatalogTree({
                           "hover" means nothing. */}
                       {onInsertTable && (
                         <Button
-                          variant="ghost"
+                          variant="plain"
                           onClick={() => onInsertTable(t)}
                           title={`Insert ${t.name} at the cursor`}
                           data-testid="rail-insert-table"
@@ -427,7 +427,7 @@ export function CatalogTree({
                         onDragStart={onColumnDragStart ? e => onColumnDragStart(e, c, t) : undefined}
                       >
                         <Button
-                          variant="ghost"
+                          variant="plain"
                           onClick={() => onSelectColumn?.(c.name, t.name)}
                           title={onSelectColumn
                             ? `${actionLabel(c.name, "column")}${c.type ? ` (${c.type})` : ""}`

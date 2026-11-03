@@ -329,7 +329,7 @@ function GroupRow({ g, first, showConn, conns, onOpen }: {
   return (
     <div data-testid="run-group" style={{ padding: "5px 0", ...(first ? {} : RULE) }}>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 64px 64px", gap: 10, alignItems: "center" }}>
-        <Button variant="ghost" onClick={() => onOpen(latest)} title={g.title} style={ROW_BUTTON}>
+        <Button variant="plain" onClick={() => onOpen(latest)} title={g.title} style={ROW_BUTTON}>
           <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
             <span title={chat ? "a conversation" : "a deep analysis"} style={{ display: "inline-flex", color: "var(--t3)", flex: "0 0 auto" }}>
               <Icon name={chat ? "chat" : "spark"} size={13} />
@@ -366,7 +366,7 @@ function GroupRow({ g, first, showConn, conns, onOpen }: {
       {expanded && (
         <div data-testid="run-earlier" style={{ margin: "2px 0 4px 24px", paddingLeft: 10, borderLeft: "1px solid var(--b1)" }}>
           {earlier.map(r => (
-            <Button key={r.id} variant="ghost" onClick={() => onOpen(r)} title={formatTimestamp(r.started_at)}
+            <Button key={r.id} variant="plain" onClick={() => onOpen(r)} title={formatTimestamp(r.started_at)}
               style={{ ...ROW_BUTTON, display: "grid", gridTemplateColumns: "130px minmax(0, 1fr)", gap: 10, alignItems: "center" }}>
               <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>{formatTimestamp(r.started_at, "short")}</span>
               <span className="aug-fs-xs" style={{ ...ROW, flexWrap: "nowrap", gap: 6, color: "var(--t2)", minWidth: 0 }}>

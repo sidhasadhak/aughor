@@ -111,7 +111,7 @@ export function OpenQueryDialog({
           <span style={{ flex: 1 }} />
           {pill("saved", "Saved", savedHits.length)}
           {pill("recent", "Recent", recentHits.length)}
-          <Button variant="ghost" size="xs" onClick={onClose} aria-label="Close">
+          <Button variant="plain" size="xs" onClick={onClose} aria-label="Close">
             <Icon name="close" size={13} />
           </Button>
         </div>
@@ -138,7 +138,7 @@ export function OpenQueryDialog({
                   : "Nothing matches this search."}
               </p>
             ) : savedHits.map(s => (
-              <Button key={s.id} variant="ghost"
+              <Button key={s.id} variant="plain"
                 onClick={() => { onOpen(s.sql, s.name); onClose(); }}
                 title="Open this query's SQL in a new tab (a copy — Save creates a new record)"
                 className="block h-auto w-full whitespace-normal px-3 py-2 text-left font-normal"
@@ -163,7 +163,7 @@ export function OpenQueryDialog({
               {recent.length === 0 ? "Nothing has run on this connection yet." : "Nothing matches this search."}
             </p>
           ) : recentHits.map(r => (
-            <Button key={r.id} variant="ghost"
+            <Button key={r.id} variant="plain"
               onClick={() => { onOpen(r.sql_full || r.sql_digest, "History"); onClose(); }}
               title="Open this run's SQL in a new tab"
               className="block h-auto w-full whitespace-normal px-3 py-2 text-left font-normal"

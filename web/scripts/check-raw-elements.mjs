@@ -35,6 +35,12 @@ const BASELINE = 29;
 // (three such went uncounted until 2026-10-06).
 const RAW_BUTTON = /<button[\s>]/g;
 
+// The same one-way ratchet for a <Button> with no edge. An action looks like a button before the pointer reaches it (the
+// user, 2026-11-03), so `plain` is only for a whole row, a bare icon, a name that opens what it names, or a button that
+// draws its own edge (components/ui/button.tsx). A new one is a decision: never raise this for an action, give it its edge.
+const PLAIN_BASELINE = 230;
+const PLAIN_BUTTON = /variant="plain"/g;
+
 function* walk(dir) {
   for (const name of readdirSync(dir)) {
     if (name === "node_modules") continue;
@@ -46,10 +52,13 @@ function* walk(dir) {
 }
 
 let count = 0;
+let plain = 0;
 const perFile = [];
 for (const root of ROOTS) {
   for (const file of walk(join(WEB, root))) {
-    const n = (readFileSync(file, "utf8").match(RAW_BUTTON) || []).length;
+    const text = readFileSync(file, "utf8");
+    if (!file.includes(".test.")) plain += (text.match(PLAIN_BUTTON) || []).length;
+    const n = (text.match(RAW_BUTTON) || []).length;
     if (n) {
       count += n;
       perFile.push({ file: relative(WEB, file), n });
@@ -57,12 +66,20 @@ for (const root of ROOTS) {
   }
 }
 
+if (plain > PLAIN_BASELINE) {
+  console.error(
+    `✗ raw-element ratchet: ${plain} <Button variant="plain"> exceeds baseline ${PLAIN_BASELINE}. ` +
+      `An action needs its edge: use variant="ghost". Plain is for a row, a bare icon or a name.`,
+  );
+  process.exit(1);
+}
+
 if (count <= BASELINE) {
   const slack = BASELINE - count;
   console.log(
     `✓ raw-element ratchet: ${count} raw <button> (baseline ${BASELINE}` +
       (slack ? `; ${slack} under — lower BASELINE to ${count}` : "") +
-      "). Prefer <Button> from components/ui/button.",
+      `). ${plain} plain <Button> (baseline ${PLAIN_BASELINE}). Prefer <Button> from components/ui/button.`,
   );
   process.exit(0);
 }

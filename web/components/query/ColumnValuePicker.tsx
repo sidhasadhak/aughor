@@ -113,7 +113,7 @@ export function ColumnValuePicker({
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 2px" }}>
         <span style={{ color: "var(--t2)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis",
           whiteSpace: "nowrap", flex: 1 }}>{column}</span>
-        <Button variant="ghost" size="xs" aria-label="Close" onClick={onClose}><Icon name="close" size={12} /></Button>
+        <Button variant="plain" size="xs" aria-label="Close" onClick={onClose}><Icon name="close" size={12} /></Button>
       </div>
       <div className="aug-fs-xs" data-testid="picker-source" style={{ color: liveRead ? "var(--t3)" : truncated ? "var(--amb4)" : "var(--t3)",
         padding: "0 8px 6px" }}>

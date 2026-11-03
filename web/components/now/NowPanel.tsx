@@ -704,7 +704,7 @@ function Sent({ week, missions, connections, doors }: {
           <div key={g.key} data-testid="now-send-group" style={{ padding: "8px 0", ...(i ? RULE : {}) }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 12, alignItems: "center" }}>
               <div style={{ minWidth: 0 }}>
-                <Button variant="ghost" size="xs" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : g.key)}
+                <Button variant="plain" size="xs" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : g.key)}
                   title={expanded ? "Hide each send" : "Each send"}
                   style={{ height: "auto", padding: 0, margin: 0, gap: 6, color: "var(--t1)", fontWeight: 500, maxWidth: "100%" }}>
                   <span className="aug-fs-chrome" style={ONE_LINE}>{g.source}</span>
@@ -830,7 +830,7 @@ function Restated({ split, labels, inspect }: {
       )}
       <div style={{ paddingTop: 6, ...RULE }}>
         <Button variant="ghost" size="xs" aria-expanded={details} onClick={() => setDetails(v => !v)}
-          style={{ margin: 0, padding: 0, height: "auto", color: "var(--t2)" }}>
+          style={{ margin: 0, color: "var(--t2)" }}>
           Details <Icon name={details ? "chevu" : "chevd"} size={12} />
         </Button>
         {details && (

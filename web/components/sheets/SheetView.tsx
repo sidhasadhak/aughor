@@ -436,7 +436,7 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
             opens beside it */}
         <div style={{ ...BAR, flexWrap: "wrap", rowGap: 6 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0, overflow: "hidden" }}>
-          <Button variant="ghost" size="sm" onClick={onBack} style={{ ...MUTED, padding: "0 4px", flex: "0 0 auto" }}>Spreadsheets /</Button>
+          <Button variant="plain" size="sm" onClick={onBack} style={{ ...MUTED, padding: "0 4px", flex: "0 0 auto" }}>Spreadsheets /</Button>
           {renaming !== null ? (
             <Input value={renaming} autoFocus aria-label="The sheet's name" style={{ flex: "0 1 240px", minWidth: 80 }}
               onChange={e => setRenaming(e.target.value)}
@@ -445,7 +445,7 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
                 if (e.key === "Escape") setRenaming(null);
               }} onBlur={() => setRenaming(null)} />
           ) : (
-            <Button variant="ghost" size="sm" disabled={!editable} title={editable ? `Rename ${sheet.name}` : sheet.name}
+            <Button variant="plain" size="sm" disabled={!editable} title={editable ? `Rename ${sheet.name}` : sheet.name}
               onClick={() => setRenaming(sheet.name)} style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px",
                 flex: "0 1 auto", minWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
               {sheet.name}
@@ -499,7 +499,7 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
             return (
               <span key={v.id} style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto",
                 borderBottom: on ? "2px solid var(--blue3)" : "2px solid transparent" }}>
-                <Button role="tab" aria-selected={on} variant="ghost" size="sm"
+                <Button role="tab" aria-selected={on} variant="plain" size="sm"
                   onClick={() => setQuery(fromView(sheet, v.id))}
                   title={v.shared ? undefined : "Your own view — only you see it"}
                   style={{ borderRadius: 0, color: on ? "var(--t1)" : "var(--t2)", height: 32 }}>

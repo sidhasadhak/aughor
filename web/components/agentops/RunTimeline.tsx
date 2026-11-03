@@ -72,7 +72,7 @@ export function RunTimeline({ runs, onOpen, emptyNote }: {
             }} />
           );
           return onOpen ? (
-            <Button key={r.id} variant="ghost" size="xs" title={title}
+            <Button key={r.id} variant="plain" size="xs" title={title}
               onClick={() => onOpen(r.id)}
               style={{ padding: 0, height: "100%", width: 12, minWidth: 12,
                        display: "flex", alignItems: "flex-end" }}>

@@ -108,7 +108,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           </div>
         </div>
         {onDelete && !canvas.is_legacy && (
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={e => { e.stopPropagation(); onDelete(); }}
             title="Delete Data Canvas"
             className="aug-canvas-card-delete"
@@ -355,7 +355,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
       width: 40,
       render: (_, { canvas }) =>
         canvas.is_legacy ? null : (
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={e => { e.stopPropagation(); askDelete(canvas); }}
             title="Delete Data Canvas"
             style={{
@@ -396,7 +396,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             style={{ flex: 1 }}
           />
           {search && (
-            <Button variant="ghost" size="xs" onClick={() => setSearch("")}
+            <Button variant="plain" size="xs" onClick={() => setSearch("")}
               style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0 }}>
               ✕
             </Button>
@@ -457,14 +457,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             </div>
             {/* Sort control */}
             <div style={{ position: "relative" }}>
-            <Button variant="ghost" size="xs"
+            <Button variant="plain" size="xs"
               onClick={() => setSortOpen(v => !v)}
               onBlur={() => setTimeout(() => setSortOpen(false), 120)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "5px 10px", borderRadius: "var(--r2)",
                 background: sortOpen ? "var(--bg-3)" : "transparent",
-                border: `1px solid ${sortOpen ? "var(--b2)" : "transparent"}`,
+                border: "1px solid var(--b2)",
                 color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "background-color .1s, border-color .1s",
               }}
               onMouseEnter={e => { if (!sortOpen) e.currentTarget.style.background = "var(--bg-2)"; }}
@@ -482,7 +482,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                 borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
               }}>
                 {(["activity", "modified", "name", "tables"] as const).map(opt => (
-                  <Button variant="ghost" size="xs"
+                  <Button variant="plain" size="xs"
                     key={opt}
                     onMouseDown={() => { setSort(opt); setSortOpen(false); }}
                     style={{
@@ -616,7 +616,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button onClick={() => askDelete(null)} variant="ghost" size="sm">Cancel</Button>
-              <Button variant="ghost" size="xs" onClick={handleDelete} disabled={deleting} style={{
+              <Button variant="plain" size="xs" onClick={handleDelete} disabled={deleting} style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
                 background: "var(--red1)", border: "1px solid var(--red2)", color: "var(--red4)",

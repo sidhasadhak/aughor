@@ -145,7 +145,7 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
         : decision === "dismiss" ? "color-mix(in srgb, var(--t4) 8%, transparent)" : "var(--bg-2)",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Button variant="ghost" onClick={() => setOpen(o => !o)} data-testid={`intake-open-${cand.id}`}
+        <Button variant="plain" onClick={() => setOpen(o => !o)} data-testid={`intake-open-${cand.id}`}
           className="aug-fs-sm h-auto min-w-0 flex-1 justify-start gap-2 border-none p-0 text-left font-normal hover:bg-transparent"
           style={{ color: "var(--t1)" }}>
           <Icon name={open ? "chevd" : "chevr"} size={14} />
@@ -615,7 +615,7 @@ export function IntakePanel({ connId, schema }: { connId: string; schema?: strin
             </p>
           )}
           {bundles.map(b => (
-            <Button key={b.id} variant="ghost" onClick={() => openPlan(b.id)}
+            <Button key={b.id} variant="plain" onClick={() => openPlan(b.id)}
               data-testid={`intake-bundle-${b.id}`}
               className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal p-2 text-left font-normal"
               style={{ background: selected === b.id ? "var(--bg-sel)" : "var(--bg-2)",

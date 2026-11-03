@@ -177,7 +177,7 @@ export function ThreadsRail({
               }}
             >
               <Button
-                variant="ghost"
+                variant="plain"
                 onClick={() => onSelect(t.session_id)}
                 className="block h-auto w-full whitespace-normal px-2 py-1.5 text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
               >

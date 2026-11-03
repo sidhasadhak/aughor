@@ -32,7 +32,7 @@ export function PacksManager() {
       <div className="bg-white/[0.03] rounded-[var(--r3)] divide-y divide-white/5">
         {packs.map(p => (
           <div key={p.id} className="px-3 py-2">
-            <Button variant="ghost" size="xs" onClick={() => setSel(sel === p.id ? null : p.id)}
+            <Button variant="plain" size="xs" onClick={() => setSel(sel === p.id ? null : p.id)}
               className="w-full flex items-center justify-between gap-3 text-left">
               <span className="flex items-center gap-2">
                 <span className="text-xs text-zinc-200">{p.name || p.id}</span>

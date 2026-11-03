@@ -559,9 +559,9 @@ function HomeScreen({
                 style={{ flex: 1, resize: "none", border: 0, background: "transparent", boxShadow: "none", minHeight: 0 }}
               />
               <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 2, padding: 2, background: "var(--bg-0)", borderRadius: "var(--r2)" }}>
-                <Button size="xs" variant={homeMode === "ask" ? "secondary" : "ghost"} aria-pressed={homeMode === "ask"}
+                <Button size="xs" variant={homeMode === "ask" ? "secondary" : "plain"} aria-pressed={homeMode === "ask"}
                   title="A fast, grounded answer" onClick={() => setHomeMode("ask")}>Quick</Button>
-                <Button size="xs" variant={homeMode === "investigate" ? "secondary" : "ghost"} aria-pressed={homeMode === "investigate"}
+                <Button size="xs" variant={homeMode === "investigate" ? "secondary" : "plain"} aria-pressed={homeMode === "investigate"}
                   title="A multi-step Agent run" onClick={() => setHomeMode("investigate")}>Agent</Button>
               </div>
               <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask</Button>
@@ -742,7 +742,7 @@ function AddConnectionForm({
       <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
-          <Button variant="ghost" size="xs" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
+          <Button variant="plain" size="xs" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
             <NavIcon name="close" size={14} />
           </Button>
         </div>
@@ -764,7 +764,7 @@ function AddConnectionForm({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
               {grouped.map(group => (
                 group.items.map(ct => (
-                  <Button variant="ghost" size="xs"
+                  <Button variant="plain" size="xs"
                     key={ct.type}
                     type="button"
                     onClick={() => handleTypeChange(ct.type)}
@@ -882,7 +882,7 @@ function DeleteConnModal({
         />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
-          <Button variant="ghost" size="xs"
+          <Button variant="plain" size="xs"
             onClick={handleConfirm}
             disabled={text !== conn.name || loading}
             style={{
@@ -1999,7 +1999,7 @@ export default function Home() {
                           {activeCanvas.scopes[0].tables.length} tables
                         </span>
                       )}
-                      <Button variant="ghost" size="xs"
+                      <Button variant="plain" size="xs"
                         onClick={() => setActiveCanvas(null)}
                         title="Clear canvas"
                         style={{
@@ -2311,7 +2311,7 @@ export default function Home() {
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", borderBottom: "1px solid var(--b1)", height: 44, flexShrink: 0 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>History</span>
-              <Button variant="ghost" size="xs" onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
+              <Button variant="plain" size="xs" onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
                 <NavIcon name="close" size={13} />
               </Button>
             </div>

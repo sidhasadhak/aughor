@@ -261,7 +261,7 @@ export function SavedQueryBar({
               </span>
               <Button
                 variant="ghost" size="xs"
-                className="aug-fs-ui h-auto p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
+                className="aug-fs-ui font-normal hover:bg-transparent dark:hover:bg-transparent"
                 style={{ color: "var(--blue3)" }}
                 disabled={!savable}
                 onClick={startCreate}
@@ -298,7 +298,7 @@ export function SavedQueryBar({
                     {isVisualQuery(q) ? "visual" : "sql"}
                   </span>
                   <Button
-                    variant="ghost" size="xs" title="Delete saved query"
+                    variant="plain" size="xs" title="Delete saved query"
                     onClick={e => void remove(q.id, e)}
                     className="h-auto shrink-0 p-0 font-normal leading-none opacity-0 transition group-hover/sq:opacity-100 hover:bg-transparent dark:hover:bg-transparent"
                     style={{ color: "var(--t3)" }}

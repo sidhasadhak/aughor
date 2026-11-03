@@ -76,7 +76,7 @@ export function HistoryRail({
           {loaded && failed === null && rows.length > 0 && (
             <span style={NUM}>{formatCount(rows.length)}{stopped ? ` · ${stopped}` : ""}</span>
           )}
-          <Button variant="ghost" size="xs" onClick={load} title="Read the history again" aria-label="Refresh">
+          <Button variant="plain" size="xs" onClick={load} title="Read the history again" aria-label="Refresh">
             <Icon name="refresh" size={12} />
           </Button>
         </>}>Recent runs</Label>
@@ -95,7 +95,7 @@ export function HistoryRail({
           return (
             <Button
               key={r.id}
-              variant="ghost"
+              variant="plain"
               onClick={() => onRestore(sql)}
               title="Open this query in a new tab"
               className="mb-0.5 block h-auto w-full whitespace-normal px-2 py-1.5 text-left font-normal"

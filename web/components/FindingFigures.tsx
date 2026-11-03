@@ -132,7 +132,7 @@ export function FigureSources({ results, answer, onShowSource }: { results: Sour
           {ordered.map(({ r, i }) => (
             <Button
               key={r.finding_id}
-              variant="ghost"
+              variant="plain"
               size="xs"
               onClick={() => onShowSource({ columns: r.columns, rows: r.rows, sql: r.sql || null, title: r.title })}
               className="max-w-full px-0 text-[var(--t3)] hover:text-[var(--t1)]"

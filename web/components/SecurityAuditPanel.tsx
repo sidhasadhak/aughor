@@ -162,7 +162,7 @@ function SqlCell({ short, full }: { short: string; full: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <Button variant="ghost" size="xs" onClick={() => setOpen(o => !o)} title={open ? "Hide the statement" : "Show the whole statement"}
+      <Button variant="plain" size="xs" onClick={() => setOpen(o => !o)} title={open ? "Hide the statement" : "Show the whole statement"}
         className="aug-fs-xs" style={{ fontFamily: "var(--font-code)", color: "var(--t2)", textAlign: "left", padding: 0, height: "auto" }}>
         {short.length > 60 ? short.slice(0, 60) + "…" : short}
       </Button>
@@ -175,7 +175,7 @@ function ErrorCell({ error }: { error: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <Button variant="ghost" size="xs" onClick={() => setOpen(o => !o)} title={open ? "Hide the error" : "Show the whole error"}
+      <Button variant="plain" size="xs" onClick={() => setOpen(o => !o)} title={open ? "Hide the error" : "Show the whole error"}
         className="aug-fs-xs" style={{ color: "var(--red4)", textAlign: "left", padding: 0, height: "auto", lineHeight: 1.35 }}>
         {open ? error : (error.length > 48 ? error.slice(0, 48) + "…" : error)}
       </Button>

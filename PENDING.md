@@ -1057,3 +1057,11 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
         block reads. Measured on the two kept live editions first: 0 of 29 sentences newly held.
       - A person's guide edit measures each new or changed check once before it is kept (`guide.verify_edit`) and is
         refused with why when one cannot be; ids must be snake_case and unique and readers must watch real checks.
+
+70. [~] **What unslop teaches: one lead per screen, no machine text** (the user, 2026-11-03: *"lets study this
+    https://github.com/heydamir/unslop and try to make our platform more appealing and top UI/UX quality"*). Study:
+    `docs/UNSLOP_STUDY_2026-11-03.md`, mockup `design-mockups/unslop-proposal.html` (Home and Record, live theLook).
+    Measured on 23 live screens: not slop, but flat. 15 open on the same equal figure cards, none has type above 22px, 9 lead
+    with an amber block. Home's lead figure is six times what that day now reads. The user's calls, 2026-11-03: buttons look
+    like buttons everywhere · uppercase labels stay · Needs you takes an amber edge · six ledgers lose the figure row.
+

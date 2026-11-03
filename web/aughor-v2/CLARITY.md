@@ -61,6 +61,7 @@ the first row still leaves with the answer.
 | **Pairs side by side** — two related cards on one row (Tokens by model · Where tokens go) | One long column the reader scrolls past |
 | **Filters in a left column**: value · count · a 6px bar; the chosen row tinted; the set's size as "37,838 of 125,080" | Dropdown filters that hide the distribution |
 | **List rows: name · figure · one muted meta line**, with marks (`✓ key`, `● 1 proposed`) instead of words | A sentence per row |
+| **An action looks like a button before the pointer reaches it** — a visible edge at rest (`ghost` draws it). A link is the accent colour. No edge only on a whole row, a bare icon, a name that opens what it names, or the off side of a switch in its own track (`plain`, counted by `lint:elements`) | A word that turns out to be clickable on hover: *"not very clear between what is the reading text and what is a button"* (the user, 2026-11-03) |
 | **Read first, edit behind *Edit*.** Forms appear only when a person asks for them | Authoring forms open in a reading view |
 | **Detail behind tabs or *Details*** (Overview · Properties · Links · Actions · Sources · History) | One panel of twelve sections that never ends |
 | **Tools in one menu** (*Tools ▾*) | A row of five tool buttons |

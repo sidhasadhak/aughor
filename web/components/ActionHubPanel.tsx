@@ -399,7 +399,7 @@ function TriggerRow({ t, first, last, sources, windowFull, note, testing, editin
             {testing ? "Testing…" : "Test"}
           </Button>
           <Button size="xs" variant="ghost" aria-expanded={editing} onClick={onEdit}>{editing ? "Close" : "Edit"}</Button>
-          <Button size="xs" variant="ghost" onClick={onDelete} aria-label={`Delete ${t.name}`} title="Delete"
+          <Button size="xs" variant="plain" onClick={onDelete} aria-label={`Delete ${t.name}`} title="Delete"
             style={{ color: "var(--red4)" }}>
             <Icon name="trash" size={12} />
           </Button>

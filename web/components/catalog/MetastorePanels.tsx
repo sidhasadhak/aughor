@@ -118,7 +118,7 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
                   <span style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                     <a href={volumeObjectContentUrl(selected, o.id)} target="_blank" rel="noreferrer"
                       style={{ fontSize: 11, color: "var(--blue4)", textDecoration: "none" }}>Download</a>
-                    <Button variant="ghost" size="xs" onClick={() => onDelete(o.id)} style={{ fontSize: 11, color: "var(--red4)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Delete</Button>
+                    <Button variant="ghost" size="xs" onClick={() => onDelete(o.id)} style={{ fontSize: 11, color: "var(--red4)", cursor: "pointer" }}>Delete</Button>
                   </span>
                 </div>
               ))}

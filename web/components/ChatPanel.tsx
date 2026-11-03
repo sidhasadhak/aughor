@@ -387,7 +387,7 @@ function DepthBanner({ turn, onRerun }: { turn: ChatTurn; onRerun: (depth: "quic
           size="xs"
           onClick={() => onRerun(deep ? "quick" : "deep")}
           title={deep ? "Re-run as a quick answer" : "Re-run as a deep analysis"}
-          className="h-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+          className="hover:bg-transparent dark:hover:bg-transparent"
           style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "var(--blue4)" }}
         >
           {deep ? "Answer quickly instead →" : "Investigate instead →"}
@@ -486,7 +486,7 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
         variant="ghost"
         size="xs"
         onClick={onEscalate}
-        className="h-auto p-0 hover:bg-transparent dark:hover:bg-transparent"
+        className="hover:bg-transparent dark:hover:bg-transparent"
         style={{ fontSize: 12, fontWeight: 500, color: "var(--vio5)" }}
       >
         Investigate this →
@@ -1341,7 +1341,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 zIndex: 3, display: "flex", justifyContent: "center", pointerEvents: "none",
               }}>
                 <Button
-                  variant="ghost"
+                  variant="plain"
                   size="sm"
                   onClick={() => scrollToBottom()}
                   title="Jump to latest"

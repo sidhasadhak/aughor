@@ -117,7 +117,7 @@ export function BriefAskPanel({
           title="Answers read only this schema's tables, and the Briefing for this period">
           {scopeText || "quick answers"}
         </span>
-        <Button variant="ghost" size="xs" onClick={onClose} title="Close" aria-label="Close"
+        <Button variant="plain" size="xs" onClick={onClose} title="Close" aria-label="Close"
           style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
           ×
         </Button>

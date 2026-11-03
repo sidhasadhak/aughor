@@ -258,7 +258,7 @@ export function McpServersSection() {
               border: "1px solid var(--b1)", borderRadius: "var(--r-chip)" }}>
             {([["signin", "Sign in"], ["key", "API key"], ["none", "None"]] as const).map(([m, label]) => (
               <Button key={m} size="xs" className="aug-fs-xs"
-                variant={access === m ? "secondary" : "ghost"}
+                variant={access === m ? "secondary" : "plain"}
                 onClick={() => setAccess(m)}>
                 {label}
               </Button>

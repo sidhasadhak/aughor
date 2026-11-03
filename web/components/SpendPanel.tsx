@@ -511,7 +511,7 @@ function SortHeader({ label, active, desc, onClick, width }: {
   return (
     <th style={{ ...cell, width, position: "sticky", top: 0, zIndex: 1, background: "var(--bg-2)", borderBottom: "1px solid var(--b1)" }}>
       {onClick ? (
-        <Button variant="ghost" size="xs" onClick={onClick} className="aug-fs-xs h-auto p-0 font-normal"
+        <Button variant="plain" size="xs" onClick={onClick} className="aug-fs-xs h-auto p-0 font-normal"
           style={{ color: active ? "var(--t1)" : "var(--t3)" }}>
           {label}
           {active && <Icon name={desc ? "chevd" : "chevu"} size={10} />}

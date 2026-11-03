@@ -79,15 +79,15 @@ export function ButtonsSetup({ spec, k, onChange, connectionId, schema }: {
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           {buttons.map((x, j) => (
             <li key={`${x.action}-${j}`} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <Button variant="ghost" data-testid="setup-button" aria-pressed={j === i} onClick={() => setAt(j)} className="aug-fs-sm"
+              <Button variant="plain" data-testid="setup-button" aria-pressed={j === i} onClick={() => setAt(j)} className="aug-fs-sm"
                 style={{ flex: 1, justifyContent: "flex-start", textAlign: "left", height: "auto", padding: "4px 8px", borderRadius: "var(--r2)", fontWeight: 400,
                   background: j === i ? "var(--accent-a3, var(--bg-3))" : "transparent", color: "var(--t1)" }}>
                 {x.label || declared?.[x.action]?.display_name || words(x.action)}
                 {x.primary && <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 6 }}>primary</span>}
               </Button>
-              <Button size="xs" variant="ghost" aria-label="Move the button earlier" disabled={j === 0}
+              <Button size="xs" variant="plain" aria-label="Move the button earlier" disabled={j === 0}
                 onClick={() => { const n = [...buttons]; [n[j - 1], n[j]] = [n[j], n[j - 1]]; put(n, "buttons arranged by hand"); setAt(j - 1); }}><Icon name="chevu" size={12} /></Button>
-              <Button size="xs" variant="ghost" aria-label="Take the button off" disabled={buttons.length === 1}
+              <Button size="xs" variant="plain" aria-label="Take the button off" disabled={buttons.length === 1}
                 onClick={() => { put(buttons.filter((_, n) => n !== j), "a button taken off by hand"); setAt(0); }}><Icon name="close" size={12} /></Button>
             </li>
           ))}

@@ -167,8 +167,8 @@ for emphasis.
   the label never moves — except the one Primary per view, which also scales to 0.96 (`.aug-press`,
   150ms ease-out; `<Button static>` keeps it still); loading = rest state + ◐ at .8 opacity. `.aug-btn`
   (`-primary` `-ghost` `-minimal` `-sm`). `<Button>` variants: `default` Primary · `secondary`
-  Secondary · `outline` and `minimal` Ghost (bordered) · `link` Minimal ("show source") ·
-  `ghost` the quiet toolbar/menu-row idiom (not on the sheet) · `destructive`. Sizes: default,
+  Secondary · `outline`, `minimal` and `ghost` Ghost (bordered; `ghost` since 2026-11-03, CLARITY §3) · `link` Minimal ("show source") ·
+  `plain` no chrome: a whole row, a bare icon, a name that opens what it names · `destructive`. Sizes: default,
   `sm`, `lg` 26; `xs` 22; icon sizes square at 26/22.
 - **Fields** — `.aug-input` `.aug-select` `.aug-textarea`, `<Input> <Textarea> <SelectTrigger>`:
   height 28, radius 4, `--bg-3`, `--b2` → `--b3` on hover, error `--red2` border with `--red4`

@@ -360,7 +360,7 @@ function TablesTab({ summary, schemas, onOpen, onOpenSchema }: {
           .map((row, i) => {
             const on = only === row.name;
             return (
-              <Button key={row.name ?? "\u0000all"} variant="ghost" onClick={() => setOnly(row.name)} aria-pressed={on}
+              <Button key={row.name ?? "\u0000all"} variant="plain" onClick={() => setOnly(row.name)} aria-pressed={on}
                 style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "3px 8px", width: "100%", height: "auto",
                   padding: "6px 8px", margin: 0, textAlign: "left", fontWeight: 400, borderRadius: "var(--r2)",
                   background: on ? "var(--blue1)" : undefined, ...(i ? {} : { marginBottom: 4 }) }}>
