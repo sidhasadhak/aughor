@@ -647,6 +647,46 @@ def dashboard_proposal(sheet_id: str, request: Request, view: str = "") -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
+class DashboardDraftRequest(BaseModel):
+    #: What the person says the dashboard should show.
+    words: str
+
+
+@router.post("/{sheet_id}/dashboard/draft")
+def dashboard_draft(sheet_id: str, req: DashboardDraftRequest, request: Request) -> dict:
+    """⚑ Spends model calls. A dashboard from this sheet and a sentence: one short model run with one tool. What comes back is
+    a proposal, each card already run on the sheet and defined in words read off its statement, or the reasons there is
+    none. Nothing is kept: the person ticks what they want and keeps it below."""
+    from aughor.sheets import dashboard_draft as drafts
+    return drafts.draft(_sheet(sheet_id, request, VIEW), req.words)
+
+
+class DashboardKeepRequest(BaseModel):
+    title: str
+    #: What was ticked: each ``{key, title, sql, shown}``. Held to the rules and run again, whatever was offered.
+    cards: list[dict[str, Any]] = Field(default_factory=list)
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    scenario: Optional[dict[str, Any]] = None
+    add_row: bool = True
+
+
+@router.post("/{sheet_id}/dashboard/keep", status_code=201)
+def dashboard_keep(sheet_id: str, req: DashboardKeepRequest, request: Request) -> dict:
+    """Keep what a person ticked of a drafted dashboard, all of it or none, as a dashboard of theirs on the Sheets connection."""
+    from aughor.dashboards.home import Home, approver, new_id, person_of
+    from aughor.sheets import dashboard_draft as drafts
+    from aughor.sheets import model
+    sheet = _sheet(sheet_id, request, VIEW)
+    owner = person_of(request)
+    dashboard_id = new_id(req.title or sheet.name)
+    home = Home(model.SHEETS_CONNECTION, owner, dashboard_id)
+    try:
+        return drafts.keep(sheet, home, title=req.title, cards=req.cards, filters=req.filters, scenario=req.scenario,
+                           add_row=req.add_row, approved_by=approver(owner), dashboard_id=dashboard_id)
+    except drafts.Refused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
 # ── SH-8 — sharing ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 @router.get("/{sheet_id}/sharing")

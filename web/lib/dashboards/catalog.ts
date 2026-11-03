@@ -50,8 +50,9 @@ import { z } from "zod";
  *  asked by the agent on a rhythm and shown as the Data Canvas shows an answer (PENDING 54, 2026-10-23). 12: a breakdown —
  *  an entity's objects grouped by one property, a measure or three per group, always adding up to the whole, a click on
  *  a group the filter column's click (ObjectBreakdown), and the rows of a table or a list a declared rule or segment
- *  admits, marked in a tone (`marked`; the Grist study §10, 2026-10-28). */
-export const DASHBOARD_VOCABULARY_VERSION = 12;
+ *  admits, marked in a tone (`marked`; the Grist study §10, 2026-10-28). 13: a dashboard made from a file: a filter column over
+ *  a table, the sliders of a scenario, and adding a row to its sheet (2026-11-03). */
+export const DASHBOARD_VOCABULARY_VERSION = 13;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -113,6 +114,8 @@ export const LIMITS = {
   ChooseOne: { w: [2, 12], h: [4, 14] },
   ObjectSearch: { w: [2, 12], h: [3, 4] },
   Question: { w: [4, 12], h: [6, 30] },
+  ScenarioInputs: { w: [4, 12], h: [3, 10] },
+  AddRow: { w: [3, 12], h: [2, 10] },
 } as const satisfies Record<string, { w: readonly [number, number]; h: readonly [number, number] }>;
 export type GridKind = keyof typeof LIMITS;
 
@@ -201,7 +204,9 @@ export type DashboardSetDef = z.infer<typeof dashboardSet>;
 /** Arc AP-8 — where a value comes from; none, the author. */
 export const valueSource = z.union([
   z.object({ by: z.literal("author") }).strict(),
-  z.object({ by: z.literal("reader"), options: z.array(z.union([z.number().finite(), z.string().max(120)])).max(MAX_VALUE_OPTIONS).nullable().optional() }).strict(),
+  z.object({ by: z.literal("reader"), options: z.array(z.union([z.number().finite(), z.string().max(120)])).max(MAX_VALUE_OPTIONS).nullable().optional(),
+    /** A number the reader moves on a slider, in a What if tab rather than the bar of values (`ScenarioInputs`). */
+    slider: z.object({ min: z.number().finite(), max: z.number().finite(), step: z.number().positive().finite(), unit: z.enum(["percent", "number"]) }).strict().nullable().optional() }).strict(),
   z.object({ by: z.literal("count"), set: z.string().regex(WIRE_NAME) }).strict(),
   z.object({ by: z.literal("chosen"), choice: z.string().regex(WIRE_NAME), path: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/) }).strict(),
   z.object({ by: z.literal("sum"), set: z.string().regex(WIRE_NAME), path: z.string().regex(PROPERTY_PATH) }).strict(),
@@ -517,6 +522,42 @@ export const dashboardCatalog = defineCatalog(schema, {
       }),
       description: "A question the agent answers on its rhythm, and every answer it gave. A person keeps one; reading it asks nothing.",
     },
+    // A dashboard made from a file and a sentence (aughor/sheets/dashboard_draft.py): written by code, never by a model.
+    QueryFilters: {
+      props: z.object({
+        /** The table the dashboard's query cards read: a reader's click narrows every card that reads it. */
+        table: z.string().min(1).max(128),
+        columns: z.array(z.object({
+          column: z.string().min(1).max(128),
+          label: z.string().min(1).max(MAX_LABEL),
+          /** A date column, narrowed by its month. */
+          grain: z.literal("month").nullable().optional(),
+        }).strict()).min(1).max(MAX_FILTERS),
+        w: z.number().int().min(FILTER_WIDTH.least).max(FILTER_WIDTH.most).nullable().optional(),
+      }),
+      description: "The dashboard's filter column over a table: each column's values with how many rows hold each. A click narrows every query card that reads the table.",
+    },
+    ScenarioInputs: {
+      props: z.object({
+        /** The dashboard's values, each a number a reader moves on a slider. */
+        values: z.array(z.string().regex(WIRE_NAME)).min(1).max(6),
+        /** Named settings of those values. "As it is" is always there, from each value's start. */
+        presets: z.array(z.object({
+          label: z.string().min(1).max(MAX_LABEL),
+          values: z.record(z.string(), z.number().finite()),
+        }).strict()).max(6).nullable().optional(),
+        size, w, h,
+      }),
+      description: "The sliders of a what-if: what the reader changes, and what each is in the file. It is a scenario, and says so.",
+    },
+    AddRow: {
+      props: z.object({
+        /** The sheet the row goes in. What a reader may do to it is the sheet's own sharing. */
+        sheet: z.string().min(1).max(64),
+        size, w, h,
+      }),
+      description: "Add a row to the sheet the dashboard's cards read, and every card reads it straight away.",
+    },
   },
   actions: {},
 });
@@ -525,11 +566,11 @@ export const dashboardCatalog = defineCatalog(schema, {
  *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
 export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton" | "ObjectFilters" | "ObjectFigure"
   | "ObjectChart" | "ObjectBreakdown" | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne"
-  | "ObjectSearch" | "Drawer" | "Question";
+  | "ObjectSearch" | "Drawer" | "Question" | "QueryFilters" | "ScenarioInputs" | "AddRow";
 export const PIECE_NAMES: readonly PieceName[] = [
   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart",
   "ObjectBreakdown", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer",
-  "Question",
+  "Question", "QueryFilters", "ScenarioInputs", "AddRow",
 ];
 /** Arc AP-4 — what the picker adds — its pieces and the drawer — each placed by hand and held to the structure's flag on
  *  the server. */
@@ -553,14 +594,14 @@ export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_N
 /** The components a section holds — each sized, each in its place. */
 export const PLACED: readonly ComponentName[] = [
   "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart", "ObjectBreakdown",
-  "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Question",
+  "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Question", "ScenarioInputs", "AddRow",
 ];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
 
 /** What each component may hold. A dashboard's shape is fixed so that a reader can predict it. */
 export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
-  Cockpit: ["Tabs", "Section", "ObjectFilters", "Drawer"],
+  Cockpit: ["Tabs", "Section", "ObjectFilters", "QueryFilters", "Drawer"],
   Tabs: ["Tab"],
   Tab: ["Section"],
   // Arc AP-4 — or sections of its own, when it is laid out (the rules hold a section to one or the other)
@@ -583,6 +624,9 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   ChooseOne: [],
   ObjectSearch: [],
   Question: [],
+  QueryFilters: [],
+  ScenarioInputs: [],
+  AddRow: [],
   // the pieces a section holds, stacked one under another beside the page
   Drawer: PLACED,
 };

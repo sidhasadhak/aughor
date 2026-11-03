@@ -2734,7 +2734,7 @@ export interface QueryShown {
   summed: boolean;
   x: string;
   bucket: QueryBucket;
-  series: { column: string; agg: QueryAgg }[];
+  series: { column: string; agg: QueryAgg; tone?: string; label?: string }[];
   split: string;
   top: number;
   segments: QuerySegments;
@@ -2744,16 +2744,22 @@ export interface QueryShown {
   sort: string;
   descending: boolean;
   label: string;
+  /** Bars that run sideways. */
+  across?: boolean;
+  /** A second value of a figure's statement, said beside it. */
+  beside?: { column: string; words: string; format: string } | null;
+  /** How a figure's value is written: money, percent or number. */
+  format?: string;
 }
 
 export interface QueryChartPoint { x: string | number | null; s: string; v: number | null }
 
 /** A run of a query card, shaped as it is shown — what was left out said in `said`. */
 export type QueryShaped =
-  | { as: "figure"; value: number | null; label: string; said: string[] }
+  | { as: "figure"; value: number | null; label: string; said: string[]; beside?: { value: number | null; words: string; format: string } | null; format?: string }
   | { as: "table"; columns: TypedColumn[]; rows: (string | number | boolean | null)[][]; more: boolean; said: string[] }
   | { as: "bar" | "line" | "area" | "scatter"; x: { name: string; kind: "number" | "date" | "time" | "text"; bucket: QueryBucket };
-      series: string[]; points: QueryChartPoint[]; other: boolean; said: string[] };
+      series: string[]; points: QueryChartPoint[]; other: boolean; said: string[]; tones?: Record<string, string>; format?: string };
 
 /** A query run as the builder would keep it: its typed columns and first rows, the card as shown — or what stops it. */
 export interface QueryPreview {
@@ -2775,7 +2781,12 @@ export interface QueryAsked {
   sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string;
   /** Arc AP-8 — the dashboard's values it reads, as the page holds them now; each bound by the engine. */
   values?: Record<string, { kind: string; value: unknown }>;
+  /** A reader's filters on the table it reads. */
+  filters?: QueryNarrowing[];
 }
+
+/** One filter a reader has on: this column of this table holds one of these (`aughor/dashboards/queries.py` `narrowed`). */
+export interface QueryNarrowing { table: string; column: string; values: (string | number)[]; grain?: string }
 
 /** A query that could not be kept: each reason, as the server says it. */
 export class QueryRefused extends Error {
@@ -3017,7 +3028,7 @@ export async function saveVizConfig(
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
 export async function runCard(cardId: string, range?: BriefingRange | null,
-  opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }> } = {}): Promise<CardRunResult> {
+  opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }>; filters?: QueryNarrowing[] } = {}): Promise<CardRunResult> {
   const q = new URLSearchParams();
   if (range) {
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
@@ -3030,8 +3041,8 @@ export async function runCard(cardId: string, range?: BriefingRange | null,
   const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
   const qs = q.toString();
   // Arc AP-8 — a query that reads the dashboard's values is sent them; every other card is run as it always was
-  const res = await fetch(qs ? `${url}?${qs}` : url, opts.values
-    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: opts.values }) }
+  const res = await fetch(qs ? `${url}?${qs}` : url, opts.values || opts.filters
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: opts.values ?? {}, filters: opts.filters ?? [] }) }
     : { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();

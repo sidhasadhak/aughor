@@ -1130,7 +1130,8 @@ const boxText = (v: unknown) => (v === null || v === undefined ? "" : Array.isAr
  *  or a box to type in — remembered in the reader's browser, never in the dashboard. Nothing when it offers none. */
 export function ValuesBar({ spaced = true }: { spaced?: boolean }) {
   const { wire, valueOf, readerValues, setValue } = usePieces();
-  const offered = Object.entries(wire.values ?? {}).filter(([, v]) => v.from?.by === "reader");
+  // a slider is a scenario's, drawn on its own tab (`ScenarioInputs`), not in this bar
+  const offered = Object.entries(wire.values ?? {}).filter(([, v]) => v.from?.by === "reader" && !v.from.slider);
   if (!offered.length) return null;
   return (
     <div role="group" aria-label="Values you set" data-testid="dashboard-values" className="aug-fs-sm"

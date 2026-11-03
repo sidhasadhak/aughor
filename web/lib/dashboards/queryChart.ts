@@ -29,13 +29,21 @@ export function xText(x: unknown, kind: string, bucket: string, manyYears = fals
   return typeof x === "number" ? x : String(x);
 }
 
-/** The colour of each series, in order — Other the theme's grey. */
-export function seriesColours(series: string[], colours: ChartColours): string[] {
+/** The palette's adverse red: what went wrong wears it on a chart as on a figure. */
+const ADVERSE_AT = 5;
+
+/** The colour of each series, in order — Other the theme's grey, a series the query says went wrong the palette's red, one not
+ *  known yet the same grey. Every other series takes the next colour, so none is skipped. */
+export function seriesColours(series: string[], colours: ChartColours, tones: Record<string, string> = {}): string[] {
   let k = 0;
-  return series.map(s => (s === "Other" ? colours.other : colours.palette[k++ % colours.palette.length]));
+  return series.map(s => {
+    if (s === "Other" || tones[s] === "open") return colours.other;
+    if (tones[s] === "adverse") return colours.palette[ADVERSE_AT % colours.palette.length];
+    return colours.palette[k++ % colours.palette.length];
+  });
 }
 
-export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments" | "labels" | "running">,
+export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments" | "labels" | "running"> & Partial<Pick<QueryShown, "across">>,
   colours: ChartColours): Record<string, unknown> {
   const temporal = c.x.kind === "date" || c.x.kind === "time";
   const manyYears = temporal && new Set(c.points.map(p => String(p.x ?? "").slice(0, 4))).size > 1;
@@ -44,7 +52,7 @@ export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments"
   const named = c.series.filter(s => s !== "");
   const color = split
     ? { color: { field: "s", type: "nominal", sort: named, title: null,
-        scale: { domain: named, range: seriesColours(named, colours) },
+        scale: { domain: named, range: seriesColours(named, colours, c.tones ?? {}) },
         legend: { orient: "top", direction: "horizontal", title: null, symbolType: "square", labelLimit: 140 } } }
     : {};
   const numericX = c.x.kind === "number";
@@ -61,26 +69,33 @@ export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments"
   const shares = setup.segments === "shares" && (c.as === "bar" || c.as === "area");
   const stack = c.as === "line" || c.as === "scatter" || !split ? null
     : shares ? "normalize" : setup.segments === "side_by_side" ? null : "zero";
+  // A share reads as a percent and money with its symbol. Below one, the SI form says "50m" for 0.05: never what a reader means.
+  const small = Math.max(0, ...values.map(p => Math.abs(p.v ?? 0))) < 1;
+  const axisFormat = shares || c.format === "percent" ? ".0%" : c.format === "money" ? "$.3~s" : small ? ".2~f" : ".3~s";
   const y = {
     field: "v", type: "quantitative", stack, title: null,
-    axis: { title: null, tickCount: 4, ...(shares ? { format: ".0%" } : { format: ".3~s" }) },
+    axis: { title: null, tickCount: 4, format: axisFormat },
     ...(c.as === "scatter" ? { scale: { zero: false } } : {}),
   };
   const tooltip = [
     { field: "x", title: "Along the bottom" },
     ...(split ? [{ field: "s", title: "Series" }] : []),
-    { field: "v", type: "quantitative", title: "Value", format: ",.2~f" },
+    { field: "v", type: "quantitative", title: "Value", format: c.format === "percent" ? ".1%" : c.format === "money" ? "$,.0f" : ",.2~f" },
   ];
-  const mark = bars ? { type: "bar", tooltip: true, cornerRadiusEnd: 2 }
+  // one series, so no legend and no scale: what went wrong still wears its colour
+  const tone = !split ? Object.values(c.tones ?? {})[0] : undefined;
+  const lone = tone === "adverse" ? { color: colours.palette[ADVERSE_AT % colours.palette.length] } : tone === "open" ? { color: colours.other } : {};
+  const mark = bars ? { type: "bar", tooltip: true, cornerRadiusEnd: 2, ...lone }
     : c.as === "line" ? { type: "line", tooltip: true, strokeWidth: 2 }
       : c.as === "area" ? { type: "area", tooltip: true, ...(stack === null && split ? { opacity: 0.45 } : {}) }
         : { type: "point", tooltip: true, filled: true, size: 36 };
-  const encoding: Record<string, unknown> = {
-    x, y, ...color, tooltip,
-    ...(bars && split && setup.segments === "side_by_side" ? { xOffset: { field: "s", sort: named } } : {}),
-  };
+  const across = bars && !!setup.across;
+  const offset = bars && split && setup.segments === "side_by_side" ? { field: "s", sort: named } : null;
+  const encoding: Record<string, unknown> = across
+    ? { y: { ...x, axis: { ...x.axis, labelLimit: 180 } }, x: y, ...color, tooltip, ...(offset ? { yOffset: offset } : {}) }
+    : { x, y, ...color, tooltip, ...(offset ? { xOffset: offset } : {}) };
   const layer: Record<string, unknown>[] = [{ mark, encoding }];
-  if (setup.labels && !shares && c.as !== "scatter") {
+  if (setup.labels && !shares && c.as !== "scatter" && !across) {
     // labels are selective: along dates or numbers only the last place is labelled — a stack by its total, a line or a
     // side-by-side bar by each series' value there; along categories each bar is
     const lastX = temporal || numericX ? values.at(-1)?.x : undefined;

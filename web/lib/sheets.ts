@@ -8,7 +8,7 @@
  * Every write is the server's to check — the kinds, the versions, who may — and a refusal comes back as an Error
  * carrying the server's own sentence, which the screen shows as said.
  */
-import { fastApiError, type QueryShown } from "@/lib/api";
+import { fastApiError, type QueryShaped, type QueryShown } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 import { formatCount, formatMoney } from "@/lib/format";
 import { currencySymbol } from "@/lib/orgSettings";
@@ -752,3 +752,32 @@ export function monthWords(month: string): string {
     "November", "December"];
   return NAMES[m - 1] ? `${NAMES[m - 1]} ${y}` : month;
 }
+
+// ── a dashboard from this sheet and a sentence (aughor/sheets/dashboard_draft.py) ──────────
+
+/** A card a model drafted, already run on the sheet: its definition is read off its statement, never the model's words. */
+export interface DraftedCard {
+  key: string; title: string; sql: string; shown: QueryShown; size: string; definition: string; preview: QueryShaped; reads: string[];
+}
+export interface DraftedFilter { column: string; label: string; grain: string; values: [string, number][] }
+export interface DraftedScenario {
+  inputs: { name: string; label: string; start: number; min: number; max: number; step: number; unit: "percent" | "number" }[];
+  presets: { label: string; values: Record<string, number> }[];
+  scenario_card: string; file_card: string;
+}
+export interface DraftedDashboard {
+  drafted: boolean; sentences: string[]; sheet?: string; connection_id?: string; title?: string; table?: string; words?: string;
+  cards: DraftedCard[]; filters: DraftedFilter[]; scenario: DraftedScenario | null;
+  questions: { says: string; instead: { label: string; cards: Record<string, DraftedCard> } | null }[];
+  not_made: { asked: string; why: string }[];
+}
+
+/** Spends model calls: one short run. Nothing is kept. */
+export const draftSheetDashboard = (id: string, words: string) =>
+  call<DraftedDashboard>(`/${id}/dashboard/draft`, json("POST", { words }), "Drafting the dashboard");
+
+export const keepSheetDashboard = (id: string, body: {
+  title: string; cards: (Pick<DraftedCard, "key" | "title" | "sql" | "shown"> & { scenario_only?: boolean })[];
+  filters: Pick<DraftedFilter, "column" | "label" | "grain">[]; scenario: DraftedScenario | null; add_row: boolean;
+}) => call<{ connection_id: string; dashboard_id: string; title: string; version: number; cards: number }>(
+  `/${id}/dashboard/keep`, json("POST", body), "Keeping the dashboard");

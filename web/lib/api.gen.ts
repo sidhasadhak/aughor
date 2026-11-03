@@ -17008,6 +17008,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sheets/{sheet_id}/dashboard/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dashboard Draft
+         * @description ⚑ Spends model calls. A dashboard from this sheet and a sentence: one short model run with one tool. What comes back is
+         *     a proposal, each card already run on the sheet and defined in words read off its statement, or the reasons there is
+         *     none. Nothing is kept: the person ticks what they want and keeps it below.
+         */
+        post: operations["dashboard_draft_sheets__sheet_id__dashboard_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/dashboard/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dashboard Keep
+         * @description Keep what a person ticked of a drafted dashboard, all of it or none, as a dashboard of theirs on the Sheets connection.
+         */
+        post: operations["dashboard_keep_sheets__sheet_id__dashboard_keep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/grounding": {
         parameters: {
             query?: never;
@@ -19037,9 +19079,17 @@ export interface components {
         /**
          * CardRunValues
          * @description Arc AP-8 — the dashboard's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
-         *     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
+         *     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement. ``filters`` are the
+         *     reader's own filters on the table it reads (`queries.narrowed`).
          */
         CardRunValues: {
+            /**
+             * Filters
+             * @default []
+             */
+            filters: {
+                [key: string]: unknown;
+            }[];
             /**
              * Values
              * @default {}
@@ -19760,6 +19810,33 @@ export interface components {
             settings_override: {
                 [key: string]: unknown;
             };
+        };
+        /** DashboardDraftRequest */
+        DashboardDraftRequest: {
+            /** Words */
+            words: string;
+        };
+        /** DashboardKeepRequest */
+        DashboardKeepRequest: {
+            /**
+             * Add Row
+             * @default true
+             */
+            add_row: boolean;
+            /** Cards */
+            cards?: {
+                [key: string]: unknown;
+            }[];
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            }[];
+            /** Scenario */
+            scenario?: {
+                [key: string]: unknown;
+            } | null;
+            /** Title */
+            title: string;
         };
         /** DecisionKindRequest */
         DecisionKindRequest: {
@@ -22084,6 +22161,13 @@ export interface components {
          * @description Arc AP-7 — a person's own query, how it is shown, and — when it changes a card of theirs — the card it replaces.
          */
         QueryRequest: {
+            /**
+             * Filters
+             * @default []
+             */
+            filters: {
+                [key: string]: unknown;
+            }[];
             /**
              * Replaces
              * @default
@@ -54907,6 +54991,80 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_draft_sheets__sheet_id__dashboard_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_keep_sheets__sheet_id__dashboard_keep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardKeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

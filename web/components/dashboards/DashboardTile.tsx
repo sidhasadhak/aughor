@@ -45,6 +45,7 @@ import { SPAN, type Size } from "@/lib/dashboards/catalog";
 import { cardValue } from "@/lib/dashboards/hostStatus";
 import type { CardStatus } from "@/lib/dashboards/hostState";
 import { fmtDate, formatMetricValue, formatSeconds } from "@/lib/format";
+import { draftedFigure } from "@/lib/dashboards/figureText";
 
 export type TileShape = "figure" | "trend" | "rows";
 
@@ -480,12 +481,27 @@ function QueryTile({ cs, doors, place }: { cs: CardState & { card: DashboardCard
     const t = readVegaTokens();
     return queryChartSpec(shaped, setup, { palette: t.palette, other: t.deemph });
   }, [shaped, setup]);
-  const foot = (
+  // A card drafted from a file says what it means, read off its statement: under a figure always, under a chart behind Details.
+  const drafted = (card.render as { drafted_by_model?: boolean }).drafted_by_model === true;
+  const definition = (card.render as { definition?: string }).definition ?? "";
+  const [details, setDetails] = useState(false);
+  const foot = drafted ? (
+    <Foot icon="sql" aside={<Button size="xs" variant="ghost" aria-expanded={details} data-testid="query-tile-details" onClick={() => setDetails(d => !d)}>Details</Button>}>
+      Reads the sheet
+    </Foot>
+  ) : (
     <Foot icon="sql">
       Your query{run?.duration_ms != null ? ` · ${formatSeconds(run.duration_ms)}` : ""}
       {run?.scoped && !run.scoped.standing ? `, for ${run.scoped.covers}` : ""} · read straight from the tables
     </Foot>
   );
+  const explained = details && (
+    <div data-testid="query-tile-explained" className="aug-fs-xs" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--t2)" }}>
+      <div>{definition || "This query is too involved to say in words. Read it below."}</div>
+      <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "var(--font-mono)", background: "var(--bg-3)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: "6px 8px" }}>{card.sql}</pre>
+    </div>
+  );
+  const beside = shaped?.as === "figure" && shaped.beside && shaped.beside.value !== null ? shaped.beside : null;
   if (!shaped) return <QueryUnread title={card.title} why={run?.error || "It returned nothing this card can read."} doors={<Doors card={card} doors={doors} place={place} />} />;
   const said = shaped.said.length > 0 && (
     <div className="aug-fs-xs" data-testid="query-tile-said" style={{ color: "var(--t3)" }}>{shaped.said.join(" ")}</div>
@@ -495,8 +511,15 @@ function QueryTile({ cs, doors, place }: { cs: CardState & { card: DashboardCard
       <Title title={card.title} />
       {shaped.as === "figure" ? (
         <div data-testid="query-tile-figure" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span className="aug-fs-h1" style={{ fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(shaped.value)}</span>
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{shaped.label}</span>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span className="aug-fs-h1" data-testid="query-tile-value" style={{ fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{shaped.format ? draftedFigure(shaped.value, shaped.format) : formatMetricValue(shaped.value)}</span>
+            {beside && (
+              <span data-testid="query-tile-beside" className="aug-fs-sm" style={{ padding: "0 6px", borderRadius: "var(--r2)", background: "var(--bg-3)", color: "var(--t2)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                {besideText(beside)}
+              </span>
+            )}
+          </span>
+          <span className="aug-fs-sm" data-testid="query-tile-definition" style={{ color: "var(--t3)" }}>{drafted && definition ? definition : shaped.label}</span>
         </div>
       ) : shaped.as === "table" ? (
         <div ref={room} data-testid="query-tile-table" style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
@@ -519,9 +542,16 @@ function QueryTile({ cs, doors, place }: { cs: CardState & { card: DashboardCard
         </div>
       )}
       {said}
+      {explained}
       {foot}
     </Frame>
   );
+}
+
+/** A value said beside a figure, in the form its statement asked for. */
+function besideText(b: { value: number | null; words: string; format: string }): string {
+  const text = draftedFigure(b.value, b.format);
+  return b.words ? `${text} ${b.words}` : text;
 }
 
 /** A query reading a value still being read: its place held, and marked reading for the builder's checks. */

@@ -55,7 +55,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { runCard, type BriefingRange, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { runCard, type BriefingRange, type CardRunResult, type DashboardCard, type QueryNarrowing } from "@/lib/api";
 import {
   FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ActionButtonDef, type ComponentName,
   type GridKind, type Layout, type Size, type Tone,
@@ -65,6 +65,9 @@ import { stateModel, type DashboardHostState } from "@/lib/dashboards/hostState"
 import { checkDashboardSpec, openingTab } from "@/lib/dashboards/rules";
 import type { WireSpec } from "@/lib/dashboards/sets";
 import { valuesFor, valuesRead, type ValuesSent } from "@/lib/dashboards/values";
+import { AddRowPiece } from "@/components/dashboards/AddRowPiece";
+import { QueryFiltersPiece, QueryNarrowingProvider, readsTable, useQueryNarrowing, type FilterColumn } from "@/components/dashboards/QueryFilters";
+import { ScenarioInputsPiece, type ScenarioPreset } from "@/components/dashboards/ScenarioInputs";
 
 /** What a dashboard may ask of the page that holds it. The static doors and `onResize` are absent
  *  on a dashboard the reader may not change — a published one, a strip. */
@@ -158,8 +161,22 @@ function DashboardRoot({ element, children }: ComponentRenderProps<{ title: stri
   const firstKey = element.children?.[0] ?? "";
   const first = elements[firstKey];
   const [preview, setPreview] = useState<number | null>(null);
+  if (first?.type === "QueryFilters") {
+    // A dashboard made from a file: its filter column at the left, and every query card that reads the table narrowed by it
+    const [queryColumn, ...others] = Children.toArray(children);
+    const held = first.props as { table: string; w?: number | null };
+    return (
+      <QueryNarrowingProvider table={held.table}>
+        <div role="region" aria-label={element.props.title} data-testid="dashboard"
+          style={{ display: "grid", gridTemplateColumns: `${(held.w ?? null) ? (held.w as number) * GRADE : FILTER_COLUMN}px minmax(0, 1fr)`, gap: 14, alignItems: "start" }}>
+          <div data-testid="dashboard-filter-column" style={{ alignSelf: "stretch", minWidth: 0 }}>{queryColumn}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}><ValuesBar spaced={false} />{others}</div>
+        </div>
+      </QueryNarrowingProvider>
+    );
+  }
   if (first?.type !== "ObjectFilters") {
-    return <div role="region" aria-label={element.props.title} data-testid="dashboard"><ValuesBar />{children}</div>;
+    return <QueryNarrowingProvider table={null}><div role="region" aria-label={element.props.title} data-testid="dashboard"><ValuesBar />{children}</div></QueryNarrowingProvider>;
   }
   // A dashboard started from an object: its filter column at the left, the pieces it narrows beside it, and above them
   // what is chosen and how many objects that leaves (the rules hold the column to the root's first child, once).
@@ -732,17 +749,22 @@ function useValuedRun(cs: CardState | undefined, range: BriefingRange | null | u
   cs: CardState | undefined; waits: QueryWaiting | null; onRefresh: (() => void) | null;
 } {
   const { valueOf, wire } = usePieces();
+  // a dashboard made from a file: a reader's filters narrow a query that reads its table, and a row added here is read again
+  const { narrowing, table, changes } = useQueryNarrowing();
+  const isQuery = !!(cs?.card.render as { shown?: unknown } | undefined)?.shown;
+  const filters = isQuery && readsTable(cs?.card.sql, table) ? narrowing : [];
   const names = valuesRead(cs?.card.sql);
-  const now = names.length ? valuesFor(names, wire.values, valueOf) : null;
+  const now = names.length ? valuesFor(names, wire.values, valueOf) : filters.length || (isQuery && changes > 0) ? { values: {} } : null;
   const sent = now && "values" in now ? JSON.stringify(now.values) : "";
+  const filtersSent = JSON.stringify(filters);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
-  const key = cs && sent ? `${cs.card.id}|${sent}|${JSON.stringify(range ?? null)}|${tick}` : "";
+  const key = cs && sent ? `${cs.card.id}|${sent}|${filtersSent}|${changes}|${JSON.stringify(range ?? null)}|${tick}` : "";
   const [got, setGot] = useState<{ key: string; run?: CardRunResult; failed?: boolean } | null>(null);
   useEffect(() => {
     if (!key || !cs) return;
     let alive = true;
-    runCard(cs.card.id, range, { values: JSON.parse(sent) as ValuesSent })
+    runCard(cs.card.id, range, { values: JSON.parse(sent) as ValuesSent, filters: JSON.parse(filtersSent) as QueryNarrowing[] })
       .then(run => { if (alive) setGot({ key, run }); })
       .catch(() => { if (alive) setGot({ key, failed: true }); });
     return () => { alive = false; };
@@ -756,7 +778,8 @@ function useValuedRun(cs: CardState | undefined, range: BriefingRange | null | u
     return { cs: { card, run }, waits: null, onRefresh };
   }
   if ("waiting" in now) return { cs: { card }, waits: { waiting: <>{chooseWords(wire, now.waiting)} — this reads {now.label} from it.</> }, onRefresh };
-  if ("reading" in now || !got || got.key !== key) return { cs: { card }, waits: { reading: true }, onRefresh };
+  if ("reading" in now) return { cs: { card }, waits: { reading: true }, onRefresh };
+  if (!got || got.key !== key) return { cs: { card }, waits: { reading: true }, onRefresh };
   return { cs: { card, run: got.run, failed: got.failed }, waits: null, onRefresh };
 }
 
@@ -801,6 +824,29 @@ function DashboardNote({ element }: ComponentRenderProps<{ text: string; size?: 
         <NoteTile elementKey={own ? key : null} text={element.props.text} author={element.props.author}
           writtenAt={element.props.written_at} size={element.props.size ?? "small"} doors={doors} />
       )}
+    </Cell>
+  );
+}
+
+function DashboardQueryFilters({ element }: ComponentRenderProps<{ table: string; columns: FilterColumn[] }>) {
+  const { connectionId } = useDashboard();
+  return <QueryFiltersPiece connectionId={connectionId ?? ""} table={element.props.table} columns={element.props.columns} />;
+}
+
+function DashboardScenarioInputs({ element }: ComponentRenderProps<{ values: string[]; presets?: ScenarioPreset[] | null; size?: Size | null }>) {
+  return (
+    <Cell type="ScenarioInputs" props={element.props as Record<string, unknown>} size={element.props.size ?? "full"} testid="dashboard-scenario-inputs"
+      extra={{ style: { gridColumn: "1 / -1" } }}>
+      {() => <ScenarioInputsPiece values={element.props.values} presets={element.props.presets ?? []} />}
+    </Cell>
+  );
+}
+
+function DashboardAddRow({ element }: ComponentRenderProps<{ sheet: string; size?: Size | null }>) {
+  return (
+    <Cell type="AddRow" props={element.props as Record<string, unknown>} size={element.props.size ?? "full"} testid="dashboard-add-row"
+      extra={{ style: { gridColumn: "1 / -1" } }}>
+      {() => <AddRowPiece sheetId={element.props.sheet} />}
     </Cell>
   );
 }
@@ -1090,6 +1136,9 @@ const REGISTRY = {
   ObjectSearch: DashboardObjectSearch,
   Drawer: DashboardDrawer,
   Question: DashboardQuestion,
+  QueryFilters: DashboardQueryFilters,
+  ScenarioInputs: DashboardScenarioInputs,
+  AddRow: DashboardAddRow,
 } satisfies Record<ComponentName, unknown>;
 
 const NO_IMAGES: Record<string, ImageStamp> = {};

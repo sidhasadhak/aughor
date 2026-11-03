@@ -1082,3 +1082,16 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     those fixes. SQL Server and TiDB cannot refuse a write themselves, so the door is the boundary and each says so.
     Still open: the Preview tiles (each needs its server or an account); SQL Server and Oracle read no keys or comments yet.
 
+72. [x] **A dashboard from a file and a sentence** (the user, 2026-11-03, with Google Sheets Canvas as the reference: *"Can you imagine
+    our users uploading a CSV and then such dashboards getting created purely based on the prompt that user gives it? Shouldn't this be
+    part of the Dashboards?"*, then *"All of it"*). New dashboard ▸ From a file: the file becomes a sheet, one short model run drafts the
+    cards, a person checks them and keeps what they tick. Mockup: `design-mockups/dashboard-from-file.html`. Tabs Overview, Rows, What if;
+    a filter column that narrows every card; sliders; Add a row.
+    **This is the one door where a model writes a card's query** (`aughor/sheets/dashboard_draft.py`), on terms code enforces: this sheet's
+    table and nothing else, each card run before it is offered, its definition read off its SQL (`dashboards/definitions.py`), a scenario
+    that must equal the file at its starting values, no figure stated in anything the model writes. The model drafts; the platform lays out.
+    Proven on the real file (20,957 rows cut from theLook) with a real model and through the UI on a scratch API: every figure equals DuckDB on the
+    CSV under five filter sets, a scenario and an added row.
+    Still open: a stacked share is grey, not hatched, on a Vega chart; a card drafted here reads the whole file, so no period picker; the
+    dashboard lives on the Sheets connection, not the one in view.
+

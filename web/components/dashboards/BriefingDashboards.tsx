@@ -44,6 +44,8 @@ import { QuerySetup } from "@/components/dashboards/QuerySetup";
 import { PinStrip } from "@/components/dashboards/PinStrip";
 import { METRICS_DASHBOARD, MetricsDashboard } from "@/components/dashboards/MetricsDashboard";
 import { QuestionComposer } from "@/components/dashboards/QuestionComposer";
+import { FromFile } from "@/components/dashboards/FromFile";
+import { requestTab } from "@/lib/navigate";
 import { PeriodPicker, choiceName } from "@/components/dashboards/PeriodPicker";
 import { person as personName, type ImageStamp } from "@/components/dashboards/StaticTile";
 import { Button } from "@/components/ui/button";
@@ -291,7 +293,7 @@ function NewDashboard({ connectionId, schema, sym, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (dashboardId: string) => void; onClose: () => void;
   sym: string;
 }) {
-  const [way, setWay] = useState<"empty" | "object" | "pack" | "process" | "draft">("empty");
+  const [way, setWay] = useState<"empty" | "file" | "object" | "pack" | "process" | "draft">("empty");
   const [types, setTypes] = useState<{ object_type: string; display_name: string }[] | null>(null);
   const [entity, setEntity] = useState("");
   // Arc AP-5 — what each object suggests a dashboard be
@@ -350,7 +352,7 @@ function NewDashboard({ connectionId, schema, sym, onKept, onClose }: {
   return (
     <div data-testid="dashboard-new" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-        {([["empty", "Start empty"], ["object", "From an object"], ["pack", "From a pack template"], ["process", "For a process"],
+        {([["empty", "Start empty"], ["file", "From a file"], ["object", "From an object"], ["pack", "From a pack template"], ["process", "For a process"],
            ["draft", "Draft it with a model"]] as const).map(([w, label]) => (
           <Button key={w} size="xs" variant={way === w ? "secondary" : "ghost"} aria-pressed={way === w}
             data-testid={`dashboard-new-${w}`} disabled={drafting || starting || !!proposal} onClick={() => setWay(w)}>{label}</Button>
@@ -358,6 +360,15 @@ function NewDashboard({ connectionId, schema, sym, onKept, onClose }: {
         <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} disabled={drafting || starting} onClick={onClose}>Close</Button>
       </div>
 
+      {way === "file" && (
+        <FromFile onKept={(id, connection) => {
+          // a file's dashboard lives on the Sheets connection: opened there, whichever connection this page was on
+          if (connection === connectionId) { onKept(id); return; }
+          remember(connection, id);
+          onClose();
+          requestTab("dashboards", { conn: connection });
+        }} />
+      )}
       {way === "empty" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
           <Input aria-label="The dashboard's name" placeholder="Carrier performance" value={name} disabled={starting}
@@ -1343,8 +1354,10 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
       ) : live.length === 0 ? noneYet : drawn && data ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-            <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
-              showing={data.range.status === "standing" || reading ? null : data.range} />
+            {!cards.every(c => (c.card.render as { standing?: boolean } | undefined)?.standing === true) && (
+              <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
+                showing={data.range.status === "standing" || reading ? null : data.range} />
+            )}
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => {
                 // a resize kept since the page was read is not in its history yet: read it again once
