@@ -5,6 +5,7 @@ import {
   ASKED, SCHEDULED_HEADER, byDay, dayWords, daysBehind, leadFigure, metricWords, percentOf, pickLead, pickQuestion,
   pickWorthALook, rangeText, standingQuestions, weekAhead,
   type Analysis, type Finding,
+  leadReading, plainDays,
 } from "@/lib/home";
 
 // The install's own records, 2026-10-02 to 10-06 (theLook): four daily runs and the asks around them.
@@ -169,5 +170,30 @@ describe("the question and the week, as Home draws them", () => {
     expect(rangeText(0.092011, 0.111332, "ratio 0..1")).toBe("9.2% – 11.1%");
     expect(rangeText(51.39, 52.29, "percent 0-100")).toBe("51.4% – 52.3%");
     expect(rangeText(1.8586, 2.1383, "days, roughly 0-30")).toBe("1.9 – 2.1 days");
+  });
+});
+
+describe("the lead's day as it reads now", () => {
+  const points = [
+    { day: "2026-10-13", value: 15745.65, text: "$15,745.65", settling: false },
+    { day: "2026-10-14", value: 15275.75, text: "$15,275.75", settling: false },
+  ];
+
+  it("says what the day reads now, against the day before, and how far that is from what was reported", () => {
+    const r = leadReading({ day: "2026-10-14", value: "$97,274.71" }, points);
+    expect(r?.value).toBe("$15,276");
+    expect(r?.change).toBe("−$470 vs Tue 13 Oct");
+    expect(r?.up).toBe(false);
+    expect(r?.reported).toBe("$97,275");
+    expect(r?.restated).toBeCloseTo(-0.843, 3);
+  });
+
+  it("names no restatement when the reading holds, and stands aside when the trend does not hold the day", () => {
+    expect(leadReading({ day: "2026-10-14", value: "$15,275.75" }, points)?.reported).toBeNull();
+    expect(leadReading({ day: "2026-09-01", value: "$1" }, points)).toBeNull();
+  });
+
+  it("writes an ISO day inside an analysis's line the way Home writes days", () => {
+    expect(plainDays("+$37,497.69 vs 2026-10-13")).toBe("+$37,497.69 vs Tue 13 Oct");
   });
 });

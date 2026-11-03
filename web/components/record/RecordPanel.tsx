@@ -25,7 +25,7 @@ import {
   type ListColumn, type Load,
 } from "@/components/record/kit";
 import {
-  CARD, Card, Chip, Dot, Empty, Figure, Figures, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page as ClarityPage,
+  CARD, Card, Chip, Dot, Empty, Figure, Tally, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page as ClarityPage,
   RULE, type Tone,
 } from "@/components/clarity/kit";
 import {
@@ -187,7 +187,7 @@ function ClaimOverview({ all, asOf, onAsOf, connections, selectedConn, coverage,
 
   return (
     <>
-      <Figures testId="claim-figures">
+      <Tally testId="claim-figures">
         <Figure label={asOf ? `Claims on ${dateWords(asOf)}` : "Claims"} value={formatCount(all.length)} testId="fig-claims"
           title={all.length >= LIMIT ? `The newest ${LIMIT} are read` : undefined}
           sub={all.length === 0 ? "none on the record" : <>
@@ -208,7 +208,7 @@ function ClaimOverview({ all, asOf, onAsOf, connections, selectedConn, coverage,
           title="How often claims of a kind have been right — counted, never a model's own estimate"
           sub={counted.length === all.length ? "every one has a hit rate"
             : <Chip title={notes.join("\n") || undefined} testId="claims-not-counted">{`${formatCount(all.length - counted.length)} not counted yet`}</Chip>} />
-      </Figures>
+      </Tally>
 
       <NeedsYou testId="claim-needs" empty="Nothing needs you · predictions are scored by code on their day">
         {blocker?.definition && (blocker.holds ?? 0) > 0 ? [

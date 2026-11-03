@@ -547,9 +547,10 @@ function HomeScreen({
             the question into the chat with the chosen depth. */}
         {connections.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-2)", border: "1px solid var(--card-edge)",
-              borderRadius: "var(--r3)", padding: "6px 8px 6px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-3)", border: "1px solid var(--b2)",
+              borderRadius: "var(--r3)", padding: "6px 8px 6px 6px" }}>
               <Textarea
+                bespoke
                 value={homeQ}
                 onChange={e => setHomeQ(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitHome(); } }}

@@ -532,12 +532,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         </div>
 
         {/* Search */}
-        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, position: "relative" }}>
-          <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
-            <Icon name="search" size={11} />
-          </span>
+        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0 }}>
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
-            style={{ width: "100%" }} />
+            leading={<Icon name="search" size={11} />} style={{ width: "100%" }} />
         </div>
 
         {/* Tree body */}

@@ -73,6 +73,9 @@ export function callerName(hypothesisId: string): { agent: string; detail?: stri
     case "cb2_review":            return { agent: "Curator", detail: "measurement" };
   }
   if (h.startsWith("card:")) return { agent: "You", detail: "a pinned card" };
+  // automation:<uuid>:<its step>: the id is the store's, the step is what a reader can name
+  const automation = /^automation:[0-9a-f-]{8,}(?::(.+))?$/i.exec(h);
+  if (automation) return { agent: "Automation", detail: automation[1]?.replace(/_/g, " ") };
   // the object door's reads: a dashboard's figures and charts count, its tables list, an object's page reads the rest
   if (h === "objects") return { agent: "Objects", detail: "counted" };
   if (h === "objects.list") return { agent: "Objects", detail: "listed" };

@@ -1923,7 +1923,7 @@ export function QueryBuilder({
                       <div className="relative">
                         <Button variant="ghost" size="xs" onClick={()=>setShowMetricsCatalog(v=>!v)}
                           className="h-auto font-normal aug-fs-xs px-2.5 py-1 rounded-[var(--r3)] border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition whitespace-nowrap">
-                          📊 Catalog
+                          <Icon name="metric" size={11} /> Catalog
                         </Button>
                         {showMetricsCatalog && (
                           <>
@@ -1966,7 +1966,7 @@ export function QueryBuilder({
                           className={`inline-flex items-center gap-1.5 aug-fs-sm font-mono px-2.5 py-1 rounded-[var(--r3)] border ${
                             warn ? "text-amber-200 border-amber-500/50 bg-amber-500/10"
                                  : (ao?.cls ?? "text-violet-300 border-violet-500/30 bg-violet-500/10")}`}>
-                          <span className="aug-fs-xs font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
+                          <span className="aug-fs-xs font-sans opacity-70">{m.fromMetric?<Icon name="metric" size={11} />:m.agg==="CUSTOM"?"fx":m.agg}</span>
                           <span className="max-w-[120px] truncate">{m.alias||measureExpr(m,isMulti)}</span>
                           {warn && (
                             <>

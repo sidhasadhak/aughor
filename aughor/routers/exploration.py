@@ -1000,17 +1000,21 @@ def read_edition_covers(conn_id: str, schema: str | None = None, workspace_id: s
 
 @router.post("/exploration/{conn_id}/briefing/metric/{metric}")
 def read_metric_trend(conn_id: str, metric: str, schema: str | None = None, workspace_id: str | None = None,
-                      preset: str | None = None, start: str | None = None, end: str | None = None):
-    """What a measured figure opens to: the metric over the range and the ranges before it, each saying
-    whether it is still settling, with how it is defined and dated. One warehouse statement, no model call; a metric
-    that cannot be read says why."""
+                      preset: str | None = None, start: str | None = None, end: str | None = None,
+                      count: int | None = None):
+    """What a measured figure opens to: the metric over the range and the ranges before it (``count`` of them, up to
+    90: Home's line is one day at a time), each saying whether it is still settling, with how it is defined and
+    dated. One warehouse statement, no model call; a metric that cannot be read says why."""
     from aughor.briefing import ranges
+
+    if count is not None and not 2 <= count <= 90:
+        raise HTTPException(status_code=422, detail="count is between 2 and 90")
 
     spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     seen = ranges.metric_trend(conn_id, spec, metric, profile=_load_business_profile(conn_id, schema),
-                               workspace_id=workspace_id, schema=schema)
+                               workspace_id=workspace_id, schema=schema, count=count)
     if not seen.get("found"):
         raise HTTPException(status_code=404, detail=seen.get("why") or "no such metric")
     return {**seen, "period": ranges.range_block(spec)}

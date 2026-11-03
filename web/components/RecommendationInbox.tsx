@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ExecuteRecommendation as ExecuteButton } from "@/components/actions/ExecuteRecommendation";
 import {
-  Bar, CARD, Card, Chip, Dot, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE, type Tone,
+  Bar, CARD, Card, Chip, Dot, Empty, Figure, Tally, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE, type Tone,
 } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -169,7 +169,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
 
   return (
     <div data-testid="inbox" style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
-      <Figures testId="inbox-figures">
+      <Tally testId="inbox-figures">
         <Figure testId="inbox-fig-open" label="Open" value={formatCount(open)}
           title={`Recommendations nobody has verified, rejected or dismissed, from the newest ${READ} deep analyses`}
           sub={<>
@@ -180,7 +180,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
         <Figure testId="inbox-fig-verified" label="Verified" value={formatCount(verified)} sub="checked again and held" />
         <Figure testId="inbox-fig-closed" label="Closed" value={formatCount(rejected + dismissed)}
           sub={`${rejected} rejected · ${dismissed} dismissed`} />
-      </Figures>
+      </Tally>
 
       {unread.length > 0 && (
         <div className="aug-fs-xs" style={ROW}>
@@ -189,31 +189,12 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
         </div>
       )}
 
-      <NeedsYou testId="inbox-needs" waiting={due.length > 0} right={due.length ? `${countNoun(due.length, "review")} due` : undefined}>
-        {due.length === 0 ? (
-          <Empty title="When a recommendation is accepted, a review date is set; on that day its question is asked here">
-            No review has come due.
-          </Empty>
-        ) : due.map((r, i) => (
+      <NeedsYou testId="inbox-needs" right={due.length ? `${countNoun(due.length, "review")} due` : undefined} empty={<span title="When a recommendation is accepted, a review date is set; on that day its question is asked here">No review has come due.</span>}>
+        {due.map((r, i) => (
           <DueRow key={keyOf(r.run.id, r.index)} first={i === 0} runId={r.run.id} index={r.index} rec={r.rec}
             outcome={r.outcome!} onOutcome={onOutcome} />
         ))}
       </NeedsYou>
-
-      {rows.length > 0 && (
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
-            <Card label="Where they stand" testId="inbox-funnel" right={`${countNoun(rows.length, "recommendation")}`}>
-              <Funnel rows={rows.map(r => r.outcome)} />
-            </Card>
-          </div>
-          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
-            <Card label="Who they are for" testId="inbox-owners" right="open · by owner">
-              <Owners recs={rows.filter(r => isOpen(r.outcome)).map(r => r.rec)} />
-            </Card>
-          </div>
-        </div>
-      )}
 
       <section aria-label="Recommendations" data-testid="inbox-list" style={CARD}>
         <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "var(--t3)",
@@ -235,6 +216,21 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
             outcome={r.outcome} today={today} onOutcome={onOutcome} onOpen={onOpenInvestigation} />
         ))}
       </section>
+
+      {rows.length > 0 && (
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
+            <Card label="Where they stand" testId="inbox-funnel" right={`${countNoun(rows.length, "recommendation")}`}>
+              <Funnel rows={rows.map(r => r.outcome)} />
+            </Card>
+          </div>
+          <div style={{ flex: "1 1 340px", minWidth: 0 }}>
+            <Card label="Who they are for" testId="inbox-owners" right="open · by owner">
+              <Owners recs={rows.filter(r => isOpen(r.outcome)).map(r => r.rec)} />
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

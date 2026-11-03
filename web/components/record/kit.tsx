@@ -261,8 +261,10 @@ export interface ListColumn<T> {
  * words the record keeps (the full question, not its label), because a table a reader cannot leave with is a picture
  * of a table.
  */
-export function ListCard<T>({ label, tools, rows, rowKey, columns, name, renderRow, empty, page = 50, group, testId }: {
+export function ListCard<T>({ label, tools, rows, exportRows, rowKey, columns, name, renderRow, empty, page = 50, group, testId }: {
   label: React.ReactNode;
+  /** What Copy and CSV take, when the rows on screen are fewer: folded repeats, or rows said once already above. */
+  exportRows?: T[];
   /** What filters or acts on the list (a filter, its one action), at the label's right end before Copy · CSV. */
   tools?: React.ReactNode;
   rows: T[];
@@ -280,7 +282,7 @@ export function ListCard<T>({ label, tools, rows, rowKey, columns, name, renderR
   testId?: string;
 }) {
   const [shown, setShown] = useState(page);
-  const read = () => ({ columns: columns.map(c => c.head), rows: rows.map(r => columns.map(c => c.value(r))) });
+  const read = () => ({ columns: columns.map(c => c.head), rows: (exportRows ?? rows).map(r => columns.map(c => c.value(r))) });
   const members = new Map<string, T[]>();
   if (group) for (const r of rows) { const k = group.key(r); members.set(k, [...(members.get(k) ?? []), r]); }
   return (

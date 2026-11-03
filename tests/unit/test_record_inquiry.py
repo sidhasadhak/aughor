@@ -267,7 +267,7 @@ def test_a_fired_monitor_alert_opens_an_inquiry_without_spending_a_run():
     assert dispatch_alert(alert, monitor) is None                      # in-app: nothing to send
     opened = I.list_inquiries(conn_id=conn, subject="refund-rate")
     assert len(opened) == 1 and opened[0].opened_by == f"monitor:{monitor.id}" and opened[0].runs == []
-    assert opened[0].question.startswith("Why did refund_rate")
+    assert opened[0].question == "Why is refund_rate at 12.4 vs threshold 10?"
     dispatch_alert(alert, monitor)                                      # the same signal again wakes, never doubles
     assert len(I.list_inquiries(conn_id=conn, subject="refund-rate")) == 1
 

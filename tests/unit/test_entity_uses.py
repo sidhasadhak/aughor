@@ -64,8 +64,8 @@ def test_it_composes_the_two_doors_with_the_entity_and_counts_its_tables_by_mont
 
 def test_reads_by_month_keeps_every_month_of_the_window_and_only_this_connection():
     AuditLogger.log(connection_id="window-t", sql="SELECT * FROM orders")
-    months = AuditLogger.reads_by_month("window-t", ["orders"], months=3, now=1_800_000_000)   # 2027-01-15 UTC
-    assert [m["month"] for m in months] == ["2026-11", "2026-12", "2027-01"]
+    months = AuditLogger.reads_by_month("window-t", ["orders"], months=3, now=4_102_444_800)   # 2100-01-01 UTC, never today
+    assert [m["month"] for m in months] == ["2099-11", "2099-12", "2100-01"]
     assert sum(m["reads"] for m in months) == 0                       # the row was stamped today, outside that window
     assert AuditLogger.reads_by_month("window-t", [], months=2) == [
         {"month": m["month"], "reads": 0} for m in AuditLogger.reads_by_month("window-t", ["orders"], months=2)]

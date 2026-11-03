@@ -12,6 +12,7 @@
  */
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { FixItForm } from "@/components/FixItForm";
 import { recordVerdict, sendChatFeedback } from "@/lib/api";
 import type { ChatTurn } from "@/lib/chatTurn";
@@ -60,8 +61,8 @@ export function AnswerFeedback({ turn, connectionId }: { turn: ChatTurn; connect
   const said = fixItDone
     ? "Correction recorded — future answers cite it"
     : verdict === "helpful"
-      ? (accepted ? "Thanks — recorded as accepted 👍" : "Thanks — noted 👍")
-      : "Noted 👎";
+      ? (accepted ? "Thanks — recorded as accepted" : "Thanks — noted")
+      : "Noted";
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -72,12 +73,12 @@ export function AnswerFeedback({ turn, connectionId }: { turn: ChatTurn; connect
           <Button variant="ghost" size="icon-xs" aria-label="Helpful"
                   title="Helpful — records this answer as accepted"
                   onClick={() => rate("helpful")}>
-            👍
+            <Icon name="thumbup" size={13} />
           </Button>
           <Button variant="ghost" size="icon-xs" aria-label="Not helpful"
                   title="Not helpful — say what was wrong"
                   onClick={() => rate("unhelpful")}>
-            👎
+            <Icon name="thumbdown" size={13} />
           </Button>
         </div>
       )}

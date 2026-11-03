@@ -23,6 +23,8 @@ describe("byWho", () => {
     expect(whoLabel("user:ana", "amit")).toBe("ana");
     expect(whoLabel("user:amit")).toBe("amit");
     expect(whoLabel("agent:amit", "amit")).toBe("the amit agent");
+    expect(whoLabel("monitor:a1c46186-81fb-4d03-ab24-b2acb2f2fdb5")).toBe("a monitor");
+    expect(whoLabel("process:order_fulfilment")).toBe("the order fulfilment process");
     expect(whoLabel("system", "system")).toBe("the platform");
   });
 });

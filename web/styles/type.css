@@ -81,6 +81,7 @@
 .aug-fs-h2      { font-size: 15px; }  /* subheadings */
 .aug-fs-h1      { font-size: 18px; }  /* headings, the verdict sentence */
 .aug-fs-display { font-size: 22px; }  /* hero stat numbers — tabular figures, never words */
+.aug-fs-lead    { font-size: 40px; line-height: 1.1; letter-spacing: -.02em; }  /* the one figure a screen leads with (Home) */
 .aug-fs-glyph   { font-size: 28px; }  /* an ICON rendered as text in an empty state —
                                          the only step above --display. */
 

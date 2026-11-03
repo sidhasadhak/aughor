@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { CARD, Chip, Dot, Empty, Figure, Figures, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE }
+import { CARD, Chip, Dot, Empty, Figure, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE, Tally }
   from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -221,7 +221,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
 
   return (
     <Page testId="runs">
-      <Figures testId="runs-figures">
+      <Tally testId="runs-figures">
         <Figure testId="runs-fig-runs" label="Runs" value={formatCount(all.length)}
           sub={<>
             <span>since {dayWords(since)}{where}</span>
@@ -233,7 +233,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
           tone={unfinished ? "red" : undefined} sub="failed, timed out or stopped" />
         <Figure testId="runs-fig-running" label="Running" value={formatCount(running)}
           sub={paused ? `${formatCount(paused)} paused, waiting` : running ? "in flight now" : "nothing in flight"} />
-      </Figures>
+      </Tally>
 
       {liveLine}
 

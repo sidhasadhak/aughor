@@ -99,6 +99,31 @@ export interface RowLabel {
 }
 
 /**
+ * A question the platform wrote from a signal, as a person would say it. Display only, as `runTitle` is: what the Record
+ * holds stands, `full` keeps it for the hover, and a row opened before 2026-11-03 holds the old wording, where a monitor's
+ * failed query was asked as "Why did X X: its query could not run … 404 …?".
+ */
+function signalTitle(full: string): string | null {
+  const t = full.replace(/\s+/g, " ").trim();
+  const failed = /^Why did (.+?): its query could not run\b/.exec(t) ?? /^Why can't (.+) be checked\?$/.exec(t);
+  if (failed) {
+    // the old wording says the metric's name and then the monitor's, usually the same words twice
+    const words = failed[1].split(" ");
+    const half = words.slice(0, words.length / 2).join(" ");
+    return `${words.length % 2 === 0 && `${half} ${half}` === failed[1] ? half : failed[1]} can't be checked`;
+  }
+  const crossed = /^Why (?:did|is) (.+?) (?:at )?(-?[\d.]+(?:e[+-]?\d+)?) vs threshold (-?[\d.]+(?:e[+-]?\d+)?)(?: \(previous [^)]*\))?\?$/i.exec(t);
+  if (crossed) {
+    return `${sentenceCase(readable(crossed[1]))} at ${formatMetricValue(Number(crossed[2]))}, threshold ${formatMetricValue(Number(crossed[3]))}`;
+  }
+  const stage = /^Why did (the .+? stage of .+?) slow(?:ed)?: (.+)\?$/.exec(t);
+  if (stage) return `${sentenceCase(readable(stage[1]))} slowed: ${stage[2]}`;
+  const promise = /^Why (?:did|is) (the .+? promise of .+?) (?:is )?breaking more: (.+)\?$/.exec(t);
+  if (promise) return `${sentenceCase(readable(promise[1]))} is breaking more: ${promise[2]}`;
+  return null;
+}
+
+/**
  * An inquiry's question as a row label. A scheduled run's question opens with the grounding code wrote for the model
  * (`aughor/automations/temporal.py`); the person's own question follows it. The Record keeps the first 500 characters
  * of a question, which a grounding block alone outruns — so the person's words are not in an inquiry opened before
@@ -115,7 +140,7 @@ export function inquiryLabel(question: string, scheduled = false): RowLabel {
     const cadence = /This is a scheduled (\w+) run/.exec(full)?.[1];
     return { text: cadence ? `Scheduled ${cadence} run` : "Scheduled run", full, scheduled: true };
   }
-  return { text: readable(firstSentence(full)), full, scheduled };
+  return { text: signalTitle(full) ?? readable(firstSentence(full)), full, scheduled };
 }
 
 /** "data that would settle the open items" → "data"; a reason short enough to read stays whole. */

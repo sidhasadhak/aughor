@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { AnswerRecheck } from "@/components/AnswerRecheck";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { renderEmphasis } from "@/components/brief/BriefProse";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { StatusChip } from "@/components/brief/StatusChip";
@@ -226,7 +227,7 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)" }}>Why this number</span>
               {rec && <StatusChip hue="info" strength="soft">{MODE_LABEL[rec.mode] ?? rec.mode}</StatusChip>}
-              {rec?.signature && <StatusChip hue="positive" strength="soft" icon="🔏">server-signed</StatusChip>}
+              {rec?.signature && <StatusChip hue="positive" strength="soft" icon={<Icon name="lock" size={11} />}>server-signed</StatusChip>}
             </div>
             {rec?.question && <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 4, lineHeight: 1.5 }}>{rec.question}</div>}
           </div>

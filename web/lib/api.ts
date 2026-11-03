@@ -8442,9 +8442,9 @@ export interface MetricTrend {
 }
 
 export async function readMetricTrend(
-  connectionId: string, metric: string, range: BriefingRange, schema?: string, workspaceId?: string,
+  connectionId: string, metric: string, range: BriefingRange, schema?: string, workspaceId?: string, count?: number,
 ): Promise<MetricTrend> {
-  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/metric/${encodeURIComponent(metric)}?${rangeQuery(range, schema, workspaceId)}`;
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/metric/${encodeURIComponent(metric)}?${rangeQuery(range, schema, workspaceId)}${count ? `&count=${count}` : ""}`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

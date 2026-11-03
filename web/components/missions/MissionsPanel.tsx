@@ -26,7 +26,7 @@ import {
   type ListColumn,
 } from "@/components/record/kit";
 import {
-  CARD, Chip, Dot, Empty, Figure, Figures, NeedsRow, NeedsYou, Page as ClarityPage, ROW,
+  CARD, Chip, Dot, Empty, Figure, Tally, NeedsRow, NeedsYou, Page as ClarityPage, ROW,
 } from "@/components/clarity/kit";
 import { countBy, dateWords, distanceWords } from "@/components/record/words";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
@@ -135,7 +135,7 @@ function MissionOverview({ all, onOpen, form, write }: {
 
   return (
     <>
-      <Figures testId="mission-figures">
+      <Tally testId="mission-figures">
         <Figure label="Missions" value={formatCount(all.length)} testId="fig-mis-all"
           sub={countBy(all, m => m.state).map(([k, n]) => `${n} ${k}`).join(" · ")} />
         <Figure label="Running" value={formatCount(running.length)} testId="fig-mis-running"
@@ -144,7 +144,7 @@ function MissionOverview({ all, onOpen, form, write }: {
           testId="fig-mis-interruptions" sub={running.length ? `across ${countNoun(running.length, "running mission")}` : "none is running"} />
         <Figure label="Next report" value={nextOf ? dateWords(nextOf.review.next_report_on) : "—"} testId="fig-mis-next"
           sub={nextOf ? `${nextOf.name} · ${distanceWords(nextOf.review.next_report_on)}` : "none is due to report"} />
-      </Figures>
+      </Tally>
 
       <NeedsYou testId="mission-needs" empty="Nothing needs you · every live mission is owned and running">
         {[

@@ -28,8 +28,7 @@ describe("an inquiry's question as a row label", () => {
   });
 
   it("keeps an ordinary question whole, its snake_case read as words", () => {
-    expect(inquiryLabel("Why did the delivered stage of order_fulfilment slowed: p90 4.0 → 5.0 days?").text)
-      .toBe("Why did the delivered stage of order fulfilment slowed: p90 4.0 → 5.0 days?");
+    expect(inquiryLabel("What slowed the order_fulfilment stage?").text).toBe("What slowed the order fulfilment stage?");
   });
 });
 
@@ -105,5 +104,21 @@ describe("counting", () => {
     expect(countBy(rows, r => r)).toEqual([["finding", 3], ["said", 2], ["prediction", 1]]);
     expect(modeOf(rows, r => r)).toBe("finding");
     expect(breakdown(countBy(rows, r => r), (k, n) => (n === 1 ? k : `${k}s`))).toBe("3 findings · 2 saids · 1 more");
+  });
+});
+
+describe("a question the platform wrote from a signal", () => {
+  it("reads as what happened, and keeps what the Record holds for the hover", () => {
+    const failed = "Why did Average Order Value (AOV) Average Order Value (AOV): its query could not run, so it is not being checked — 404 Not found: Table x?";
+    expect(inquiryLabel(failed)).toMatchObject({ text: "Average Order Value (AOV) can't be checked", full: failed });
+    expect(inquiryLabel("Why can't Units Sold be checked?").text).toBe("Units Sold can't be checked");
+    expect(inquiryLabel("Why did gross_merchandise_value_item_price 145 vs threshold 800000?").text)
+      .toBe("Gross merchandise value item price at 145, threshold 800,000");
+    expect(inquiryLabel("Why did the delivered stage of order_fulfilment slowed: p90 4.0 → 5.0 days?").text)
+      .toBe("The delivered stage of order fulfilment slowed: p90 4.0 → 5.0 days");
+  });
+
+  it("leaves a person's question alone", () => {
+    expect(inquiryLabel("Why did revenue fall?").text).toBe("Why did revenue fall?");
   });
 });

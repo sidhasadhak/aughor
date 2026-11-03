@@ -144,6 +144,11 @@ remaining 40 are links in the accent colour, names, tree rows, tabs and pills. C
 **Decided, same day** (the user, asked directly): uppercase section labels stay, so CLARITY §3 does not move · "Needs you" takes
 an amber edge in place of the fill · all six ledgers lose the figure row · the buttons go live, then the fixes follow.
 
+**Built, same day, on `claude/visible-buttons`:** the craft bugs, the machine text, the amber edge, the six ledgers (Record's five
+tabs among them), and Home's lead chart. Home's figure now says what the day reads today and what it was reported as.
+Left alone on purpose: the Data Canvas list (the user kept it as it was, 2026-10-12), one type scale (making the small sizes
+follow the scaling knob would shrink text that is already 12px or less), model prose such as "Totalled 610,184.21 USD".
+
 ## 6. The work, if taken
 
 | Step | What | Size |

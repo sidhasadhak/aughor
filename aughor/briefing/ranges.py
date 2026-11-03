@@ -1090,8 +1090,9 @@ def read_value(row: Optional[dict]) -> Optional[float]:
 
 def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: Any = None,
                  workspace_id: Optional[str] = None, runner: Optional[Callable[[], Any]] = None,
-                 schema: Optional[str] = None) -> dict:
-    """One approved metric read for the range and the ranges before it, with how it is defined and
+                 schema: Optional[str] = None, count: Optional[int] = None) -> dict:
+    """One approved metric read for the range and the ranges before it (``count`` of them, when a caller
+    wants more than a drawer shows), with how it is defined and
     dated — what a reader opens a figure for. One warehouse statement and no model call. A cohort's
     earlier ranges are read at the same age as the range, as its comparison is; a flow's are read as
     their rows stand today, and each range still settling says so. A metric that cannot be read says
@@ -1119,7 +1120,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     yearly = spec.period == "year" or spec.preset == "year_to_date"
     age = spec.as_of - spec.end
     windows = [Window(f"r{i}", s, e, as_of=e + age)
-               for i, (s, e) in enumerate(earlier_ranges(spec, TREND_YEARS if yearly else TREND_RANGES))]
+               for i, (s, e) in enumerate(earlier_ranges(spec, count or (TREND_YEARS if yearly else TREND_RANGES)))]
     try:
         with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
             # the same first step a Briefing's measurement takes: a metric's dates are set by rule

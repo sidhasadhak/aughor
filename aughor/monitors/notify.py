@@ -112,7 +112,9 @@ def _open_inquiry_for_alert(alert: "MonitorAlert", monitor: "Monitor") -> None:
     try:
         from aughor.record.inquiry import mission_for, open_inquiry, subject_of
         metric = alert.metric_name or getattr(monitor, "metric_name", None) or getattr(monitor, "name", "") or "the metric"
-        question = f"Why did {metric} {_threshold_phrase(alert)}?".replace("??", "?")
+        # A check that could not run measured nothing, so there is no move to ask about; the error stays on the alert.
+        question = (f"Why can't {metric} be checked?" if alert.current_value is None
+                    else f"Why is {metric} at {_threshold_phrase(alert)}?")
         conn = alert.conn_id or getattr(monitor, "conn_id", "") or ""
         open_inquiry(question=question[:500], connection_id=conn, opened_by=f"monitor:{alert.monitor_id}",
                      subject=subject_of("", metric), mission=mission_for(conn, metric))

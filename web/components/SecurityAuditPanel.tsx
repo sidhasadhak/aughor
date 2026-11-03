@@ -34,7 +34,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import {
-  CARD, Chip, Dot, Figure, Figures, HBars, Label, MUTED, NeedsRow, NeedsYou, ONE_LINE, Page, ROW,
+  CARD, Chip, Dot, Figure, Tally, HBars, Label, MUTED, NeedsRow, NeedsYou, ONE_LINE, Page, ROW,
 } from "@/components/clarity/kit";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -497,7 +497,7 @@ function QueriesLens({ connId, connections, reloadKey, onLoading }: {
 
   return (
     <Page testId="audit-queries">
-      <Figures testId="audit-figures">
+      <Tally testId="audit-figures">
         <Figure label="Queries checked" value={compactNumber(stats.total)} title={`${formatCount(stats.total)} statements checked and logged`}
           sub={`${compactNumber(stats.errors)} errors · avg ${ms(stats.avg_duration_ms)}`} testId="fig-checked" />
         <Figure label="Blocked" value={compactNumber(stats.blocked)} tone={recentBlocked.length ? "red" : undefined}
@@ -507,7 +507,7 @@ function QueriesLens({ connId, connections, reloadKey, onLoading }: {
             + ` and ${formatCount(split.own)} of those were the platform's own reads. A flag is written before a statement runs; the`
             + " statement is logged again when it runs." : undefined} />
         <Figure label="Values masked" value={compactNumber(stats.pii_redacted)} sub="sensitive values hidden in results" testId="fig-masked" />
-      </Figures>
+      </Tally>
 
       <NeedsYou testId="audit-needs" empty={flagsRead
         ? "Nothing needs you · no recent flag from a person or an agent, nothing blocked this week"
@@ -528,29 +528,6 @@ function QueriesLens({ connId, connections, reloadKey, onLoading }: {
           ),
         ]}
       </NeedsYou>
-
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <section aria-label="Who ran them" data-testid="audit-callers" style={{ ...CARD, flex: "1.6 1 420px" }}>
-          <Label right={records.length ? <span>{windowSpan}</span> : null}>
-            Who ran them
-          </Label>
-          {callers.length === 0 ? <div className="aug-fs-sm" style={MUTED}>Nothing in the log yet.</div> : (
-            <HBars bars={callers.map(c => {
-              const parts = [
-                c.flagged ? (c.flaggedOwn === c.flagged ? `${formatCount(c.flagged)} flagged, its own reads` : `${formatCount(c.flagged)} flagged`) : "",
-                c.blocked ? `${formatCount(c.blocked)} blocked` : "",
-                c.withheld ? `${formatCount(c.withheld)} withheld` : "",
-                c.failed ? plural(c.failed, "error") : "",
-              ].filter(Boolean);
-              return {
-                key: c.name, name: c.name, meta: parts.join(" · ") || undefined, value: c.total, shown: compactNumber(c.total),
-                tip: `${c.name}: ${plural(c.total, "check")}${parts.length ? ` — ${parts.join(", ")}` : ", all passed"}`,
-              };
-            })} />
-          )}
-        </section>
-        {connId && <LimitsCard key={connId} connId={connId} connName={connectionLabel(connId, connections)} />}
-      </div>
 
       <section ref={listRef} aria-label="Query checks" data-testid="audit-checks" style={CARD}>
         <Label right={<>
@@ -591,6 +568,29 @@ function QueriesLens({ connId, connections, reloadKey, onLoading }: {
           </div>
         )}
       </section>
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <section aria-label="Who ran them" data-testid="audit-callers" style={{ ...CARD, flex: "1.6 1 420px" }}>
+          <Label right={records.length ? <span>{windowSpan}</span> : null}>
+            Who ran them
+          </Label>
+          {callers.length === 0 ? <div className="aug-fs-sm" style={MUTED}>Nothing in the log yet.</div> : (
+            <HBars bars={callers.map(c => {
+              const parts = [
+                c.flagged ? (c.flaggedOwn === c.flagged ? `${formatCount(c.flagged)} flagged, its own reads` : `${formatCount(c.flagged)} flagged`) : "",
+                c.blocked ? `${formatCount(c.blocked)} blocked` : "",
+                c.withheld ? `${formatCount(c.withheld)} withheld` : "",
+                c.failed ? plural(c.failed, "error") : "",
+              ].filter(Boolean);
+              return {
+                key: c.name, name: c.name, meta: parts.join(" · ") || undefined, value: c.total, shown: compactNumber(c.total),
+                tip: `${c.name}: ${plural(c.total, "check")}${parts.length ? ` — ${parts.join(", ")}` : ", all passed"}`,
+              };
+            })} />
+          )}
+        </section>
+        {connId && <LimitsCard key={connId} connId={connId} connName={connectionLabel(connId, connections)} />}
+      </div>
     </Page>
   );
 }

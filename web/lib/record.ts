@@ -871,7 +871,9 @@ export function whoLabel(who: string | null | undefined, me?: string | null): st
       : byWho(w, me);
   }
   if (kind === "user" || kind === "person") return byWho(name, me);
-  if (kind === "monitor") return `the ${name} monitor`;
+  // A monitor's id is a uuid, and the row beside it already names the metric.
+  if (kind === "monitor") return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(name) ? "a monitor" : `the ${name} monitor`;
+  if (kind === "process") return `the ${name.replace(/_/g, " ")} process`;
   if (kind === "agent") return `the ${name} agent`;
   if (kind === "claim") return "a restated claim";
   return `${kind} ${name}`;

@@ -107,7 +107,7 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
               {tiles.map(t => (
                 <Button key={t.start === "chat" ? "chat" : t.start.source} variant="plain"
                   onClick={() => (t.start === "chat" ? setChatting(true) : setStart(t.start))}
-                  style={{ display: "flex", alignItems: "flex-start", gap: 10, height: "auto", padding: "12px 14px",
+                  style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-start", gap: 10, height: "auto", padding: "12px 14px",
                     textAlign: "left", whiteSpace: "normal", border: "1px solid var(--card-edge)",
                     background: "var(--bg-2)", borderRadius: "var(--r3)", fontWeight: 400 }}>
                   <span style={{ color: "var(--blue4)", paddingTop: 2 }}><Icon name={t.icon} size={16} /></span>

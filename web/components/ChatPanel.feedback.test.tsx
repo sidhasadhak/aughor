@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const pairs = () => screen.queryAllByLabelText("Helpful").length;
-const glyphs = (c: HTMLElement) => (c.textContent ?? "").split("👍").length - 1;
+const glyphs = (c: HTMLElement) => c.querySelectorAll('button[aria-label="Helpful"]').length;
 
 describe("a finished quick answer", () => {
   it("asks for feedback once — and still once with its details open", async () => {

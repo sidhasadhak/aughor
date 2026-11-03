@@ -20,6 +20,7 @@ import { withUniqueKeys } from "@/lib/listKeys";
 import type {
   ObjectTypeDetail, ObjectTypeUses, ProcessDetail, ProcessPromise, ProcessesAndRules, ReadsWindow,
 } from "@/lib/objectTypes";
+import { NEEDS_EDGE } from "@/components/clarity/kit";
 
 const muted: React.CSSProperties = { color: "var(--t3)" };
 const tabular: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
@@ -104,7 +105,7 @@ export function NeedsRow({ title, detail, children, testid }: {
   return (
     <div data-testid={testid ?? "entity-needs"}
       style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "8px 10px", borderRadius: "var(--r2)",
-               background: "var(--amb1)" }}>
+               background: "var(--bg-3)", boxShadow: NEEDS_EDGE }}>
       <span style={{ flex: "1 1 160px", minWidth: 0 }}>
         <span className="aug-fs-sm" style={{ display: "block", color: "var(--t1)" }}>{title}</span>
         {detail && <span className="aug-fs-xs" style={{ display: "block", color: "var(--t2)" }}>{detail}</span>}

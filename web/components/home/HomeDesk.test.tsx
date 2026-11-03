@@ -78,7 +78,7 @@ describe("HomeDesk", () => {
     const lead = screen.getByTestId("home-lead");
     expect(lead).toHaveTextContent("Revenue · Fri 2 Oct");
     expect(lead).toHaveTextContent("+$209.55 · +1.1%");
-    expect(lead).toHaveTextContent("within normal range");
+    expect(lead).toHaveTextContent("Within normal range");
     // a conclusion below high confidence says so beside the figure, with why on hover
     expect(screen.getByText("medium confidence")).toHaveAttribute("title", "a refutation challenged it");
   });

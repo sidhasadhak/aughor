@@ -48,7 +48,7 @@ glow and lift, and two component layers for one class is one too many.
 ## 2. Hard constraints
 
 **Type.** Root 14px, the reading size; 13 is chrome. Seven steps and no others — `11 · 12 · 13 · 14 · 15 · 18 · 22` (`aug-fs-xs … aug-fs-display`);
-28px exists in exactly one place, an icon in an empty state (`aug-fs-glyph`, `.aug-empty-glyph`).
+28px exists in exactly one place, an icon in an empty state (`aug-fs-glyph`, `.aug-empty-glyph`), and 40px in one, the figure a screen leads with (`aug-fs-lead`, 2026-11-03).
 11 is the floor. Inter for UI text; *(stale: figures are tabular Inter, as §10 and `CLARITY.md` §4 say — mono for ids and code only)* **JetBrains Mono for every figure, id, timestamp, metric,
 table or column name, and code**, always tabular (`.aug-num`). Line heights 1.45 at 11/18,
 1.55 at 12, 1.7 at 13 (1.8 in prose, `.aug-text-prose`), 1.5 at 15, 1.0 at 22.

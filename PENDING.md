@@ -1064,4 +1064,6 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     Measured on 23 live screens: not slop, but flat. 15 open on the same equal figure cards, none has type above 22px, 9 lead
     with an amber block. Home's lead figure is six times what that day now reads. The user's calls, 2026-11-03: buttons look
     like buttons everywhere · uppercase labels stay · Needs you takes an amber edge · six ledgers lose the figure row.
+    Built on `claude/visible-buttons`, the same day. Home's 60-day line reads through a new `count` on the trend door, so it
+    needs an API restart to be live.
 

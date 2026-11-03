@@ -14,7 +14,7 @@ import { SelectField } from "@/components/ui/select";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { Switch } from "@/components/ui/switch";
 import {
-  CARD, Chip, Dot, Empty, Figure, Figures, Label, MUTED, NeedsRow, NeedsYou, NUM, ONE_LINE, Page, ROW, RULE, type Tone,
+  CARD, Chip, Dot, Empty, Figure, Tally, Label, MUTED, NeedsRow, NeedsYou, NUM, ONE_LINE, Page, ROW, RULE, type Tone,
 } from "@/components/clarity/kit";
 import { getApiBase } from "@/lib/config";
 import { formatCount, formatDateTime, relTime } from "@/lib/format";
@@ -282,7 +282,7 @@ export function ActionHubPanel() {
       {!loaded && <Loading what="notifications" />}
       {loaded && (
         <>
-          <Figures testId="notification-figures">
+          <Tally testId="notification-figures">
             <Figure label="Triggers" value={readFailed.triggers ? "—" : formatCount(triggers.length)} testId="fig-triggers"
               sub={readFailed.triggers ? "could not be read" : triggers.length === 0 ? "none set up"
                 : on === triggers.length ? "all on" : `${on} on · ${triggers.length - on} off`} />
@@ -291,7 +291,7 @@ export function ActionHubPanel() {
                 : `of the latest ${plural(logs.length, "send")}${skipped ? ` · ${formatCount(skipped)} skipped` : ""}`} />
             <Figure label="Failed" value={readFailed.logs ? "—" : formatCount(failedLogs.length)} testId="fig-failed"
               tone={failedLive.length ? "red" : undefined} sub={readFailed.logs ? "could not be read" : failedSub} />
-          </Figures>
+          </Tally>
 
           <NeedsYou testId="notification-needs"
             empty={triggers.length === 0 ? "Nothing needs you" : "Nothing needs you · no live trigger is failing"}>

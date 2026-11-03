@@ -262,6 +262,17 @@ export function normalizeNumberPrecision(text: string | null | undefined): strin
     .replace(UNGROUPED_RE, (_m, int: string, frac: string | undefined) => group(int) + (frac ?? ""));
 }
 
+const RATIO_WORD = /\b(margin|rate|share|ratio|conversion)\b/i;
+
+/**
+ * Figures a model wrote into a sentence, as a reader reads them: grouped (`231,521.3`), and a long fraction in a sentence
+ * about a margin, rate, share or ratio as the percent it is (`0.599699` → `60.0%`). Display only: the stored text stands.
+ */
+export function readableFigures(text: string | null | undefined): string {
+  return normalizeNumberPrecision(text).split(/(?<=[.!?])\s+/).map(sentence => (RATIO_WORD.test(sentence)
+    ? sentence.replace(/\b0\.\d{3,}\b/g, m => `${(Number(m) * 100).toFixed(1)}%`) : sentence)).join(" ");
+}
+
 /** "1 entity" / "3 entities" — a count with its correctly-inflected noun (PX-1:
  *  "1 entities" is machine text; a screen never shows it). One home, like the rest
  *  of this file. */

@@ -1094,7 +1094,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               }}
               title={u.error || (u.table ? `Imported as ${u.table}` : "Added as context")}
             >
-              <span aria-hidden>{u.error ? "⚠" : u.table ? "▦" : "📄"}</span>
+              <span aria-hidden style={{ display: "inline-flex" }}>{u.error ? "⚠" : <Icon name={u.table ? "table" : "brief"} size={12} />}</span>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {u.error
                   ? `${u.filename} — ${u.error}`

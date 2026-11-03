@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBase } from "@/lib/config";
 import { relTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 
 export interface ChatSessionSummary {
@@ -221,7 +222,7 @@ export function ThreadsRail({
                     aria-label="Delete this conversation"
                     onClick={() => setConfirmDelete(t.session_id)}
                   >
-                    <span aria-hidden className="aug-fs-xs" style={{ color: "var(--t3)" }}>🗑</span>
+                    <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="trash" size={12} /></span>
                   </Button>
                 </div>
               )}

@@ -43,6 +43,7 @@ import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
+import { CARD, NEEDS_EDGE } from "@/components/clarity/kit";
 
 const card: CSSProperties = {
   background: "var(--bg-2)", border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", padding: "12px 14px", minWidth: 0,
@@ -198,8 +199,8 @@ export function SpendPanel() {
 
         {(unpriced.length > 0 || noCap) && (
           <section aria-label="Needs you" data-testid="spend-needs"
-            style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 14px",
-              borderRadius: "var(--r3)", background: "var(--amb1)" }}>
+            style={{ ...CARD, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 14px",
+              boxShadow: NEEDS_EDGE }}>
             <span style={{ flex: "1 1 320px", minWidth: 0 }}>
               {totals && unpriced.length > 0 ? (
                 <>

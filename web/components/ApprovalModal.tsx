@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { onApprovalRequired, approveAction, type ApprovalInfo } from "@/lib/approval";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 
 // Friendly labels for the high-risk actions the backend gates.
 const ACTION_LABELS: Record<string, string> = {
@@ -73,8 +74,8 @@ export function ApprovalModal() {
           <div style={{
             width: 34, height: 34, borderRadius: "var(--r2)", background: "var(--amb1)",
             border: "1px solid var(--amb2)", display: "flex", alignItems: "center",
-            justifyContent: "center", flexShrink: 0, fontSize: 15,
-          }}>🔒</div>
+            justifyContent: "center", flexShrink: 0, color: "var(--amb4)",
+          }}><Icon name="lock" size={16} /></div>
           <div>
             <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Approval required</DialogTitle>
             <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em" }}>

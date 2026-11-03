@@ -38,7 +38,8 @@ element is, it goes.
 |---|---|
 | **Lead with the figure.** `$19,087.76` · `▲ $209.55 · +1.1%` · `within normal range` | Open with a sentence: *"TheLook generated $19,087.76 in revenue on October 2, 2026, representing a 1.1% increase…"* |
 | **Say a thing once; fold repeats into a count.** "Query checks · 477" as one row; "Mon 12 Oct · 11 forecasts" | List 500 identical *"query.execution · query safe"* rows, or 33 *"A forecast settles: expected: …"* lines |
-| **Put what needs a person first, together, under "Needs you"**, in amber, with its buttons on the row | Scatter questions and decisions among status cards |
+| **Put what needs a person first, together, under "Needs you"**, with an amber edge and label, its buttons on the row. With nothing waiting it is one muted line | Scatter questions and decisions among status cards; fill the block with amber, so that a warning is the brightest thing on the page (the user, 2026-11-03) |
+| **No machine text reaches a reader.** A raw error, a uuid, a prompt's preamble, an ISO day or `0.599699` is read into words where it is shown; what is stored stands, on the hover or behind *Details* | *"Why did AOV AOV: its query could not run… 404 Not found: Table project-f9f4…"* as a question |
 | **One-line subtitles.** At most two sentences of 20 words anywhere always visible | A paragraph under any title |
 | **Humanise numbers.** `$231.5K`, `60.0%`, `4.48M`, `1,904`; tabular numerals | `231521.3`, `0.599699`, `4476728` |
 | **Facts as chips, not prose.** `Daily` · `Sends to Slack` · `1 model call per draft` · `no price` | *"Costs one model call per certified golden per agent per night."* |
@@ -53,6 +54,14 @@ element is, it goes.
 
 **The order of a screen:** figures → *Needs you* → the picture (a chart, a flow) → the list. A reader who stops after
 the first row still leaves with the answer.
+
+**A ledger leads with its rows** (the user, 2026-10-13 and 2026-11-03): Record, Inbox, Agent runs, Evals, Security and
+Notifications say their figures as one quiet line (`Tally` in `components/clarity/kit.tsx`), then *Needs you*, then the
+list, with any picture after it. The row of figure cards is for a screen where a number is the point.
+
+**A screen that leads with a figure gives it room:** one figure at `aug-fs-lead` (40px), with the picture that proves it
+beside it, and no second figure that size. Before it ships, swap the product's name for another's: if the screen would
+still fit, it says nothing only this product could say.
 
 | Do | Don't |
 |---|---|

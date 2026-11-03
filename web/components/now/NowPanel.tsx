@@ -22,12 +22,14 @@ import { owes, sourceName, summaryLine, whenText } from "@/lib/departures";
 import { countNoun, endedDay, formatCount, normalizeNumberPrecision, relTime } from "@/lib/format";
 import { dayWords } from "@/lib/home";
 import { connectionLabel, destinationLabel, needsYouTitle } from "@/lib/names";
+import { runDisplayTitle } from "@/lib/runTitle";
 import {
   WAITING_CHANGED_EVENT, getAttentionBudget, getAttentionHeld, getCorrections, getSetAside, listDecisions,
   listInquiries, listMissions, restoreItem, setAttentionSlots, setItemAside, whoLabel,
   type AttentionBudget, type CorrectionEntry, type Corrections, type Decision, type HeldItem, type Inquiry,
   type Mission, type SetAside, type SetAsideKind,
 } from "@/lib/record";
+import { inquiryLabel } from "@/components/record/words";
 import { ActorField, Gate, day, dayDistance, useActor, useLoad, type Actor, type Load } from "@/components/record/kit";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { InspectorHost, type Inspect, type InspectLayer } from "@/components/record/Inspector";
@@ -222,7 +224,7 @@ export function NowPanel({ connections, contextReady, doors }: {
                 <div key={j.id} data-testid="now-running-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
                   gap: 12, alignItems: "center", padding: "7px 0", ...(i ? RULE : {}) }}>
                   <div style={{ minWidth: 0 }}>
-                    <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{j.title || j.kind}</div>
+                    <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{j.title ? runDisplayTitle(j.title).title : j.kind}</div>
                     <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
                       {j.agent?.agent || j.kind} · {connectionLabel(j.conn_id ?? "", connections)}
                       {j.started_at || j.created_at ? ` · started ${relTime(j.started_at || j.created_at || "")} ago` : ""}
@@ -306,7 +308,7 @@ interface WaitingRow {
 function rowsOf(w: Waiting): WaitingRow[] {
   return [
     ...w.decisions.map(d => ({ kind: "decision" as const, ref: d.key, id: d.id, title: `What became of “${d.chosen}”?` })),
-    ...w.inquiries.map(q => ({ kind: "inquiry" as const, ref: q.key, id: q.id, title: q.question })),
+    ...w.inquiries.map(q => ({ kind: "inquiry" as const, ref: q.key, id: q.id, title: inquiryLabel(q.question, q.extra?.scheduled === true).text })),
     ...w.departures.map(d => ({ kind: "departure" as const, ref: d.id, id: d.id, title: summaryLine(d) })),
     ...w.needs.rows.map(r => ({ kind: "approval" as const, ref: `${r.source}:${r.id}`, id: `${r.source}:${r.id}`, title: needsYouTitle(r.title).display })),
   ];
@@ -479,7 +481,7 @@ function WaitingList({ waiting, aside, returned, connections, doors, inspect, on
       {waiting.inquiries.filter(q => !isHidden("inquiry", q.key)).map(q => {
         const x = notNow("inquiry", q.key);
         return (
-          <WaitRow key={`inquiry:${q.id}`} first={first()} title={q.question} onTitle={() => inspect("inquiries", q.id)}
+          <WaitRow key={`inquiry:${q.id}`} first={first()} title={inquiryLabel(q.question, q.extra?.scheduled === true).text} onTitle={() => inspect("inquiries", q.id)}
             meta={<><span>inquiry · check date {day(q.next_check)}{q.waiting_for ? ` · was waiting for ${q.waiting_for}` : ""}</span>{x.note}</>}
             buttons={<>{x.button}<Button size="xs" variant="secondary" onClick={() => doors.onOpenInquiry(q.id)}>Open the inquiry</Button></>}
             below={x.form} />
