@@ -91,6 +91,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
 from aughor.db.registry import list_connections, get_connection_settings
+from aughor.db.errors import ConnectionUnreachable
 from aughor.db.registry import ConnectionKeyMismatch
 from aughor.llm.provider import NoModelConfigured
 from aughor.ontology.overrides import OverrideWriteFailed
@@ -534,6 +535,19 @@ async def _connection_key_mismatch_handler(request: "Request", exc: ConnectionKe
     return JSONResponse(status_code=503, content={
         "error": "connection_key_mismatch", "connection_id": exc.conn_id,
         "detail": str(exc),
+    })
+
+
+# ── a database that is not running is the operator's error too ──────────────────
+# 503 for the same reason: the request is fine and the thing it needs is not up. The message says where it was looked
+# for and what to do, which is all a person needs and all the catch-all would have hidden.
+@app.exception_handler(ConnectionUnreachable)
+async def _connection_unreachable_handler(request: "Request", exc: ConnectionUnreachable):
+    from fastapi.responses import JSONResponse
+    logger.warning("Connection %s is not answering at %s (%s %s)", exc.conn_id, exc.where or "its address",
+                   request.method, request.url.path)
+    return JSONResponse(status_code=503, content={
+        "error": "connection_unreachable", "connection_id": exc.conn_id, "detail": str(exc),
     })
 
 

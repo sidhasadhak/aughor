@@ -33,6 +33,7 @@ _DRIVER_NAMES = derive_error_names()
 _CONNECTION_NAMES = frozenset({
     "ConnectionError", "ConnectionResetError", "ConnectionRefusedError", "ConnectionAbortedError",         # stdlib
     "BrokenPipeError", "RemoteDisconnected", "ConnectError", "ReadError", "WriteError",                   # http
+    "ConnectionUnreachable",                                                                              # ours
 }) | _DRIVER_NAMES["connection"]
 #: Exception class names that are a timeout on their own.
 _TIMEOUT_NAMES = frozenset({"TimeoutError", "ReadTimeout", "ConnectTimeout", "Timeout", "ReadTimeoutError",
@@ -52,6 +53,32 @@ _CONNECTION_TEXT = re.compile(
     r"connection already closed|failed to get the response|connection timed out|network (?:error|is unreachable)|"
     r"name or service not known|temporary failure in name resolution|server closed the connection|socket (?:closed|error)",
     re.I)
+
+
+#: A database that did not answer at all, as each driver says it. Narrower than the connection kind on purpose: psycopg2
+#: reports a wrong password as the same `OperationalError`, and "start your database" would send a person the wrong way.
+_UNREACHABLE_TEXT = re.compile(
+    r"connection refused|could not connect|can't connect to|could not translate host name|name or service not known|"
+    r"temporary failure in name resolution|network is unreachable|no route to host|timeout expired|connection timed out",
+    re.I)
+
+
+def is_unreachable(exc: BaseException) -> bool:
+    """Whether opening a connection failed because nothing answered, rather than because something refused the login."""
+    return bool(_UNREACHABLE_TEXT.search(str(exc)))
+
+
+class ConnectionUnreachable(Exception):
+    """A registered database did not answer when it was opened: the operator's to start, not an internal fault.
+
+    The same shape as `registry.ConnectionKeyMismatch`, and for the same reason: every read of LuxExperience came back
+    `500 {"error": "internal_error"}` while its Docker container was simply not running (2026-11-03). The message names
+    where it was looked for and carries no secret: host and port only, never the DSN or the driver's text.
+    """
+
+    def __init__(self, conn_id: str = "", where: str = "") -> None:
+        self.conn_id, self.where = conn_id, where
+        super().__init__(f"This connection's database is not answering{f' at {where}' if where else ''}. Start it, then try again.")
 
 
 def classify_error(exc: BaseException) -> str:
