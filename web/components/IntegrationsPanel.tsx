@@ -19,6 +19,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { BrandTile } from "@/components/BrandLogos";
+import { TabStrip } from "@/components/ui/tab-strip";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
@@ -127,6 +129,7 @@ function ConnectMenu({ p, label, busy, onConnect }: {
 }
 
 export function IntegrationsPanel() {
+  const [tab, setTab] = useState<"providers" | "slack" | "mcp">("providers");
   const [providers, setProviders] = useState<IntegrationProvider[]>([]);
   const [redirectUri, setRedirectUri] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -470,8 +473,8 @@ export function IntegrationsPanel() {
       : products.length ? "" : p.blurb;
     return (
       <div key={p.id} data-testid={`integration-card-${p.id}`} style={{ ...(i ? RULE : {}), padding: "9px 2px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
-          <Dot hue={st.hue} title={st.chip} />
+        <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
+          <BrandTile type={p.name} />
           <div style={{ minWidth: 0 }}>
             <div style={{ ...ROW, flexWrap: "nowrap", minWidth: 0 }}>
               <span className="aug-fs-chrome" title={p.blurb} style={{ fontWeight: 600, color: "var(--t1)" }}>{p.name}</span>
@@ -543,7 +546,7 @@ export function IntegrationsPanel() {
             consent for that product alone, and the grant grows a product at a time. */}
         {products.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: "4px 14px",
-            padding: "6px 0 0 22px" }}>
+            padding: "6px 0 0 38px" }}>
             {products.map(pr => {
               const granted = (conn?.scopes || "").split(/[\s,]+/);
               const stale = conn?.status === "needs_reconnect" && pr.scopes.split(" ").every(sc => granted.includes(sc));
@@ -553,10 +556,9 @@ export function IntegrationsPanel() {
               const about = [pr.blurb, pr.connected ? conn?.account : "", tools ? `tools: ${tools}` : ""].filter(Boolean).join(" · ");
               return (
                 <div key={key} data-testid={`integration-product-${pr.id}`}
-                  style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto", gap: 8, alignItems: "center",
+                  style={{ display: "grid", gridTemplateColumns: "20px minmax(0, 1fr) auto", gap: 8, alignItems: "center",
                     minHeight: 28 }}>
-                  <Dot hue={pr.connected ? "green" : stale ? "amber" : "grey"}
-                    title={pr.connected ? "connected" : stale ? "needs reconnecting" : "not connected"} />
+                  <BrandTile type={pr.name} size={20} />
                   <span className="aug-fs-sm" title={about} style={{ ...ONE_LINE, color: "var(--t1)" }}>{pr.name}</span>
                   {pr.connected ? <Chip tone="up">connected</Chip> : (
                     <Button variant="outline" size="xs" disabled={!p.configured || !!p.client_id_problem || busy === key}
@@ -726,8 +728,8 @@ export function IntegrationsPanel() {
     ].filter(Boolean).join(" · ");
     return (
       <div key={b.id} data-testid="slack-bot-row" style={{ ...(i ? RULE : {}), padding: "9px 2px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
-          <Dot hue={!b.enabled ? "grey" : b.listening ? "green" : "amber"} />
+        <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
+          <BrandTile type="slack" />
           <div style={{ minWidth: 0 }}>
             <div style={{ ...ROW, flexWrap: "nowrap", minWidth: 0 }}>
               <span className="aug-fs-chrome" title={`Slack member ID ${b.bot_user_id || "unknown"}`}
@@ -971,25 +973,33 @@ export function IntegrationsPanel() {
 
       <NeedsYou testId="integration-needs" empty="Nothing needs you">{needs}</NeedsYou>
 
-      <Card label="Providers" testId="integration-providers"
-        right={<Chip title="Aughor holds every token itself — encrypted at rest, refreshed before expiry, never shown to a model or a screen; each grant has an owner, scopes and a revoke.">
-          tokens held encrypted · never shown
-        </Chip>}>
-        {providers.length === 0 ? <Empty>No provider is offered on this deployment.</Empty> : providers.map(providerRow)}
-      </Card>
+      <TabStrip label="Integrations" value={tab} onChange={setTab} tabs={[
+        { id: "providers", label: "Providers" },
+        ...(slack ? [{ id: "slack" as const, label: "Slack bots" }] : []),
+        { id: "mcp", label: "MCP servers" },
+      ]} />
 
-      {slack && (
+      {tab === "providers" && (
+        <Card label="Providers" testId="integration-providers"
+          right={<Chip title="Aughor holds every token itself — encrypted at rest, refreshed before expiry, never shown to a model">
+            tokens held encrypted · never shown
+          </Chip>}>
+          {providers.length === 0 ? <Empty>No provider is offered on this deployment.</Empty> : providers.map(providerRow)}
+        </Card>
+      )}
+
+      {tab === "slack" && slack && (
         <Card label="Slack bots" testId="slack-bots">
-          {bots.length === 0 && <Empty>A bot is added with Add Slack app, on the Slack row above.</Empty>}
+          {bots.length === 0 && <Empty>A bot is added with Add Slack app, on the Slack row under Providers.</Empty>}
           {bots.map(botRow)}
           {supervisorShown && supervisorRows()}
           {bots.length > 0 && !supervisor?.managed && keyRow(true)}
         </Card>
       )}
 
-      {/* VA-9d — last on purpose: everything above is "connect as me", an account a user grants us; this is "call out to
-          them", a third party an operator writes down. */}
-      <McpServersSection />
+      {/* VA-9d: its own tab, because everything else here is "connect as me", an account a user grants us; this is "call
+          out to them", a third party an operator writes down. */}
+      {tab === "mcp" && <McpServersSection />}
     </Page>
   );
 }

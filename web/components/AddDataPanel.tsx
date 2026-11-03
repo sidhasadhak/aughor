@@ -31,7 +31,7 @@ import {
   type FileAnalysis,
   type BulkUploadResult,
 } from "@/lib/api";
-import { BrandLogo, brandColor } from "@/components/BrandLogos";
+import { BrandLogo, BrandTile, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
@@ -83,13 +83,7 @@ const fmtBytes = (n: number) =>
 // ── Cards ──────────────────────────────────────────────────────────────────────
 
 function LogoBox({ type, size = 36 }: { type: string; size?: number }) {
-  const c = brandColor(type);
-  return (
-    <span style={{ width: size, height: size, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-      background: `color-mix(in srgb, ${c} 12%, var(--bg-2))`, border: `1px solid color-mix(in srgb, ${c} 26%, transparent)` }}>
-      <BrandLogo type={type} size={Math.round(size * 0.56)} />
-    </span>
-  );
+  return <BrandTile type={type} size={size} />;
 }
 
 // A tile whose driver is not installed on the server. `available` is optional on

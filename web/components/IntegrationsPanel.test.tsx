@@ -80,12 +80,14 @@ it("opens on the figures, asks about the half-set-up provider, and keeps the cli
   expect(within(needs).queryByTestId("needs-bot")).toBeNull();
 
   // The bot's row names its agent and connection, never their ids.
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Slack bots" }));
   const bot = screen.getByTestId("slack-bot-row");
   expect(bot.textContent).toContain("answers as The Look Analyst · asks on theLook");
 
   // Read first: no form open, and the client id only behind Details.
   expect(screen.queryByTestId("integration-setup-google")).toBeNull();
   expect(screen.queryByText("client-id-under-details")).toBeNull();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Providers" }));
   fireEvent.click(within(screen.getByTestId("integration-card-google")).getByRole("button", { name: /details/i }));
   const details = screen.getByTestId("integration-details-google");
   expect(details.textContent).toContain("client-id-under-details");
@@ -148,6 +150,7 @@ it("a supervisor waiting on its setup says what is missing, and is no outage whi
   api.listMcpServers.mockResolvedValue({ servers: [] });
   render(<Theme><IntegrationsPanel /></Theme>);
   expect(await screen.findByTestId("fig-supervisor-value")).toHaveTextContent("Waiting on setup");
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Slack bots" }));
   expect(screen.getByTestId("slack-supervisor").textContent).toContain(WAITING);
   expect(within(screen.getByTestId("integration-needs")).queryByTestId("needs-supervisor")).toBeNull();
 });
