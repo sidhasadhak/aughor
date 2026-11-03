@@ -256,14 +256,17 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
               </Chip>
             )}
           </div>
-          {trend && trend.points.length > 1 ? (
+          {/* The line is the figure's proof, so it is drawn only when it holds the figure's day. */}
+          {trend && reading && trend.points.length > 1 ? (
             <LeadChart points={trend.points} day={fig.day}
               reported={reading?.reported ? { value: Number(fig.value.replace(/[^0-9.-]/g, "")), text: reading.reported, on: dayMonth(lead.run.started_at) } : null} />
           ) : trend?.why ? (
             <div className="aug-fs-xs" style={{ ...muted, marginTop: 10 }}>The line behind this figure could not be read · {trend.why}</div>
           ) : !trend ? (
             <div aria-hidden style={{ height: 272, marginTop: 12 }} />
-          ) : null}
+          ) : (
+            <div className="aug-fs-xs" data-testid="home-lead-as-reported" style={{ ...muted, marginTop: 10 }}>As the analysis reported it · not read again here</div>
+          )}
         </>
       ) : (
         <div className="aug-fs-h2" style={{ color: "var(--t1)", fontWeight: 500, lineHeight: 1.45 }}>{headline}</div>
