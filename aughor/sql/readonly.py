@@ -118,6 +118,9 @@ _EXTERNAL_READER_FUNCTIONS: frozenset[str] = frozenset({
     "ICEBERG_SCAN", "ICEBERG_METADATA", "ICEBERG_SNAPSHOTS", "DELTA_SCAN",
     "SQLITE_SCAN", "SQLITE_ATTACH", "POSTGRES_SCAN", "POSTGRES_ATTACH",
     "POSTGRES_QUERY", "MYSQL_QUERY",
+    # a statement held in a string: no check here can read what it reads, so `FROM query('SELECT content FROM read_text(...)')`
+    # passed every other line of this list and read the file
+    "QUERY", "QUERY_TABLE",
     # environment / secret disclosure
     "GETENV", "DUCKDB_SECRETS", "WHICH_SECRET", "LOAD_AWS_CREDENTIALS",
     # MySQL server-side file read

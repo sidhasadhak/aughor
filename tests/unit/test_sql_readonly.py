@@ -122,6 +122,9 @@ def test_duckdb_file_readers_are_disallowed_in_any_position():
         ("SELECT * FROM read_csv_auto('x.csv')", "READ_CSV_AUTO"),      # exp.Anonymous
         ("SELECT * FROM read_parquet(['a.parquet'])", "READ_PARQUET"),
         ("SELECT * FROM read_text('/etc/passwd')", "READ_TEXT"),
+        # a statement in a string, which no check can read: this one read the file
+        ("SELECT * FROM query('SELECT content FROM read_text(''/etc/passwd'')')", "QUERY"),
+        ("SELECT * FROM orders, query_table('secrets')", "QUERY_TABLE"),
         ("SELECT * FROM glob('/**')", "GLOB"),
         ("SELECT * FROM sniff_csv('/etc/passwd')", "SNIFF_CSV"),
         ("SELECT * FROM postgres_scan('host=h', 'public', 't')", "POSTGRES_SCAN"),
