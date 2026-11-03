@@ -235,7 +235,7 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate: reexamine
                     // The chosen row's tint sits outside the button: a ghost button takes the gray accent, so the
                     // selection tint drawn on it would read grey.
                     <div key={c.id} style={{ borderRadius: "var(--r2)", background: on ? "var(--bg-sel)" : undefined }}>
-                    <Button variant="ghost" data-testid="evidence-claim" aria-current={on || undefined}
+                    <Button variant="plain" data-testid="evidence-claim" aria-current={on || undefined}
                       onClick={() => { setSelectedId(c.id); setNotSaved(""); }}
                       style={{ display: "block", width: "100%", height: "auto", margin: 0, padding: "6px 8px", textAlign: "left",
                         whiteSpace: "normal", fontWeight: 400, borderRadius: "var(--r2)" }}>

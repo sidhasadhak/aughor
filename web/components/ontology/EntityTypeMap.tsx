@@ -365,7 +365,7 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
   const row = (t: TypeMapRow, part: boolean) => {
     const current = t.object_type === selected;
     return (
-      <Button key={t.object_type} variant="ghost" size="sm" onClick={() => onPick(t.object_type)}
+      <Button key={t.object_type} variant="plain" size="sm" onClick={() => onPick(t.object_type)}
         aria-current={current ? "true" : undefined} data-testid={part ? "entity-rail-part" : "entity-rail-row"}
         title={part ? `Open ${t.display_name}, a part of ${t.absorbed_into}` : `Light ${t.display_name} up on the map and open it here`}
         className="h-auto w-full justify-start py-1.5"
@@ -466,7 +466,7 @@ function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickT
       {processes.map((p) => {
         const current = p.id === openProcess;
         return (
-          <Button key={p.id} variant="ghost" size="sm" onClick={() => onPickProcess(p)} data-testid="entity-rail-process"
+          <Button key={p.id} variant="plain" size="sm" onClick={() => onPickProcess(p)} data-testid="entity-rail-process"
             aria-current={current ? "true" : undefined} className="h-auto w-full justify-start py-1.5"
             title={`Open the ${p.display_name} process — its stages, timings and promises`}
             style={current ? { background: "var(--bg-hover)" } : undefined}>
@@ -482,20 +482,20 @@ function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickT
       })}
       {onNewProcess && (
         <Button variant="ghost" size="sm" onClick={onNewProcess} data-testid="entity-rail-new-process"
-          className="h-auto w-full justify-start py-1.5" title="Design a business process from the data — its stages, promises and exits">
+          className="justify-start py-1.5" title="Design a business process from the data — its stages, promises and exits">
           <Icon name="plus" size={12} /> New process
         </Button>
       )}
       {onNewAction && <div className="aug-fs-xs" style={RAIL_HEADING}>Actions</div>}
       {onNewAction && (
         <Button variant="ghost" size="sm" onClick={onNewAction} data-testid="entity-rail-new-action"
-          className="h-auto w-full justify-start py-1.5" title="Decide an action people can press on an object — what it does, when it is allowed, who approves">
+          className="justify-start py-1.5" title="Decide an action people can press on an object — what it does, when it is allowed, who approves">
           <Icon name="plus" size={12} /> New action
         </Button>
       )}
       {rules.length > 0 && <div className="aug-fs-xs" style={RAIL_HEADING}>Rules</div>}
       {rules.map((r) => (
-        <Button key={r.id} variant="ghost" size="sm" onClick={() => onPickType(r.entity)} data-testid="entity-rail-rule"
+        <Button key={r.id} variant="plain" size="sm" onClick={() => onPickType(r.entity)} data-testid="entity-rail-rule"
           className="h-auto w-full justify-start py-1.5" title={`Open ${r.entity}, where ${r.display_name} reads as a segment`}>
           <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, gap: 1 }}>
             <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>{r.display_name}</span>

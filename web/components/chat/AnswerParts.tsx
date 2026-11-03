@@ -61,7 +61,7 @@ function Section({ part }: { part: Extract<AnswerPart, { kind: "section" }> }) {
   const [open, setOpen] = useState(!part.collapsed);
   return (
     <div className="rounded-md" style={{ border: "1px solid var(--b1)" }}>
-      <Button variant="ghost" size="xs" onClick={() => setOpen(o => !o)}
+      <Button variant="plain" size="xs" onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         className="w-full h-auto justify-start gap-1.5 px-2 py-1.5 font-normal">
         <span style={{ transform: open ? "rotate(90deg)" : undefined, transition: "transform 120ms" }}>

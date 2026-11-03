@@ -18,7 +18,7 @@ import { dayMonth, dayWords } from "@/lib/home";
 import { connectionLabel } from "@/lib/names";
 import { getCorrections, type Corrections, type CorrectionEntry, type CorrectionKind } from "@/lib/record";
 import { Gate, ListCard, ListRow, day, useLoad, type ListColumn } from "@/components/record/kit";
-import { Chip, Columns, Card, Dot, Figure, Figures, NUM, NeedsYou, Page } from "@/components/clarity/kit";
+import { Chip, Columns, Card, Dot, Figure, Tally, NUM, NeedsYou, Page } from "@/components/clarity/kit";
 import { dateWords, firstSentence, predictionView, VERDICT_SHORT } from "@/components/record/words";
 
 const ORDER: CorrectionKind[] = [
@@ -103,7 +103,7 @@ function CorrectionsOverview({ c, connections, open }: {
 
   return (
     <>
-      <Figures testId="correction-figures">
+      <Tally testId="correction-figures">
         <Figure label="Corrections" value={formatCount(shown.length)} testId="fig-corrections"
           title="A re-booking that changed no words is bookkeeping, not a correction a reader was owed"
           sub={same.length ? `not counted: ${formatCount(same.length)} ${sameWhat} re-booked, same words` : "each one changed what was said"} />
@@ -117,7 +117,7 @@ function CorrectionsOverview({ c, connections, open }: {
             <span>{rest.map(k => SHORT[k].toLowerCase()).join(" · ")}</span>
             <Chip title={c.note} testId="corrections-note">none recorded is not none happened</Chip>
           </>} />
-      </Figures>
+      </Tally>
 
       <NeedsYou testId="correction-needs" empty="Nothing needs you · each correction is booked as it happens">{[]}</NeedsYou>
 

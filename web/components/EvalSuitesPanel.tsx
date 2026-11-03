@@ -32,7 +32,7 @@ import { SelectField } from "@/components/ui/select";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  CARD, Chip, Empty, Figure, Figures, Label, MUTED, NeedsRow, NeedsYou, NUM, ONE_LINE, Page, ROW, RULE, type Tone,
+  CARD, Chip, Empty, Figure, Figures, Tally, Label, MUTED, NeedsRow, NeedsYou, NUM, ONE_LINE, Page, ROW, RULE, type Tone,
 } from "@/components/clarity/kit";
 import { formatCount } from "@/lib/format";
 import {
@@ -287,7 +287,7 @@ function Overview({ suites, runs, cases, connName, running, ran, onNew, onOpen, 
 
   return (
     <>
-      <Figures testId="suite-figures">
+      <Tally testId="suite-figures">
         <Figure label="Suites" value={formatCount(suites.length)} testId="fig-suites"
           sub={runsRead ? `${ranOnce.length} have run · ${never.length} never` : "runs could not be read"} />
         <Figure label="Cases" testId="fig-cases" value={casesPending || casesFailed ? "—" : formatCount(totalCases)}
@@ -300,7 +300,7 @@ function Overview({ suites, runs, cases, connName, running, ran, onNew, onOpen, 
         <Figure label="Never run" testId="fig-never" value={runsRead ? formatCount(never.length) : "—"}
           tone={runsRead && never.length ? "amber" : undefined}
           sub={!runsRead ? "runs could not be read" : never.length ? "no measurement yet" : "every suite has a result"} />
-      </Figures>
+      </Tally>
 
       {runsRead ? (
         <NeedsYou testId="suite-needs" empty="Nothing needs you · every suite has run, and none fell or failed at its last run">

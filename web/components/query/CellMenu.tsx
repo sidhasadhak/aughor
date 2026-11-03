@@ -65,7 +65,7 @@ export function CellMenu({
   };
   const filter = (kind: FilterKind) => { onFilter(filterPhrase(target.column, target.value, kind)); onClose(); };
   const item = (label: string, onClick: () => void, icon?: Parameters<typeof Icon>[0]["name"], testid?: string) => (
-    <Button variant="ghost" size="xs" className="aug-fs-ui" data-testid={testid}
+    <Button variant="plain" size="xs" className="aug-fs-ui" data-testid={testid}
       style={{ width: "100%", justifyContent: "flex-start" }} onClick={onClick}>
       {icon && <Icon name={icon} size={12} />}{label}
     </Button>

@@ -508,7 +508,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
     "genie": (r"(?i)\bgenie\b", CODE_ROOTS, (), "name our features for what they do"),
     "foundry": (r"(?i)\bfoundry\b", CODE_ROOTS, (), "name our features for what they do"),
     "databricks": (
-        r"(?i)databricks", CODE_ROOTS, (),
+        r"(?i)databricks", CODE_ROOTS,
+        # Where we genuinely integrate, since 2026-11-03: the connector, its declaration, the two files generated from that, its
+        # driver's name, and the two suites that list the declared engines.
+        ("aughor/connectors/warehouse/databricks.py", "aughor/connectors/declarations.py", "aughor/connectors/catalog.json",
+         "aughor/connectors/registry.py", "web/lib/connectors.gen.ts", "tests/unit/test_connector_capabilities.py",
+         "tests/unit/test_de3b_one_declaration.py"),
         "keep it only where we genuinely integrate; elsewhere describe the behaviour",
     ),
     "copilotkit": (r"(?i)copilotkit", CODE_ROOTS, (), "the protocol we speak is AG-UI"),
@@ -588,7 +593,8 @@ BASELINE: dict[str, int] = {
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
     # outside CODE_ROOTS); Wave 2d removed the last one in a FLAG_META description.
     # 2026-09-13: 46 → 45. Instrument rewrote `web/aughor-v2/theme/tokens-v2.css`, which held one.
-    "databricks": 45,
+    # 2026-11-03: 45 → 44. The connector is exempt above; `brandMarks.ts` still names its logo.
+    "databricks": 44,
     # 2026-09-13: 165 → 145. Instrument redrew the Briefing: its digest tiles went, and with them
     # every spelling left in BriefingPanel.tsx.
     # 2026-10-12: 145 → 139. Security & Audit redone to CLARITY: the log's SQL cell names its text `short`.

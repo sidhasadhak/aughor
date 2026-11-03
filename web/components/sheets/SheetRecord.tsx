@@ -91,7 +91,7 @@ export function SheetRecordPanel({ sheet, row, editable, onClose, onOpenSheet }:
       <div role="tablist" style={{ display: "flex", gap: 2, padding: "0 10px", borderBottom: "1px solid var(--b0)" }}>
         {([["fields", "Fields"], ["linked", `Linked · ${linked}`], ["history", "History"],
           ["comments", `Comments${rec?.comments.length ? ` · ${rec.comments.length}` : ""}`]] as [Tab, string][]).map(([t, label]) => (
-          <Button key={t} role="tab" aria-selected={tab === t} variant="ghost" size="sm" onClick={() => go(t)}
+          <Button key={t} role="tab" aria-selected={tab === t} variant="plain" size="sm" onClick={() => go(t)}
             style={{ borderRadius: 0, borderBottom: tab === t ? "2px solid var(--blue3)" : "2px solid transparent" }}>{label}</Button>
         ))}
       </div>

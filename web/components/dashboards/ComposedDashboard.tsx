@@ -306,7 +306,7 @@ function LaidOutSection({ element, children }: ComponentRenderProps<SectionProps
         <>
           <div role="tablist" aria-label={element.props.title ?? "Sections"} style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--b1)", marginBottom: 12 }}>
             {held.map((k, i) => (
-              <Button key={k} size="sm" variant="ghost" role="tab" aria-selected={i === tab} data-testid="dashboard-layout-tab" onClick={() => setTab(i)}
+              <Button key={k} size="sm" variant="plain" role="tab" aria-selected={i === tab} data-testid="dashboard-layout-tab" onClick={() => setTab(i)}
                 style={{ borderRadius: 0, color: i === tab ? "var(--t1)" : "var(--t3)", borderBottom: i === tab ? "2px solid var(--accent)" : "2px solid transparent" }}>
                 {String(elements[k]?.props?.title ?? `Tab ${i + 1}`)}
               </Button>

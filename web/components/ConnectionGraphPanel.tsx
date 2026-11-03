@@ -327,7 +327,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
                   {graph.domains.length === 0 ? <Empty>No domains yet.</Empty> : graph.domains.map((d, i) => {
                     const joined = domainJoinsFor(d.label);
                     return (
-                      <Button key={d.label} variant="ghost" onClick={() => setView({ level: "tables", domain: d.label })}
+                      <Button key={d.label} variant="plain" onClick={() => setView({ level: "tables", domain: d.label })}
                         style={{ ...rowButtonStyle(false, { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12 }), ...(i === 0 ? { borderTop: 0 } : {}) }}>
                         <span style={{ minWidth: 0 }}>
                           <span className="aug-fs-chrome" style={{ display: "block", color: "var(--t1)", fontWeight: 500 }}>{d.label}</span>
@@ -350,7 +350,7 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
                   <Label right={countNoun(tablesOf(view.domain).length, "table")}>{view.domain}</Label>
                   {tablesOf(view.domain).length === 0 ? <Empty>No tables in this domain.</Empty>
                     : tablesOf(view.domain).map((t, i) => (
-                      <Button key={t.id} variant="ghost" onClick={() => setView({ level: "detail", tableId: t.id })}
+                      <Button key={t.id} variant="plain" onClick={() => setView({ level: "detail", tableId: t.id })}
                         style={{ ...rowButtonStyle(false, { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12 }), ...(i === 0 ? { borderTop: 0 } : {}) }}>
                         <span style={{ minWidth: 0 }}>
                           <span className="aug-fs-chrome" style={{ display: "block", color: "var(--t1)", fontWeight: 500 }}>{nodeName(t)}</span>

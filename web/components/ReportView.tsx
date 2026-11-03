@@ -42,7 +42,7 @@ const VERDICT_META: Record<Verdict, { label: string; hue: ChipHue }> = {
 };
 
 const STAT_META: Record<StatResult["type"], { icon: string; hue: ChipHue }> = {
-  anomaly:      { icon: "⚡", hue: "caution" },
+  anomaly:      { icon: "⚠", hue: "caution" },
   trend:        { icon: "↗",  hue: "info"    },
   comparison:   { icon: "⟺", hue: "accent"  },
   distribution: { icon: "≈",  hue: "muted"   },

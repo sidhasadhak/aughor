@@ -198,7 +198,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
             <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--t1)", margin: 0 }}>
               Connect your data
             </h2>
-            <Button variant="ghost" size="xs" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 4 }}>
+            <Button variant="plain" size="xs" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 4 }}>
               <Icon name={CLOSE_ICON} size={16} />
             </Button>
           </div>
@@ -222,7 +222,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                 style={{ flex: 1 }}
               />
             </div>
-            <Button variant="ghost" size="xs"
+            <Button variant="plain" size="xs"
               onClick={() => { if (connId) openConnection(connId); }}
               title="Refresh"
               style={{
@@ -237,7 +237,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
 
           {/* Breadcrumb */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "16px 0 6px", fontSize: 13 }}>
-            <Button variant="ghost" size="xs"
+            <Button variant="plain" size="xs"
               onClick={backToCatalog}
               style={{
                 background: "none", border: "none", cursor: connId ? "pointer" : "default",
@@ -265,7 +265,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
               </div>
             ) : (
               connections.map(c => (
-                <Button variant="ghost" size="xs"
+                <Button variant="plain" size="xs"
                   key={c.id}
                   onClick={() => openConnection(c.id)}
                   style={{
@@ -291,7 +291,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
             // ── Table list with multi-select ──
             <>
               {/* All tables pseudo-row */}
-              <Button variant="ghost" size="xs"
+              <Button variant="plain" size="xs"
                 onClick={toggleAll}
                 style={{
                   width: "100%", display: "flex", alignItems: "center", gap: 12,
@@ -318,7 +318,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                     const checked = isChecked(t);
                     const dimmed = selection?.kind === "all";
                     return (
-                      <Button variant="ghost" size="xs"
+                      <Button variant="plain" size="xs"
                         key={t}
                         onClick={() => toggleTable(t)}
                         style={{
@@ -340,7 +340,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                   const allIn = selection?.kind === "tables" && names.every(n => selection.tables.has(n));
                   const dimmed = selection?.kind === "all";
                   return [
-                    <Button variant="ghost" size="xs"
+                    <Button variant="plain" size="xs"
                       key={`schema:${schemaName}`}
                       onClick={() => toggleSchema(names)}
                       title={`${allIn ? "Untick" : "Tick"} every table in ${schemaName}`}
@@ -429,7 +429,7 @@ function Chip({ label, onRemove, mono }: { label: string; onRemove: () => void; 
       fontFamily: mono ? "var(--font-mono)" : "var(--font-ui)", maxWidth: 180,
     }}>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-      <Button variant="ghost" size="xs"
+      <Button variant="plain" size="xs"
         onClick={e => { e.stopPropagation(); onRemove(); }}
         style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0, display: "flex" }}
       >

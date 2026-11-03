@@ -51,7 +51,7 @@ describe("Notifications", () => {
 
     const needs = screen.getByTestId("notification-needs");
     expect(needs.getAttribute("data-waiting")).toBe("false");
-    expect(needs.textContent).toBe("Needs youNothing needs you");
+    expect(needs.textContent).toBe("Nothing needs you");
 
     // Fifty rows became two, each with its count; the removed trigger says so.
     const rows = screen.getAllByTestId("delivery-row");

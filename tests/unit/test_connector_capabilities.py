@@ -68,6 +68,10 @@ NO_BINDING = {
         "cannot be rewritten into without a name→position map nobody has run against a live "
         "cluster; refusing visibly beats a rendering unproven on the engine. DE-3b's live "
         "receipt on a Trino container decides it. See warehouse/trino.py.",
+    "DatabricksConnection":
+        "Preview: no server to run a bound statement on here, and refusing visibly beats a rendering unproven on the engine.",
+    "AthenaConnection":
+        "Preview: every statement bills its scan, and no account to run one on here. Same reason as Databricks.",
 }
 
 #: Connectors with no driver-handle abort, with the reason. Same contract as NO_BINDING:

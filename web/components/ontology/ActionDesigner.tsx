@@ -488,7 +488,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
                     onChange={e => editAsk(i, { required: e.target.checked })} /> Required
                 </label>
                 {drafting && (
-                  <Button size="xs" variant="ghost" aria-label={`Take question ${i + 1} off`}
+                  <Button size="xs" variant="plain" aria-label={`Take question ${i + 1} off`}
                     onClick={() => setDraft(d => ({ ...d, asks: d.asks.filter((_, j) => j !== i),
                       mark: d.mark.noteFrom === idFrom(a.label) ? { ...d.mark, noteFrom: "" } : d.mark }))}>
                     <Icon name="close" size={12} />
@@ -520,7 +520,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
                       <option value="not">is none of</option>
                     </SelectField>
                     {drafting && (
-                      <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} aria-label={`Take condition ${i + 1} off`}
+                      <Button size="xs" variant="plain" style={{ marginLeft: "auto" }} aria-label={`Take condition ${i + 1} off`}
                         onClick={() => setDraft(d => ({ ...d, conditions: d.conditions.filter((_, j) => j !== i) }))}>
                         <Icon name="close" size={12} />
                       </Button>
@@ -694,7 +694,7 @@ function Choice({ on, disabled, icon, title, says, onPick }: {
   on: boolean; disabled: boolean; icon: "bookmark" | "plug" | "run" | "hand" | "send" | "search"; title: string; says: string; onPick: () => void;
 }) {
   return (
-    <Button variant="ghost" size="sm" disabled={disabled} aria-pressed={on} onClick={onPick} className="h-auto w-full justify-start py-1.5"
+    <Button variant="plain" size="sm" disabled={disabled} aria-pressed={on} onClick={onPick} className="h-auto w-full justify-start py-1.5"
       style={{ border: on ? "1px solid var(--accent)" : RULE, marginBottom: 6, textAlign: "left" }}>
       <span style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
         <Icon name={icon} size={14} />

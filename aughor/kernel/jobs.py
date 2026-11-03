@@ -33,6 +33,7 @@ import contextvars
 import json
 import logging
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
@@ -214,10 +215,34 @@ def _max_concurrent_jobs() -> int:
         return 8
 
 
+#: How often a job waiting for a slot looks again. It only ever looks while the cap is reached.
+_SLOT_POLL_S = 0.05
+
+
+class _JobSlots:
+    """The cap on running jobs, which a job on ANY event loop may wait on.
+
+    Not an ``asyncio.Semaphore``: that belongs to one loop, and once full it raises RuntimeError at a job from another.
+    A step that needs an investigation's answer drains it on its worker thread's own loop (`runners/investigation.py`),
+    so a job submitted while automation ticks filled the cap died before it ran, its row PENDING and the step waiting on
+    it for good (the Daily Briefing, 2026-10-30 to 2026-11-03).
+    """
+
+    def __init__(self, slots: int) -> None:
+        self._free = threading.BoundedSemaphore(slots)
+
+    async def acquire(self) -> None:
+        while not self._free.acquire(blocking=False):
+            await asyncio.sleep(_SLOT_POLL_S)
+
+    def release(self) -> None:
+        self._free.release()
+
+
 def concurrency_policy() -> dict:
     """The kernel's actual concurrency shape, for surfaces that render it.
 
-    Deliberately not "per-kind caps": there is ONE process-wide semaphore plus
+    Deliberately not "per-kind caps": there is ONE process-wide cap plus
     an exemption set. A fleet view that invented per-agent knobs over this
     would be describing a mechanism that does not exist (Wave CR §2).
     """
@@ -233,18 +258,16 @@ class JobKernel:
     def __init__(self, ledger: Optional[Ledger] = None):
         self.ledger = ledger or Ledger.default()
         self._tasks: dict[str, asyncio.Task] = {}
-        # Lazily created on the running loop (a kernel built off-loop in a test
-        # otherwise binds the semaphore to the wrong loop).
-        self._job_sem: Optional[asyncio.Semaphore] = None
+        self._job_slots: Optional[_JobSlots] = None
 
-    def _slot_for(self, kind: str) -> Optional[asyncio.Semaphore]:
-        """The concurrency semaphore a job of *kind* must hold to run, or None
-        when the kind is exempt from the cap."""
+    def _slot_for(self, kind: str) -> Optional[_JobSlots]:
+        """The cap a job of *kind* must hold a slot of to run, or None when the
+        kind is exempt from it."""
         if kind in _UNBOUNDED_KINDS:
             return None
-        if self._job_sem is None:
-            self._job_sem = asyncio.Semaphore(_max_concurrent_jobs())
-        return self._job_sem
+        if self._job_slots is None:
+            self._job_slots = _JobSlots(_max_concurrent_jobs())
+        return self._job_slots
 
     # ── state transitions (the ONLY writer of job.state) ─────────────────────
 

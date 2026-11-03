@@ -1731,7 +1731,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
             {(graph?.runs ?? []).map((r) => {
               const active = (runId || graph?.run_id) === r.id;
               return (
-                <Button key={r.id} variant="ghost" size="sm" className="aug-fs-xs"
+                <Button key={r.id} variant="plain" size="sm" className="aug-fs-xs"
                   onClick={() => { setPreview(null); setRunId(r.id); }}
                   style={{
                     display: "block", width: "100%", height: "auto", textAlign: "left",

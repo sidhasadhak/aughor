@@ -97,10 +97,10 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
       </div>
       {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
-        <Button variant="ghost" type="submit" disabled={loading} className="h-auto p-0 font-normal" style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", opacity: loading ? .5 : 1 }}>
+        <Button variant="plain" type="submit" disabled={loading} className="h-auto p-0 font-normal" style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", opacity: loading ? .5 : 1 }}>
           {loading ? "Saving…" : "Save"}
         </Button>
-        <Button variant="ghost" type="button" onClick={onCancel} className="h-auto p-0 font-normal" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
+        <Button variant="plain" type="button" onClick={onCancel} className="h-auto p-0 font-normal" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
       </div>
     </form>
   );
@@ -330,7 +330,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             </span>
           </div>
           {section.id === "connections" && (
-            <Button variant="ghost" onClick={() => setShowAddData(true)}
+            <Button variant="plain" onClick={() => setShowAddData(true)}
               className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
               style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
@@ -507,13 +507,13 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       <div style={{ borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-1)", height: "100%", width: "100%" }}>
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 12px 8px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, gap: 8 }}>
-          <Button variant="ghost" onClick={() => setSel(null)} title="Catalog home"
+          <Button variant="plain" onClick={() => setSel(null)} title="Catalog home"
             className="h-auto p-0 justify-start"
             style={{ fontSize: 12, fontWeight: 600, color: sel ? "var(--t3)" : "var(--t1)", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = sel ? "var(--t3)" : "var(--t1)"}
           >Catalog</Button>
-          <Button variant="ghost" onClick={() => setShowAddData(true)} title="Add data"
+          <Button variant="plain" onClick={() => setShowAddData(true)} title="Add data"
             className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue5)", border: "0.5px solid var(--blue2)", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--blue2)"}
@@ -521,7 +521,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           >
             <Icon name="plus" size={11} />
           </Button>
-          <Button variant="ghost" onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
+          <Button variant="plain" onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
             className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
@@ -532,12 +532,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         </div>
 
         {/* Search */}
-        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, position: "relative" }}>
-          <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
-            <Icon name="search" size={11} />
-          </span>
+        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0 }}>
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
-            style={{ width: "100%" }} />
+            leading={<Icon name="search" size={11} />} style={{ width: "100%" }} />
         </div>
 
         {/* Tree body */}

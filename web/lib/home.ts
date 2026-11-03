@@ -5,6 +5,7 @@
  * the same records give the same page.
  */
 import { getApiBase } from "@/lib/config";
+import { formatCount } from "@/lib/format";
 import type { Claim, Decision } from "@/lib/record";
 
 export interface Analysis {
@@ -324,6 +325,55 @@ export function leadFigure(report: unknown): LeadFigure | null {
              verdict, unusual: !!verdict && /outside|anomal|unusual|significant/i.test(verdict) && !/within/i.test(verdict) };
   }
   return null;
+}
+
+/** One day of the lead's metric, as the warehouse reads it now. */
+export interface TrendPoint {
+  day: string;
+  value: number;
+  text: string;
+  /** Inside the days this source keeps changing: the figure may still move. */
+  settling: boolean;
+}
+
+/** A figure written whole when it is money ("$15,276"), as the trend wrote it otherwise ("12.3%"). */
+export function wholeFigure(value: number, sample: string): string {
+  const symbol = /^-?([$€£¥₹]|R\$)/.exec(sample)?.[1];
+  if (!symbol) return sample;
+  return `${value < 0 ? "−" : ""}${symbol}${formatCount(Math.round(Math.abs(value)))}`;
+}
+
+/** The lead's day as it reads now, against what the analysis reported. */
+export interface LeadReading {
+  value: string;
+  /** Against the day before it, as both read now: "−$470 vs Tue 13 Oct". */
+  change: string | null;
+  up: boolean;
+  /** What the analysis reported, and how far today's reading is from it, when they differ by more than 1%. */
+  reported: string | null;
+  restated: number | null;
+}
+
+/** Null when the trend does not hold the lead's day: the page then says what the analysis reported, as reported. */
+export function leadReading(figure: Pick<LeadFigure, "day" | "value">, points: TrendPoint[]): LeadReading | null {
+  const at = points.findIndex(p => p.day === figure.day);
+  if (at < 0) return null;
+  const now = points[at], before = points[at - 1];
+  const was = Number(figure.value.replace(/[^0-9.-]/g, ""));
+  const diff = before ? now.value - before.value : null;
+  const moved = Number.isFinite(was) && was !== 0 && Math.abs(now.value - was) / Math.abs(was) > 0.01;
+  return {
+    value: wholeFigure(now.value, now.text),
+    change: before && diff !== null ? `${diff >= 0 ? "+" : ""}${wholeFigure(diff, now.text)} vs ${dayWords(before.day)}` : null,
+    up: (diff ?? 0) >= 0,
+    reported: moved ? wholeFigure(was, now.text) : null,
+    restated: moved ? (now.value - was) / Math.abs(was) : null,
+  };
+}
+
+/** ISO days inside a line an analysis wrote, as Home writes days: "vs 2026-10-13" → "vs Tue 13 Oct". */
+export function plainDays(text: string): string {
+  return text.replace(/\b\d{4}-\d{2}-\d{2}\b/g, dayWords);
 }
 
 export interface LeadDetail {

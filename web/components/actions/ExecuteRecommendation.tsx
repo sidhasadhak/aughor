@@ -90,7 +90,7 @@ export function ExecuteRecommendation({ invId, index, label = "Execute →" }: {
               : triggers.length === 0
               ? <p className="aug-fs-xs text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Notifications.</p>
               : triggers.map(t => (
-                  <Button key={t.id} role="menuitem" variant="ghost" size="xs" onClick={() => fire(t)}
+                  <Button key={t.id} role="menuitem" variant="plain" size="xs" onClick={() => fire(t)}
                     className="w-full justify-start rounded-none px-3 py-1.5 text-zinc-300">
                     {t.name}
                   </Button>

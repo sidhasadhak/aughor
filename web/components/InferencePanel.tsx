@@ -234,7 +234,7 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
             <Chip key={m}>
               <span style={MONO}>{m}</span>
               <Button
-                variant="ghost"
+                variant="plain"
                 size="xs"
                 disabled={busy}
                 onClick={() => onRemove(m)}

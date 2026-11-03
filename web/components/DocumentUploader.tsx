@@ -310,7 +310,7 @@ export function DocumentUploader({ formats, onAdded, onClose }: {
                 {staged.map((f, i) => (
                   <div key={f.name} style={{ ...(i ? RULE : {}), display: "flex", alignItems: "center", gap: 8, padding: "6px 4px",
                     borderRadius: i === shown ? "var(--r2)" : undefined, background: i === shown ? "var(--bg-sel)" : undefined }}>
-                    <Button variant="ghost" size="xs" onClick={() => setShown(i)} aria-pressed={i === shown}
+                    <Button variant="plain" size="xs" onClick={() => setShown(i)} aria-pressed={i === shown}
                       style={{ flex: 1, minWidth: 0, justifyContent: "flex-start", height: "auto", padding: "2px 4px", fontWeight: 400 }}>
                       <Chip>{formatLabel({ filename: f.name })}</Chip>
                       <span style={{ minWidth: 0, textAlign: "left" }}>

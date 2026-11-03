@@ -641,8 +641,7 @@ function NodeCard({ data }: { data: CardData }) {
           variant="ghost" size="xs" className="nodrag aug-fs-xs"
           aria-label={`Collapse these ${data.regroup.reps} repeats`}
           onClick={e => { e.stopPropagation(); data.regroup!.onCollapse(); }}
-          style={{ width: "100%", justifyContent: "flex-start", gap: 5, height: "auto",
-                   padding: "3px 9px", color: "var(--chart-3)",
+          style={{ justifyContent: "flex-start", gap: 5, padding: "3px 9px", color: "var(--chart-3)",
                    borderBottom: "1px solid var(--b1)", borderRadius: 0 }}>
           <Icon name="layers" size={11} />
           collapse ×{data.regroup.reps}
@@ -669,7 +668,7 @@ function NodeCard({ data }: { data: CardData }) {
         onClick={data.onToggle}
         className="nodrag aug-fs-xs"
         style={{
-          width: "100%", display: "flex", justifyContent: "space-between",
+          display: "flex", justifyContent: "space-between",
           alignItems: "center", padding: "0 9px", borderRadius: 0,
           borderTop: "1px solid var(--b1)", color: "var(--t3)",
         }}
@@ -879,7 +878,7 @@ function TimelineRail({ timeline, nodes, origin, selectedId, onSelect }: {
           return (
             <Button
               key={n.id}
-              variant="ghost"
+              variant="plain"
               size="sm"
               onClick={() => onSelect(n.id)}
               className="aug-fs-xs"

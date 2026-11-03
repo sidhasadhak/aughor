@@ -105,9 +105,9 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
             <Label>Start a sheet</Label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
               {tiles.map(t => (
-                <Button key={t.start === "chat" ? "chat" : t.start.source} variant="ghost"
+                <Button key={t.start === "chat" ? "chat" : t.start.source} variant="plain"
                   onClick={() => (t.start === "chat" ? setChatting(true) : setStart(t.start))}
-                  style={{ display: "flex", alignItems: "flex-start", gap: 10, height: "auto", padding: "12px 14px",
+                  style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-start", gap: 10, height: "auto", padding: "12px 14px",
                     textAlign: "left", whiteSpace: "normal", border: "1px solid var(--card-edge)",
                     background: "var(--bg-2)", borderRadius: "var(--r3)", fontWeight: 400 }}>
                   <span style={{ color: "var(--blue4)", paddingTop: 2 }}><Icon name={t.icon} size={16} /></span>
@@ -142,8 +142,8 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
                   {shown.map(s => (
                     <tr key={s.id} style={{ borderTop: "1px solid var(--b0)", height: 34 }}>
                       <td style={{ padding: "4px 8px" }}>
-                        <Button variant="ghost" size="sm" onClick={() => onOpen(s.id)}
-                          style={{ fontWeight: 600, color: "var(--t1)", padding: "0 4px" }}>
+                        <Button variant="link" size="sm" onClick={() => onOpen(s.id)}
+                          style={{ fontWeight: 600, padding: "0 4px" }}>
                           <Icon name="table" size={13} /> {s.name}
                         </Button>
                         {s.access === "view" && <span className="aug-fs-xs" style={MUTED} title="Shared with you to read">can read</span>}
@@ -158,7 +158,7 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
                         {lastChangeWords(s.last_change, data.me)}
                       </td>
                       <td style={{ padding: "4px 8px", position: "relative" }}>
-                        <Button variant="ghost" size="xs" onClick={() => setSharing(sharing === s.id ? "" : s.id)}
+                        <Button variant="plain" size="xs" onClick={() => setSharing(sharing === s.id ? "" : s.id)}
                           aria-expanded={sharing === s.id}>
                           <Chip>{sharedWords(s)}</Chip>
                         </Button>

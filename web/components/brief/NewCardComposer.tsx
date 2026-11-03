@@ -188,7 +188,7 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
   if (!open) {
     return (
       <div style={{ marginBottom: 12 }}>
-        <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
+        <Button variant="plain" size="xs" onClick={() => setOpen(true)}
           title="Author a new dashboard card from a grounded metric"
           style={{ fontSize: 11, color: "var(--vio4)", padding: "3px 8px", border: "1px dashed color-mix(in srgb, var(--vio4) 40%, var(--b1))", borderRadius: "var(--r2)" }}>
           ＋ New card

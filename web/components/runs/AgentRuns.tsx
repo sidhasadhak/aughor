@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { CARD, Chip, Dot, Empty, Figure, Figures, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE }
+import { CARD, Chip, Dot, Empty, Figure, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE, Tally }
   from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -221,7 +221,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
 
   return (
     <Page testId="runs">
-      <Figures testId="runs-figures">
+      <Tally testId="runs-figures">
         <Figure testId="runs-fig-runs" label="Runs" value={formatCount(all.length)}
           sub={<>
             <span>since {dayWords(since)}{where}</span>
@@ -233,7 +233,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
           tone={unfinished ? "red" : undefined} sub="failed, timed out or stopped" />
         <Figure testId="runs-fig-running" label="Running" value={formatCount(running)}
           sub={paused ? `${formatCount(paused)} paused, waiting` : running ? "in flight now" : "nothing in flight"} />
-      </Figures>
+      </Tally>
 
       {liveLine}
 
@@ -329,7 +329,7 @@ function GroupRow({ g, first, showConn, conns, onOpen }: {
   return (
     <div data-testid="run-group" style={{ padding: "5px 0", ...(first ? {} : RULE) }}>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 64px 64px", gap: 10, alignItems: "center" }}>
-        <Button variant="ghost" onClick={() => onOpen(latest)} title={g.title} style={ROW_BUTTON}>
+        <Button variant="plain" onClick={() => onOpen(latest)} title={g.title} style={ROW_BUTTON}>
           <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
             <span title={chat ? "a conversation" : "a deep analysis"} style={{ display: "inline-flex", color: "var(--t3)", flex: "0 0 auto" }}>
               <Icon name={chat ? "chat" : "spark"} size={13} />
@@ -366,7 +366,7 @@ function GroupRow({ g, first, showConn, conns, onOpen }: {
       {expanded && (
         <div data-testid="run-earlier" style={{ margin: "2px 0 4px 24px", paddingLeft: 10, borderLeft: "1px solid var(--b1)" }}>
           {earlier.map(r => (
-            <Button key={r.id} variant="ghost" onClick={() => onOpen(r)} title={formatTimestamp(r.started_at)}
+            <Button key={r.id} variant="plain" onClick={() => onOpen(r)} title={formatTimestamp(r.started_at)}
               style={{ ...ROW_BUTTON, display: "grid", gridTemplateColumns: "130px minmax(0, 1fr)", gap: 10, alignItems: "center" }}>
               <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>{formatTimestamp(r.started_at, "short")}</span>
               <span className="aug-fs-xs" style={{ ...ROW, flexWrap: "nowrap", gap: 6, color: "var(--t2)", minWidth: 0 }}>

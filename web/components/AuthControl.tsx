@@ -120,7 +120,7 @@ export function AuthControl() {
   const initials = email.slice(0, 2).toUpperCase();
   return (
     <div style={{ position: "relative" }}>
-      <Button variant="ghost" onClick={() => setMenuOpen(o => !o)} title={email}
+      <Button variant="plain" onClick={() => setMenuOpen(o => !o)} title={email}
         aria-expanded={menuOpen}
         className="aug-user-menu h-auto font-normal">
         <span className="aug-avatar">{initials}</span>
@@ -138,7 +138,7 @@ export function AuthControl() {
         }}>
           <span className="aug-fs-sm" style={{ color: "var(--t1)", overflowWrap: "anywhere" }}>{email}</span>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>verified by the server on every call</span>
-          <Button variant="ghost" size="xs" className="h-auto px-2 py-1 aug-fs-xs font-normal"
+          <Button variant="plain" size="xs" className="h-auto px-2 py-1 aug-fs-xs font-normal"
             style={{ border: "1px solid var(--b1)", alignSelf: "flex-start" }}
             onClick={() => { clearIdToken(); setToken(null); setMenuOpen(false); window.location.reload(); }}>
             Sign out

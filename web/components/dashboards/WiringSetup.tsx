@@ -117,7 +117,7 @@ function SetLine({ spec, name, selected, onSelect, connectionId, schema }: {
   const readers = readersOf(spec, name);
   const from = set?.from ? spec.sets?.[set.from]?.label ?? words(set.from) : words(set?.entity ?? "");
   return (
-    <Button variant="ghost" data-testid="data-set" data-name={name} aria-pressed={selected} onClick={onSelect} className="aug-fs-sm"
+    <Button variant="plain" data-testid="data-set" data-name={name} aria-pressed={selected} onClick={onSelect} className="aug-fs-sm"
       style={{ ...ROW, background: selected ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
       <span aria-hidden="true" style={{ color: "var(--blue3)" }}>●</span>
       <span style={{ minWidth: 0 }}>
@@ -218,7 +218,7 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
     onSelect(`value:${name}`);
   };
   const choiceRows = withUniqueKeys(choices, c => c.name).map(([key, c]) => (
-    <Button key={key} variant="ghost" data-testid="data-choice" aria-pressed={selected === `choice:${c.name}`} onClick={() => onSelect(`choice:${c.name}`)}
+    <Button key={key} variant="plain" data-testid="data-choice" aria-pressed={selected === `choice:${c.name}`} onClick={() => onSelect(`choice:${c.name}`)}
       className="aug-fs-sm" style={{ ...ROW, background: selected === `choice:${c.name}` ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
       <span aria-hidden="true" style={{ color: "var(--vio4)" }}>◆</span>
       <span style={{ minWidth: 0 }}>
@@ -238,7 +238,7 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
         if (!v) return null;
         const used = readersAll(spec, n, cardReads).count;
         return (
-          <Button key={n} variant="ghost" data-testid="data-value" data-name={n} aria-pressed={selected === `value:${n}`} onClick={() => onSelect(`value:${n}`)}
+          <Button key={n} variant="plain" data-testid="data-value" data-name={n} aria-pressed={selected === `value:${n}`} onClick={() => onSelect(`value:${n}`)}
             className="aug-fs-sm" style={{ ...ROW, background: selected === `value:${n}` ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
             <span aria-hidden="true" className="aug-fs-xs" style={{ color: "var(--amb3)" }}>{KIND_MARK[v.kind] ?? "#"}</span>
             <span style={{ minWidth: 0 }}>
@@ -648,7 +648,7 @@ function Condition({ spec, c, fields, onChange, onDrop }: {
   return (
     <div data-testid="set-condition" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 4, padding: "4px 0", borderBottom: "1px solid var(--b1)" }}>
       <span className="aug-fs-sm" style={{ color: "var(--t1)", alignSelf: "center" }}>{f ? (f.via ? `${f.label} via ${f.via}` : f.label) : words(c.path)}</span>
-      <Button size="xs" variant="ghost" aria-label={`Take the condition on ${words(c.path)} off`} onClick={onDrop}><Icon name="close" size={12} /></Button>
+      <Button size="xs" variant="plain" aria-label={`Take the condition on ${words(c.path)} off`} onClick={onDrop}><Icon name="close" size={12} /></Button>
       <Pick label="Is" value={op} options={ops.map(o => ({ value: o, label: OP_WORDS[o] }))} onPick={pickOp} />
       <span />
       {comparable(op).length > 0 && (

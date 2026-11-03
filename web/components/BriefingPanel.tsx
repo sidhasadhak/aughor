@@ -516,7 +516,7 @@ function CitationActionsPopover({
         />
         <div style={{ display: "flex", gap: 8 }}>
           <Button
-            variant="ghost"
+            variant="plain"
             onClick={() => onPull({
               question: `Why is this happening? ${citation.finding}`,
               seedSql: cited.sql || null,
@@ -533,7 +533,7 @@ function CitationActionsPopover({
             Pull the thread →
           </Button>
           <Button
-            variant="ghost"
+            variant="plain"
             onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`, citation.insight_id); onClose(); }}
             style={{
               alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
@@ -809,7 +809,7 @@ function ScopeChip({ label, dot, count, active, onClick }: {
 }) {
   return (
     <Button
-      variant="ghost" size="xs" onClick={onClick} className="px-3"
+      variant="plain" size="xs" onClick={onClick} className="px-3"
       aria-pressed={active}
       style={{
         borderRadius: "var(--r-chip)", gap: 6, height: 26,
@@ -1162,13 +1162,13 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
           <ActionButton label="⋯" title="More actions" status="idle" color={btnColor} onClick={() => setMoreOpen(v => !v)} />
           {moreOpen && (
             <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 150, padding: 4, display: "flex", flexDirection: "column" as const, gap: 2 }}>
-              <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
+              <Button variant="plain" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                 onClick={() => { setMoreOpen(false); handlePromote(); }}
                 style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
                 {promStatus === "done" ? "Promoted ✓" : "Promote"}
               </Button>
               <div style={{ position: "relative" }}>
-                <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
+                <Button variant="plain" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                   onClick={() => { if (triggers.length === 0) { setMoreOpen(false); onTriggersHint(); } else { setShareOpen(v => !v); } }}
                   style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
                   Share
@@ -1176,7 +1176,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                 {shareOpen && triggers.length > 0 && (
                   <div style={{ position: "absolute", top: 0, right: "calc(100% + 4px)", zIndex: 40, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 160, overflow: "hidden" }}>
                     {triggers.map(t => (
-                      <Button key={t.id} variant="ghost" size="xs" className="w-full justify-start h-auto"
+                      <Button key={t.id} variant="plain" size="xs" className="w-full justify-start h-auto"
                         onClick={() => { handleShareTo(t); setMoreOpen(false); }}
                         style={{ padding: "7px 10px", fontSize: 12, color: t.enabled ? "var(--t2)" : "var(--t3)" }}>
                         <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>{t.name}{!t.enabled && " (disabled)"}
@@ -1185,12 +1185,12 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                   </div>
                 )}
               </div>
-              <Button variant="ghost" size="xs" className="w-full justify-start h-auto"
+              <Button variant="plain" size="xs" className="w-full justify-start h-auto"
                 onClick={() => { setMoreOpen(false); onEvidence(insight); }}
                 style={{ padding: "7px 10px", fontSize: 12, color: "var(--t2)" }}>
                 Evidence
               </Button>
-              <Button variant="ghost" size="xs" className="w-full justify-start h-auto"
+              <Button variant="plain" size="xs" className="w-full justify-start h-auto"
                 onClick={() => { setMoreOpen(false); handleDismiss(); }}
                 style={{ padding: "7px 10px", fontSize: 12, color: "var(--t2)" }}>
                 Dismiss
@@ -1233,7 +1233,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
               Send to channel
             </div>
             {triggers.map(t => (
-              <Button key={t.id} variant="ghost" onClick={() => handleShareTo(t)}
+              <Button key={t.id} variant="plain" onClick={() => handleShareTo(t)}
                 className="aug-fs-sm font-normal"
                 style={{
                   display: "block", width: "100%", height: "auto", textAlign: "left" as const,
@@ -1800,7 +1800,7 @@ function VerdictHero({
                   <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--t1)" }}>
                     {normalizeNumberPrecision(openTile.insight.finding)}
                   </div>
-                  <Button variant="ghost" size="xs" onClick={() => setOpenIdent(null)}
+                  <Button variant="plain" size="xs" onClick={() => setOpenIdent(null)}
                     title="Close" aria-label="Close"
                     style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
                     ×
@@ -2170,7 +2170,7 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
               {jumpOpen && (
                 <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 20, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 170, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
                   {domainsInList.map(d => (
-                    <Button key={d} variant="ghost" size="xs" onClick={() => jumpTo(d)}
+                    <Button key={d} variant="plain" size="xs" onClick={() => jumpTo(d)}
                       className="w-full justify-start h-auto"
                       style={{ gap: 8, padding: "7px 11px", fontSize: 12, color: "var(--t2)" }}>
                       <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: domainColor(d), flex: "none" }} />{d}

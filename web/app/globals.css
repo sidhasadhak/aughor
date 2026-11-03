@@ -937,6 +937,15 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 /* A Themes ghost button bleeds into its neighbours by design (negative margins, to line its
    label up with text). In a toolbar or a table cell that eats the gap, so ours sit still. */
 .rt-BaseButton:where(.rt-variant-ghost) { margin: 0; }
+/* The zoom buttons on every map: xyflow's own are near-white on either skin. */
+.react-flow {
+  --xy-controls-button-background-color: var(--bg-2);
+  --xy-controls-button-background-color-hover: var(--bg-hover);
+  --xy-controls-button-color: var(--t2);
+  --xy-controls-button-color-hover: var(--t1);
+  --xy-controls-button-border-color: var(--b1);
+  --xy-controls-box-shadow: 0 0 0 1px var(--b1);
+}
 /* A table's rows: Themes draws the table, the page says which row is hovered and which is open.
    Both the record ledger and the shared table (components/ui/table.tsx) are Themes' size-1 table. */
 :is([data-ledger], [data-slot="table"]) .rt-TableRow:where(:hover) { background-color: var(--gray-a3); }

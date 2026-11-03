@@ -415,7 +415,7 @@ function ColumnsList({ cols, loading, distMap, onSave, mode }: {
                     <Button variant="secondary" size="xs" disabled={busy} onClick={() => save(c.name)}>Save</Button>
                   </div>
                 ) : (
-                  <Button variant="ghost" size="xs" title="Change its type" onClick={() => { setEditing(c.name); setEditType(c.type); }}
+                  <Button variant="plain" size="xs" title="Change its type" onClick={() => { setEditing(c.name); setEditType(c.type); }}
                     style={{ justifyContent: "flex-start", fontFamily: "var(--font-mono)", color: "var(--t3)", ...NUM }}>
                     {c.type || "—"}
                   </Button>

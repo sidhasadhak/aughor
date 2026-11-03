@@ -368,7 +368,7 @@ export function PaperSources({ refs }: { refs: { n: number; label: string; onOpe
 
 export function AskBar({ onOpen }: { onOpen: () => void }) {
   return (
-    <Button variant="ghost" data-testid="paper-ask" onClick={onOpen} className="h-auto w-full justify-start"
+    <Button variant="plain" data-testid="paper-ask" onClick={onOpen} className="h-auto w-full justify-start"
       style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, padding: "10px 12px",
         background: "var(--bg-1)", borderRadius: "var(--r3)", cursor: "text", textAlign: "left" }}>
       <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t3)" }}>Ask a follow-up about this briefing…</span>

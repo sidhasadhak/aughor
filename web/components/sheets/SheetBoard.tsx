@@ -150,7 +150,7 @@ export function SheetBoard({ sheet, query, column, card, editable, tick, onOpenR
                       boxShadow: marks.length ? `inset 3px 0 0 ${RULE_COLOR[marks[0].tone]}` : undefined }}
                     title={marks.length ? `marked: ${marks.map(m => m.name).join(", ")}` : undefined}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                      <Button variant="ghost" size="xs" onClick={() => onOpenRow(rowNo)}
+                      <Button variant="plain" size="xs" onClick={() => onOpenRow(rowNo)}
                         style={{ justifyContent: "flex-start", padding: 0, height: "auto", fontWeight: 600, color: "var(--t1)",
                           minWidth: 0, flex: 1 }}>
                         <span className="aug-mono" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

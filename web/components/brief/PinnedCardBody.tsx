@@ -263,7 +263,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
           {/* Evidence capsule — the receipt/derivation behind a finding-derived card. */}
           {onEvidence && card.provenance.insight_id && (
-            <Button variant="ghost" size="xs" onClick={() => onEvidence(card.provenance.insight_id)}
+            <Button variant="plain" size="xs" onClick={() => onEvidence(card.provenance.insight_id)}
               title="See the evidence behind this finding"
               style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--vio4) 35%, var(--b1))", borderRadius: "var(--r-chip)" }}>Evidence</Button>
           )}

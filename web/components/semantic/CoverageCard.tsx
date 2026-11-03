@@ -144,7 +144,7 @@ export function CoverageCard({ connId, schema, rows, onAdopted }: {
             const state = STATE[a.state];
             return (
               <div key={a.id} data-testid="coverage-area" data-area={a.id}>
-                <Button variant="ghost" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : a.id)} style={rowButtonStyle(isOpen, GRID)}>
+                <Button variant="plain" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : a.id)} style={rowButtonStyle(isOpen, GRID)}>
                   <span style={{ minWidth: 0 }}>
                     <span className="aug-fs-chrome" style={{ ...ONE_LINE, display: "block", color: "var(--t1)", fontWeight: 500 }}>{a.name}</span>
                     <span className="aug-fs-xs" style={{ ...MUTED, ...ONE_LINE, display: "block" }}>{a.question}</span>

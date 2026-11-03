@@ -136,7 +136,7 @@ function FactCard({
               variant="ghost"
               size="xs"
               onClick={onExplore}
-              className="h-auto gap-1 px-0 aug-fs-xs font-medium hover:bg-transparent dark:hover:bg-transparent"
+              className="gap-1 aug-fs-xs font-medium hover:bg-transparent dark:hover:bg-transparent"
               style={{ color: "var(--blue4, #6aa3ff)" }}
             >
               Explore this fact →
@@ -149,7 +149,7 @@ function FactCard({
               onClick={() =>
                 onShowSource({ columns: fact.columns, rows: fact.rows, sql: fact.sql, title: fact.headline })
               }
-              className="h-auto gap-1 px-0 aug-fs-xs font-normal hover:bg-transparent dark:hover:bg-transparent"
+              className="gap-1 aug-fs-xs font-normal hover:bg-transparent dark:hover:bg-transparent"
               style={{ color: "var(--t3)" }}
             >
               View SQL &amp; data
@@ -159,7 +159,7 @@ function FactCard({
               variant="ghost"
               size="xs"
               onClick={() => setSqlOpen((o) => !o)}
-              className="h-auto gap-1 px-0 aug-fs-xs font-normal hover:bg-transparent dark:hover:bg-transparent"
+              className="gap-1 aug-fs-xs font-normal hover:bg-transparent dark:hover:bg-transparent"
               style={{ color: "var(--t3)" }}
             >
               <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL

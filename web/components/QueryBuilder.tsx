@@ -95,7 +95,7 @@ function SemanticStepPanel({
   ));
   return (
     <div className="rounded border border-violet-500/25 bg-violet-500/[0.04]">
-      <Button variant="ghost" onClick={() => setOpen(!open)}
+      <Button variant="plain" onClick={() => setOpen(!open)}
         className={`w-full h-auto justify-start font-normal gap-1.5 px-2.5 py-1.5 aug-fs-xs text-violet-300 hover:text-violet-200 hover:bg-transparent dark:hover:bg-transparent transition ${SVG_SIZE_AUTO}`}>
         <Icon name="spark" size={11} />
         Semantic step
@@ -145,13 +145,13 @@ function SemanticStepPanel({
                   <Input value={f.description} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
                     placeholder="what to extract" className={`${inputCls} flex-1`} />
                   {fields.length > 1 && (
-                    <Button variant="ghost" size="xs" onClick={() => setFields(fields.filter((_, j) => j !== i))}
+                    <Button variant="plain" size="xs" onClick={() => setFields(fields.filter((_, j) => j !== i))}
                       className="h-auto px-1 py-0 font-normal text-sm text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent" title="remove field">×</Button>
                   )}
                 </div>
               ))}
               <Button variant="ghost" size="xs" onClick={() => setFields([...fields, { name: "", description: "" }])}
-                className="h-auto p-0 self-start font-normal aug-fs-xs text-violet-400 hover:text-violet-300 hover:bg-transparent dark:hover:bg-transparent">+ field</Button>
+                className="self-start font-normal aug-fs-xs text-violet-400 hover:text-violet-300 hover:bg-transparent dark:hover:bg-transparent">+ field</Button>
             </div>
           )}
 
@@ -652,13 +652,13 @@ function AggPicker({ col, table, onAdd, onCancel }: {
             <p className="text-base font-semibold text-zinc-100">Configure Metric</p>
             <p className="aug-fs-sm font-mono text-zinc-500 mt-0.5">{table}.{col.name} · {col.type}</p>
           </div>
-          <Button variant="ghost" size="xs" onClick={onCancel} className="h-auto p-0.5 font-normal text-lg leading-none text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">×</Button>
+          <Button variant="plain" size="xs" onClick={onCancel} className="h-auto p-0.5 font-normal text-lg leading-none text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">×</Button>
         </div>
 
         <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Aggregation function</p>
         <div className="grid grid-cols-5 gap-2 mb-5">
           {AGG_OPTIONS.map(o => (
-            <Button variant="ghost" size="xs" key={o.fn} onClick={() => changeAgg(o.fn as AggFn)} title={o.hint}
+            <Button variant="plain" size="xs" key={o.fn} onClick={() => changeAgg(o.fn as AggFn)} title={o.hint}
               className={`h-auto px-0 py-2 aug-fs-xs font-medium rounded-[var(--r3)] transition ${
                 agg === o.fn ? `${o.cls} ring-2 ring-current/40` : "text-zinc-500 border-zinc-700 bg-zinc-800/50 hover:border-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 dark:hover:bg-zinc-800/50"
               }`}>
@@ -724,7 +724,7 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
           <span className="aug-fs-xs text-zinc-500">↑↓  ↵ insert  Esc</span>
         </div>
         {items.map((s, i) => (
-          <Button variant="ghost" size="xs" key={s}
+          <Button variant="plain" size="xs" key={s}
             onMouseDown={e => { e.preventDefault(); onSelect(s); }}
             onMouseEnter={() => setActive(i)}
             className={`w-full h-auto justify-start rounded-none font-normal text-left px-3 py-[7px] aug-fs-sm font-mono transition ${
@@ -1692,7 +1692,7 @@ export function QueryBuilder({
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-[var(--r-pill)] ${isPrimary ? "bg-blue-400" : found ? "bg-emerald-400" : "bg-amber-400"}`} />
                   {t}
-                  {!isPrimary && <Button variant="ghost" size="xs" onClick={()=>removeJoin(t)} className="h-auto p-0 font-normal aug-fs-xs font-mono opacity-50 hover:opacity-100 ml-0.5 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>}
+                  {!isPrimary && <Button variant="plain" size="xs" onClick={()=>removeJoin(t)} className="h-auto p-0 font-normal aug-fs-xs font-mono opacity-50 hover:opacity-100 ml-0.5 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>}
                 </span>
               );
             })}
@@ -1798,7 +1798,7 @@ export function QueryBuilder({
             style={controlsCollapsed ? undefined : { height: controlsH }}>
             <div className="flex items-center gap-1 px-4 pt-2 border-b border-zinc-700/40 shrink-0">
               {(["data","customize"] as const).map(tab => (
-                <Button variant="ghost" key={tab} onClick={()=>{ setRailTab(tab); if (controlsCollapsed) setControlsCollapsed(false); }}
+                <Button variant="plain" key={tab} onClick={()=>{ setRailTab(tab); if (controlsCollapsed) setControlsCollapsed(false); }}
                   className={`h-auto aug-fs-sm font-semibold uppercase tracking-wide px-3 py-2 -mb-px rounded-none border-0 border-b-2 hover:bg-transparent dark:hover:bg-transparent transition ${railTab===tab ? "border-blue-500 text-zinc-100 hover:text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
                   {tab}
                 </Button>
@@ -1850,7 +1850,7 @@ export function QueryBuilder({
                 <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 aug-fs-sm text-blue-200">
                   <Icon name="link" size={13} className="shrink-0" />
                   <span className="font-mono">{joinHint}</span>
-                  <Button variant="ghost" size="xs" onClick={()=>setJoinHint(null)} className="h-auto p-0 font-normal ml-auto opacity-60 hover:opacity-100 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
+                  <Button variant="plain" size="xs" onClick={()=>setJoinHint(null)} className="h-auto p-0 font-normal ml-auto opacity-60 hover:opacity-100 leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                 </div>
               )}
 
@@ -1907,7 +1907,7 @@ export function QueryBuilder({
                             {TIME_PRESETS.filter(p=>p.id!=="custom").map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
                           </SelectField>
                         </>)}
-                        <Button variant="ghost" size="xs" onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none ml-0.5 hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
+                        <Button variant="plain" size="xs" onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none ml-0.5 hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                       </span>
                     ))}
                   </div>
@@ -1923,7 +1923,7 @@ export function QueryBuilder({
                       <div className="relative">
                         <Button variant="ghost" size="xs" onClick={()=>setShowMetricsCatalog(v=>!v)}
                           className="h-auto font-normal aug-fs-xs px-2.5 py-1 rounded-[var(--r3)] border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent transition whitespace-nowrap">
-                          📊 Catalog
+                          <Icon name="metric" size={11} /> Catalog
                         </Button>
                         {showMetricsCatalog && (
                           <>
@@ -1933,7 +1933,7 @@ export function QueryBuilder({
                                 <p className="aug-fs-xs font-semibold text-zinc-400">Metrics Catalog</p>
                               </div>
                               {metrics.map(m => (
-                                <Button variant="ghost" key={m.name}
+                                <Button variant="plain" key={m.name}
                                   onClick={()=>{setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable??"",agg:"CUSTOM",customExpr:m.sql,alias:m.name,fromMetric:m.name}]);setShowMetricsCatalog(false);}}
                                   className="w-full h-auto flex-col items-start justify-start rounded-none font-normal whitespace-normal text-left px-4 py-3 hover:bg-zinc-800/70 dark:hover:bg-zinc-800/70 transition border-0 border-b border-zinc-700/30 last:border-0">
                                   <p className="aug-fs-sm font-semibold text-zinc-200">{m.label}</p>
@@ -1966,18 +1966,18 @@ export function QueryBuilder({
                           className={`inline-flex items-center gap-1.5 aug-fs-sm font-mono px-2.5 py-1 rounded-[var(--r3)] border ${
                             warn ? "text-amber-200 border-amber-500/50 bg-amber-500/10"
                                  : (ao?.cls ?? "text-violet-300 border-violet-500/30 bg-violet-500/10")}`}>
-                          <span className="aug-fs-xs font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
+                          <span className="aug-fs-xs font-sans opacity-70">{m.fromMetric?<Icon name="metric" size={11} />:m.agg==="CUSTOM"?"fx":m.agg}</span>
                           <span className="max-w-[120px] truncate">{m.alias||measureExpr(m,isMulti)}</span>
                           {warn && (
                             <>
                               <span title={warn} className="text-amber-400 cursor-help">⚠</span>
                               {m.agg === "SUM" && (
                                 <Button variant="ghost" size="xs" onClick={()=>fixGrainMeasure(m)} title={`Rewrite as SUM(${m.col} × quantity)`}
-                                  className="h-auto p-0 font-normal aug-fs-xs text-amber-300 hover:text-amber-100 hover:bg-transparent dark:hover:bg-transparent underline decoration-dotted">fix</Button>
+                                  className="font-normal aug-fs-xs text-amber-300 hover:text-amber-100 hover:bg-transparent dark:hover:bg-transparent underline decoration-dotted">fix</Button>
                               )}
                             </>
                           )}
-                          <Button variant="ghost" size="xs" onClick={()=>{ setMeasures(p=>p.filter(x=>x.id!==m.id)); setHaving(h=>h.filter(x=>x.measureId!==m.id)); }} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
+                          <Button variant="plain" size="xs" onClick={()=>{ setMeasures(p=>p.filter(x=>x.id!==m.id)); setHaving(h=>h.filter(x=>x.measureId!==m.id)); }} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                         </span>
                       );
                     })}
@@ -1988,7 +1988,7 @@ export function QueryBuilder({
               {/* Resolved joins — below metrics, collapsed by default */}
               {joinStatuses.length > 0 && (
                 <div className="rounded-md border border-zinc-700/50 bg-zinc-800/20">
-                  <Button variant="ghost" onClick={()=>setJoinsOpen(o=>!o)} className={`w-full h-auto justify-start rounded-none font-normal gap-2 px-3 py-2 text-left hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
+                  <Button variant="plain" onClick={()=>setJoinsOpen(o=>!o)} className={`w-full h-auto justify-start rounded-none font-normal gap-2 px-3 py-2 text-left hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
                     <Icon name="chevr" size={11} className={`shrink-0 text-zinc-500 transition-transform ${joinsOpen?"rotate-90":""}`} />
                     <span className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</span>
                     {fanOutRisk && (
@@ -2029,7 +2029,7 @@ export function QueryBuilder({
                   {filters.map(f => (
                     <span key={f.id} className="inline-flex items-center gap-1.5 aug-fs-sm font-mono px-3 py-1 rounded-[var(--r3)] border bg-amber-500/10 border-amber-500/30 text-amber-300">
                       {NO_VAL_OPS.includes(f.op) ? `${qualify(f.col,f.table,isMulti)} ${f.op}` : `${qualify(f.col,f.table,isMulti)} ${f.op} ${f.val}`}
-                      <Button variant="ghost" size="xs" onClick={()=>setFilters(p=>p.filter(x=>x.id!==f.id))} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
+                      <Button variant="plain" size="xs" onClick={()=>setFilters(p=>p.filter(x=>x.id!==f.id))} className="h-auto p-0 font-normal opacity-50 hover:opacity-100 text-sm leading-none hover:text-current hover:bg-transparent dark:hover:bg-transparent">×</Button>
                     </span>
                   ))}
                   {showAddFilter ? (
@@ -2091,7 +2091,7 @@ export function QueryBuilder({
                         </SelectField>
                         <Input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
                           className="w-28" />
-                        <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="h-auto py-0 font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent text-sm leading-none px-1">×</Button>
+                        <Button variant="plain" size="xs" onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="h-auto py-0 font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent text-sm leading-none px-1">×</Button>
                       </div>
                     ))}
                     <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
@@ -2130,7 +2130,7 @@ export function QueryBuilder({
               {(primaryTable || sql.trim()) && (
               <div className="border-t border-zinc-700/30 pt-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Button variant="ghost" onClick={()=>setSqlOpen(o=>!o)} className={`h-auto p-0 font-normal gap-2 hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
+                  <Button variant="plain" onClick={()=>setSqlOpen(o=>!o)} className={`h-auto p-0 font-normal gap-2 hover:bg-transparent dark:hover:bg-transparent ${SVG_SIZE_AUTO}`}>
                     <Icon name="chevr" size={11} className={`shrink-0 text-zinc-500 transition-transform ${sqlOpen?"rotate-90":""}`} />
                     <p className="aug-fs-ui font-semibold text-zinc-300">SQL</p>
                   </Button>

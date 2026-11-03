@@ -114,12 +114,14 @@ def process_signals(process_id: str, prior: Any, now: Any) -> list[dict]:
                 if rose >= STAGE_MIN_DAYS and rose >= STAGE_MIN_REL * float(b90):
                     out.append({"signal": "stage_slowed", "process": process_id, "stage": name,
                                 "before": b90, "after": a90,
-                                "text": f"the {name} stage of {process_id} slowed: p90 {b90} → {a90} days"})
+                                "text": f"the {name} stage of {process_id} slowed: p90 {b90} → {a90} days",
+                                "question": f"Why did the {name} stage of {process_id} slow: p90 {b90} → {a90} days?"})
         pa, pb = s.get("promise") or {}, p.get("promise") or {}
         ra, rb = pa.get("breach_rate") if isinstance(pa, dict) else None, pb.get("breach_rate") if isinstance(pb, dict) else None
         if isinstance(ra, (int, float)) and isinstance(rb, (int, float)) and float(ra) - float(rb) >= BREACH_MIN_POINTS:
             out.append({"signal": "promise_breaking", "process": process_id, "stage": name, "before": rb, "after": ra,
-                        "text": f"the {pa.get('name') or name} promise of {process_id} is breaking more: {rb:.1%} → {ra:.1%}"})
+                        "text": f"the {pa.get('name') or name} promise of {process_id} is breaking more: {rb:.1%} → {ra:.1%}",
+                        "question": f"Why is the {pa.get('name') or name} promise of {process_id} breaking more: {rb:.1%} → {ra:.1%}?"})
     return out
 
 
@@ -133,7 +135,7 @@ def on_process_measured(connection_id: str, process_id: str, prior_entry: Any, n
         try:
             from aughor.record.inquiry import mission_for, open_inquiry
             metric = f"{signal.get('stage')}_lag_days" if signal["signal"] == "stage_slowed" else f"{signal.get('stage')}_breach_rate"
-            q = open_inquiry(question=f"Why did {signal['text']}?"[:500], connection_id=connection_id,
+            q = open_inquiry(question=signal["question"][:500], connection_id=connection_id,
                              opened_by=f"process:{process_id}", subject=f"process-{process_id}-{signal.get('stage')}",
                              mission=mission_for(connection_id, metric))
             _emit(connection_id, signal, q.id)

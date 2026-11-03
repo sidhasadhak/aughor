@@ -29,7 +29,7 @@ export function AppearancePanel({ theme, setTheme }: { theme: ThemeChoice; setTh
             {MODES.map(m => {
               const on = theme === m.id;
               return (
-                <Button key={m.id} variant="ghost" role="radio" aria-checked={on} onClick={() => setTheme(m.id)}
+                <Button key={m.id} variant="plain" role="radio" aria-checked={on} onClick={() => setTheme(m.id)}
                   style={{ height: "auto", margin: 0, padding: "10px 12px", justifyContent: "flex-start", gap: 10,
                     textAlign: "left", whiteSpace: "normal", borderRadius: "var(--r3)",
                     background: on ? "var(--bg-sel)" : "var(--bg-3)",

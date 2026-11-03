@@ -48,7 +48,7 @@ glow and lift, and two component layers for one class is one too many.
 ## 2. Hard constraints
 
 **Type.** Root 14px, the reading size; 13 is chrome. Seven steps and no others — `11 · 12 · 13 · 14 · 15 · 18 · 22` (`aug-fs-xs … aug-fs-display`);
-28px exists in exactly one place, an icon in an empty state (`aug-fs-glyph`, `.aug-empty-glyph`).
+28px exists in exactly one place, an icon in an empty state (`aug-fs-glyph`, `.aug-empty-glyph`), and 40px in one, the figure a screen leads with (`aug-fs-lead`, 2026-11-03).
 11 is the floor. Inter for UI text; *(stale: figures are tabular Inter, as §10 and `CLARITY.md` §4 say — mono for ids and code only)* **JetBrains Mono for every figure, id, timestamp, metric,
 table or column name, and code**, always tabular (`.aug-num`). Line heights 1.45 at 11/18,
 1.55 at 12, 1.7 at 13 (1.8 in prose, `.aug-text-prose`), 1.5 at 15, 1.0 at 22.
@@ -167,8 +167,8 @@ for emphasis.
   the label never moves — except the one Primary per view, which also scales to 0.96 (`.aug-press`,
   150ms ease-out; `<Button static>` keeps it still); loading = rest state + ◐ at .8 opacity. `.aug-btn`
   (`-primary` `-ghost` `-minimal` `-sm`). `<Button>` variants: `default` Primary · `secondary`
-  Secondary · `outline` and `minimal` Ghost (bordered) · `link` Minimal ("show source") ·
-  `ghost` the quiet toolbar/menu-row idiom (not on the sheet) · `destructive`. Sizes: default,
+  Secondary · `outline`, `minimal` and `ghost` Ghost (bordered; `ghost` since 2026-11-03, CLARITY §3) · `link` Minimal ("show source") ·
+  `plain` no chrome: a whole row, a bare icon, a name that opens what it names · `destructive`. Sizes: default,
   `sm`, `lg` 26; `xs` 22; icon sizes square at 26/22.
 - **Fields** — `.aug-input` `.aug-select` `.aug-textarea`, `<Input> <Textarea> <SelectTrigger>`:
   height 28, radius 4, `--bg-3`, `--b2` → `--b3` on hover, error `--red2` border with `--red4`

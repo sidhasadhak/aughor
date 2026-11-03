@@ -205,7 +205,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
           {status.tables_total > 0 && `${status.tables_total} tables · ${status.joins_total} joins`}
         </span>
         {isRunning && (
-          <Button variant="ghost" size="xs" onClick={onStop} disabled={stopping}
+          <Button variant="plain" size="xs" onClick={onStop} disabled={stopping}
             className="flex items-center gap-1 aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "var(--red4)" }} />
@@ -213,12 +213,12 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
           </Button>
         )}
         {isStopped && !isRunning && (<>
-          <Button variant="ghost" size="xs" onClick={onResume} disabled={resuming || restarting}
+          <Button variant="plain" size="xs" onClick={onResume} disabled={resuming || restarting}
             className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
             {resuming ? "resuming…" : interrupted ? "Continue" : "Resume"}
           </Button>
-          <Button variant="ghost" size="xs" onClick={onRestart} disabled={resuming || restarting}
+          <Button variant="plain" size="xs" onClick={onRestart} disabled={resuming || restarting}
             className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)" }}>
             {restarting ? "restarting…" : "Restart"}
@@ -256,7 +256,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
   }
 
   if (!open) return (
-    <Button variant="ghost" size="xs" onClick={() => setOpen(true)} className="aug-fs-xs px-2.5 py-1 rounded mt-2"
+    <Button variant="plain" size="xs" onClick={() => setOpen(true)} className="aug-fs-xs px-2.5 py-1 rounded mt-2"
       style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
       ↺ Retry with fix
     </Button>
@@ -270,12 +270,12 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
           placeholder="e.g. use click_ts instead of click_id…"
           className="flex-1" />
-        <Button variant="ghost" size="xs" onClick={handleRetry} disabled={loading}
+        <Button variant="plain" size="xs" onClick={handleRetry} disabled={loading}
           className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
           style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
           {loading ? "fixing…" : "Run fix"}
         </Button>
-        <Button variant="ghost" size="xs" onClick={() => { setOpen(false); setResult(null); }}
+        <Button variant="plain" size="xs" onClick={() => { setOpen(false); setResult(null); }}
           className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t3)" }}>✕</Button>
       </div>
       {result && (
@@ -302,7 +302,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
               </div>
               {/* Save the successful fix as a finding (through the Phase-8 guards) */}
               {!saved ? (
-                <Button variant="ghost" size="xs" onClick={handleSave} disabled={saving}
+                <Button variant="plain" size="xs" onClick={handleSave} disabled={saving}
                   className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40"
                   style={{ background: "var(--grn1)", color: "var(--grn4)", border: "0.5px solid var(--grn2)" }}>
                   {saving ? "saving…" : "Save as finding"}
@@ -717,7 +717,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           </span>
         )}
         {errorCount > 0 && (
-          <Button variant="ghost" size="xs" onClick={handleFixAll} disabled={fixingAll}
+          <Button variant="plain" size="xs" onClick={handleFixAll} disabled={fixingAll}
             title={`Repair the ${errorCount} errored quer${errorCount !== 1 ? "ies" : "y"} visible under the current filter`}
             style={{
               fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
@@ -739,7 +739,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           {isRunning && <span className="ml-2 inline-flex items-center gap-1.5" style={{ color: "var(--t3)" }}><span className="aug-dot aug-dot-live" aria-hidden />live</span>}
         </span>
         {filtered.length > DEFAULT_LIMIT && (
-          <Button variant="ghost" size="xs" onClick={() => setShowAll(v => !v)} style={{
+          <Button variant="plain" size="xs" onClick={() => setShowAll(v => !v)} style={{
             fontSize: 11, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
             background: showAll ? "var(--blue1)" : "var(--bg-1)",
             color: showAll ? "var(--blue4)" : "var(--t3)",

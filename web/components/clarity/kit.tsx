@@ -10,7 +10,7 @@
  * Inbox share them from here, so they read as one product and like Home (two kits were made the same day and are
  * one here). Nothing here fetches or decides — it only lays out.
  */
-import { Children, type CSSProperties, type ReactNode, type Ref, useState } from "react";
+import { Children, createContext, type CSSProperties, type ReactNode, type Ref, useContext, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -115,6 +115,21 @@ export function Figures({ children, testId }: { children: ReactNode; testId?: st
 }
 
 /**
+ * The same figures as one quiet line, for a screen that leads with its rows: a ledger, a log, a list of things. Its
+ * figures say all they said as cards (value, label, the muted line, the chip) and take no more height than a sentence.
+ */
+export function Tally({ children, testId }: { children: ReactNode; testId?: string }) {
+  return (
+    <TallyLine.Provider value={true}>
+      <div data-testid={testId} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 20px" }}>
+        {children}
+      </div>
+    </TallyLine.Provider>
+  );
+}
+const TallyLine = createContext(false);
+
+/**
  * One figure: its label, the value, one muted line. `onOpen` makes the whole card the door to where the number
  * comes from (the label's `title` says so on hover). `tone` colours the value only when it means something:
  * amber — it needs a person; red — an adverse figure.
@@ -123,12 +138,23 @@ export function Figure({ label, value, sub, tone, title, onOpen, testId }: {
   label: string; value: ReactNode; sub?: ReactNode; tone?: "amber" | "red"; title?: string;
   onOpen?: () => void; testId?: string;
 }) {
+  const inline = useContext(TallyLine);
+  const color = tone === "amber" ? "var(--amb4)" : tone === "red" ? "var(--red4)" : "var(--t1)";
+  if (inline) {
+    return (
+      <span data-testid={testId} title={title} style={{ display: "inline-flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
+        <span className="aug-fs-chrome" data-slot="figure-value" data-testid={testId ? `${testId}-value` : undefined}
+          style={{ color, fontWeight: 600, ...NUM }}>{value}</span>
+        <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{label}</span>
+        {sub != null && sub !== false && <span className="aug-fs-xs" style={{ ...MUTED, ...ROW, gap: 6 }}>{sub}</span>}
+      </span>
+    );
+  }
   const body = (
     <>
       <span className="aug-fs-xs" style={{ ...MUTED, display: "block" }}>{label}</span>
       <span className="aug-fs-display" data-slot="figure-value" data-testid={testId ? `${testId}-value` : undefined} style={{ display: "block",
-        color: tone === "amber" ? "var(--amb4)" : tone === "red" ? "var(--red4)" : "var(--t1)", fontWeight: 600,
-        lineHeight: 1.25, margin: "2px 0", ...NUM }}>{value}</span>
+        color, fontWeight: 600, lineHeight: 1.25, margin: "2px 0", ...NUM }}>{value}</span>
       {sub != null && sub !== false && (
         <span className="aug-fs-xs" style={{ ...MUTED, ...ROW, gap: 6, lineHeight: 1.5 }}>{sub}</span>
       )}
@@ -136,7 +162,7 @@ export function Figure({ label, value, sub, tone, title, onOpen, testId }: {
   );
   if (!onOpen) return <div data-testid={testId} title={title} style={CARD}>{body}</div>;
   return (
-    <Button variant="ghost" data-testid={testId} title={title} onClick={onOpen}
+    <Button variant="plain" data-testid={testId} title={title} onClick={onOpen}
       style={{ ...CARD, display: "block", height: "auto", margin: 0, textAlign: "left", whiteSpace: "normal",
         width: "100%", fontWeight: 400, cursor: "pointer" }}>
       {body}
@@ -145,20 +171,27 @@ export function Figure({ label, value, sub, tone, title, onOpen, testId }: {
 }
 
 /**
- * What needs a person, together, in amber — its buttons sit on the row each one acts on. With nothing waiting it is
- * an ordinary card holding one muted line: amber means a person is needed, so an empty section does not wear it.
+ * What needs a person, together, under an amber edge and label — its buttons sit on the row each one acts on. With
+ * nothing waiting it is one muted line: amber means a person is needed, so an empty section does not wear it.
  * Hand it rows and the `empty` line (it is waiting when a row is there), or its body and whether it is `waiting`.
  */
+export const NEEDS_EDGE = "inset 2px 0 0 var(--amb3)";
+
 export function NeedsYou({ right, children, testId, waiting, empty }: {
   right?: ReactNode; children: ReactNode; testId?: string; waiting?: boolean; empty?: ReactNode;
 }) {
   const rows = empty !== undefined ? Children.toArray(children).filter(Boolean) : null;
   const on = rows ? rows.length > 0 : waiting ?? true;
-  // The amber edge overrides CARD's `border` SHORTHAND, never a `borderColor` longhand beside it: React warns
-  // when a longhand is removed on rerender while the shorthand stays (the Metrics tab, 2026-10-15).
+  // An edge and an amber label, never a fill (the user, 2026-11-03): a warning is not the brightest thing on the page.
+  // Inset, so the edge never touches CARD's `border` shorthand (React warns when a longhand beside it is removed).
+  if (rows && !on) {
+    return (
+      <section aria-label="Needs you" data-testid={testId} data-waiting="false" className="aug-fs-sm" style={MUTED}>{empty}</section>
+    );
+  }
   return (
     <section aria-label="Needs you" data-testid={testId} data-waiting={on ? "true" : "false"}
-      style={on ? { ...CARD, background: "var(--amb1)", border: "1px solid var(--amb2)" } : CARD}>
+      style={on ? { ...CARD, boxShadow: NEEDS_EDGE } : CARD}>
       <Label tone={on ? "amber" : undefined} right={right}>Needs you</Label>
       {rows ? (rows.length ? rows : <Empty>{empty}</Empty>) : children}
     </section>
@@ -221,7 +254,7 @@ export function Bar({ value, max, color = "var(--chart-1)", hatched = false }: {
 /** A rule between rows of a list. */
 export const RULE: CSSProperties = { borderTop: "1px solid var(--b0)" };
 
-/** One thing that needs a person, with its buttons on the row — inside the amber "Needs you" card, so it wears none of
+/** One thing that needs a person, with its buttons on the row — inside the "Needs you" card, so it wears no amber of
  *  its own. */
 export function NeedsRow({ title, detail, actions, testId }: {
   title: ReactNode;
@@ -294,8 +327,8 @@ export function Columns({ columns, height = 72, testId }: { columns: Column[]; h
       <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height, borderBottom: "1px solid var(--chart-grid)" }}>
         {columns.map(c => (
           <Tooltip key={c.key} content={c.tip}>
-            <div role="img" aria-label={c.tip} style={{ flex: 1, height: "100%", display: "flex", alignItems: "flex-end" }}>
-              <div style={{ width: "100%", height: c.value ? `${Math.max(4, (c.value / max) * 100)}%` : 0,
+            <div role="img" aria-label={c.tip} style={{ flex: 1, height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+              <div style={{ width: "100%", maxWidth: 28, height: c.value ? `${Math.max(4, (c.value / max) * 100)}%` : 0,
                 borderRadius: "3px 3px 0 0", background: "var(--chart-1)" }} />
             </div>
           </Tooltip>

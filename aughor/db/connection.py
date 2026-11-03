@@ -19,9 +19,11 @@ from typing import Optional
 import duckdb
 import sqlglot
 
+from urllib.parse import urlsplit
+
 from aughor.db.dialects import known_dialect, sql_for_engine
 from aughor.db.doors import add as _add_doors, door_dialect, door_schema, passed as _passed, statement_is_internal, through_door
-from aughor.db.errors import classify_error
+from aughor.db.errors import ConnectionUnreachable, classify_error, is_unreachable
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
 
@@ -1146,7 +1148,9 @@ class DatabaseConnection(ABC):
         if self.dialect == "duckdb":
             return sql
         try:
-            out = sqlglot.transpile(sql, read="duckdb", write=self.dialect)[0]
+            from aughor.sql.engine_fit import FITTED_DIALECTS, translate_for
+            out = (translate_for(sql, self.dialect) if self.dialect in FITTED_DIALECTS
+                   else sqlglot.transpile(sql, read="duckdb", write=self.dialect)[0])
         except Exception:
             return sql  # best-effort — fall back to original
         if out != sql:
@@ -2123,9 +2127,22 @@ def open_connection(
     connection_id: str = "",
     meta: dict | None = None,
 ) -> DatabaseConnection:
-    return _schema_without_excluded(
-        _open_connection(conn_type, dsn, schema_name=schema_name, connection_id=connection_id, meta=meta),
-        connection_id)
+    try:
+        opened = _open_connection(conn_type, dsn, schema_name=schema_name, connection_id=connection_id, meta=meta)
+    except Exception as exc:
+        if not is_unreachable(exc):
+            raise
+        raise ConnectionUnreachable(connection_id, _host_and_port(dsn)) from exc
+    return _schema_without_excluded(opened, connection_id)
+
+
+def _host_and_port(dsn: str) -> str:
+    """Where a DSN points, and nothing else of it: the rest can hold a password."""
+    try:
+        at = urlsplit(dsn)
+        return f"{at.hostname}:{at.port}" if at.hostname and at.port else at.hostname or ""
+    except ValueError:
+        return ""
 
 
 def _open_connection(

@@ -187,7 +187,7 @@ One corpus of intelligence behind many surfaces — the depth, mechanisms, and t
 - **Adaptive temporal scope** — four tiers from activity-anchored recency to a cost governor for TB-scale warehouses.
 
 **Data**
-- **Connectors** — DuckDB · MotherDuck · PostgreSQL · **BigQuery** (run live in production against a real warehouse) · Snowflake · MySQL · SQLite · Exasol · Trino · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion, and federated queries across them. Credentials Fernet-encrypted at rest; a per-dialect capability contract keeps generated SQL runnable on each engine.
+- **Connectors** — DuckDB · MotherDuck · PostgreSQL · **BigQuery** (run live in production against a real warehouse) · Snowflake · MySQL · MariaDB · TiDB · CockroachDB · TimescaleDB · SQL Server · Oracle · ClickHouse · SQLite · Exasol · Trino · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion, and federated queries across them. Credentials Fernet-encrypted at rest; a per-dialect capability contract keeps generated SQL runnable on each engine.
 - **Spreadsheets** — sheets people make from a file, a query's rows or nothing, and edit as they would in a spreadsheet: keys, paste, undo, ranges, a menu and a sort on every header, pinned rows. Views of a sheet are boards, calendars and grouped totals with rules, and a column a model fills row by row is never counted in a figure. Combine sheets, chat with one (the answer says how many of what whole, and shows the rows on the grid), share it with chosen people and groups to read or edit, and make a dashboard from it. Every change is kept with who and when.
 - **SQL Editor** — SQL or a visual composer; type `/ask` and a question and it writes the SQL; every statement is checked by the guards before it runs; results, charts, and open-in-editor from any answer.
 - **Catalog & Documents** — browsable schema intelligence and glossary; a searchable corpus of the documents your agents read.
@@ -283,7 +283,7 @@ Each `uv sync` leaves exactly the extras it names and removes any others — so 
 | `export` | PDF / PowerPoint reports | Export answers **501**, naming the extra |
 | `semantic` | Semantic search over past analyses (embedded Qdrant — no server needed) | Reads return no hits, writes no-op |
 | `fastread` | Faster bulk table reads (polars) | Falls back to DuckDB automatically |
-| `warehouse` | Snowflake, BigQuery, MySQL, Exasol, Trino | Those connectors are unavailable |
+| `warehouse` | Snowflake, BigQuery, MySQL and MariaDB, Exasol, Trino, SQL Server, Oracle, ClickHouse, Databricks, Athena | Those connectors are unavailable |
 | `crm`, `cloud-storage`, `knowledge-sync` | Stripe/HubSpot/Salesforce, Azure Blob, Confluence/Notion | Those connectors are unavailable |
 | `observability`, `evals` | OTel/Langfuse export, eval harnesses | Tracing and harnesses unavailable |
 

@@ -63,7 +63,11 @@ class MetadataRead:
 
 # ── which engine a connection is ──────────────────────────────────────────────────
 
-_TYPE_BY_CLASS: dict[str, str] = {d.connector.rsplit(":", 1)[1]: d.type for d in ENGINES if d.connector}
+#: A class several tiles share answers as its first: MySQLConnection is `mysql`, whichever of its wire engines a person picked.
+_TYPE_BY_CLASS: dict[str, str] = {}
+for _d in ENGINES:
+    if _d.connector:
+        _TYPE_BY_CLASS.setdefault(_d.connector.rsplit(":", 1)[1], _d.type)
 _TYPE_BY_CLASS.update({"DuckDBConnection": "duckdb", "AughorOpsConnection": "duckdb", "PostgresConnection": "postgres"})
 
 
@@ -71,6 +75,9 @@ def engine_type_of(conn) -> Optional[str]:
     """The declared engine type of a connection object, by its class (the registered name, or
     the two built-ins); None when the class is unknown — a dialect alone does not say whose
     catalog is behind it, so an unknown class is answered `unknown`, not guessed."""
+    opened_as = getattr(conn, "engine_type", None)
+    if isinstance(opened_as, str) and opened_as in BY_TYPE:
+        return opened_as
     for cls in type(conn).__mro__:
         if cls.__name__ in _TYPE_BY_CLASS:
             return _TYPE_BY_CLASS[cls.__name__]

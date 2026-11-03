@@ -645,17 +645,17 @@ export function ResultsPanel({
                     minWidth: 150, padding: 5, background: "var(--bg-2)",
                     border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
                   }}>
-                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    <Button variant="plain" size="xs" className="aug-fs-ui"
                       style={{ width: "100%", justifyContent: "flex-start" }}
                       onClick={() => { setRenaming(v.id); setRenameDraft(v.name); setVizMenu(""); }}>
                       Rename
                     </Button>
-                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    <Button variant="plain" size="xs" className="aug-fs-ui"
                       style={{ width: "100%", justifyContent: "flex-start" }}
                       onClick={() => duplicateViz(v.id)}>
                       Duplicate
                     </Button>
-                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    <Button variant="plain" size="xs" className="aug-fs-ui"
                       style={{ width: "100%", justifyContent: "flex-start", color: "var(--red4)" }}
                       onClick={() => removeViz(v.id)}>
                       Remove

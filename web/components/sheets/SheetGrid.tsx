@@ -291,7 +291,7 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, on
           style={{ ...cellStyle(c), justifyContent: "flex-start", gap: 6, fontWeight: 600,
             ...(c.left !== undefined ? { background: "var(--bg-2)", zIndex: 2 } : { position: "relative" }),
             opacity: drag?.id === c.id ? 0.45 : undefined }}>
-          <Button variant="ghost" size="xs" disabled={!onSort}
+          <Button variant="plain" size="xs" disabled={!onSort}
             onPointerDown={e => startDrag(e, c)}
             onClick={e => {
               if (dragged.current) { dragged.current = false; return; }   // the end of a drag, not a click
@@ -394,7 +394,7 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, on
             background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 4,
             display: "flex", flexDirection: "column", fontWeight: 400, color: "var(--t1)" }}>
           {items.map(it => (
-            <Button key={it.action} role="menuitem" variant="ghost" size="xs"
+            <Button key={it.action} role="menuitem" variant="plain" size="xs"
               onClick={() => { setMenu(""); onAction(it.action, menuOn.id); }}
               style={{ justifyContent: "flex-start", width: "100%", fontWeight: 400 }}>
               {it.label}

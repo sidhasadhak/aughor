@@ -133,7 +133,7 @@ function Chooser({ sheetId, me, onChanged }: { sheetId: string; me?: string; onC
                   <Segmented label={`What ${s.name ?? s.id} may do`} value={s.level}
                     onChange={v => setShares(shares.map(x => (x === s ? { ...x, level: v } : x)))}
                     options={[{ value: "view", label: "Can read" }, { value: "edit", label: "Can edit" }]} />
-                  <Button variant="ghost" size="xs" aria-label={`Stop sharing with ${s.name ?? s.id}`}
+                  <Button variant="plain" size="xs" aria-label={`Stop sharing with ${s.name ?? s.id}`}
                     onClick={() => setShares(shares.filter(x => x !== s))}><Icon name="close" size={12} /></Button>
                 </>
               ) : (

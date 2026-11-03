@@ -44,7 +44,7 @@ export function ExportButton({ invId }: { invId: string }) {
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <Button variant="ghost" size="xs"
+      <Button variant="plain" size="xs"
         onClick={() => setOpen(v => !v)}
         title="Download this analysis as PDF or PowerPoint"
         style={{
@@ -71,14 +71,14 @@ export function ExportButton({ invId }: { invId: string }) {
           <button style={item} disabled={!!busy} onClick={() => go("pdf")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-            <span style={{ fontSize: 15 }}>📄</span>
+            <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="brief" size={14} /></span>
             <span style={{ flex: 1 }}>PDF document</span>
             {busy === "pdf" && <Spin />}
           </button>
           <button style={item} disabled={!!busy} onClick={() => go("pptx")}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-3)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-            <span style={{ fontSize: 15 }}>📊</span>
+            <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="chart" size={14} /></span>
             <span style={{ flex: 1 }}>PowerPoint (.pptx)</span>
             {busy === "pptx" && <Spin />}
           </button>

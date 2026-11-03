@@ -240,7 +240,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                   : "Recording is on — the next question asked will appear here as a trace."}
             </div>
           ) : traces.map(t => (
-            <Button key={t.trace_id} variant="ghost" size="sm"
+            <Button key={t.trace_id} variant="plain" size="sm"
               onClick={() => setSelected(t.trace_id)}
               style={{
                 display: "block", width: "100%", height: "auto", textAlign: "left",
@@ -294,10 +294,10 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
           >
             {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
           </SelectField>
-          <Button variant="ghost" size="sm" className="aug-fs-xs"
+          <Button variant="plain" size="sm" className="aug-fs-xs"
             disabled={offset === 0}
             onClick={() => setOffset(o => Math.max(0, o - pageSize))}>‹</Button>
-          <Button variant="ghost" size="sm" className="aug-fs-xs"
+          <Button variant="plain" size="sm" className="aug-fs-xs"
             disabled={offset + pageSize >= total}
             onClick={() => setOffset(o => o + pageSize)}>›</Button>
         </div>
@@ -573,7 +573,7 @@ export function TraceView({ traceId, answer = "" }: {
                     <div key={e.seq} style={{
                       opacity: reached ? 1 : 0.28,
                       borderLeft: isCursor ? "2px solid var(--blue3)" : "2px solid transparent" }}>
-                      <Button variant="ghost" size="sm"
+                      <Button variant="plain" size="sm"
                         onClick={() => setExpanded(isOpen ? null : e.seq)}
                         style={{ display: "flex", width: "100%", height: "auto",
                           alignItems: "center", gap: 8, padding: "4px 6px",

@@ -140,6 +140,11 @@ warehouse = [
     "PyMySQL>=1.0.0",
     "pyexasol>=0.25.0",
     "trino>=0.330.0",
+    "pymssql>=2.3.0",
+    "oracledb>=2.0.0",
+    "clickhouse-connect>=0.8.0",
+    "databricks-sql-connector>=3.0.0",
+    "PyAthena>=3.0.0",
 ]
 # The three REST connectors (`connectors/api/`) speak HTTP through `requests`, imported at
 # MODULE level in all three. This extra used to declare `stripe`, `hubspot-api-client` and

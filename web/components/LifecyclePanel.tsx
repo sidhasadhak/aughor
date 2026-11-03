@@ -112,7 +112,7 @@ export function LifecyclePanel({
             ? `Pinned to v${freeze.version}`
             : `Pinned to v${freeze.version} — ${freeze.reason || "drifted"}`}
           <Button variant="ghost" size="xs" disabled={busy} onClick={unpin}
-                  className="h-auto p-0 ml-2 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                  className="ml-2 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
             Unfreeze
           </Button>
         </div>
@@ -130,19 +130,19 @@ export function LifecyclePanel({
             </span>
             {r.version !== published && (
               <Button variant="ghost" size="xs" disabled={busy} onClick={() => publish(r.version)}
-                      className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                      className="aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
                 Publish
               </Button>
             )}
             <Button variant="ghost" size="xs" disabled={busy} onClick={() => revert(r.version)}
                     title="Restore this version's content as a NEW version — history is never rewound"
-                    className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                    className="aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
               Revert to
             </Button>
             {!freeze?.frozen && (
               <Button variant="ghost" size="xs" disabled={busy} onClick={() => pin(r.version)}
                       title="Pin the artifact to this version and the data behind it"
-                      className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                      className="aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
                 Freeze
               </Button>
             )}

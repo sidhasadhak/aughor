@@ -1057,3 +1057,28 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
         block reads. Measured on the two kept live editions first: 0 of 29 sentences newly held.
       - A person's guide edit measures each new or changed check once before it is kept (`guide.verify_edit`) and is
         refused with why when one cannot be; ids must be snake_case and unique and readers must watch real checks.
+
+70. [~] **What unslop teaches: one lead per screen, no machine text** (the user, 2026-11-03: *"lets study this
+    https://github.com/heydamir/unslop and try to make our platform more appealing and top UI/UX quality"*). Study:
+    `docs/UNSLOP_STUDY_2026-11-03.md`, mockup `design-mockups/unslop-proposal.html` (Home and Record, live theLook).
+    Measured on 23 live screens: not slop, but flat. 15 open on the same equal figure cards, none has type above 22px, 9 lead
+    with an amber block. Home's lead figure is six times what that day now reads. The user's calls, 2026-11-03: buttons look
+    like buttons everywhere · uppercase labels stay · Needs you takes an amber edge · six ledgers lose the figure row.
+    Built on `claude/visible-buttons`, the same day. Home's 60-day line reads through a new `count` on the trend door, so it
+    needs an API restart to be live.
+    Found on the way: the Daily Briefing had not finished since 28 Oct. A job submitted from a worker thread's own event loop
+    died when the kernel's cap was full, its row PENDING and its automation waiting for good. Fixed in `kernel/jobs.py`; live at
+    the next API restart.
+
+71. [x] **Connectors: a tile for what a person looks for, proven before it loses Preview** (the user, 2026-11-03: *"Lets add more
+    connectors like here: https://superset.apache.org/user-docs/databases/"*; the user chose Superset's groups 1 and 2, and to pull
+    the Docker images). 18 connector types became 40. `tests/integration/test_connectors_on_real_servers.py` runs on eight real
+    servers: connect, schema, platform SQL, model SQL, a cut read, a bound value, a profile, the screens' doors, and a write refused.
+    Passed, no badge: MySQL, MariaDB, TiDB, CockroachDB, TimescaleDB, ClickHouse, SQL Server, Oracle. On Preview because no server
+    was run here: Redshift, YugabyteDB, Greenplum, Aurora (both), AlloyDB, Neon, Supabase, SingleStore, StarRocks, Doris, Starburst,
+    Synapse, Databricks, Athena. Running them was the point: real MySQL 8 never read its schema (upper-case keys), TiDB refused
+    the read-only session outright and put every row in one month, Catalog was empty on every engine but Postgres, DuckDB and BigQuery, and
+    sqlglot moved a QUALIFY's cap inside its subquery on Postgres and MySQL (the wrong rows, with no error). `aughor/sql/engine_fit.py` holds
+    those fixes. SQL Server and TiDB cannot refuse a write themselves, so the door is the boundary and each says so.
+    Still open: the Preview tiles (each needs its server or an account); SQL Server and Oracle read no keys or comments yet.
+

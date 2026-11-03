@@ -1384,7 +1384,7 @@ function MetricRow({ p, every, open, onToggle, children }: {
   const col = m?.time_column ? shortColumn(m.time_column) : "";
   return (
     <div id={`metric-row-${p.key}`} data-testid="metric-row">
-      <Button variant="ghost" onClick={onToggle} aria-expanded={open} style={rowButtonStyle(open, LIST_GRID)}>
+      <Button variant="plain" onClick={onToggle} aria-expanded={open} style={rowButtonStyle(open, LIST_GRID)}>
         <span style={{ minWidth: 0 }} title={r.name}>
           <span className="aug-fs-chrome" style={{ ...ONE_LINE, display: "block", color: "var(--t1)", fontWeight: 500 }}>{r.label}</span>
           {meta && (

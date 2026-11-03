@@ -106,3 +106,9 @@ describe("blockedSince", () => {
     expect(blockedSince([recent, rec({ verdict: "blocked", ts: "2026-09-12T00:00:00Z" }), rec({})], now)).toEqual([recent]);
   });
 });
+
+describe("an automation's statement", () => {
+  it("names the automation's step, never its id", () => {
+    expect(callerText("automation:7473b250-3bed-4aea-b009-9bbe493abf32:top_sellers")).toBe("Automation · top sellers");
+  });
+});

@@ -414,7 +414,7 @@ function ResultFigure({
             variant="ghost"
             size="xs"
             onClick={handleSourceClick}
-            className="self-end h-auto gap-1.5 px-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+            className="self-end gap-1.5 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
           >
             <Icon name="table" size={16} label="Table" />
             Source data
@@ -666,7 +666,7 @@ function Section({
   return (
     <div className="mt-2">
       <Button
-        variant="ghost"
+        variant="plain"
         size="xs"
         onClick={() => setOpen(v => !v)}
         className="h-auto justify-start gap-1 px-0 py-1 aug-fs-sm font-normal text-zinc-500 hover:text-zinc-400 hover:bg-transparent dark:hover:bg-transparent"
@@ -845,7 +845,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
   return (
     <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, var(--amb3) 5%, var(--bg-0))" }}>
       <Button
-        variant="ghost"
+        variant="plain"
         onClick={() => setOpen(v => !v)}
         className="w-full h-auto justify-start gap-2 px-3 py-2 border-b border-amber-700/20 rounded-none text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
       >
@@ -937,7 +937,7 @@ function InlineAgentTrace({ turn, onShowSource }: { turn: ChatTurn; onShowSource
   return (
     <div className="mb-4" role="group" aria-label="Thought process">
       <Button
-        variant="ghost"
+        variant="plain"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         className="h-auto max-w-full justify-start gap-2 px-1 py-1 group/trace font-normal hover:bg-transparent dark:hover:bg-transparent"
@@ -1118,7 +1118,7 @@ function NarrativeBrief({
               ? <span key="cq" className="italic">originally: &ldquo;{turn.cachedQuestion}&rdquo;</span>
               : null,
             onRunFresh
-              ? <Button key="rf" variant="ghost" size="xs" onClick={() => onRunFresh(turn.question)} className="h-auto p-0 aug-text-xs font-normal text-zinc-400 hover:text-zinc-200 hover:underline underline-offset-2 hover:bg-transparent dark:hover:bg-transparent">Run fresh</Button>
+              ? <Button key="rf" variant="ghost" size="xs" onClick={() => onRunFresh(turn.question)} className="aug-text-xs font-normal text-zinc-400 hover:text-zinc-200 hover:underline underline-offset-2 hover:bg-transparent dark:hover:bg-transparent">Run fresh</Button>
               : null,
           ]}
         />
@@ -1161,7 +1161,7 @@ function NarrativeBrief({
           variant="ghost"
           size="xs"
           onClick={() => setExplained(true)}
-          className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
+          className="self-start gap-1.5 aug-text-sm font-normal text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent"
         >
           <Icon name="info" size={16} />
           Explain the data
@@ -1196,7 +1196,7 @@ function NarrativeBrief({
             {turn.followups.map((q, i) => (
               <Button
                 key={i}
-                variant="ghost"
+                variant="plain"
                 size="xs"
                 onClick={() => onFollowUp?.(q)}
                 className="aug-pressable h-auto items-start justify-start gap-1.5 p-0 text-left whitespace-normal aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
@@ -1288,12 +1288,12 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
         </Button>
         <span className="text-zinc-700">·</span>
         <Button variant="ghost" size="xs" onClick={() => navigator.clipboard.writeText(sql).catch(() => {})}
-          className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">Copy SQL</Button>
+          className="aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">Copy SQL</Button>
         {annotateTarget && (
           <>
             <span className="text-zinc-700">·</span>
             <Button variant="ghost" size="xs" onClick={() => setAnnotateOpen(o => !o)}
-              className="h-auto p-0 aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+              className="aug-text-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
               title={`Pin a note to ${annotateTarget} — future reads see it`}>Annotate</Button>
           </>
         )}
@@ -1307,13 +1307,13 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
             placeholder={`Note on ${annotateTarget} (e.g. 'March data is a partial load — totals run low')`}
             className="w-full resize-none" />
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="xs" disabled={annotateBusy || !annotateText.trim()}
+            <Button variant="plain" size="xs" disabled={annotateBusy || !annotateText.trim()}
               onClick={submitAnnotation}
               className="h-auto px-2 py-0.5 aug-fs-xs border rounded-[var(--r1)] border-zinc-600 text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
               {annotateBusy ? "Pinning…" : "Pin note"}
             </Button>
             <Button variant="ghost" size="xs" disabled={annotateBusy} onClick={() => setAnnotateOpen(false)}
-              className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+              className="aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
               Cancel
             </Button>
             <span className="aug-fs-xs text-zinc-600">Overlay only — the source data is never touched.</span>
@@ -1359,7 +1359,7 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
         variant="ghost"
         size="xs"
         onClick={load}
-        className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+        className="self-start gap-1.5 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
       >
         <Icon name="info" size={16} />
         Show grounding
@@ -1376,7 +1376,7 @@ function GroundingDetails({ connectionId, question }: { connectionId: string; qu
         variant="ghost"
         size="xs"
         onClick={() => setOpen(false)}
-        className="self-start h-auto px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+        className="self-start aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
       >
         Hide grounding
       </Button>
@@ -1465,7 +1465,7 @@ function InsightDetails({
             sql: turn.sql,
             title: inferSourceTitle(turn.columns, turn.rows),
           })}
-          className="self-start h-auto gap-1.5 px-0 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
+          className="self-start gap-1.5 aug-text-sm font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent"
         >
           <Icon name="table" size={16} label="Table" />
           View source data &amp; SQL
@@ -1581,7 +1581,7 @@ export function ChatMessage({
               variant="ghost"
               size="xs"
               onClick={() => { setDraft(turn.question); setEditing(true); }}
-              className="h-auto w-auto p-0.5 mt-2 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-transparent dark:hover:bg-transparent"
+              className="w-auto p-0.5 mt-2 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-transparent dark:hover:bg-transparent"
               title="Edit and re-send — the conversation continues from this question"
             >
               Edit
@@ -1602,7 +1602,7 @@ export function ChatMessage({
               />
               <div className="flex items-center justify-end gap-2">
                 <Button variant="ghost" size="xs" onClick={() => setEditing(false)}
-                  className="h-auto p-0 aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
+                  className="aug-fs-xs font-normal text-zinc-500 hover:text-zinc-300 hover:bg-transparent dark:hover:bg-transparent">
                   Cancel
                 </Button>
                 <Button variant="ghost" size="xs" onClick={submitEdit} disabled={!draft.trim()}
@@ -1806,7 +1806,7 @@ export function ChatMessage({
               {turn.followups.map((q, i) => (
                 <Button
                   key={i}
-                  variant="ghost"
+                  variant="plain"
                   size="xs"
                   onClick={() => onFollowUp?.(q)}
                   className="h-auto gap-1 px-2.5 py-[3px] aug-fs-sm font-normal text-zinc-500 hover:text-zinc-200 border-zinc-700/50 hover:border-zinc-600 rounded-[var(--r-chip)] whitespace-normal text-left hover:bg-transparent dark:hover:bg-transparent"

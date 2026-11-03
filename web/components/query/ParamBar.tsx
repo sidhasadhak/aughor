@@ -211,7 +211,7 @@ export function ParamBar({
             ) : null}
 
             {def.widget === "date" && (
-              <Button variant="ghost" size="xs" title="Dynamic values — today, start of this month, …"
+              <Button variant="plain" size="xs" title="Dynamic values — today, start of this month, …"
                 aria-label={`Dynamic date for ${label}`}
                 onClick={() => setZap(z => z === name ? "" : name)}
                 style={{ padding: "0 3px" }}>
@@ -219,7 +219,7 @@ export function ParamBar({
               </Button>
             )}
 
-            <Button variant="ghost" size="xs" title={`Configure the ${label} widget`}
+            <Button variant="plain" size="xs" title={`Configure the ${label} widget`}
               aria-label={`Configure ${label}`}
               onClick={() => setGear(g => g === name ? "" : name)}
               style={{ padding: "0 3px" }}>
@@ -231,14 +231,14 @@ export function ParamBar({
                 <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setZap("")} />
                 <div className="aug-fs-ui" style={menuStyle}>
                   {DYNAMIC_DATE_TOKENS.map(t => (
-                    <Button key={t} variant="ghost" size="xs" className="aug-fs-ui"
+                    <Button key={t} variant="plain" size="xs" className="aug-fs-ui"
                       style={{ width: "100%", justifyContent: "flex-start" }}
                       onClick={() => { setValue(name, t); setZap(""); }}>
                       {t}
                     </Button>
                   ))}
                   {isDynamicDate(value) && (
-                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    <Button variant="plain" size="xs" className="aug-fs-ui"
                       style={{ width: "100%", justifyContent: "flex-start", color: "var(--t3)" }}
                       onClick={() => { setValue(name, ""); setZap(""); }}>
                       Clear — type a date instead
@@ -263,7 +263,7 @@ export function ParamBar({
                   ) : choices.map(o => {
                     const selected = Array.isArray(value) && value.includes(o);
                     return (
-                      <Button key={o} variant="ghost" size="xs" className="aug-fs-ui"
+                      <Button key={o} variant="plain" size="xs" className="aug-fs-ui"
                         style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
                         onClick={() => {
                           const cur = Array.isArray(value) ? value : [];

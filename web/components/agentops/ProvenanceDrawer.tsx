@@ -78,7 +78,7 @@ export function ProvenanceDrawer({ open, data, onClose }: {
               <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 3 }}>{data.eyebrow}</div>
               <h4 className="aug-text-h3" style={{ margin: 0 }}>{data.title}</h4>
             </div>
-            <Button ref={closeRef} variant="ghost" size="sm" onClick={onClose} aria-label="Close"
+            <Button ref={closeRef} variant="plain" size="sm" onClick={onClose} aria-label="Close"
               style={{ height: 24, width: 24, padding: 0, color: "var(--t2)" }}>×</Button>
           </div>
 
@@ -101,7 +101,7 @@ export function ProvenanceDrawer({ open, data, onClose }: {
             </dl>
 
             {data.open && (
-              <Button variant="ghost" onClick={data.open.onOpen}
+              <Button variant="plain" onClick={data.open.onOpen}
                 style={{
                   display: "block", width: "100%", height: "auto", textAlign: "left",
                   background: "var(--blue1)", border: "1px solid var(--blue2)",

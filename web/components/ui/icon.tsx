@@ -49,7 +49,7 @@ import {
   IconFileText, IconFilter, IconHelp, IconHistory, IconHome, IconInbox, IconInfoCircle,
   IconLayersIntersect, IconLayoutSidebar, IconMessage, IconMoon, IconPlayerPlay,
   IconPlug, IconPlus, IconRefresh, IconSearch, IconSend2, IconSettings, IconShieldCheck,
-  IconSitemap, IconSparkles, IconStar, IconSun, IconTable, IconTrash, IconUpload, IconX,
+  IconSitemap, IconSparkles, IconStar, IconSun, IconTable, IconThumbDown, IconThumbUp, IconTrash, IconUpload, IconX,
   IconAbc, IconAdjustmentsHorizontal, IconAlertCircle, IconArrowLeft, IconBell,
   IconBookmark, IconCalendar, IconChartBar, IconChevronLeft, IconChevronUp, IconColumns,
   IconCompass, IconCopy, IconDotsVertical, IconDownload, IconExternalLink, IconEye, IconEyeOff,
@@ -151,6 +151,8 @@ const ICONS = {
   plus: IconPlus,
   close: IconX,
   trash: IconTrash,
+  thumbup: IconThumbUp,
+  thumbdown: IconThumbDown,
   // IconSend2, not IconSend: the classic paper plane sits at 45° and reads as "share"
   // beside a text field. The horizontal one points the way the text goes.
   send: IconSend2,

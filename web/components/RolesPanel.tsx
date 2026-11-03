@@ -336,7 +336,7 @@ export function RolesPanel() {
                             <span key={m} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
                               <Code>{m}</Code>
                               {canManage && (
-                                <Button variant="ghost" size="xs" disabled={busy} onClick={() => void onRemoveMember(g.id, m)}
+                                <Button variant="plain" size="xs" disabled={busy} onClick={() => void onRemoveMember(g.id, m)}
                                   title="Remove from the group" aria-label={`Remove ${m}`}>×</Button>
                               )}
                             </span>
@@ -362,7 +362,7 @@ export function RolesPanel() {
                             <span key={`${gr.securable}:${gr.level}`} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
                               <Code>{`${gr.level} · ${gr.securable}`}</Code>
                               {canManage && (
-                                <Button variant="ghost" size="xs" disabled={busy} onClick={() => void onRevokeGrant(g.id, gr)}
+                                <Button variant="plain" size="xs" disabled={busy} onClick={() => void onRevokeGrant(g.id, gr)}
                                   title="Revoke this grant" aria-label={`Revoke ${gr.level} on ${gr.securable}`}>×</Button>
                               )}
                             </span>

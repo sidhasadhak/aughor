@@ -156,5 +156,4 @@ const _linkBtn: React.CSSProperties = {
   border: "none",
   cursor: "pointer",
   color: "var(--t3)",
-  padding: 0,
 };

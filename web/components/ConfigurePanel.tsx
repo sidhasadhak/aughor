@@ -417,7 +417,7 @@ function DataTab({
             <span className="w-20 text-right text-[var(--t3)] shrink-0 font-mono">
               {compactNumber(Number(t.row_count), 1)}
             </span>
-            <Button variant="ghost" size="xs" onClick={() => setSelected(t)} className="text-[var(--t3)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
+            <Button variant="plain" size="xs" onClick={() => setSelected(t)} className="text-[var(--t3)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
               <Icon name="chevr" size={16} />
             </Button>
           </div>
@@ -622,7 +622,7 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, o
                 canvas had its own set, which it never did.
               </p>
               {onOpenDocuments && (
-                <Button variant="ghost" size="xs"
+                <Button variant="plain" size="xs"
                   type="button"
                   onClick={onOpenDocuments}
                   className="mt-3 aug-fs-xs px-2 py-1 rounded border border-zinc-600 hover:bg-zinc-800"

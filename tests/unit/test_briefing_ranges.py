@@ -315,6 +315,12 @@ def test_a_metric_opens_to_its_trend_oldest_first_with_how_it_is_defined(con, ap
     assert all(p["value_text"] for p in series if p["value"] is not None)
 
 
+def test_a_caller_may_ask_for_more_ranges_than_a_drawer_shows(con, approved):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    seen = ranges.metric_trend("c1", spec, "revenue", profile=_profile(), runner=_runner(con), count=3)
+    assert [p["current"] for p in seen["series"]] == [False, False, True]
+
+
 def test_a_metric_that_cannot_be_read_says_why_and_carries_no_series(con, approved):
     spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
     draft = ranges.metric_trend("c1", spec, "aov", runner=_runner(con))            # a draft is not measured

@@ -12,6 +12,277 @@
   },
   "types": [
     {
+      "type": "alloydb",
+      "label": "Google AlloyDB",
+      "category": "warehouse",
+      "blurb": "Google Cloud managed Postgres",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "alloydb://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@host:5432/db",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#4285F4",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
+      "type": "athena",
+      "label": "Amazon Athena",
+      "category": "warehouse",
+      "blurb": "Query S3 with SQL; every statement bills its scan",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "athena://region",
+      "fields": [
+        {
+          "key": "region",
+          "label": "Region",
+          "placeholder": "us-east-1",
+          "secret": false
+        },
+        {
+          "key": "s3_staging_dir",
+          "label": "Results bucket",
+          "placeholder": "s3://my-athena-results/",
+          "secret": false
+        },
+        {
+          "key": "access_key",
+          "label": "Access key (blank for the AWS default chain)",
+          "placeholder": "",
+          "secret": false,
+          "optional": true
+        },
+        {
+          "key": "secret_key",
+          "label": "Secret key",
+          "placeholder": "",
+          "secret": true,
+          "optional": true
+        },
+        {
+          "key": "work_group",
+          "label": "Workgroup",
+          "placeholder": "primary",
+          "secret": false,
+          "optional": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Database",
+          "placeholder": "default",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "secret_key"
+      ],
+      "drivers": [
+        "pyathena"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.athena:AthenaConnection",
+      "dialect": "athena",
+      "native_sql": true,
+      "param_style": null,
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATEDIFF",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE",
+          "TIMESTAMPDIFF"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#8C4FFF",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unknown"
+      },
+      "metadata_detail": "INFORMATION_SCHEMA.COLUMNS; Athena declares no primary or foreign keys"
+    },
+    {
+      "type": "aurora_mysql",
+      "label": "Aurora MySQL",
+      "category": "warehouse",
+      "blurb": "AWS managed MySQL",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "aurora_mysql://host:3306/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "3306",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.wire:MySQLWireConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": null,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#4479A1",
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
+    },
+    {
+      "type": "aurora_postgres",
+      "label": "Aurora PostgreSQL",
+      "category": "warehouse",
+      "blurb": "AWS managed Postgres",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "aurora_postgres://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@cluster.region.rds.amazonaws.com:5432/db",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#4169E1",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
       "type": "bigquery",
       "label": "BigQuery",
       "category": "warehouse",
@@ -82,6 +353,142 @@
       ]
     },
     {
+      "type": "clickhouse",
+      "label": "ClickHouse",
+      "category": "warehouse",
+      "blurb": "Column-oriented analytics database",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "clickhouse://host:8123/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "8123",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "default",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true,
+          "optional": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "default",
+          "secret": false
+        },
+        {
+          "key": "secure",
+          "label": "Use HTTPS (true or false)",
+          "placeholder": "false",
+          "secret": false,
+          "optional": true
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "clickhouse_connect"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.clickhouse:ClickHouseConnection",
+      "dialect": "clickhouse",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE",
+          "STRING_AGG"
+        ],
+        "features": []
+      },
+      "brand_color": "#FFCC01",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "system.columns; keys and comments are not read yet"
+    },
+    {
+      "type": "cockroachdb",
+      "label": "CockroachDB",
+      "category": "warehouse",
+      "blurb": "Distributed SQL on Postgres's protocol",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "cockroachdb://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@host:26257/db?sslmode=require",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#6933FF",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
       "type": "confluence",
       "label": "Confluence",
       "category": "knowledge",
@@ -142,6 +549,154 @@
         "comments": "unsupported"
       },
       "metadata_detail": "not a SQL connector"
+    },
+    {
+      "type": "databricks",
+      "label": "Databricks",
+      "category": "warehouse",
+      "blurb": "Lakehouse SQL warehouses and clusters",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "databricks://workspace.cloud.databricks.com",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Server hostname",
+          "placeholder": "dbc-1234.cloud.databricks.com",
+          "secret": false
+        },
+        {
+          "key": "http_path",
+          "label": "HTTP path",
+          "placeholder": "/sql/1.0/warehouses/abc",
+          "secret": false
+        },
+        {
+          "key": "access_token",
+          "label": "Access token",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "catalog",
+          "label": "Catalog",
+          "placeholder": "main",
+          "secret": false,
+          "optional": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "default",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "access_token"
+      ],
+      "drivers": [
+        "databricks.sql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.databricks:DatabricksConnection",
+      "dialect": "databricks",
+      "native_sql": true,
+      "param_style": null,
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": []
+      },
+      "brand_color": "#FF3621",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "INFORMATION_SCHEMA.COLUMNS; keys and comments are not read yet"
+    },
+    {
+      "type": "doris",
+      "label": "Apache Doris",
+      "category": "warehouse",
+      "blurb": "Analytical database on MySQL's protocol",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "doris://host:9030/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "9030",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.wire:MySQLWireConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": null,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#5B5FE3",
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
     },
     {
       "type": "duckdb",
@@ -291,6 +846,61 @@
       "metadata_detail": "members are attached as views; a member's declared keys and comments do not survive the attach"
     },
     {
+      "type": "greenplum",
+      "label": "Greenplum",
+      "category": "warehouse",
+      "blurb": "Massively parallel Postgres",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "greenplum://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@host:5432/db",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#00A65E",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
       "type": "gsheets",
       "label": "Google Sheets",
       "category": "api",
@@ -423,6 +1033,82 @@
       "metadata_detail": "an uploaded file declares no keys and carries no comments"
     },
     {
+      "type": "mariadb",
+      "label": "MariaDB",
+      "category": "warehouse",
+      "blurb": "Connect to a MariaDB database",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "mariadb://host:3306/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "3306",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.wire:MySQLWireConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#C0765A",
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
+    },
+    {
       "type": "motherduck",
       "label": "MotherDuck",
       "category": "warehouse",
@@ -483,6 +1169,88 @@
           "fallback_for": "token"
         }
       ]
+    },
+    {
+      "type": "mssql",
+      "label": "Microsoft SQL Server",
+      "category": "warehouse",
+      "blurb": "Connect to a SQL Server database. It cannot refuse writes itself: give it a read-only login",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "mssql://host:1433/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "1433",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "sa",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "dbo",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymssql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.mssql:MSSQLConnection",
+      "dialect": "tsql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#CC2927",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "INFORMATION_SCHEMA.COLUMNS; keys and comments are not read yet"
     },
     {
       "type": "mysql",
@@ -561,6 +1329,61 @@
       "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
     },
     {
+      "type": "neon",
+      "label": "Neon",
+      "category": "warehouse",
+      "blurb": "Serverless Postgres; use its direct endpoint, not the pooled one",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "neon://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@ep-name.region.aws.neon.tech/db?sslmode=require",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#00E599",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
       "type": "notion",
       "label": "Notion",
       "category": "knowledge",
@@ -611,6 +1434,90 @@
       "metadata_detail": "not a SQL connector"
     },
     {
+      "type": "oracle",
+      "label": "Oracle",
+      "category": "warehouse",
+      "blurb": "Connect to an Oracle database",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "oracle://host:1521/service",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "1521",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "analyst",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "service_name",
+          "label": "Service name",
+          "placeholder": "ORCLPDB1",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema (the login's own when blank)",
+          "placeholder": "",
+          "secret": false,
+          "optional": true
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "oracledb"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.oracle:OracleConnection",
+      "dialect": "oracle",
+      "native_sql": true,
+      "param_style": "named",
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATEDIFF",
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#F80000",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "ALL_TAB_COLUMNS; keys and comments are not read yet"
+    },
+    {
       "type": "postgres",
       "label": "PostgreSQL",
       "category": "built-in",
@@ -656,6 +1563,61 @@
         ]
       },
       "brand_color": "#6f9bcc",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
+      "type": "redshift",
+      "label": "Amazon Redshift",
+      "category": "warehouse",
+      "blurb": "AWS data warehouse",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "redshift://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@cluster.region.redshift.amazonaws.com:5439/dev",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#8C4FFF",
       "engine_family": "postgres",
       "metadata": {
         "columns": "supported",
@@ -803,6 +1765,82 @@
       "metadata_detail": "synced objects land as tables with no declared keys or comments"
     },
     {
+      "type": "singlestore",
+      "label": "SingleStore",
+      "category": "warehouse",
+      "blurb": "Real-time distributed SQL",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "singlestore://host:3306/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "3306",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.wire:MySQLWireConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": null,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#AA00FF",
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
+    },
+    {
       "type": "snowflake",
       "label": "Snowflake",
       "category": "warehouse",
@@ -919,6 +1957,159 @@
       "metadata_detail": "pragma_table_info and pragma_foreign_key_list; SQLite has no comments"
     },
     {
+      "type": "starburst",
+      "label": "Starburst",
+      "category": "warehouse",
+      "blurb": "Trino, managed",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "starburst://host:443",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host:Port",
+          "placeholder": "trino.example.com:8080",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "analyst",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password (blank when the cluster takes none)",
+          "placeholder": "",
+          "secret": true,
+          "optional": true
+        },
+        {
+          "key": "catalog",
+          "label": "Catalog",
+          "placeholder": "hive",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "default",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "trino"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.trino:TrinoConnection",
+      "dialect": "trino",
+      "native_sql": true,
+      "param_style": null,
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATEDIFF",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE",
+          "TIMESTAMPDIFF"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#00A7E1",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unsupported",
+        "foreign_keys": "unsupported",
+        "comments": "unknown"
+      },
+      "metadata_detail": "Trino declares no primary or foreign keys; INFORMATION_SCHEMA.COLUMNS.COMMENT is not read yet"
+    },
+    {
+      "type": "starrocks",
+      "label": "StarRocks",
+      "category": "warehouse",
+      "blurb": "Analytical database on MySQL's protocol",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "starrocks://host:9030/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "9030",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.wire:MySQLWireConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": null,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#1F4FFF",
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
+    },
+    {
       "type": "stripe",
       "label": "Stripe",
       "category": "api",
@@ -967,6 +2158,274 @@
         "comments": "unsupported"
       },
       "metadata_detail": "synced objects land as tables with no declared keys or comments"
+    },
+    {
+      "type": "supabase",
+      "label": "Supabase",
+      "category": "warehouse",
+      "blurb": "Hosted Postgres; use its direct connection string",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "supabase://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://postgres:pass@db.project.supabase.co:5432/postgres",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#3ECF8E",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
+    },
+    {
+      "type": "synapse",
+      "label": "Azure Synapse",
+      "category": "warehouse",
+      "blurb": "Azure's analytics warehouse, through SQL Server's driver",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "synapse://server.sql.azuresynapse.net:1433/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "server.sql.azuresynapse.net",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "1433",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "sqladmin",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "db",
+          "secret": false
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "dbo",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymssql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.mssql:MSSQLConnection",
+      "dialect": "tsql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#0078D4",
+      "engine_family": "standard",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "unknown",
+        "foreign_keys": "unknown",
+        "comments": "unknown"
+      },
+      "metadata_detail": "INFORMATION_SCHEMA.COLUMNS; keys and comments are not read yet"
+    },
+    {
+      "type": "tidb",
+      "label": "TiDB",
+      "category": "warehouse",
+      "blurb": "Distributed SQL on MySQL's protocol. It cannot refuse writes itself: give it a read-only login",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "tidb://host:4000/db",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "placeholder": "localhost",
+          "secret": false
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "placeholder": "4000",
+          "secret": false
+        },
+        {
+          "key": "user",
+          "label": "Username",
+          "placeholder": "root",
+          "secret": false
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "placeholder": "",
+          "secret": true
+        },
+        {
+          "key": "database",
+          "label": "Database",
+          "placeholder": "mydb",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "password"
+      ],
+      "drivers": [
+        "pymysql"
+      ],
+      "install": "warehouse",
+      "connector": "aughor.connectors.warehouse.wire:MySQLWireConnection",
+      "dialect": "mysql",
+      "native_sql": true,
+      "param_style": "pyformat",
+      "engine_read_only": false,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DATE_DIFF",
+          "DATE_TRUNC",
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "ilike",
+          "qualify"
+        ]
+      },
+      "brand_color": "#E30C33",
+      "engine_family": "mysql",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.KEY_COLUMN_USAGE / TABLE_CONSTRAINTS; COLUMN_COMMENT and TABLE_COMMENT"
+    },
+    {
+      "type": "timescaledb",
+      "label": "TimescaleDB",
+      "category": "warehouse",
+      "blurb": "Time series on Postgres",
+      "badge": null,
+      "support_tier": "supported",
+      "dsn_preview": "timescaledb://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@host:5432/db",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#FDB515",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
     },
     {
       "type": "trino",
@@ -1044,6 +2503,61 @@
         "comments": "unknown"
       },
       "metadata_detail": "Trino declares no primary or foreign keys; INFORMATION_SCHEMA.COLUMNS.COMMENT is not read yet"
+    },
+    {
+      "type": "yugabytedb",
+      "label": "YugabyteDB",
+      "category": "warehouse",
+      "blurb": "Distributed Postgres",
+      "badge": "Preview",
+      "support_tier": "preview",
+      "dsn_preview": "yugabytedb://***",
+      "fields": [
+        {
+          "key": "dsn",
+          "label": "Connection string",
+          "placeholder": "postgresql://user:pass@host:5433/yugabyte",
+          "secret": true
+        },
+        {
+          "key": "schema_name",
+          "label": "Schema",
+          "placeholder": "public",
+          "secret": false
+        }
+      ],
+      "secret_fields": [
+        "dsn"
+      ],
+      "drivers": [
+        "psycopg2"
+      ],
+      "install": "base",
+      "connector": "aughor.connectors.warehouse.wire:PostgresWireConnection",
+      "dialect": "postgres",
+      "native_sql": false,
+      "param_style": null,
+      "engine_read_only": true,
+      "metadata_strategy": "information_schema",
+      "refuses": {
+        "functions": [
+          "DIV0",
+          "IFF",
+          "SAFE_DIVIDE"
+        ],
+        "features": [
+          "qualify"
+        ]
+      },
+      "brand_color": "#FF6E42",
+      "engine_family": "postgres",
+      "metadata": {
+        "columns": "supported",
+        "primary_keys": "supported",
+        "foreign_keys": "supported",
+        "comments": "supported"
+      },
+      "metadata_detail": "information_schema.table_constraints / key_column_usage; pg_description for comments"
     }
   ]
 }

@@ -152,7 +152,7 @@ function DayChips({ value, onChange }: { value: number[]; onChange: (d: number[]
       {[1, 2, 3, 4, 5, 6, 0].map(d => {
         const on = value.includes(d);
         return (
-          <Button key={d} variant="ghost" size="xs" onClick={() => toggle(d)}
+          <Button key={d} variant="plain" size="xs" onClick={() => toggle(d)}
             aria-pressed={on} className="aug-fs-xs h-auto font-normal"
             style={{
               padding: "4px 8px", borderRadius: "var(--r-pill)",

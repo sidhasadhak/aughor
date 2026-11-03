@@ -31,7 +31,7 @@ import {
   type FileAnalysis,
   type BulkUploadResult,
 } from "@/lib/api";
-import { BrandLogo, brandColor } from "@/components/BrandLogos";
+import { BrandLogo, BrandTile, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
@@ -83,13 +83,7 @@ const fmtBytes = (n: number) =>
 // ── Cards ──────────────────────────────────────────────────────────────────────
 
 function LogoBox({ type, size = 36 }: { type: string; size?: number }) {
-  const c = brandColor(type);
-  return (
-    <span style={{ width: size, height: size, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-      background: `color-mix(in srgb, ${c} 12%, var(--bg-2))`, border: `1px solid color-mix(in srgb, ${c} 26%, transparent)` }}>
-      <BrandLogo type={type} size={Math.round(size * 0.56)} />
-    </span>
-  );
+  return <BrandTile type={type} size={size} />;
 }
 
 // A tile whose driver is not installed on the server. `available` is optional on
@@ -110,7 +104,7 @@ function FileTile({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => v
   const m = meta(info.type);
   const off = isUnavailable(info);
   return (
-    <Button variant="ghost" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
+    <Button variant="plain" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
       className={`h-auto p-0 font-normal whitespace-normal items-stretch justify-start ${SVG_SIZE_AUTO}`}
       style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 10, cursor: off ? "not-allowed" : "pointer",
         background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", width: "100%",
@@ -129,7 +123,7 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
   const m = meta(info.type);
   const off = isUnavailable(info);
   return (
-    <Button variant="ghost" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
+    <Button variant="plain" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
       className={`h-auto p-0 font-normal justify-start ${SVG_SIZE_AUTO}`}
       style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, cursor: off ? "not-allowed" : "pointer",
         background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", width: "100%",
@@ -145,7 +139,7 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
             ? <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--t3) 16%, transparent)", color: "var(--t3)", whiteSpace: "nowrap" }}>NOT INSTALLED</span>
             : m.badge && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
         </span>
-        <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{off ? missingNote(info) : m.blurb}</span>
+        <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, lineHeight: 1.35 }}>{off ? missingNote(info) : m.blurb}</span>
       </span>
     </Button>
   );
@@ -363,7 +357,7 @@ function WorkspaceUploader({ onAdded, workspaceId }: {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Input style={{ ...S, maxWidth: 220 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
             placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSchema(); } }} />
-          <Button variant="ghost" type="button" onClick={addSchema} disabled={!newSchema.trim() || addingSchema}
+          <Button variant="plain" type="button" onClick={addSchema} disabled={!newSchema.trim() || addingSchema}
             className="h-auto p-0 font-normal"
             style={{ fontSize: 12, padding: "8px 12px", borderRadius: 6, cursor: newSchema.trim() ? "pointer" : "not-allowed", background: "transparent", color: "var(--t2)", border: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
             + Add schema
@@ -412,7 +406,7 @@ function WorkspaceUploader({ onAdded, workspaceId }: {
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
                   </SelectField>
                   {suggest && (
-                    <Button variant="ghost" type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
+                    <Button variant="plain" type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
                       title={c.detected_format
                         ? `Values are ${c.detected_format.kind.replace(/_/g, " ")}-formatted${c.detected_format.example ? ` (e.g. ${c.detected_format.example})` : ""} — stored as text, read as ${suggest}`
                         : `DuckDB read this as text but the values look like ${suggest}`}
@@ -466,11 +460,11 @@ function WorkspaceUploader({ onAdded, workspaceId }: {
             {committing ? "Importing…" : conflict ? "Replace table" : "Add table"}
           </Button>
           {queue.length > 0 && (
-            <Button variant="ghost" type="button" onClick={() => analyzeNext(queue)} disabled={committing}
+            <Button variant="plain" type="button" onClick={() => analyzeNext(queue)} disabled={committing}
               className="h-auto p-0 font-normal"
               style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Skip</Button>
           )}
-          <Button variant="ghost" type="button" onClick={cancelReview}
+          <Button variant="plain" type="button" onClick={cancelReview}
             className="h-auto p-0 font-normal"
             style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Cancel</Button>
         </div>
@@ -498,7 +492,7 @@ function WorkspaceUploader({ onAdded, workspaceId }: {
       {/* Mode toggle: review each file vs. bulk import into one schema */}
       <div style={{ display: "inline-flex", gap: 2, padding: 3, borderRadius: 8, background: "var(--bg-2)", border: "1px solid var(--b1)", alignSelf: "flex-start" }}>
         {(["review", "bulk"] as const).map(m => (
-          <Button variant="ghost" key={m} type="button" onClick={() => { setMode(m); setError(""); setBulkResults(null); }}
+          <Button variant="plain" key={m} type="button" onClick={() => { setMode(m); setError(""); setBulkResults(null); }}
             className="h-auto p-0"
             style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 6, cursor: "pointer", border: "none",
               background: mode === m ? "var(--bg-0)" : "transparent",
@@ -548,7 +542,7 @@ function WorkspaceUploader({ onAdded, workspaceId }: {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <Input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
               placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); bulkAddSchema(); } }} />
-            <Button variant="ghost" type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
+            <Button variant="plain" type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
               className="h-auto p-0 font-normal"
               style={{ fontSize: 12, padding: "8px 12px", borderRadius: 6, cursor: newSchema.trim() ? "pointer" : "not-allowed", background: "transparent", color: "var(--t2)", border: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
               + Add schema
@@ -620,7 +614,7 @@ function WorkspaceUploader({ onAdded, workspaceId }: {
                         <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{f.table_name}</span>
                         <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{f.filename} · {fmtBytes(f.size_bytes)}{f.column_types && Object.keys(f.column_types).length > 0 ? ` · ${Object.keys(f.column_types).length} typed` : ""}</span>
                       </span>
-                      <Button variant="ghost" onClick={() => remove(f)} title="Remove table"
+                      <Button variant="plain" onClick={() => remove(f)} title="Remove table"
                         className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
                         style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", display: "flex", alignItems: "center", justifyContent: "center" }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--red4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--red4)"; }}
@@ -743,7 +737,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
       {/* Header bar */}
       <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 14, padding: "16px 28px", borderBottom: "1px solid var(--b1)", background: "var(--bg-0)" }}>
         {picked ? (
-          <Button variant="ghost" onClick={() => setPicked(null)}
+          <Button variant="plain" onClick={() => setPicked(null)}
             className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
             style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
@@ -757,7 +751,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
             <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 2 }}>Connect to a data source, upload local files, or read from an application.</p>
           </div>
         )}
-        <Button variant="ghost" onClick={onClose} title="Close (Esc)"
+        <Button variant="plain" onClick={onClose} title="Close (Esc)"
           className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "6px 12px", borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "inherit" }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
@@ -768,7 +762,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
       </div>
 
       {/* Body */}
-      <div style={{ maxWidth: 940, margin: "0 auto", padding: "26px 28px 64px" }}>
+      <div style={{ padding: "26px 28px 64px" }}>
         {!picked ? (
           <>
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search data sources…"
@@ -841,7 +835,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
               <Button variant="default" size="sm" type="submit" disabled={saving}>
                 {saving ? (phase || "Connecting…") : "Create connection"}
               </Button>
-              <Button variant="ghost" type="button" onClick={() => setPicked(null)}
+              <Button variant="plain" type="button" onClick={() => setPicked(null)}
                 className="h-auto p-0 font-normal"
                 style={{ fontSize: 13, padding: "9px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "1px solid var(--b1)" }}>Back</Button>
             </div>

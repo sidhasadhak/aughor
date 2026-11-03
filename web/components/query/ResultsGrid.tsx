@@ -398,7 +398,7 @@ export function ResultsGrid({
             ))}
             {hidden.size > 0 && (
               <Button size="xs" variant="ghost" onClick={() => setHidden(new Set())}
-                style={{ width: "100%", marginTop: 4 }}>Show all</Button>
+                style={{ marginTop: 4 }}>Show all</Button>
             )}
           </div>
         </>
@@ -435,9 +435,9 @@ export function ResultsGrid({
             whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }} data-testid="grid-find-count">
             {!find.trim() ? "" : matches.length ? `${findIdx + 1} of ${formatCount(matches.length)}` : "no match"}
           </span>
-          <Button size="xs" variant="ghost" onClick={() => gotoMatch(findIdx - 1)}
+          <Button size="xs" variant="plain" onClick={() => gotoMatch(findIdx - 1)}
             disabled={!matches.length} title="Previous match — ⇧↵"><Icon name="chevu" size={12} /></Button>
-          <Button size="xs" variant="ghost" onClick={() => gotoMatch(findIdx + 1)}
+          <Button size="xs" variant="plain" onClick={() => gotoMatch(findIdx + 1)}
             disabled={!matches.length} title="Next match — ↵"><Icon name="chevd" size={12} /></Button>
         </>
       )}

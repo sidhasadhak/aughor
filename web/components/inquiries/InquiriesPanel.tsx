@@ -27,7 +27,8 @@ import {
   countBy, dateWords, daysFrom, inquiryLabel, inquiryStateShort, whenWords,
 } from "@/components/record/words";
 import {
-  Chip, Dot, Figure, Figures, NUM, NeedsRow, NeedsYou, Page as ClarityPage,
+  MUTED,
+  Chip, Dot, Figure, Tally, NUM, NeedsRow, NeedsYou, Page as ClarityPage,
 } from "@/components/clarity/kit";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -111,6 +112,18 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
   const scope = many ? `${conns.length} connections` : conns[0] ? connectionLabel(conns[0], connections) : "";
   const ownerOf = (q: Inquiry) => (typeof q.extra.owner === "string" ? q.extra.owner : "");
 
+  // Say a thing once (CLARITY §2): repeats of one question fold into a count, and what sits under Needs you is not
+  // printed again below it unless a filter asks for it. Copy and CSV still take every row.
+  const textOf = (q: Inquiry) => inquiryLabel(q.question, q.extra?.scheduled === true).text;
+  const needing = new Set([...due, ...noRun].map(q => q.id));
+  const folded = (list: Inquiry[]) => {
+    const by = new Map<string, Inquiry[]>();
+    for (const q of list) by.set(`${textOf(q)}|${q.state}`, [...(by.get(`${textOf(q)}|${q.state}`) ?? []), q]);
+    return [...by.values()].map(group => ({ head: group[0], times: group.length }));
+  };
+  const listed = folded(rows.filter(q => filter !== "all" || !needing.has(q.id)));
+  const timesOf = new Map(listed.map(g => [g.head.id, g.times]));
+
   const columns: ListColumn<Inquiry>[] = [
     { head: "Question", value: q => q.question },
     { head: "State", value: q => inquiryState(q) },
@@ -126,7 +139,7 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
 
   return (
     <>
-      <Figures testId="inquiry-figures">
+      <Tally testId="inquiry-figures">
         <Figure label="Open" value={formatCount(open.length)} testId="fig-inq-open"
           sub={open.length === 0 ? "none open" : noRun.length ? `${noRun.length} with no run yet` : "each has a run"} />
         <Figure label="Waiting" value={formatCount(waiting.length)} testId="fig-inq-waiting"
@@ -141,21 +154,21 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
             <span>{`across ${countNoun(withItems, "inquiry", "inquiries")}`}</span>
             {unstated && <Chip title="Each report named the gap without what would close it">none says what settles it</Chip>}
           </>} />
-      </Figures>
+      </Tally>
 
       <NeedsYou testId="inquiry-needs" empty={next ? `Nothing needs you · the next check is ${whenWords(next)}` : "Nothing needs you"}>
         {[
           ...due.map(q => (
             <NeedsRow key={`due-${q.id}`} testId="needs-inq-due"
-              title={`${inquiryLabel(q.question, q.extra?.scheduled === true).text} · its check was due ${dateWords(q.next_check)}`}
+              title={`${textOf(q)} · its check was due ${dateWords(q.next_check)}`}
               detail={q.waiting_for ? `waiting for ${q.waiting_for}` : undefined}
               actions={<Button size="xs" variant="secondary" onClick={() => onOpen(q.id)}>Open</Button>} />
           )),
-          ...noRun.map(q => {
+          ...folded(noRun).map(({ head: q, times }) => {
             const cost = (q.extra.proposed_run as ProposedRun | undefined)?.cost;
             return (
               <NeedsRow key={`norun-${q.id}`} testId="needs-inq-norun"
-                title={inquiryLabel(q.question, q.extra?.scheduled === true).text}
+                title={<span title={q.question}>{textOf(q)}{times > 1 && <span className="aug-fs-xs" style={{ ...MUTED, marginLeft: 8, fontWeight: 400 }}>×{times}</span>}</span>}
                 detail={`open, with no run yet${cost?.tokens != null ? ` · a deep analysis would take about ${compactNumber(cost.tokens)} tokens here` : ""}`}
                 actions={<Button size="xs" variant="secondary" onClick={() => onOpen(q.id)}>Open</Button>} />
             );
@@ -163,8 +176,8 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
         ]}
       </NeedsYou>
 
-      <ListCard<Inquiry> label="Inquiries" name="inquiries" testId="inquiry-list" rows={rows} rowKey={q => q.id}
-        columns={columns}
+      <ListCard<Inquiry> label={filter === "all" && needing.size > 0 ? "Everything else" : "Inquiries"} name="inquiries"
+        testId="inquiry-list" rows={listed.map(g => g.head)} exportRows={rows} rowKey={q => q.id} columns={columns}
         tools={<>
           <span className="aug-fs-xs" style={NUM}>
             {filter === "all" ? formatCount(all.length) : `${formatCount(rows.length)} of ${formatCount(all.length)}`}{scope ? ` · ${scope}` : ""}
@@ -196,6 +209,7 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
             <ListRow first={first} testId="inquiry-row" title={label.text} full={label.full} onOpen={() => onOpen(q.id)}
               mark={<Dot hue={q.state === "closed" && q.closed_as === "answered" ? "green" : STATE_DOT[q.state] ?? "grey"} title={inquiryState(q)} />}
               chips={<>
+                {(timesOf.get(q.id) ?? 1) > 1 && <span className="aug-fs-xs" style={MUTED}>×{timesOf.get(q.id)}</span>}
                 {label.scheduled && <Chip title="Opened by a scheduled run">scheduled</Chip>}
                 {q.hypotheses.length > 0 && <Chip>{countNoun(q.hypotheses.length, "hypothesis", "hypotheses")}</Chip>}
               </>}
@@ -235,7 +249,7 @@ function InquiryReader({ id, connections, onBack, onMoved, onOpenRun, onOpenDeci
   const q = load.data;
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
-      <BackHeader from="Inquiries" onBack={onBack} title={q?.question ?? "Inquiry"}
+      <BackHeader from="Inquiries" onBack={onBack} title={q ? inquiryLabel(q.question, q.extra?.scheduled === true).text : "Inquiry"}
         chips={q && <StatusChip hue={STATE_HUE[q.state] ?? "muted"}>{inquiryState(q)}</StatusChip>} />
       <Gate load={load} what="the inquiry">
         {detail => <InquiryBody q={detail} connections={connections} onMoved={onMoved} onReload={load.reload}

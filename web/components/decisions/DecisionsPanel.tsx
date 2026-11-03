@@ -35,7 +35,7 @@ import {
   type Actor, type ListColumn,
 } from "@/components/record/kit";
 import {
-  CARD, Chip, Dot, Figure, Figures, NUM, NeedsRow, NeedsYou, Page as ClarityPage,
+  CARD, Chip, Dot, Figure, Tally, NUM, NeedsRow, NeedsYou, Page as ClarityPage,
 } from "@/components/clarity/kit";
 import { chosenWords, countBy, dateWords, distanceWords, shortLabel, whenWords } from "@/components/record/words";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
@@ -341,7 +341,7 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
 
   return (
     <>
-      <Figures testId="decision-figures">
+      <Tally testId="decision-figures">
         <Figure label="Decisions" value={formatCount(all.length)} testId="fig-dec-all"
           sub={all.length === 0 ? "none booked yet" : [
             ...countBy(all, d => d.source.kind).map(([k, n]) => `${n} ${SOURCE_SHORT[k] ?? k}`),
@@ -358,7 +358,7 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
             ? (scored.length ? `${formatCount(told)} of ${formatCount(scored.length)} reviewed reached a verdict`
               : "each is scored on its review date")
             : <Chip title={notes.join(" · ") || undefined}>{`${formatCount(all.length - withExpectation)} cannot be scored`}</Chip>} />
-      </Figures>
+      </Tally>
 
       <NeedsYou testId="decision-needs" empty="Nothing needs you">
         {[

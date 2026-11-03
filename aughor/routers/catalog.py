@@ -168,6 +168,20 @@ def quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
             if not read_any:
                 db.close()
                 return None
+        elif getattr(db, "dialect", "") != "postgres":
+            # Every other engine: no pg_stat_user_tables, so the Postgres read below can only fail, and with it the
+            # catalog rendered empty. The schema the connection connected to is what it reads: a server's own schemas
+            # (mysql, sys, system) are not the person's data. A read that fails is "could not look", as above.
+            own = str(getattr(db, "_schema_name", "") or "").replace("'", "''")
+            got = db.execute(
+                "__catalog__",
+                "SELECT table_schema, table_name, NULL FROM INFORMATION_SCHEMA.TABLES WHERE table_type = 'BASE TABLE'"
+                + (f" AND table_schema = '{own}'" if own else "") + " ORDER BY table_schema, table_name",
+             internal=True)
+            if got.error:
+                db.close()
+                return None
+            rows = got.rows
         else:
             rows = db.execute(
                 "__catalog__",
@@ -192,6 +206,8 @@ def quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
         # could be neither seen nor turned off (2026-10-11: gold_finance and gold_governance, explored and unseen).
         if schema_filter and rows and getattr(db, "dialect", "") != "postgres":
             rows = [r for r in rows if r[0] == schema_filter]
+        if (server_schema := getattr(db, "is_server_schema", None)):
+            rows = [r for r in rows if not server_schema(str(r[0]))]
         db.close()
     except Exception as exc:
         # None, NOT [] — the caller reconciles the metastore to whatever comes

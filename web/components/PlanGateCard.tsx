@@ -60,7 +60,7 @@ export function PlanGateCard({
           return (
             <li key={sq.id ?? i}>
               <Button
-                variant="ghost"
+                variant="plain"
                 onClick={() => toggle(i)}
                 className="w-full h-auto items-start justify-start gap-2 rounded px-2 py-1.5 whitespace-normal text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
                 style={{ background: on ? "var(--bg-3)" : "transparent", opacity: on ? 1 : 0.45 }}

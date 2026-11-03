@@ -19,11 +19,14 @@ import { ActorField, useActor } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { getMetrics, type Metric } from "@/lib/api";
+import { NEEDS_EDGE } from "@/components/clarity/kit";
+import { LeadChart } from "@/components/home/LeadChart";
+import { getMetrics, readMetricTrend, type Metric } from "@/lib/api";
+import { readableFigures } from "@/lib/format";
 import {
   ANSWERS, ASKED, bookSaid, byDay, dayMonth, dayWords, daysBehind, dismissFinding, domainFindings, leadDetail, metricWords,
   pickLead, pickQuestion, pickWorthALook, rangeText, readYou, recheckFinding, standingQuestions, weekAhead,
-  type Analysis, type Due, type Finding, type LeadDetail, type YourRecord,
+  type Analysis, type Due, type Finding, type LeadDetail, type YourRecord, leadReading, plainDays, type TrendPoint,
 } from "@/lib/home";
 import { declareDecision, listClaims, listDecisions, type Claim, type Decision, type ExpectationIn } from "@/lib/record";
 
@@ -37,10 +40,13 @@ const oneLine: CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textO
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** How much of the lead's metric the line shows, a day at a time. */
+const TREND_DAYS = 60;
+
 /** A section's small uppercase label, with what it says at its right end. */
-function Label({ children, right }: { children: ReactNode; right?: ReactNode }) {
+function Label({ children, right, amber }: { children: ReactNode; right?: ReactNode; amber?: boolean }) {
   return (
-    <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "var(--t3)",
+    <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: amber ? "var(--amb4)" : "var(--t3)",
       textTransform: "uppercase", letterSpacing: ".06em" }}>
       {children}
       {right && <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0 }}>{right}</span>}
@@ -129,14 +135,18 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
       </div>
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "stretch" }}>
-        <div style={{ flex: "1.55 1 420px", minWidth: 0, display: "flex" }}>
-          <LeadCard lead={lead} onOpen={onOpenAnalysis} onDraft={onDraft} />
+        <div style={{ flex: "2 1 560px", minWidth: 0, display: "flex" }}>
+          <LeadCard lead={lead} connectionId={connectionId} onOpen={onOpenAnalysis} onDraft={onDraft} />
         </div>
-        <div style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-          <QuestionCard key={question?.about.id ?? "none"} question={question} connectionId={connectionId}
-            actor={actor} onBooked={id => { setAnsweredNow(prev => new Set([...prev, id])); reloadRecord(); }} />
+        <div style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+          {question && (
+            <QuestionCard key={question.about.id} question={question} connectionId={connectionId}
+              actor={actor} onBooked={id => { setAnsweredNow(prev => new Set([...prev, id])); reloadRecord(); }} />
+          )}
           <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId}
-            onDecided={reloadRecord} />
+            onDecided={reloadRecord} noQuestion={!question} />
+          <WeekCard due={due} />
+          <YouCard you={you} />
         </div>
       </div>
 
@@ -147,29 +157,27 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
         {standing.length === 0 ? (
           <div className="aug-fs-sm" style={muted}>No question asked three times yet.</div>
         ) : standing.map((s, i) => (
-          <Button key={s.latest.id} variant="ghost" title={s.question} onClick={() => onOpenAnalysis(s.latest.id, s.latest.kind)}
-            style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.1fr) 40px", alignItems: "center", gap: 14,
-              width: "100%", height: "auto", padding: "9px 2px", borderRadius: 0, textAlign: "left", whiteSpace: "normal",
+          <Button key={s.latest.id} variant="plain" title={s.question} onClick={() => onOpenAnalysis(s.latest.id, s.latest.kind)}
+            style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 32px", alignItems: "center", gap: 14,
+              width: "100%", height: "auto", padding: "8px 2px", borderRadius: 0, textAlign: "left", whiteSpace: "normal",
               borderTop: i ? "1px solid var(--b1)" : undefined }}>
-            <span className="aug-fs-sm" style={{ ...oneLine, color: "var(--t2)" }}>{s.question}</span>
-            <span className="aug-fs-sm" title={s.latest.headline ?? ""} style={{ ...oneLine, color: "var(--t1)", fontWeight: 600, textAlign: "right" }}>
-              {s.latest.headline}
+            <span style={{ minWidth: 0 }}>
+              <span className="aug-fs-chrome" title={s.latest.headline ?? ""} style={{ ...oneLine, display: "block", color: "var(--t1)", fontWeight: 500 }}>
+                {readableFigures(s.latest.headline)}
+              </span>
+              <span className="aug-fs-xs" style={{ ...oneLine, ...muted, display: "block" }}>{s.question}</span>
             </span>
             <span className="aug-fs-xs" style={{ ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{s.count}×</span>
           </Button>
         ))}
       </section>
-
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ flex: "1.55 1 420px", minWidth: 0 }}><WeekCard due={due} /></div>
-        <div style={{ flex: "1 1 300px", minWidth: 0 }}><YouCard you={you} /></div>
-      </div>
     </div>
   );
 }
 
-function LeadCard({ lead, onOpen, onDraft }: {
+function LeadCard({ lead, connectionId, onOpen, onDraft }: {
   lead: ReturnType<typeof pickLead>;
+  connectionId: string;
   onOpen: (id: string, kind?: string) => void;
   onDraft: (q: string) => void;
 }) {
@@ -180,6 +188,29 @@ function LeadCard({ lead, onOpen, onDraft }: {
     if (!runId) return;
     leadDetail(runId).then(setDetail).catch(() => setDetail(null));
   }, [runId]);
+  // The metric the analysis reported, as the warehouse reads it now: one statement, no model call.
+  const label = detail?.figure?.metric ?? "";
+  const [trend, setTrend] = useState<{ points: TrendPoint[]; why: string } | null>(null);
+  useEffect(() => {
+    setTrend(null);
+    if (!label || !connectionId) return;
+    let alive = true;
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    getMetrics(connectionId)
+      .then(ms => ms.find(m => m.status === "approved" && (m.label === label || m.name === label)))
+      .then(m => (m ? readMetricTrend(connectionId, m.name, { preset: "custom", start: yesterday, end: yesterday }, undefined, undefined, TREND_DAYS) : null))
+      .then(t => {
+        if (!alive) return;
+        // the trend words a figure bare and keeps its currency in `unit`
+        const symbol = t && /^(\$|€|£|¥|₹|R\$)$/.test(t.unit ?? "") ? t.unit : "";
+        setTrend(t ? {
+          points: t.series.flatMap(p => (p.value == null ? [] : [{ day: p.start, value: p.value, text: `${symbol}${p.value_text ?? ""}`, settling: !!p.settling }])),
+          why: t.why ?? "",
+        } : { points: [], why: "" });
+      })
+      .catch(e => { if (alive) setTrend({ points: [], why: e instanceof Error ? e.message : String(e) }); });
+    return () => { alive = false; };
+  }, [label, connectionId]);
   if (!lead) {
     return (
       <section aria-label="The one thing to know" style={{ ...card, flex: 1 }}>
@@ -194,31 +225,60 @@ function LeadCard({ lead, onOpen, onDraft }: {
   const up = fig?.change ? !fig.change.trim().startsWith("-") : true;
   const pct = fig?.pct != null ? `${fig.pct >= 0 ? "+" : ""}${(fig.pct * 100).toFixed(1)}%` : "";
   const low = detail?.confidence && detail.confidence.toUpperCase() !== "HIGH";
+  // What the day reads now wins over what the analysis reported; a difference is said, never smoothed over.
+  const reading = fig && trend ? leadReading(fig, trend.points) : null;
+  // Until today's reading is in, no number stands at this size: the reported one may be the wrong one.
+  const readingDay = !!fig?.metric && !trend;
+  const looked = dayWords(lead.run.started_at);
+  const verdict = fig?.verdict ? fig.verdict.charAt(0).toUpperCase() + fig.verdict.slice(1) : "";
   return (
-    <section aria-label="The one thing to know" data-testid="home-lead" style={{ ...card, flex: 1 }}>
-      <Label right={behind > 0 ? <Chip>{behind === 1 ? "1 day behind today" : `${behind} days behind today`}</Chip> : null}>
+    <section aria-label="The one thing to know" data-testid="home-lead" style={{ ...card, flex: 1, display: "flex", flexDirection: "column" }}>
+      <Label right={behind > 0 || low ? (
+        <span style={row}>
+          {low && <Chip title={detail?.why || undefined}>{`${detail?.confidence.toLowerCase()} confidence`}</Chip>}
+          {behind > 0 && <Chip>{behind === 1 ? "1 day behind today" : `${behind} days behind today`}</Chip>}
+        </span>
+      ) : null}>
         {lead.stale ? "One thing to know · nothing new since your last visit" : "One thing to know"}
       </Label>
       {fig ? (
         <>
-          <div className="aug-fs-sm" style={{ color: "var(--t2)" }} title={headline}>{fig.metric} · {dayWords(fig.day)}</div>
-          <div className="aug-fs-display" data-testid="home-lead-value"
-            style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums", margin: "2px 0 8px" }}>{fig.value}</div>
+          <div className="aug-fs-chrome" style={{ color: "var(--t2)" }} title={headline}>{fig.metric} · {dayWords(fig.day)}</div>
+          <div className="aug-fs-lead" data-testid="home-lead-value"
+            style={{ color: readingDay ? "var(--t3)" : "var(--t1)", fontWeight: 500, fontVariantNumeric: "tabular-nums", margin: "2px 0 6px" }}>{readingDay ? "—" : reading?.value ?? fig.value}</div>
           <div style={row}>
-            {fig.change && (
-              <Chip tone={up ? "up" : "down"}><Icon name={up ? "trendup" : "trenddown"} size={12} />{fig.change}{pct ? ` · ${pct}` : ""}</Chip>
+            {readingDay ? null : reading ? (
+              reading.change && <span className="aug-fs-chrome" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>{reading.change}</span>
+            ) : fig.change && (
+              <Chip tone={up ? "up" : "down"}><Icon name={up ? "trendup" : "trenddown"} size={12} />{plainDays(fig.change)}{pct ? ` · ${pct}` : ""}</Chip>
             )}
-            {fig.verdict && <Chip tone={fig.unusual ? "amber" : "plain"}>{fig.verdict}</Chip>}
-            {low && <Chip title={detail?.why || undefined}>{`${detail?.confidence.toLowerCase()} confidence`}</Chip>}
+            {reading?.reported && (
+              <Chip tone="amber" title={`The analysis of ${looked} reported ${fig.value}. The warehouse reads this day differently now.`}>
+                {`reported ${reading.reported} on ${dayMonth(lead.run.started_at)} · restated ${(reading.restated! * 100).toFixed(0).replace("-", "−")}%`}
+              </Chip>
+            )}
           </div>
+          {/* The line is the figure's proof, so it is drawn only when it holds the figure's day. */}
+          {trend && reading && trend.points.length > 1 ? (
+            <LeadChart points={trend.points} day={fig.day}
+              reported={reading?.reported ? { value: Number(fig.value.replace(/[^0-9.-]/g, "")), text: reading.reported, on: dayMonth(lead.run.started_at) } : null} />
+          ) : trend?.why ? (
+            <div className="aug-fs-xs" style={{ ...muted, marginTop: 10 }}>The line behind this figure could not be read · {trend.why}</div>
+          ) : readingDay ? (
+            <div aria-hidden style={{ height: 272, marginTop: 12 }} />
+          ) : (
+            <div className="aug-fs-xs" data-testid="home-lead-as-reported" style={{ ...muted, marginTop: 10 }}>As the analysis reported it · not read again here</div>
+          )}
         </>
       ) : (
         <div className="aug-fs-h2" style={{ color: "var(--t1)", fontWeight: 500, lineHeight: 1.45 }}>{headline}</div>
       )}
-      <div className="aug-fs-xs" style={{ ...muted, margin: "10px 0 12px" }}>Looked into on {dayWords(lead.run.started_at)}</div>
-      <div style={row}>
+      <div style={{ ...row, marginTop: "auto", paddingTop: 12 }}>
         <Button size="sm" variant="secondary" onClick={() => onOpen(lead.run.id, lead.run.kind)}>Read the analysis</Button>
         <Button size="sm" variant="ghost" onClick={() => onDraft(`Why did this happen? ${headline}`)}>Ask a follow-up</Button>
+        <span className="aug-fs-xs" style={{ ...muted, flex: "1 1 240px", textAlign: "right" }}>
+          Looked into on {looked}{verdict ? ` · ${verdict}` : ""}
+        </span>
       </div>
     </section>
   );
@@ -232,14 +292,7 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
 }) {
   const [kept, setKept] = useState("");
   const [error, setError] = useState("");
-  if (!question) {
-    return (
-      <section aria-label="A question for you" style={card}>
-        <Label>Needs you · a question</Label>
-        <div className="aug-fs-sm" style={muted}>Nothing to ask you today.</div>
-      </section>
-    );
-  }
+  if (!question) return null;
   const answer = async (text: string) => {
     setError("");
     try {
@@ -249,8 +302,8 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   return (
-    <section aria-label="A question for you" data-testid="home-question" style={card}>
-      <Label>Needs you · a question</Label>
+    <section aria-label="A question for you" data-testid="home-question" style={{ ...card, boxShadow: NEEDS_EDGE }}>
+      <Label amber>Needs you · a question</Label>
       <div className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>{ASKED}</div>
       <div className="aug-fs-sm" title={question.subject}
         style={{ ...muted, margin: "2px 0 10px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
@@ -270,11 +323,13 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
 }
 
 /** PENDING 57, D-1: a decision taken here cites its finding, offers not acting, and may say what is expected. */
-function LookCard({ findings, acted, connectionId, onDecided }: {
+function LookCard({ findings, acted, connectionId, onDecided, noQuestion }: {
   findings: Finding[] | null;
   acted: ReadonlySet<string>;
   connectionId: string;
   onDecided: () => void;
+  /** Nothing to ask: said once, in the foot of this card, rather than as a card of its own. */
+  noQuestion: boolean;
 }) {
   const [skip, setSkip] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"" | "decide" | "dismiss">("");
@@ -297,6 +352,7 @@ function LookCard({ findings, acted, connectionId, onDecided }: {
       <section aria-label="Worth another look" style={card}>
         <Label>Needs you · a finding to act on</Label>
         <div className="aug-fs-sm" style={muted}>{said || "Every finding here has been acted on."}</div>
+        {noQuestion && <div className="aug-fs-sm" style={{ ...muted, marginTop: 8 }}>Nothing to ask you today.</div>}
       </section>
     );
   }
@@ -335,10 +391,10 @@ function LookCard({ findings, acted, connectionId, onDecided }: {
     } catch (e) { setSaidLine(e instanceof Error ? e.message : String(e)); }
   };
   return (
-    <section aria-label="Worth another look" data-testid="home-look" style={card}>
-      <Label right={<span className="aug-fs-xs" style={muted}>{dayWords(finding.generated_at)}</span>}>Needs you · a finding to act on</Label>
+    <section aria-label="Worth another look" data-testid="home-look" style={{ ...card, flex: 1, display: "flex", flexDirection: "column", boxShadow: NEEDS_EDGE }}>
+      <Label amber right={<span className="aug-fs-xs" style={muted}>{dayWords(finding.generated_at)}</span>}>Needs you · a finding to act on</Label>
       <div className="aug-fs-chrome" title={finding.text} style={{ color: "var(--t1)", fontWeight: 500, marginBottom: 10,
-        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{finding.text}</div>
+        display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{readableFigures(finding.text)}</div>
       {mode === "" ? (
         <div style={row}>
           <Button size="xs" variant="secondary" onClick={() => setMode("decide")}>Decide</Button>
@@ -357,6 +413,7 @@ function LookCard({ findings, acted, connectionId, onDecided }: {
       )}
       {mode === "decide" && <ExpectRow metrics={metrics} value={expect} onChange={setExpect} />}
       {said && <div className="aug-fs-xs" style={{ ...muted, marginTop: 8 }}>{said}</div>}
+      {noQuestion && <div className="aug-fs-sm" style={{ ...muted, marginTop: "auto", paddingTop: 12 }}>Nothing to ask you today.</div>}
     </section>
   );
 }
@@ -374,41 +431,31 @@ function WeekCard({ due }: { due: Due[] }) {
   };
   return (
     <section aria-label="The week ahead" data-testid="home-week" style={card}>
-      <Label><Icon name="date" size={13} /> The week ahead</Label>
+      <Label right={days.length ? <span className="aug-fs-xs" style={muted}>{dayWords(days[0].on)}{span(days[0].forecasts) ? ` · ${span(days[0].forecasts)}` : ""}</span> : null}>The week ahead</Label>
       {days.length === 0 ? (
         <div className="aug-fs-sm" style={muted}>Nothing lands in the next seven days.</div>
       ) : days.map((d, i) => (
-        <div key={d.on} style={{ display: "grid", gridTemplateColumns: "96px minmax(0, 1fr) auto", gap: 12, padding: "8px 0",
-          borderTop: i ? "1px solid var(--b1)" : undefined }}>
-          <div className="aug-fs-sm" style={{ color: "var(--t1)" }}>
-            {dayWords(d.on)}
-            <div className="aug-fs-xs" style={muted}>
-              {[d.forecasts.length ? `${d.forecasts.length} forecast${d.forecasts.length === 1 ? "" : "s"}` : "",
-                d.reviews.length ? `${d.reviews.length} review${d.reviews.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")}
+        <div key={d.on} style={{ padding: i ? "8px 0 0" : 0, borderTop: i ? "1px solid var(--b1)" : undefined, marginTop: i ? 8 : 0 }}>
+          {i > 0 && <div className="aug-fs-sm" style={{ color: "var(--t1)", marginBottom: 4 }}>{dayWords(d.on)}</div>}
+          {d.reviews.map(r => (
+            <div key={r.what} className="aug-fs-sm" style={{ ...oneLine, color: "var(--t2)" }} title={r.what}>{r.what}</div>
+          ))}
+          {i === 0 ? (
+            <div className="aug-fs-sm" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "3px 16px" }}>
+              {d.forecasts.slice(0, 4).map(f => (
+                <div key={f.what} style={{ display: "contents" }}>
+                  <span style={{ ...oneLine, color: "var(--t2)" }}>{metricWords(f.metric)}</span>
+                  <span style={{ color: "var(--t1)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{rangeText(f.low, f.high, f.unit)}</span>
+                </div>
+              ))}
+              {d.forecasts.length > 4 && <span className="aug-fs-xs" style={muted}>+{d.forecasts.length - 4} more</span>}
             </div>
-          </div>
-          <div style={{ minWidth: 0 }}>
-            {d.reviews.map(r => (
-              <div key={r.what} className="aug-fs-sm" style={{ ...oneLine, color: "var(--t2)" }} title={r.what}>{r.what}</div>
-            ))}
-            {i === 0 ? (
-              <div className="aug-fs-sm" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "3px 16px" }}>
-                {d.forecasts.slice(0, 4).map(f => (
-                  <div key={f.what} style={{ display: "contents" }}>
-                    <span style={oneLine}>{metricWords(f.metric)}</span>
-                    <span style={{ color: "var(--t2)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{rangeText(f.low, f.high, f.unit)}</span>
-                  </div>
-                ))}
-                {d.forecasts.length > 4 && <span className="aug-fs-xs" style={muted}>+{d.forecasts.length - 4} more</span>}
-              </div>
-            ) : (
-              <div style={row}>
-                {d.forecasts.slice(0, 5).map(f => <Chip key={f.what}>{metricWords(f.metric)}</Chip>)}
-                {d.forecasts.length > 5 && <Chip>+{d.forecasts.length - 5}</Chip>}
-              </div>
-            )}
-          </div>
-          <span className="aug-fs-xs" style={muted}>{span(d.forecasts)}</span>
+          ) : (
+            <div style={row}>
+              {d.forecasts.slice(0, 5).map(f => <Chip key={f.what}>{metricWords(f.metric)}</Chip>)}
+              {d.forecasts.length > 5 && <Chip>+{d.forecasts.length - 5}</Chip>}
+            </div>
+          )}
         </div>
       ))}
     </section>
@@ -422,7 +469,7 @@ function YouCard({ you }: { you: YourRecord | null }) {
   const inside = you?.predictions?.inside ?? 0;
   const stat = (k: string, v: string) => (
     <div>
-      <div className="aug-fs-h1" style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{v}</div>
+      <div className="aug-fs-h1" style={{ color: "var(--t1)", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{v}</div>
       <div className="aug-fs-xs" style={muted}>{k}</div>
     </div>
   );

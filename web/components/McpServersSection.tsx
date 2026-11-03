@@ -40,6 +40,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { BrandTile } from "@/components/BrandLogos";
 import { Icon } from "@/components/ui/icon";
 import {
   beginMcpSignIn, createMcpServer, deleteMcpServer, discoverMcpServer, grantMcpTool,
@@ -47,7 +48,7 @@ import {
   type McpServerRow, type McpToolRow,
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
-import { Card, Chip, Dot, MUTED, ONE_LINE, ROW, RULE, type Tone } from "@/components/clarity/kit";
+import { Card, Chip, MUTED, ONE_LINE, ROW, RULE, type Tone } from "@/components/clarity/kit";
 import { formatTimestamp, relTime } from "@/lib/format";
 import { dayMonth } from "@/lib/monitorSummary";
 
@@ -258,7 +259,7 @@ export function McpServersSection() {
               border: "1px solid var(--b1)", borderRadius: "var(--r-chip)" }}>
             {([["signin", "Sign in"], ["key", "API key"], ["none", "None"]] as const).map(([m, label]) => (
               <Button key={m} size="xs" className="aug-fs-xs"
-                variant={access === m ? "secondary" : "ghost"}
+                variant={access === m ? "secondary" : "plain"}
                 onClick={() => setAccess(m)}>
                 {label}
               </Button>
@@ -413,8 +414,8 @@ export function McpServersSection() {
   );
 
   /** One server, one row: a dot, its name, its state, one muted line; its one next step, Manage and Details on the row. */
-  const row = ({ key, testId, name, chip, hue, reach, about, s, primary, manageable, first }: {
-    key: string; testId: string; name: string; chip: { tone: Tone; text: string }; hue: "green" | "amber" | "grey";
+  const row = ({ key, testId, name, chip, reach, about, s, primary, manageable, first }: {
+    key: string; testId: string; name: string; chip: { tone: Tone; text: string };
     reach: string; about: string; s: McpServerRow | undefined; primary: React.ReactNode; manageable: boolean; first: boolean;
   }) => {
     const meta = [reach, ...(s ? serverFacts(s) : [])].filter(Boolean).join(" · ");
@@ -422,8 +423,8 @@ export function McpServersSection() {
     const open = detailsFor.has(key);
     return (
       <div key={key} data-testid={testId} style={{ ...(first ? {} : RULE), padding: "9px 2px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
-          <Dot hue={hue} title={chip.text} />
+        <div style={{ display: "grid", gridTemplateColumns: "28px minmax(0, 1fr) auto", gap: 10, alignItems: "center" }}>
+          <BrandTile type={name} />
           <div style={{ minWidth: 0 }}>
             <div style={{ ...ROW, flexWrap: "nowrap", minWidth: 0 }}>
               <span className="aug-fs-chrome" title={about || undefined} style={{ ...ONE_LINE, fontWeight: 600, color: "var(--t1)" }}>
@@ -479,7 +480,6 @@ export function McpServersSection() {
           key: card.id, testId: `mcp-card-${card.id}`, name: card.name, first: i === 0 && !adding,
           chip: signedIn ? { tone: "up", text: "connected" } : byKey ? { tone: "plain", text: "added with a key" }
             : pending ? { tone: "plain", text: "waiting for the sign-in" } : { tone: "plain", text: "not connected" },
-          hue: signedIn ? "green" : pending ? "amber" : "grey",
           reach: card.reach, about: card.blurb, s, manageable: !!s,
           primary: loaded && !signedIn && !byKey ? (
             <Button variant="default" size="xs" disabled={busy === card.id} onClick={() => connect(card)}>
@@ -497,7 +497,6 @@ export function McpServersSection() {
           chip: !s.enabled ? { tone: "plain", text: "off" }
             : oauth ? (s.oauth?.signed_in ? { tone: "up", text: "connected" } : { tone: "amber", text: "not signed in" })
             : { tone: "plain", text: s.has_auth ? "added with a key" : "added" },
-          hue: !s.enabled ? "grey" : oauth && !s.oauth?.signed_in ? "amber" : s.discovered_at ? "green" : "grey",
           reach: where, about: "", s, manageable: true,
           primary: oauth && !s.oauth?.signed_in ? (
             <Button variant="default" size="xs" disabled={busy === s.id} onClick={() => signIn(s.id, async () => s.id)}>
