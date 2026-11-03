@@ -139,7 +139,7 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
             ? <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--t3) 16%, transparent)", color: "var(--t3)", whiteSpace: "nowrap" }}>NOT INSTALLED</span>
             : m.badge && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--blue4,#60a5fa) 16%, transparent)", color: "var(--blue4,#60a5fa)", whiteSpace: "nowrap" }}>{m.badge}</span>}
         </span>
-        <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{off ? missingNote(info) : m.blurb}</span>
+        <span style={{ display: "block", fontSize: 11, color: "var(--t3)", marginTop: 1, lineHeight: 1.35 }}>{off ? missingNote(info) : m.blurb}</span>
       </span>
     </Button>
   );
@@ -762,7 +762,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
       </div>
 
       {/* Body */}
-      <div style={{ maxWidth: 940, margin: "0 auto", padding: "26px 28px 64px" }}>
+      <div style={{ padding: "26px 28px 64px" }}>
         {!picked ? (
           <>
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search data sources…"
