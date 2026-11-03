@@ -629,6 +629,41 @@ def tables_of(sql: str, dialect: str) -> list[str]:
     return sorted(names, key=lambda n: (first(n), n))       # in the order the statement names them
 
 
+#: Table functions that make their rows from their arguments and read nothing.
+_MADE_FROM_ARGUMENTS = frozenset({"generate_series", "range", "unnest"})
+
+
+def reads_beyond(sql: str, table: str, dialect: str) -> list[str]:
+    """Everything a statement reads besides ``table``, which it must read: another table, a name in another schema, a table
+    function. `tables_of` names tables, so a table function is invisible to it, and `FROM t, query_table('other')` reads as t
+    alone; here anything that is not plainly this table or the statement's own CTE is named. Empty means it reads this table
+    and nothing else."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(PARAM.sub("NULL", _inner(sql)), read=dialect or None)
+    except Exception:
+        return ["a statement that cannot be read"]
+    ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    beyond: list[str] = []
+    found = False
+    for read in tree.find_all(exp.Table):
+        source = read.this
+        if isinstance(source, exp.Func):
+            name = (source.name if isinstance(source, exp.Anonymous) else source.sql_name()).lower()
+            if name not in _MADE_FROM_ARGUMENTS:
+                beyond.append(f"{name}()")
+            continue
+        name = (read.name or "").lower()
+        if read.db or read.catalog or not name:
+            beyond.append(read.sql())
+        elif name == table.lower():
+            found = True
+        elif name not in ctes:
+            beyond.append(name)
+    return list(dict.fromkeys(beyond if found else [*beyond, "no table"]))
+
+
 def policy_refusal(graph: Any, tables: list[str]) -> Optional[str]:
     """Why a query cannot be kept or run while row policies hold — it reads the table of an entity a policy narrows,
     straight, so no reader's policy can narrow it — or None."""

@@ -17008,6 +17008,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sheets/{sheet_id}/dashboard/card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dashboard Card
+         * @description A drafted card a person changed, its title or its query, run on the sheet and held to the rules. No model is asked, and
+         *     nothing is kept.
+         */
+        post: operations["dashboard_card_sheets__sheet_id__dashboard_card_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/dashboard/draft": {
         parameters: {
             query?: never;
@@ -17024,6 +17045,28 @@ export interface paths {
          *     none. Nothing is kept: the person ticks what they want and keeps it below.
          */
         post: operations["dashboard_draft_sheets__sheet_id__dashboard_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/dashboard/explore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dashboard Explore
+         * @description ⚑ Spends model calls, and more than a draft does: a model runs its own queries on this sheet, reads what they return, and
+         *     writes what a dashboard of it should show. A stream, because this takes a minute or two and a person should see what it is
+         *     doing; leaving stops the spending at the next step. Nothing is kept.
+         */
+        post: operations["dashboard_explore_sheets__sheet_id__dashboard_explore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19811,10 +19854,40 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** DashboardCardRequest */
+        DashboardCardRequest: {
+            /** Card */
+            card: {
+                [key: string]: unknown;
+            };
+            /** Scenario */
+            scenario?: {
+                [key: string]: unknown;
+            } | null;
+            /** Twin */
+            twin?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** DashboardDraftRequest */
         DashboardDraftRequest: {
+            /** Noticed */
+            noticed?: string[];
             /** Words */
             words: string;
+        };
+        /** DashboardExploreRequest */
+        DashboardExploreRequest: {
+            /**
+             * Draw
+             * @default false
+             */
+            draw: boolean;
+            /**
+             * Focus
+             * @default
+             */
+            focus: string;
         };
         /** DashboardKeepRequest */
         DashboardKeepRequest: {
@@ -55011,6 +55084,43 @@ export interface operations {
             };
         };
     };
+    dashboard_card_sheets__sheet_id__dashboard_card_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardCardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dashboard_draft_sheets__sheet_id__dashboard_draft_post: {
         parameters: {
             query?: never;
@@ -55035,6 +55145,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_explore_sheets__sheet_id__dashboard_explore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardExploreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

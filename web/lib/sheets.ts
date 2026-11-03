@@ -12,6 +12,7 @@ import { fastApiError, type QueryShaped, type QueryShown } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 import { formatCount, formatMoney } from "@/lib/format";
 import { currencySymbol } from "@/lib/orgSettings";
+import { readFrames } from "@/lib/sseFrames";
 
 export type Kind = "text" | "number" | "money" | "date" | "datetime" | "choice" | "yesno" | "email" | "link";
 export type Role = "stored" | "computed" | "lookup" | "total";
@@ -773,11 +774,43 @@ export interface DraftedDashboard {
 }
 
 /** Spends model calls: one short run. Nothing is kept. */
-export const draftSheetDashboard = (id: string, words: string) =>
-  call<DraftedDashboard>(`/${id}/dashboard/draft`, json("POST", { words }), "Drafting the dashboard");
+export const draftSheetDashboard = (id: string, words: string, noticed: string[] = []) =>
+  call<DraftedDashboard>(`/${id}/dashboard/draft`, json("POST", { words, noticed }), "Drafting the dashboard");
+
+/** One query a model ran while exploring, as it happened. */
+export interface ExploreLook { why: string; sql: string; rows: number; more: boolean; refused: string }
+
+export type ExploreFrame =
+  | ({ type: "look" } & ExploreLook)
+  | { type: "explored"; words: string; noticed: string[]; looks: ExploreLook[] }
+  | { type: "drafting" }
+  | { type: "drafted"; draft: DraftedDashboard }
+  | { type: "failed"; sentences: string[] }
+  | { type: "end" };
+
+/** Spends model calls, more than a draft: a model runs its own queries on the sheet. Each thing is heard as it happens, and leaving
+ *  (``signal``) stops the spending at its next step. A stream with no ``end`` was cut short, and that throws. */
+export async function exploreSheetDashboard(id: string, body: { focus: string; draw: boolean }, hear: (frame: ExploreFrame) => void, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${getApiBase()}/sheets/${id}/dashboard/explore`, { ...json("POST", body), signal });
+  if (!res.ok || !res.body) {
+    const said = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(said, `Exploring the file failed (${res.status})`));
+  }
+  let ended = false;
+  for await (const frame of readFrames(res.body, signal)) {
+    if (frame.event === "error") throw new Error(String(frame.data.message ?? "The exploring could not be read."));
+    if (frame.event === "end") ended = true;
+    hear(frame.data as unknown as ExploreFrame);
+  }
+  if (!ended && !signal?.aborted) throw new Error("The exploring stopped before it finished. Nothing was kept, so you can start it again.");
+}
+
+/** A drafted card a person changed, run on the sheet with no model: the card as it now reads, or what stops it. Nothing is kept. */
+export const checkDraftedCard = (id: string, body: { card: Pick<DraftedCard, "key" | "title" | "sql" | "shown">; scenario: DraftedScenario | null; twin: Pick<DraftedCard, "key" | "title" | "sql" | "shown"> | null }) =>
+  call<{ card: DraftedCard | null; sentences: string[] }>(`/${id}/dashboard/card`, json("POST", body), "Running the card");
 
 export const keepSheetDashboard = (id: string, body: {
-  title: string; cards: (Pick<DraftedCard, "key" | "title" | "sql" | "shown"> & { scenario_only?: boolean })[];
+  title: string; cards: (Pick<DraftedCard, "key" | "title" | "sql" | "shown"> & { scenario_only?: boolean; edited?: boolean })[];
   filters: Pick<DraftedFilter, "column" | "label" | "grain">[]; scenario: DraftedScenario | null; add_row: boolean;
 }) => call<{ connection_id: string; dashboard_id: string; title: string; version: number; cards: number }>(
   `/${id}/dashboard/keep`, json("POST", body), "Keeping the dashboard");

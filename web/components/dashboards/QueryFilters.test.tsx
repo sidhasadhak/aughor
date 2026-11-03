@@ -63,6 +63,32 @@ describe("a dashboard's filter column over a table", () => {
     expect(channels?.[1].filters).toEqual([]);
   });
 
+  it("lists every month, the newest first, so a long file can be narrowed to its end", async () => {
+    const months = Array.from({ length: 25 }, (_, i) => `${2018 - Math.floor(i / 12)}-${String(12 - (i % 12)).padStart(2, "0")}`);
+    api.previewDashboardQuery.mockImplementation(async (_c: string, q: { sql: string }) => {
+      if (q.sql.startsWith("SELECT COUNT(*)")) return { refused: [], rows: [[7]] };
+      return q.sql.includes("strftime") ? { refused: [], rows: months.map(m => [m, 1]) } : { refused: [], rows: [["Search", 4]] };
+    });
+    draw();
+    await screen.findByRole("checkbox", { name: "Month: Dec 2018" });
+    const asked = api.previewDashboardQuery.mock.calls.map(c => c[1].sql as string).find(s => s.includes("strftime")) ?? "";
+    expect(asked).toContain("ORDER BY value DESC");
+    expect(asked).toContain("LIMIT 241");
+    expect(screen.getByRole("checkbox", { name: "Month: Dec 2016" })).toBeInTheDocument();
+    expect(screen.queryByTestId("query-facet-more")).not.toBeInTheDocument();
+    expect(screen.getByTestId("query-facet-scroll")).toHaveTextContent("Newest first. 25 months: scroll for the rest.");
+  });
+
+  it("says so when a column has more values than it lists", async () => {
+    api.previewDashboardQuery.mockImplementation(async (_c: string, q: { sql: string }) => {
+      if (q.sql.startsWith("SELECT COUNT(*)")) return { refused: [], rows: [[7]] };
+      return q.sql.includes("strftime") ? { refused: [], rows: [["2026-07", 3]] } : { refused: [], rows: Array.from({ length: 41 }, (_, i) => [`v${i}`, 41 - i]) };
+    });
+    draw();
+    expect(await screen.findByTestId("query-facet-more")).toHaveTextContent("Showing the first 40.");
+    expect(screen.queryByRole("checkbox", { name: "Channel: v40" })).not.toBeInTheDocument();
+  });
+
   it("knows which cards read the table", () => {
     expect(readsTable("SELECT SUM(x) FROM orders", "orders")).toBe(true);
     expect(readsTable('SELECT SUM(x) FROM "ORDERS"', "orders")).toBe(true);

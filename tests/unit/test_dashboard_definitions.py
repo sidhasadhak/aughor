@@ -89,3 +89,51 @@ def test_the_rows_are_said_as_rows():
 def test_what_words_cannot_hold_is_not_guessed(sql):
     """A guess in plain words is worse than none: the card then says to read its query."""
     assert definition_of(sql) is None
+
+
+@pytest.mark.parametrize("sql,said", [
+    # how a real model wrote these, on a file of orders, 2026-11-04
+    ("SELECT AVG(CASE WHEN CAST(delivered AS DATE) > estimated_date THEN 1.0 ELSE 0.0 END) AS late FROM t WHERE status = 'delivered' AND delivered IS NOT NULL",
+     "Share of rows where Delivered is after Estimated date, out of rows where Status is delivered and Delivered is filled in"),
+    ("SELECT AVG(CASE WHEN status = 'late' THEN 1 ELSE 0 END) FROM t", "Share of rows where Status is late"),
+    ("SELECT AVG(date_diff('second', bought_at, delivered_at) / 86400.0) AS days FROM t WHERE status = 'delivered'",
+     "Average of Days from Bought at to Delivered at where Status is delivered"),
+    ("SELECT AVG(date_diff('day', bought_at, delivered_at)) FROM t", "Average of Days from Bought at to Delivered at"),
+    ("SELECT AVG(epoch(delivered_at - bought_at) / 86400.0) FROM t", "Average of Days from Bought at to Delivered at"),
+    ("SELECT AVG(epoch(delivered_at - bought_at)) FROM t", "Average of Seconds from Bought at to Delivered at"),
+    ("SELECT AVG(date_diff('second', bought_at, delivered_at) / 3600) FROM t", "Average of Hours from Bought at to Delivered at"),
+    ("SELECT COUNT(*) FROM t WHERE status = 'canceled' OR status = 'unavailable' OR status = 'shipped'", "Count of rows where Status is canceled or unavailable or shipped"),
+    ("SELECT COUNT(*) FROM t WHERE bought_at >= '2017-01-01' AND bought_at < '2018-09-01'", "Count of rows where Bought at is on or after 2017-01-01 and Bought at is before 2018-09-01"),
+    ("SELECT SUM(CASE WHEN status = 'canceled' THEN 1.0 ELSE 0.0 END) FROM t", "Count of rows where Status is canceled"),
+    ("SELECT ROUND(SUM(price), 2) FROM t", "Sum of Price"),
+    ("SELECT SUM(price * quantity) FROM t", "Sum of Price × Quantity"),
+    ("SELECT AVG(price - cost) FROM t", "Average of Price − Cost"),
+    ("SELECT COUNT(*) FILTER (WHERE status = 'late') FROM t WHERE region = 'north'", "Count of rows where Status is late and Region is north"),
+    ("SELECT COUNT(*) FROM t WHERE (a = 1 OR b = 2) AND c = 3", "Count of rows where (A is 1 or B is 2) and C is 3"),
+    ("SELECT COUNT(*) FROM t WHERE (a = 1 OR a = 2) AND c = 3", "Count of rows where A is 1 or 2 and C is 3"),
+    # not dates, whatever they are near
+    ("SELECT COUNT(*) FROM t WHERE update_count > 5", "Count of rows where Update count is above 5"),
+    ("SELECT COUNT(*) FROM t WHERE at_risk > 5", "Count of rows where At risk is above 5"),
+])
+def test_what_a_real_model_writes_can_be_said(sql, said):
+    assert definition_of(sql) == said
+
+
+@pytest.mark.parametrize("sql,said", [
+    ("SELECT strftime(bought_at, '%Y-%m') AS month, COUNT(*) AS orders FROM t GROUP BY 1 ORDER BY 1", "Orders: Count of rows. By Month of Bought at."),
+    ("SELECT strftime(bought_at, '%Y') AS y, SUM(paid) AS total FROM t GROUP BY 1", "Total: Sum of Paid. By Year of Bought at."),
+    ("SELECT EXTRACT(year FROM bought_at) AS y, SUM(paid) AS total FROM t GROUP BY 1", "Total: Sum of Paid. By Year of Bought at."),
+    ("SELECT YEAR(bought_at) AS y, SUM(paid) AS total FROM t GROUP BY 1", "Total: Sum of Paid. By Year of Bought at."),
+])
+def test_a_chart_along_a_date_says_which_part_of_it(sql, said):
+    assert definition_of(sql) == said
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT strftime(bought_at, '%H:%M') AS h, COUNT(*) AS n FROM t GROUP BY 1",      # a format it cannot name
+    "SELECT AVG(CASE WHEN a = 1 THEN 1 END) FROM t",                                  # no ELSE 0: this average is 1, not a share
+    "SELECT AVG(CASE WHEN a = 1 THEN 2 ELSE 0 END) FROM t WHERE b = 3",
+])
+def test_what_cannot_be_said_exactly_is_not_said_as_a_share(sql):
+    said = definition_of(sql)
+    assert said is None or "Share" not in said

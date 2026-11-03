@@ -98,6 +98,27 @@ describe("a query card's chart", () => {
 });
 
 describe("a chart drafted from a file", () => {
+  it("says a statement's own whole months as months, and a real day as a day", () => {
+    const dated = (xs: string[]) => ({ as: "bar", x: { name: "x", kind: "date", bucket: "" }, series: [""], other: false, said: [], points: xs.map((x, i) => ({ x, s: "", v: i })) }) as unknown as Chart;
+    const stay = { segments: "stacked" as const, labels: false, running: false };
+    const shown = (xs: string[]) => JSON.stringify(queryChartSpec(dated(xs), stay, COLOURS));
+    expect(shown(["2016-09-01", "2016-10-01", "2017-01-01"])).toContain("Sep 2016");
+    expect(shown(["2016-09-01", "2016-10-01", "2017-01-01"])).not.toMatch(/"1 Sept? 2016"/);
+    expect(shown(["2016-09-01", "2016-09-02"])).not.toContain('"Sep 2016"');
+  });
+
+  it("keeps months a statement wrote as text in their own order, and still ranks real categories", () => {
+    const along = (xs: string[]) => ({ as: "bar" as const, x: { name: "x", kind: "text" as const, bucket: null }, series: [""], other: false, said: [], tones: {}, format: "",
+      points: xs.map((x, i) => ({ x, s: "", v: 10 - i })) });
+    const sorted = (spec: Record<string, unknown>) => JSON.stringify(spec).includes('"op":"sum"');
+    const stay = { segments: "stacked" as const, labels: false, running: false };
+    expect(sorted(queryChartSpec(along(["2017-01", "2017-02", "2017-03"]) as unknown as Chart, stay, COLOURS))).toBe(false);
+    expect(sorted(queryChartSpec(along(["2017-01-05", "2017-01-06"]) as unknown as Chart, stay, COLOURS))).toBe(false);
+    expect(sorted(queryChartSpec(along(["2017", "2018"]) as unknown as Chart, stay, COLOURS))).toBe(false);
+    expect(sorted(queryChartSpec(along(["SP", "RJ", "MG"]) as unknown as Chart, stay, COLOURS))).toBe(true);
+    expect(sorted(queryChartSpec(along(["2017-01", "SP"]) as unknown as Chart, stay, COLOURS))).toBe(true);
+  });
+
   const colours = { palette: ["#a1", "#a2", "#a3", "#a4", "#a5", "#a6"], other: "#grey" };
   const chart = (over: Record<string, unknown> = {}) => ({
     as: "bar" as const, x: { name: "channel", kind: "text" as const, bucket: "" }, series: ["Kept", "Came back", "Still open"],

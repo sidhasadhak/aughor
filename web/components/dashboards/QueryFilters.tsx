@@ -62,9 +62,12 @@ export function readsTable(sql: string | null | undefined, table: string | null)
 
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const valueName = (value: string, grain?: string | null) => (grain === "month" ? fmtDate(`${value}-01`, "month") : value);
+/** How many values a filter lists: every month of twenty years, or the commonest of a column, and it says when there are more. */
+const LISTED = { month: 240, values: 40 };
 
 function Facet({ connectionId, table, column }: { connectionId: string; table: string; column: FilterColumn }) {
   const { narrowing, chosen, toggle, changes } = useQueryNarrowing();
+  const listed = column.grain === "month" ? LISTED.month : LISTED.values;
   const others = useMemo(() => narrowing.filter(n => n.column !== column.column), [narrowing, column.column]);
   const sent = JSON.stringify(others);
   const [rows, setRows] = useState<{ value: string; n: number }[] | null>(null);
@@ -72,8 +75,8 @@ function Facet({ connectionId, table, column }: { connectionId: string; table: s
   useEffect(() => {
     let live = true;
     const target = column.grain === "month" ? `strftime(${ident(column.column)}, '%Y-%m')` : ident(column.column);
-    const order = column.grain === "month" ? "value" : "n DESC";
-    const sql = `SELECT ${target} AS value, COUNT(*) AS n FROM ${ident(table)} WHERE ${ident(column.column)} IS NOT NULL GROUP BY 1 ORDER BY ${order} LIMIT 13`;
+    const order = column.grain === "month" ? "value DESC" : "n DESC";     // the newest month first: what a reader most often wants
+    const sql = `SELECT ${target} AS value, COUNT(*) AS n FROM ${ident(table)} WHERE ${ident(column.column)} IS NOT NULL GROUP BY 1 ORDER BY ${order} LIMIT ${listed + 1}`;
     previewDashboardQuery(connectionId, { sql, shown: { as: "table" }, filters: JSON.parse(sent) as QueryNarrowing[] }).then(p => {
       if (!live) return;
       if (p.refused?.length) { setProblem(p.refused[0]); return; }
@@ -81,9 +84,10 @@ function Facet({ connectionId, table, column }: { connectionId: string; table: s
       setRows((p.rows ?? []).map(r => ({ value: String(r[0]), n: Number(r[1]) || 0 })));
     }).catch(e => { if (live) setProblem(e instanceof Error ? e.message : String(e)); });
     return () => { live = false; };
-  }, [connectionId, table, column.column, column.grain, sent, changes]);
+  }, [connectionId, table, column.column, column.grain, sent, changes, listed]);
   const picked = chosen(column.column);
-  const shown = [...(rows ?? [])];
+  const more = (rows?.length ?? 0) > listed;
+  const shown = (rows ?? []).slice(0, listed);
   for (const v of picked) if (!shown.some(r => r.value === v)) shown.push({ value: v, n: 0 });
   const top = Math.max(1, ...shown.map(r => r.n));
   return (
@@ -92,7 +96,7 @@ function Facet({ connectionId, table, column }: { connectionId: string; table: s
       {problem ? <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 5 }}>{problem}</div>
         : !rows ? <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 5 }}>Reading…</div>
           : (
-            <div style={{ marginTop: 5 }}>
+            <div data-testid="query-facet-rows" style={{ marginTop: 5, maxHeight: 340, overflowY: "auto" }}>
               {shown.map(r => {
                 const on = picked.includes(r.value);
                 return (
@@ -109,8 +113,11 @@ function Facet({ connectionId, table, column }: { connectionId: string; table: s
                   </label>
                 );
               })}
+              {more && <div className="aug-fs-sm" data-testid="query-facet-more" style={{ color: "var(--t3)", padding: "3px 4px" }}>Showing the first {formatCount(listed)}. The rest are still counted.</div>}
             </div>
           )}
+      {/* the box holds about this many; on a Mac its scrollbar does not show until it is used */}
+      {rows && shown.length > 14 && <div className="aug-fs-sm" data-testid="query-facet-scroll" style={{ color: "var(--t3)", padding: "4px 4px 0" }}>{column.grain === "month" ? `Newest first. ${formatCount(shown.length)} months: scroll for the rest.` : `${formatCount(shown.length)} values: scroll for the rest.`}</div>}
     </div>
   );
 }

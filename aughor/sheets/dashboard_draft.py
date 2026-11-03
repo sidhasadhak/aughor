@@ -13,6 +13,9 @@ so here a model may write a SELECT, on these terms, each enforced by code:
 - Nothing is kept until a person keeps it. What they keep is held to the rules again here, whatever was offered.
 
 The model drafts; the platform lays out. It never writes the dashboard's spec, which is built here, by code, from what was ticked.
+
+What it is asked may be a person's own words, or words a model wrote after exploring the file (`dashboard_explore.py`). A person may
+change a card here, its title or its statement: `check_card` holds that to the same rules, runs it, and spends nothing.
 """
 from __future__ import annotations
 
@@ -32,7 +35,9 @@ MAX_CARDS = 12
 MAX_FILTERS = 4
 MAX_INPUTS = 3
 MAX_PRESETS = 4
-MAX_WORDS = 800
+MAX_WORDS = 1200
+MAX_NOTICED = 5
+MAX_NOTE = 240
 MAX_TITLE = 80
 #: Two figures are the same when they differ by less than this, as money read to the cent.
 SAME_FIGURE = 0.01
@@ -166,9 +171,9 @@ def _read_card(sheet: Sheet, db: Any, raw: dict, scenario: Optional[dict]) -> tu
     if not sql:
         return {}, problems + [f"{named} has no statement."]
     dialect = queries.dialect_of(db)
-    read = queries.tables_of(sql, dialect)
-    if read != [sheet.table.lower()]:
-        problems.append(f"{named} reads {', '.join(read) or 'no table'}. A card reads {sheet.table} and nothing else.")
+    beyond = queries.reads_beyond(sql, sheet.table, dialect)
+    if beyond:
+        problems.append(f"{named} reads {', '.join(beyond)}. A card reads {sheet.table} and nothing else.")
         return {}, problems
     try:
         shown = _shown_of(raw)
@@ -361,23 +366,39 @@ def _what_the_model_reads(sheet: Sheet) -> dict:
     return read
 
 
-def draft(sheet: Sheet, words: str, *, provider: Any = None) -> dict:
+def model_that_calls_tools() -> tuple[Any, Optional[str]]:
+    """The model this install drafts with, or why it cannot be used here."""
+    from aughor.agent.converse_tools import binding_calls_tools
+    if not binding_calls_tools():
+        return None, ("The model this install drafts with cannot call tools, so it cannot draft a dashboard. "
+                      "Choose one that can in the model settings.")
+    from aughor.llm.provider import get_provider
+    return get_provider("coder"), None
+
+
+def notes_of(noticed: Any) -> list[str]:
+    """What exploring noticed, as it may be read: a few short sentences, none stating a figure."""
+    notes = [" ".join(str(n).split())[:MAX_NOTE] for n in (noticed if isinstance(noticed, list) else [])]
+    return [n for n in notes if n and not _stated(n)][:MAX_NOTICED]
+
+
+def draft(sheet: Sheet, words: str, *, noticed: Any = None, provider: Any = None) -> dict:
     """⚑ Spends model calls: one short run with one tool. What comes back is a proposal, every card already run on the sheet,
-    or the reasons there is none. Nothing is kept here."""
+    or the reasons there is none. ``noticed`` is what exploring found, which it may lean on; what is asked decides. Nothing is
+    kept here."""
     import json
 
     from aughor.agent.tool_loop import ToolSpec, run_tool_loop
 
-    words = " ".join((words or "").split())[:MAX_WORDS]
+    words = " ".join((words or "").split())
     if not words:
         return _nothing("Say what this dashboard should show.")
+    if len(words) > MAX_WORDS:      # never cut short: a change asked for last is what a cut would lose
+        return _nothing(f"That is more than {MAX_WORDS:,} characters, which is more than a draft reads. Say it in fewer.")
     if provider is None:
-        from aughor.agent.converse_tools import binding_calls_tools
-        if not binding_calls_tools():
-            return _nothing("The model this install drafts with cannot call tools, so it cannot draft a dashboard. "
-                            "Choose one that can in the model settings.")
-        from aughor.llm.provider import get_provider
-        provider = get_provider("coder")
+        provider, why = model_that_calls_tools()
+        if provider is None:
+            return _nothing(why)
 
     held: dict[str, Any] = {}
     faults: list[list[str]] = []
@@ -394,6 +415,11 @@ def draft(sheet: Sheet, words: str, *, provider: Any = None) -> dict:
         "Propose the dashboard, whole. Every card is run on the sheet as you call this; every fault comes back at once, to repair "
         "together. When it is staged, you are done."), parameters=_PARAMS, run=propose, concludes=True)
     ask = (f"The sheet:\n{json.dumps(_what_the_model_reads(sheet), default=str)}\n\nThe person asks for: {words}")
+    notes = notes_of(noticed)
+    if notes:
+        ask += ("\n\nAn earlier look at this file noticed, which may help you write the statements. What the person asks for decides, "
+                "and none of this is something they asked for, so what you do not use needs no mention:\n")
+        ask += "\n".join(f"- {n}" for n in notes)
     result = run_tool_loop(provider, SYSTEM, ask, [tool], max_steps=MAX_STEPS, conn_id=model.SHEETS_CONNECTION, site="sheets.dashboard_draft")
     if held.get("proposal"):
         return {"drafted": True, "sheet": sheet.id, "connection_id": model.SHEETS_CONNECTION, "words": words,
@@ -408,6 +434,66 @@ def draft(sheet: Sheet, words: str, *, provider: Any = None) -> dict:
 
 def _nothing(*sentences: str) -> dict:
     return {"drafted": False, "sentences": list(sentences), "cards": [], "filters": [], "scenario": None, "questions": [], "not_made": []}
+
+
+# ── what a person changes ───────────────────────────────────────────────────
+
+def _as_read(raw: dict) -> dict:
+    """A card as a person's browser sends it back, as `_read_card` reads one."""
+    shown = raw.get("shown") if isinstance(raw.get("shown"), dict) else {}
+    return {**shown, "key": raw.get("key"), "title": raw.get("title"), "sql": raw.get("sql")}
+
+
+def _refit(raw: dict, columns: list[dict]) -> dict:
+    """What a card draws when a person's statement returns other columns: what still exists keeps its label and tone, and the
+    rest is taken from what the statement returns. A table draws whatever comes back."""
+    drawn = raw.get("as")
+    if drawn == "table":
+        return raw
+    types = {str(c.get("name")): queries.kind_of(str(c.get("type") or "")) for c in columns}
+    numbers = [n for n, kind in types.items() if kind == "number"]
+    held = {s.get("column"): s for s in raw.get("series") or [] if isinstance(s, dict)}
+    if drawn == "figure":
+        first = next((n for n in held if n in types), None) or (numbers[0] if numbers else None)
+        beside = raw.get("beside")
+        fitted = {**raw, "series": [held.get(first, {"column": first})] if first else []}
+        if first not in held:       # another value: a count written as the percent it replaced read 9944100.0%
+            fitted["format"] = ""
+        if isinstance(beside, dict) and beside.get("column") not in types:
+            fitted["beside"] = None
+        return fitted
+    x = raw.get("x") if raw.get("x") in types else next((n for n in types if n not in numbers), next(iter(types), ""))
+    series = [held.get(n, {"column": n}) for n in numbers if n != x][:queries.MAX_SERIES]
+    return {**raw, "x": x, "series": series, **({} if any(s["column"] in held for s in series) else {"format": ""})}
+
+
+def check_card(sheet: Sheet, raw: dict, *, scenario: Optional[dict] = None, twin: Optional[dict] = None) -> dict:
+    """A card a person changed while checking a draft, run on the sheet as it stands: the card as it now reads, or what stops
+    it. No model is asked. ``twin`` is the other card of a scenario this one belongs to, which it must still equal at the
+    scenario's starting values. Nothing is kept here."""
+    from aughor.db.connection import open_connection_for
+
+    db = open_connection_for(model.SHEETS_CONNECTION)
+    read = _as_read(raw)
+    sql = str(read.get("sql") or "").strip().rstrip(";")
+    named = read.get("title") or "This card"
+    if sql and not queries.reads_beyond(sql, sheet.table, queries.dialect_of(db)):      # anything else `_read_card` says, unrun
+        try:
+            run_sql, params = queries.bind(sql, _starts(scenario)) if queries.params_of(sql) else (sql, None)
+        except queries.Refused as exc:
+            return {"card": None, "sentences": [f"{named}: {exc}"]}
+        probe = queries.probe(db, run_sql, seconds=queries.time_limit(model.SHEETS_CONNECTION), params=params)
+        if not probe["error"]:
+            read = _refit(read, probe["columns"])
+            if read.get("as") != "table" and not read.get("series"):
+                return {"card": None, "sentences": [f"{named}: this query returns no number to show."]}
+    card, problems = _read_card(sheet, db, read, scenario)
+    if card and scenario and twin:
+        other, wrong = _read_card(sheet, db, _as_read(twin), scenario)
+        problems += wrong
+        if other:
+            problems += _read_scenario(scenario, {card["key"]: card, other["key"]: other})[1]
+    return {"card": None, "sentences": problems} if problems or not card else {"card": card, "sentences": []}
 
 
 # ── what a person keeps ─────────────────────────────────────────────────────
@@ -513,11 +599,10 @@ def keep(sheet: Sheet, home: Any, *, title: str, cards: list[dict], filters: lis
     problems: list[str] = []
     read: list[dict] = []
     for raw in cards:
-        shown = raw.get("shown") if isinstance(raw.get("shown"), dict) else {}
-        card, wrong = _read_card(sheet, db, {**shown, "key": raw.get("key"), "title": raw.get("title"), "sql": raw.get("sql")}, scenario)
+        card, wrong = _read_card(sheet, db, _as_read(raw), scenario)
         problems += wrong
         if card:
-            read.append({**card, "scenario_only": bool(raw.get("scenario_only"))})
+            read.append({**card, "scenario_only": bool(raw.get("scenario_only")), "edited": bool(raw.get("edited"))})
     checked_filters = []
     cur = projection.cursor()
     try:
@@ -541,7 +626,8 @@ def keep(sheet: Sheet, home: Any, *, title: str, cards: list[dict], filters: lis
             stored = StoredCard(connection_id=model.SHEETS_CONNECTION, source="authored",
                                 kind="kpi" if card["shown"]["as"] == "figure" else "chart", title=card["title"], sql=card["sql"],
                                 render={"shown": card["shown"], "columns": card["columns"], "definition": card["definition"],
-                                        "drafted_by_model": True, "standing": True})
+                                        "drafted_by_model": True, "standing": True,
+                                        **({"changed_by_person": True} if card["edited"] else {})})
             saved = own_cards.place(home, stored)
             made.append({**card, "id": saved.id})
         spec = spec_for(title, made, sheet=sheet, filters=checked_filters, scenario=scenario, add_row=add_row)

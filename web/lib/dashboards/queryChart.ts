@@ -43,11 +43,15 @@ export function seriesColours(series: string[], colours: ChartColours, tones: Re
   });
 }
 
+const DATE_AS_TEXT = /^\d{4}(-(\d{2}|Q[1-4]))?(-\d{2})?$/;
+
 export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments" | "labels" | "running"> & Partial<Pick<QueryShown, "across">>,
   colours: ChartColours): Record<string, unknown> {
   const temporal = c.x.kind === "date" || c.x.kind === "time";
   const manyYears = temporal && new Set(c.points.map(p => String(p.x ?? "").slice(0, 4))).size > 1;
-  const values = c.points.map(p => ({ x: xText(p.x, c.x.kind, c.x.bucket, manyYears), s: p.s || "", v: p.v }));
+  // a statement's own `date_trunc('month', …)` names no bucket: months read as months, not as "1 Sept 2016"
+  const wholeMonths = temporal && !c.x.bucket && c.points.length > 1 && c.points.every(p => String(p.x ?? "").slice(8, 10) === "01");
+  const values = c.points.map(p => ({ x: xText(p.x, c.x.kind, wholeMonths ? "month" : c.x.bucket, manyYears), s: p.s || "", v: p.v }));
   const split = c.series.length > 1 || (c.series.length === 1 && c.series[0] !== "");
   const named = c.series.filter(s => s !== "");
   const color = split
@@ -57,8 +61,10 @@ export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments"
     : {};
   const numericX = c.x.kind === "number";
   const bars = c.as === "bar";
-  // a category along the bottom reads largest first; dates and numbers in their own order
-  const xSort = c.x.kind === "text" && bars && !setup.running ? { op: "sum", field: "v", order: "descending" } : null;
+  // a category along the bottom reads largest first; dates and numbers in their own order. A date a statement wrote as text
+  // (`strftime(day, '%Y-%m')`) is still a date: months ranked by size read as a chart of nothing.
+  const datesAsText = c.x.kind === "text" && c.points.length > 0 && c.points.every(p => DATE_AS_TEXT.test(String(p.x ?? "")));
+  const xSort = c.x.kind === "text" && bars && !setup.running && !datesAsText ? { op: "sum", field: "v", order: "descending" } : null;
   const x = {
     field: "x",
     type: c.as === "scatter" && numericX ? "quantitative" : "ordinal",
