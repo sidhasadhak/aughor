@@ -224,7 +224,7 @@ describe("what each metric is expected to read next", () => {
     why: "", target: { start: "2026-08-27", last_day: "2026-09-05", label: "2026-08-27 to 2026-09-05", settles_on: "2026-09-18" },
     items: [
       { metric: "revenue", name: "Revenue", why: "", expected: { claim_id: "p1", low: 120000, mid: 131000, high: 142000,
-        text: "$120,000 to $142,000", state: "open", scored_against: null, n: 6,
+        text: "$120,000 to $142,000", state: "open", scored_against: null, n: 6, held: 3, cases: 4, coverage: 0.8,
         must_say: ["6 earlier ranges, each read at the same age: $120,000 to $142,000 at 80% stated coverage", "on this metric the interval held 3 of 4 times"] } },
       { metric: "return_rate", name: "Return rate", expected: null, why: "only 2 earlier ranges held a reading; 3 are the least a band is drawn from" },
     ],

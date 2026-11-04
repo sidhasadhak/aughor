@@ -23,6 +23,8 @@ const api = vi.hoisted(() => ({
   publishDashboard: vi.fn(), unpublishDashboard: vi.fn(), askDashboard: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasDashboard: vi.fn(), restoreDashboard: vi.fn(), retireDashboard: vi.fn(),
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
+  readMetricTrend: vi.fn(async () => ({ series: [], why: "" })), readBriefingEdition: vi.fn(async () => ({ built: false })),
+  getMetricCoverage: vi.fn(async () => ({ areas: [] })),
   getSuggestedShapes: vi.fn(), getDashboardFromObject: vi.fn(), getGroups: vi.fn(),
   keepDashboardQuery: vi.fn(), previewDashboardQuery: vi.fn(), getCatalogTree: vi.fn(),
   listPackTemplates: vi.fn(), draftFromPackTemplate: vi.fn(),
@@ -359,14 +361,15 @@ describe("the metrics, the dashboard a person opens on", () => {
     show();
     const metrics = await screen.findByRole("tab", { name: "Metrics" });
     expect(metrics).toHaveAttribute("aria-selected", "true");
-    // measured for the latest month, as a dashboard is read — and the Briefing's own table shows it
+    // measured for the latest month, as a dashboard is read
     await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook"));
-    expect(await screen.findByText("Measured for August 2026 · against July 2026")).toBeInTheDocument();
-    // the figure on its card — the table behind Details holds it too
-    expect(within(screen.getByTestId("metrics-figures")).getAllByText("$110").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("columnheader", { name: "Aug 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "vs Jul 2026" })).toBeInTheDocument();
+    // the figure in its row
+    expect(within(screen.getByTestId("metrics-ledger")).getAllByText("$110").length).toBeGreaterThan(0);
     // and what the metric's own past expects of the range after it
-    expect(await screen.findByText("$100 to $116")).toBeInTheDocument();
-    expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook", undefined);
+    expect(await screen.findByText("$100 – $116")).toBeInTheDocument();
+    expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook");
     expect(screen.getByTestId("dashboard-range")).toHaveTextContent("August 2026 · final");
     expect(api.getDashboard).not.toHaveBeenCalled();
     // the person's own dashboards are still there, one click away, and that choice is remembered

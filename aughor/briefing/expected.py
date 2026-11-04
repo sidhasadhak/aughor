@@ -32,10 +32,12 @@ def _key(conn_id: str, metric: str, last_day: str) -> str:
 
 def _said(claim: Any) -> dict:
     x = claim.extra or {}
+    bt = x.get("backtest") or {}
     return {"claim_id": claim.id, "low": x.get("low"), "mid": x.get("mid"), "high": x.get("high"),
             "text": str(x.get("band_text") or ""), "state": claim.state, "scored_against": x.get("scored_against"),
             "actual_text": str(x.get("actual_text") or ""), "must_say": list(x.get("must_say") or []),
-            "n": int((x.get("backtest") or {}).get("n") or 0)}
+            "n": int(bt.get("n") or 0), "held": int(bt.get("held") or 0), "cases": int(bt.get("cases") or 0),
+            "coverage": x.get("coverage")}
 
 
 def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,

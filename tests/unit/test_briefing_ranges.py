@@ -400,6 +400,10 @@ def test_each_metric_is_expected_once_from_its_own_past_and_read_back_without_me
     assert rev["low"] < rev["mid"] < rev["high"] and rev["n"] == 6 and rev["state"] == "open"
     assert " to " in rev["text"] and "6 earlier ranges" in rev["must_say"][0]
     claim = C.get(rev["claim_id"])
+    # how often it has been right travels as numbers, the same ones its sentence states
+    tested = claim.extra["backtest"]
+    assert rev["coverage"] == claim.extra["coverage"] and rev["cases"] == tested["cases"] > 0 and rev["held"] == tested["held"]
+    assert f"held {rev['held']} of {rev['cases']} times" in rev["must_say"][1]
     assert claim.kind == "prediction" and claim.extra["settles_on"] == "2026-09-18" and claim.next_check == "2026-09-18"
     assert claim.extra["briefing"] == {"metric": "revenue", "start": "2026-08-27", "end": "2026-09-06",
                                        "as_of": "2026-09-18", "preset": "custom"}
@@ -670,3 +674,117 @@ def test_a_whole_month_is_compared_with_the_whole_month_before():
     under_way = _edge("current_month", today=oct13, edge={"through": date(2026, 10, 12)})
     assert (under_way.start, under_way.end) == (date(2026, 10, 1), date(2026, 10, 13))
     assert (under_way.previous_start, under_way.previous_end) == (date(2026, 9, 1), date(2026, 9, 13))
+
+
+# ── what the Metrics dashboard reads of a metric: its usual range, its domain, which way is good ─────────────────────
+
+def test_a_trend_says_its_usual_range_by_the_briefings_own_definition(con, approved):
+    import statistics
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    seen = ranges.metric_trend("c1", spec, "revenue", profile=_profile(), runner=_runner(con))
+    values = [p["value"] for p in seen["series"]]
+    earlier = [v for v in values[:-1][-6:] if v is not None]      # a custom range reads the six before it
+    assert len(earlier) >= 3
+    mean, sd = statistics.fmean(earlier), statistics.stdev(earlier)
+    usual = seen["usual"]
+    assert (usual["mean"], usual["low"], usual["high"], usual["n"]) == (mean, mean - sd, mean + sd, len(earlier))
+    assert usual["z"] == (values[-1] - mean) / sd
+    side = "above" if usual["z"] >= 1 else "below" if usual["z"] <= -1 else ""
+    assert usual["outside"] == side
+
+
+def test_a_usual_range_needs_enough_earlier_readings_and_a_figure_to_place(monkeypatch):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    from aughor.briefing import guide as G
+    monkeypatch.setattr(G, "current", lambda *a, **k: (None, None))
+    assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0]) is None           # two earlier readings
+    assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0, None]) is None     # no figure now
+    flat = ranges._usual_of("c1", None, spec, [2.0, 2.0, 2.0, 2.0, 9.0])
+    assert flat["outside"] == "" and flat["z"] == 0.0                            # no spread: nothing to leave
+    assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0, 9.0])["outside"] == "above"
+    assert ranges._usual_of("c1", None, spec, [7.0, 8.0, 9.0, 1.0])["outside"] == "below"
+    assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0, 2.5])["outside"] == ""
+
+
+def test_a_guide_that_cannot_be_read_leaves_the_usual_range_on_its_defaults(monkeypatch):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    from aughor.briefing import guide as G
+
+    def broken(*a, **k):
+        raise RuntimeError("no guide today")
+    monkeypatch.setattr(G, "current", broken)
+    assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0, 9.0])["outside"] == "above"
+
+
+def test_what_was_not_measured_still_says_its_area_and_what_was_says_which_way_is_good(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from aughor.semantic import metric_time as mt
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    def metric(name, status="approved"):
+        return NS(name=name, label=name.title(), status=status, connection="c1", lineage=[], time_kind="flow", unit="EUR")
+    undated, old = metric("undated"), metric("roas", status="deprecated")
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [undated])
+    monkeypatch.setattr(ranges, "_deprecated", lambda *a, **k: [old])
+    monkeypatch.setattr(ranges, "metric_cap", lambda *a, **k: 24)
+    monkeypatch.setattr(ranges, "statement_lines", lambda *a, **k: (lambda m: None))
+    monkeypatch.setattr(ranges, "directions_of", lambda *a, **k: {})
+    monkeypatch.setattr(mt, "declared", lambda m: False)
+    monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {}, raising=False)
+    placed = {"undated": {"id": "orders_sales", "name": "Orders & sales", "order": 0}, "roas": {"id": "marketing", "name": "Marketing", "order": 4}}
+    monkeypatch.setattr(ranges, "areas_of", lambda _c, ms, _s=None: {m.name: placed[m.name] for m in ms if m.name in placed})
+    got = ranges.measure_range("c1", spec, run_sql=lambda *_a: None, dialect="duckdb", north_stars=[{"name": "Roas"}])
+    by = {u["name"]: u for u in got["unmeasured"]}
+    assert by["Undated"]["area"] == {"id": "orders_sales", "name": "Orders & sales", "order": 0}
+    assert "deprecated" in by["Roas"]["reason"] and by["Roas"]["area"]["name"] == "Marketing"
+
+
+def test_a_measured_row_says_its_area_in_the_industrys_order_and_which_way_is_good(con, approved, monkeypatch):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    monkeypatch.setattr(ranges, "directions_of", lambda *a, **k: {"revenue": "up"})
+    monkeypatch.setattr(ranges, "areas_of", lambda _c, ms, _s=None: {
+        m.name: {"id": "orders_sales", "name": "Orders & sales", "order": 3} for m in ms if m.name == "revenue"})
+    with _runner(con)() as (run_sql, dialect):
+        got = ranges.measure_range("c1", spec, run_sql=run_sql, dialect=dialect, north_stars=[])
+    row = next(m for m in got["measured"] if m["metric"] == "revenue")
+    assert row["area"] == {"id": "orders_sales", "name": "Orders & sales", "order": 3} and row["better"] == "up"
+    assert all("better" not in m for m in got["measured"] if m["metric"] != "revenue")      # nobody said, so no colour
+
+
+def test_which_way_is_good_comes_from_the_guide_then_the_industrys_metrics(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from aughor.briefing import guide as G
+    from aughor.semantic import metric_map as M
+    pattern = NS(id="ec_gross_margin", title="Gross Margin", direction="up", proposable=True, intent_tags=(), area="margin_pricing")
+    cost = NS(id="fin_cogs", title="Cost of Goods", direction="down", proposable=True, intent_tags=(), area="margin_pricing")
+    either = NS(id="ec_orders", title="Orders Placed", direction="either", proposable=True, intent_tags=(), area="orders_sales")
+    monkeypatch.setattr(M, "map_for", lambda *a, **k: NS(patterns=lambda: [pattern, cost, either]))
+    guide = NS(checks=[NS(metric="refunds", better="down"), NS(metric="ratio", better="none"), NS(metric="margin_on_items", better="down")])
+    monkeypatch.setattr(G, "current", lambda *a, **k: (guide, None))
+    def metric(name, label, lineage=()):
+        return NS(name=name, label=label, lineage=list(lineage))
+    got = ranges.directions_of("c1", [
+        metric("margin_pct", "Gross Margin"),                                       # the pattern it is
+        metric("cogs", "Unit cost", ["coverage: margin_pricing · fin_cogs"]),       # the pattern it cites
+        metric("margin_on_items", "Gross Margin on Items"),                         # holds a pattern, but the guide said otherwise
+        metric("margin_by_store", "Gross Margin by Store"),                         # holds a pattern, and nobody said otherwise
+        metric("placed", "Orders Placed"),                                          # either way is good: no colour
+        metric("mystery", "Something else"),                                        # nobody has said
+        metric("refunds", "Refunds"), metric("ratio", "Ratio"),                     # the guide alone
+    ])
+    assert got == {"margin_pct": "up", "cogs": "down", "margin_on_items": "down", "margin_by_store": "up", "refunds": "down"}
+
+
+def test_a_direction_that_cannot_be_read_is_no_colour_and_never_a_failure(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from aughor.briefing import guide as G
+    from aughor.semantic import metric_map as M
+
+    def broken(*a, **k):
+        raise RuntimeError("nothing readable")
+    monkeypatch.setattr(M, "map_for", broken)
+    monkeypatch.setattr(G, "current", broken)
+    assert ranges.directions_of("c1", [NS(name="x", label="X", lineage=[])]) == {}
+    assert ranges.directions_of("c1", []) == {}

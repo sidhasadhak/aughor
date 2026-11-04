@@ -59,7 +59,7 @@ export function groupIdOf(name: string): string {
 
 // ── Arc BC · an edition composed from blocks ─────────────────────────────────────────────────
 
-const SYMBOL: Record<string, string> = { EUR: "€", USD: "$", GBP: "£", BRL: "R$", JPY: "¥", CHF: "CHF " };
+export const SYMBOL: Record<string, string> = { EUR: "€", USD: "$", GBP: "£", BRL: "R$", JPY: "¥", CHF: "CHF " };
 
 /** A source's value worded by its unit: a share as a percentage (two places under 10%), money with its symbol. */
 export function fmtValue(v: unknown, unit = ""): string {

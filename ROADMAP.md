@@ -12234,6 +12234,22 @@ area thin on metrics (LuxExperience's Traffic & conversion: one metric, 22 patte
 
 ---
 
+**The Metrics dashboard as a ledger (the user, 2026-11-04, with another data expert's prototype: *"Lets move our Metrics
+Dashboards in this manner"*, then *"I like it"*).** One row per metric, each in its area in the order the industry reads
+them: the figure, a trend with its usual range behind it, the two comparisons, the expected-next band, and one line of what
+it means, written by rule from what was measured, so it cannot state what the figures do not. **Key movements** are the same
+rows outside their usual range, what is bad first. A metric opens in its own row: how it reads, what the platform's own work
+says of it (word for word from the Briefing written for that range), how it is measured. `MetricsLedger.tsx` replaces
+`MetricsFigures.tsx`; no model call, and reading it still books the expected-next bands. **Areas come from the knowledge base
+(*"We already have industry metrics.. let it be based on that"*):** a metric is placed by the pattern it cites, is or holds
+whole, before the area a proposal happened to be written in, so Gross Margin on Items reads with Gross Margin. The
+exploration only helps pick the industry. Mockup: `design-mockups/metric-ledger-lux.html`.
+**Found by building it:** a figure the server says is not at equal age was reading as "highest in 13 months", which on theLook
+made all 10 metrics key movements; those rows now say they are not read against their usual range, and 2 remain. The Briefing's own
+`outside` (`briefing/edition.py`) has the same gap, not changed here. A dashboard's "previous month" reads the Briefing kept under
+"last month", only when both name the same days. Applying a metric's definition drops the connection's kept Briefings by design
+(`routers/metrics.py`), so what the platform knows of a metric is gone from the row until one is written again.
+
 ### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted — **SV-3 BUILT 2026-10-28** at the user's *"proceed with the rest"* · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
 **The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
