@@ -540,7 +540,7 @@ def test_a_row_added_comes_out_alone_and_goes_back_in_with_its_values(env):
     other = service.add_row(sheet, {"order_id": "x2"}, by="user:ana")["row"]
     n = added["row"]
     change = next(c for c in service.history(sheet)["changes"] if c["id"] == added["change_id"])
-    assert change["lines_total"] == 1                        # the row, its values folded inside it
+    assert change["lines_total"] == len(change["lines"]) == 1    # the row, its values folded inside it
     assert change["lines"][0]["what"] == "added"
     assert change["lines"][0]["values"] == {"order_id": "x1", "order_status": "created"}
     out = service.put_back(sheet, change=added["change_id"], row=n, column="", current=change["lines"][0]["current"],
@@ -551,6 +551,21 @@ def test_a_row_added_comes_out_alone_and_goes_back_in_with_its_values(env):
     assert line["what"] == "removed"
     service.put_back(sheet, change=out["change_id"], row=n, column="", current=line["current"], by="user:ana")
     assert _cell(sheet, n, "order_id") == "x1"
+    assert _same(sheet)["same"]
+
+
+def test_a_change_that_wrote_a_cell_twice_goes_back_to_what_stood_before_its_first_write(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    service.set_cells(sheet, [{"row": 1, "column": status, "value": "invoiced"}], by="user:ana", cid="onechange")
+    service.set_cells(sheet, [{"row": 1, "column": status, "value": "returned"}], by="user:ana", cid="onechange")
+    change = next(c for c in service.history(sheet)["changes"] if c["id"] == "onechange")
+    assert change["lines_total"] == 1
+    line = change["lines"][0]
+    assert (line["from"], line["to"]) == ("delivered", "returned")
+    service.put_back(sheet, change="onechange", row=1, column=status, current=line["current"], by="user:ana")
+    assert _cell(sheet, 1, "order_status") == "delivered"
     assert _same(sheet)["same"]
 
 
