@@ -7,6 +7,7 @@ edition per reader, and — when the model never composes — draws an edition f
 from __future__ import annotations
 
 import contextlib
+import json
 from datetime import date
 
 import duckdb
@@ -127,6 +128,54 @@ def test_a_floor_figure_the_page_left_out_is_added_by_code(setup, monkeypatch):
     assert set(entry["floor"]) == {"sales", "aov"}
     assert [b["source"] for b in added] == ["aov"]                 # sales is cited in the lead; aov was left out
     assert all(b["type"] == "figure" for b in added)
+
+
+def _settling_week():
+    spec, _ = ranges.resolve_range("last_week", today=OCT29, lag_days=1, lag_source="beyond_horizon",
+                                   still_moving=("orders",))
+    return spec
+
+
+def _given(seen) -> dict:
+    return json.loads(seen[0]["question"].split("\n\nSCHEMA (for query):")[0])
+
+
+def test_a_figure_still_settling_is_not_put_on_the_page_by_code_and_the_model_is_told_why(setup, monkeypatch):
+    blocks = [{"type": "lead", "text": "A week to read with care."}, {"type": "figure", "source": "sales"}]
+    loop, seen = _loop([("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    settled = W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                        run_query=_top_orders)
+    assert set(settled["floor"]) == {"sales", "aov"} and [b["source"] for b in settled["blocks"] if b["by_code"]] == ["aov"]
+    assert {c["id"] for c in _given(seen)["checks"] if "z" in c["facts"] and "caveats" not in c} == {"sales", "aov"}
+
+    loop, seen = _loop([("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+
+    assert entry["floor"] == [] and not [b for b in entry["blocks"] if b["by_code"]]    # "Also outside its usual range"
+    given = _given(seen)
+    assert given["floor"] == [] and {c["id"] for c in given["checks"]} == {"sales", "aov"}
+    for c in given["checks"]:
+        assert c["status"] == "provisional" and "z" not in c["facts"] and "extreme" not in c["facts"]
+        said = " ".join(c.get("caveats") or [])
+        assert "the difference in age, not a move" in said and said.endswith("So it is not called outside its usual range.")
+    assert "still settling" in seen[0]["system"] and "never lead with it" in seen[0]["system"]
+    kept = entry["sources"]["sales"]                         # what the page's evidence panel draws, in amber
+    assert kept["status"] == "provisional" and "Sales is still provisional" in " ".join(kept["caveats"])
+    assert {"Sales against its usual range", "Average order against its usual range"} <= {n["label"] for n in entry["not_read"]}
+
+
+def test_an_edition_drawn_by_code_says_a_figure_is_still_settling_too(setup, monkeypatch):
+    loop, _ = _loop([])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+    assert entry["drawn_by_code"] and entry["floor"] == []
+    drawn = [b["source"] for b in entry["blocks"]]
+    assert set(drawn) == {"sales", "aov"} and all(entry["sources"][s]["caveats"] for s in drawn)
+    assert not [b for b in entry["blocks"] if b["kicker"]]    # no block says it is outside anything
 
 
 def test_a_model_that_does_not_finish_leaves_an_edition_drawn_by_code_that_says_so(setup, monkeypatch):

@@ -530,20 +530,18 @@ def equal_age(metric: Any, status: str) -> dict:
     difference of maturity for a move. The number is still shown: a stated caveat beside a
     figure is worth more than a blank.
     """
+    from aughor.semantic import metric_time as mt
+
     if status == "final":
         return {"equal": True, "why": ""}
-    kind = str(_get_kind(metric) or "")
-    if kind == "cohort":
+    # A guide's check that writes its own aggregate is a dict (`guide.measurable`), an approved metric an object.
+    if mt._get(metric, "time_kind") == "cohort":
         return {"equal": True, "why": ""}
-    label = getattr(metric, "label", "") or getattr(metric, "name", "") or "this figure"
+    label = mt._get(metric, "label") or mt._get(metric, "name") or "this figure"
     return {"equal": False, "why": (
         f"{label} is still {'to date' if status == 'to_date' else 'provisional'}, and what it is "
         "compared with has settled — part of any difference is the difference in age, not a move. "
         "Comparing them at the same age needs a daily reading this source does not keep yet.")}
-
-
-def _get_kind(metric: Any) -> str:
-    return str(getattr(metric, "time_kind", "") or "")
 
 
 def metric_cap(conn_id: str) -> int:
@@ -733,6 +731,14 @@ def _unsettled(m: Any, spec: RangeSpec) -> bool:
     return bool({mt.bare_name(t) for t in mt.tables_read(m)} & set(spec.still_moving))
 
 
+def range_status(m: Any, spec: RangeSpec) -> str:
+    """A figure's status for ``spec``, one answer wherever it is read. The edition asked without ``_unsettled`` until
+    2026-11-04: eight of theLook's flows read final there and provisional on the Dashboard, and it told the model so."""
+    from aughor.semantic import metric_time as mt
+    return mt.figure_status(m, spec.windows()[0], as_of=spec.as_of, lag_days=spec.lag_days,
+                            unsettled=_unsettled(m, spec))
+
+
 def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
                 line_of: Callable[[Any], Any]) -> dict:
     """One metric's figure for ``read``, from its measured windows ``got``: its comparisons, how much of
@@ -751,7 +757,7 @@ def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
     if read.compare_withheld:
         pv, prev_partial = None, None
     lv = read_value(ly) if m.time_kind != "stock" else (ly["value"] if ly else None)
-    status = mt.figure_status(m, at[0], as_of=read.as_of, lag_days=read.lag_days, unsettled=_unsettled(m, read))
+    status = range_status(m, read)
     return {
         "name": name, "metric": m.name, "unit": m.unit or "", "time_kind": m.time_kind,
         "time_source": m.time_source, "confirmed": bool(m.time_confirmed_by),

@@ -85,6 +85,9 @@ How to compose:
   — and say it as the analysis's finding. Otherwise describe where the move sits and what it sits beside. Never
   predict.
 - Every figure marked floor must appear in a block (a figure block reading it is enough).
+- A check whose caveat says part of its difference is its age is still settling: it has no z and is never in floor.
+  Draw it if it matters and say it is still settling; never call it outside its usual range, unusual, or the highest
+  or lowest of anything, and never lead with it.
 
 Block types (fields per type):
 {types}"""
