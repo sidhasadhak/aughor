@@ -10,6 +10,7 @@ import type {
 } from "@/lib/api";
 import { SYMBOL, measuredBeforeWords, parseCited, rangeWord } from "@/lib/briefingEdition";
 import { endsWords, periodShort, sentence } from "@/lib/dashboards/figures";
+import { formatCount } from "@/lib/format";
 
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -115,7 +116,35 @@ export function changeWords(m: BriefingRangeMeasure, against: "previous" | "last
 
 /** A figure the server says cannot be held against its past: part of any difference would be its age, not a move. On
  *  theLook, whose recent rows are still being written, reading these as movements flagged every metric it has. */
-const unequal = (m: BriefingRangeMeasure) => !!m.equal_age && !m.equal_age.equal;
+export const unequal = (m: BriefingRangeMeasure) => !!m.equal_age && !m.equal_age.equal;
+
+/** What the ledger says of the figures it did not read against their usual range, a line per reason, in the server's own
+ *  words without the figure's name: on theLook, where no age settles, ten figures gave one sentence ten times. */
+export function notReadWords(measured: BriefingRangeMeasure[]): string[] {
+  const byReason = new Map<string, string[]>();
+  for (const m of measured) {
+    if (!unequal(m)) continue;
+    const why = m.equal_age?.why ?? "";
+    const said = why.startsWith(m.name) ? why.slice(m.name.length) : why;
+    byReason.set(said, [...(byReason.get(said) ?? []), m.name]);
+  }
+  return [...byReason].map(([said, names]) => {
+    const one = names.length === 1;
+    const who = one ? names[0] : byReason.size > 1 ? names.join(", ") : `${formatCount(names.length)} metrics`;
+    const reason = said.startsWith(" ") ? `${one ? "it" : "each"}${said}` : said;
+    return `${who} ${one ? "is" : "are"} not read against ${one ? "its" : "their"} usual range${reason ? `: ${reason}` : "."}`;
+  });
+}
+
+/** Why Key movements is empty. "Nothing left its usual range" is said only of figures that were read against it: of
+ *  anything else it would pass off a judgement not made as a quiet period. */
+export function noKeyMoveWords(read: number, unread: number): string {
+  if (unread === 0) return "Nothing left its usual range.";
+  if (read > 1) return `None of the ${formatCount(read)} read against their usual range left it.`;
+  if (read === 1) return "The one read against its usual range did not leave it.";
+  return unread === 1 ? "The one metric here was not read against its usual range, so it is not called a key movement."
+    : `None of the ${formatCount(unread)} metrics here was read against its usual range, so none is called a key movement.`;
+}
 
 /** Whether a row is a key movement, and which way: outside its usual range. A range still under way is not, because
  *  part of a month reads low against whole ones, and neither is a figure covering part of its range or one not at equal

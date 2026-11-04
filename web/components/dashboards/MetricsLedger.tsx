@@ -25,8 +25,8 @@ import {
   type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type MetricTrend,
 } from "@/lib/api";
 import {
-  bandBasisWords, bandDoubt, bandWords, briefingRangeOf, changeWords, areasOf, editionFor, expectedWords, figureWords, keyMove, meaningOf, readoutOf,
-  shortOf, targetWords, toneOfMove, twinsOf, workFor, type Work,
+  bandBasisWords, bandDoubt, bandWords, briefingRangeOf, changeWords, areasOf, editionFor, expectedWords, figureWords, keyMove, meaningOf,
+  noKeyMoveWords, notReadWords, readoutOf, shortOf, targetWords, toneOfMove, twinsOf, unequal, workFor, type Work,
 } from "@/lib/dashboards/ledger";
 import { figurePeriods, ownFigures } from "@/lib/dashboards/figures";
 import { countNoun, formatCount } from "@/lib/format";
@@ -239,7 +239,10 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
   // what is bad first, then what is furthest from its usual range
   const key = block.measured.filter(m => moveOf(m))
     .sort((a, b) => Number(toneOf(b) === "bad") - Number(toneOf(a) === "bad") || zOf(b) - zOf(a));
-  const settling = block.measured.filter(m => m.status !== "final").length;
+  const unread = block.measured.filter(unequal).length;
+  const judged = block.measured.length - unread;
+  // Not the figures it did not read: "still settling" says their days will settle, and on theLook no age does.
+  const settling = block.measured.filter(m => m.status !== "final" && !unequal(m)).length;
   const ended = block.unmeasured.filter(u => u.data_ends).length;
   const { current, previous } = figurePeriods(block);
   const hasYear = block.measured.some(m => m.last_year !== null);
@@ -371,7 +374,8 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
     <div data-testid="metrics-ledger" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div data-testid="ledger-tally" className="aug-fs-sm" style={{ color: "var(--t2)", ...NUM }}>
         {`${formatCount(block.measured.length)} measured`}
-        {done && ` · ${countNoun(key.length, "key movement")}`}
+        {done && judged > 0 && ` · ${countNoun(key.length, "key movement")}`}
+        {unread > 0 && ` · ${formatCount(unread)} not read against usual`}
         {settling > 0 && ` · ${formatCount(settling)} still settling`}
         {block.unmeasured.length > 0 && ` · ${formatCount(block.unmeasured.length)} not measured`}
       </div>
@@ -421,9 +425,14 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
           <tbody>
             {found === 0 ? (
               <tr><td colSpan={columns} data-testid="ledger-none" style={{ ...CELL, padding: 26, textAlign: "center", ...MUTED }}>
-                {q ? `No ${filter === "key" ? "key movement" : "metric"} matches “${term.trim()}”.` : filter === "key" && !done ? "Reading each metric's past…" : filter === "key" ? "Nothing left its usual range." : "Nothing here."}
+                {q ? `No ${filter === "key" ? "key movement" : "metric"} matches “${term.trim()}”.` : filter === "key" && !done ? "Reading each metric's past…" : filter === "key" ? noKeyMoveWords(judged, unread) : "Nothing here."}
               </td></tr>
             ) : bodies}
+            {filter === "key" && !q && notReadWords(block.measured).map((words, i) => (
+              <tr key={`not-read-${i}`}><td colSpan={columns} data-testid="ledger-not-read" className="aug-fs-xs" style={{ ...CELL, borderBottom: 0, padding: "10px 12px", ...MUTED }}>
+                {words}
+              </td></tr>
+            ))}
             {filter === "all" && !q && untouched.length > 0 && (
               <tr><td colSpan={columns} data-testid="ledger-untouched" className="aug-fs-xs" style={{ ...CELL, borderBottom: 0, padding: "10px 12px", ...MUTED }}>
                 {`The data also holds ${untouched.join(" and ")}, with no metric reading ${untouched.length === 1 ? "it" : "them"} yet.`}

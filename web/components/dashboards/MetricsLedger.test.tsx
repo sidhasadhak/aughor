@@ -161,11 +161,67 @@ describe("Key movements", () => {
   });
 });
 
+describe("figures not read against their usual range", () => {
+  const unread = (m: BriefingRangeMeasure): BriefingRangeMeasure => ({ ...m, status: "provisional",
+    equal_age: { equal: false, why: `${m.name} reads a table this platform has not seen stop changing.` } });
+  const SAID = "reads a table this platform has not seen stop changing.";
+  const keyTab = async () => { fireEvent.click(await screen.findByRole("radio", { name: /Key movements \d/ })); };
+  const at = (name: string) => BLOCK.measured.find(m => m.metric === name)!;
+
+  it("says none was read when none was, never that nothing left its usual range", async () => {
+    show({ ...BLOCK, measured: BLOCK.measured.map(unread) });
+    await keyTab();
+    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("7 measured · 7 not read against usual · 4 not measured");
+    expect(screen.getByTestId("ledger-tally")).not.toHaveTextContent("key movement");
+    expect(screen.getByTestId("ledger-tally")).not.toHaveTextContent("still settling");
+    expect(screen.getByTestId("ledger-none")).toHaveTextContent("None of the 7 metrics here was read against its usual range, so none is called a key movement.");
+    expect(screen.getByTestId("ledger-none")).not.toHaveTextContent("Nothing left");
+    expect(screen.getByTestId("ledger-not-read")).toHaveTextContent(`7 metrics are not read against their usual range: each ${SAID}`);
+  });
+
+  it("separates what was read and stayed from what was not read at all", async () => {
+    const flat = [at("gmv"), { ...at("net"), status: "final" as const }];
+    show({ ...BLOCK, measured: [...flat, unread(at("aov"))], unmeasured: [] });
+    await keyTab();
+    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("3 measured · 0 key movements · 1 not read against usual");
+    expect(screen.getByTestId("ledger-none")).toHaveTextContent("None of the 2 read against their usual range left it.");
+    expect(screen.getByTestId("ledger-not-read")).toHaveTextContent(`Average Order Value is not read against its usual range: it ${SAID}`);
+  });
+
+  it("says nothing left its usual range when every figure was read", async () => {
+    show({ ...BLOCK, measured: [at("gmv"), { ...at("net"), status: "final" as const }], unmeasured: [] });
+    await keyTab();
+    expect(screen.getByTestId("ledger-none")).toHaveTextContent("Nothing left its usual range.");
+    expect(screen.queryByTestId("ledger-not-read")).toBeNull();
+  });
+
+  it("says who was left out beside the key movements too, and only counts as settling what was read", async () => {
+    show({ ...BLOCK, measured: BLOCK.measured.map(m => (m.metric === "aov" ? unread(m) : m)) });
+    await keyTab();
+    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("7 measured · 4 key movements · 1 not read against usual · 1 still settling · 4 not measured");
+    expect(rows()).not.toContain("aov");
+    expect(screen.getByTestId("ledger-not-read")).toHaveTextContent("Average Order Value is not read against its usual range");
+    expect(screen.queryByTestId("ledger-none")).toBeNull();
+  });
+
+  it("is said on Key movements, and not over a search or on All, whose rows carry it", async () => {
+    show({ ...BLOCK, measured: BLOCK.measured.map(unread) });
+    await screen.findByRole("radio", { name: /Key movements 0/ });
+    expect(screen.queryByTestId("ledger-not-read")).toBeNull();
+    expect(within(screen.getByTestId("ledger-row-aov")).getByText("not at equal age")).toBeInTheDocument();
+    await keyTab();
+    fireEvent.change(screen.getByRole("textbox", { name: "Find a metric" }), { target: { value: "zzz" } });
+    expect(screen.getByTestId("ledger-none")).toHaveTextContent("No key movement matches “zzz”.");
+    expect(screen.queryByTestId("ledger-not-read")).toBeNull();
+  });
+});
+
 describe("a row", () => {
   it("does not call a figure not at equal age a key movement, and keeps its name readable", async () => {
     const young = fig({ name: "Revenue", metric: "aov", status: "provisional", better: "up", area: SALES, equal_age: { equal: false, why: "part of any difference is its age" } });
     show({ ...BLOCK, measured: [young], unmeasured: [] } as BriefingRangeBlock);
-    await waitFor(() => expect(screen.getByTestId("ledger-tally")).toHaveTextContent("0 key movements"));
+    await screen.findByRole("radio", { name: /Key movements 0/ });
+    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("1 measured · 1 not read against usual");
     const row = within(screen.getByTestId("ledger-row-aov"));
     expect(row.getByText("not at equal age")).toHaveAttribute("title", "part of any difference is its age");
     expect(row.queryByText("still settling")).toBeNull();

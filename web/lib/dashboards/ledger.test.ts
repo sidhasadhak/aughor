@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { BriefingEdition, BriefingRangeBlock, BriefingRangeMeasure, ExpectedBand, MetricTrend } from "@/lib/api";
 import { measuredBeforeWords } from "@/lib/briefingEdition";
 import {
-  bandBasisWords, bandDoubt, bandWords, briefingRangeOf, changeWords, areasOf, editionFor, expectedWords, figureWords, keyMove, namesOfMetric,
+  noKeyMoveWords, notReadWords, bandBasisWords, bandDoubt, bandWords, briefingRangeOf, changeWords, areasOf, editionFor, expectedWords, figureWords, keyMove, namesOfMetric,
   rankWords, readoutOf, shortOf, targetWords, toneOfMove, twinsOf, unitOf, workFor,
 } from "@/lib/dashboards/ledger";
 
@@ -338,3 +338,42 @@ describe("a figure not at equal age", () => {
     expect(said).toEqual({ words: "Not read against its usual range", plain: true });
   });
 });
+
+describe("what is said of figures not read against their usual range", () => {
+  const not = (name: string, tail: string) => m({ name, equal_age: { equal: false, why: `${name}${tail}` } });
+  const READS = " reads a table this platform has not seen stop changing.";
+
+  it("says one reason once, in the server's own words, without the figure's name", () => {
+    expect(notReadWords([not("Revenue", READS), not("Units", READS), m({ name: "Margin" })])).toEqual(
+      [`2 metrics are not read against their usual range: each${READS}`]);
+    expect(notReadWords([not("Revenue", READS)])).toEqual([`Revenue is not read against its usual range: it${READS}`]);
+  });
+
+  it("names who each reason is about when there are two", () => {
+    expect(notReadWords([not("Revenue", READS), not("Units", READS), not("Visits", " is still provisional.")])).toEqual([
+      `Revenue, Units are not read against their usual range: each${READS}`,
+      "Visits is not read against its usual range: it is still provisional."]);
+  });
+
+  it("keeps a reason that does not open with the name, and one with no reason says no more than it knows", () => {
+    expect(notReadWords([m({ name: "Revenue", equal_age: { equal: false, why: "part of any difference is its age" } })])).toEqual(
+      ["Revenue is not read against its usual range: part of any difference is its age"]);
+    expect(notReadWords([m({ name: "Revenue", equal_age: { equal: false, why: "" } })])).toEqual(["Revenue is not read against its usual range."]);
+  });
+
+  it("says nothing of a figure that was read", () => {
+    expect(notReadWords([m({}), m({ equal_age: { equal: true, why: "" } })])).toEqual([]);
+  });
+
+  it.each([
+    [7, 0, "Nothing left its usual range."],
+    [0, 0, "Nothing left its usual range."],
+    [5, 2, "None of the 5 read against their usual range left it."],
+    [1, 2, "The one read against its usual range did not leave it."],
+    [0, 7, "None of the 7 metrics here was read against its usual range, so none is called a key movement."],
+    [0, 1, "The one metric here was not read against its usual range, so it is not called a key movement."],
+  ])("an empty Key movements with %i read and %i not says so", (read, unread, words) => {
+    expect(noKeyMoveWords(read, unread)).toBe(words);
+  });
+});
+
