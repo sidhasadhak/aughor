@@ -12935,8 +12935,12 @@ three are this arc, in the study's own order of value over cost, each through th
   `query_history()` on every connection, `candidates.mine_from_query_log`, `POST /ontology/candidates/mine`, the
   organisation setting `read_query_history`). Snowflake's `INFORMATION_SCHEMA.QUERY_HISTORY`, ClickHouse's
   `system.query_log`, BigQuery's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` (then the caller's own jobs when the project view
-  is refused) and the lakehouse engine's `system.query.history` — finished SELECTs, statement text and when, never
-  rows, through each connection's own door as an internal read; every other engine says it keeps none. The miner the
+  is refused), the lakehouse engine's `system.query.history` and — at the user's *"Yes, do it"* on LuxExperience,
+  2026-11-04 — Postgres's `pg_stat_statements` where the extension is installed (an aggregate: each normalised
+  statement once with its call count since the last reset, weighed by its calls up to 100, literals read as `$n`;
+  without the extension the answer says what installs one; `pg_stat_activity`, the moment, is never read) —
+  finished SELECTs, statement text and when, never rows, through each connection's own door as an internal read;
+  every other engine says it keeps none. The miner the
   repo already had (`sql/query_log_miner.py`, sqlglot) turns them into typed candidates — join edges the graph lacks,
   recurring filter values, recurring named formulas, each seen at least twice, each with its frequency as evidence —
   and the door EXPLAIN-binds every one on the connection before offering it, counts what it refused, and writes

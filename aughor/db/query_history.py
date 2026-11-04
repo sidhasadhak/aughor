@@ -15,7 +15,9 @@ Three rules:
 * **Through the connection's own door**, as every platform read is (`internal=True`): the read-only gate, the trail
   and the typed error stand. A failed read is a `QueryHistory` with `error` set — a value, never a raise.
 * **Withheld is said.** `supported=False` with a `note` names the engine that has no history to read (DuckDB, a
-  file, Postgres — whose `pg_stat_activity` is the moment's activity, not a log, and is deliberately not read).
+  file). Postgres reads `pg_stat_statements` where the extension is installed — an AGGREGATE of every normalised
+  statement with its call count since the last reset, so a row stands for `calls` runs and literals read as `$1` —
+  and says so when it is not; `pg_stat_activity` is the moment's activity, not a log, and is never read.
 """
 from __future__ import annotations
 
@@ -33,6 +35,13 @@ class HistoryRow:
     ended_at: str      # the engine's end time as text (ISO where the engine gives one)
     sql: str
     user: str = ""     # the engine's user or principal, when it carries one — never a row's value
+    calls: int = 1     # how many runs this row stands for: 1 from a log, the call count from an aggregate
+
+
+#: How many runs one aggregated statement may count for when the miner weighs it — a statement run ten thousand
+#: times by a dashboard is "how the warehouse is queried", and it is also one statement; the cap keeps it from
+#: drowning every other fact while still letting it clear the miner's floor.
+CALLS_CAP = 100
 
 
 @dataclass
@@ -51,9 +60,22 @@ class QueryHistory:
     def statements(self) -> list[str]:
         return [r.sql for r in self.rows if r.sql and r.sql.strip()]
 
+    @property
+    def calls(self) -> int:
+        return sum(max(1, r.calls) for r in self.rows if r.sql and r.sql.strip())
+
+    def weighted_statements(self, cap: int = CALLS_CAP) -> list[str]:
+        """Each statement once per run it stands for (at most ``cap``), so the miner's frequencies read as calls:
+        a log row counts once, an aggregate's row its call count."""
+        out: list[str] = []
+        for r in self.rows:
+            if r.sql and r.sql.strip():
+                out.extend([r.sql] * max(1, min(int(r.calls or 1), cap)))
+        return out
+
     def to_dict(self) -> dict:
-        return {"engine": self.engine, "supported": self.supported, "count": len(self.rows), "hours": self.hours,
-                "limit": self.limit, "note": self.note, "error": self.error, "source": self.source}
+        return {"engine": self.engine, "supported": self.supported, "count": len(self.rows), "calls": self.calls,
+                "hours": self.hours, "limit": self.limit, "note": self.note, "error": self.error, "source": self.source}
 
 
 def unsupported(engine: str, why: str = "") -> QueryHistory:
@@ -62,8 +84,10 @@ def unsupported(engine: str, why: str = "") -> QueryHistory:
                         note=why or f"{engine or 'this engine'} keeps no query history the platform can read")
 
 
-def rows_from_result(result: Any, engine: str, *, source: str, hours: int, limit: int) -> QueryHistory:
-    """A connection's `QueryResult` of ``(ended_at, sql[, user])`` rows → a `QueryHistory`; the engine's error kept."""
+def rows_from_result(result: Any, engine: str, *, source: str, hours: int, limit: int,
+                     aggregate_note: str = "") -> QueryHistory:
+    """A connection's `QueryResult` of ``(ended_at, sql[, user[, calls]])`` rows → a `QueryHistory`; the engine's
+    error kept. ``aggregate_note`` is what a source that counts runs rather than logging them says of itself."""
     if getattr(result, "error", None):
         return QueryHistory(engine=engine, supported=True, hours=hours, limit=limit, source=source,
                             error=str(result.error), note=f"the history read on {source} failed")
@@ -74,9 +98,18 @@ def rows_from_result(result: Any, engine: str, *, source: str, hours: int, limit
         sql = str(row[1] or "").strip()
         if not sql or sql.upper() == "NULL":
             continue
+        calls = 1
+        if len(row) > 3 and row[3] not in (None, "NULL"):
+            try:
+                calls = max(1, int(float(row[3])))
+            except (TypeError, ValueError):
+                calls = 1
         out.append(HistoryRow(ended_at=str(row[0] or ""), sql=sql,
-                              user=str(row[2]) if len(row) > 2 and row[2] not in (None, "NULL") else ""))
-    note = "" if out else f"no finished SELECT statements in the last {hours} hours on {source}"
+                              user=str(row[2]) if len(row) > 2 and row[2] not in (None, "NULL") else "", calls=calls))
+    if not out:
+        note = f"no finished SELECT statements in the last {hours} hours on {source}"
+    else:
+        note = aggregate_note
     return QueryHistory(engine=engine, supported=True, rows=out, hours=hours, limit=limit, source=source, note=note)
 
 
@@ -94,5 +127,6 @@ def not_platform_statement(sql: str) -> bool:
     low = sql.lower()
     return not any(marker in low for marker in (
         "information_schema", "system.query_log", "system.columns", "system.tables", "query_history(",
-        "system.query.history", "pg_catalog", "pg_stat", "show tables", "describe ", "summarize ",
+        "system.query.history", "pg_catalog", "pg_stat", "pg_roles", "pg_database", "pg_namespace", "pg_class",
+        "show tables", "describe ", "summarize ",
     ))

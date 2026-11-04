@@ -72,13 +72,15 @@ def test_platform_and_catalog_statements_teach_nothing():
     assert not not_platform_statement("SELECT END_TIME FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY())")
 
 
-def test_the_four_engines_carry_a_reader_and_the_files_say_so():
+def test_the_five_engines_carry_a_reader_and_the_files_say_so():
     """A capability added to one connector class misses the others (ROADMAP §7, ×3) — every engine with a history
-    overrides the base, by name."""
+    overrides the base, by name. Postgres joined on 2026-11-04: `pg_stat_statements` where it is installed."""
     import inspect
     from aughor.connectors.warehouse import bigquery, clickhouse, databricks, snowflake
+    from aughor.db import connection as C
     for mod, cls in ((snowflake, "SnowflakeConnection"), (clickhouse, "ClickHouseConnection"),
-                     (bigquery, "BigQueryConnection"), (databricks, "DatabricksConnection")):
+                     (bigquery, "BigQueryConnection"), (databricks, "DatabricksConnection"),
+                     (C, "PostgresConnection")):
         klass = getattr(mod, cls)
         assert "query_history" in klass.__dict__, cls
         src = inspect.getsource(klass.__dict__["query_history"])
@@ -86,6 +88,48 @@ def test_the_four_engines_carry_a_reader_and_the_files_say_so():
         # The door's contract (`db.dialects.sql_for_engine`): a statement written for the engine declares NOTHING;
         # declaring the engine's own dialect raised on the first live call (theLook, 2026-11-04).
         assert "sql_dialect=None" in src and "sql_dialect=self.dialect" not in src, cls
+    pg = inspect.getsource(C.PostgresConnection.__dict__["query_history"])
+    assert "pg_stat_statements" in pg and "FROM pg_stat_activity" not in pg      # the moment is never read
+
+
+def test_an_aggregate_row_stands_for_its_calls_and_is_weighed_up_to_the_cap():
+    from aughor.db.query_history import CALLS_CAP
+    h = rows_from_result(_Result(rows=[["2026-11-04 08:02", "SELECT a FROM t JOIN u ON t.id = u.t_id", "lux", "250"],
+                                       ["2026-11-04 08:02", "SELECT 1", "lux", None]]),
+                         "postgres", source="pg_stat_statements", hours=24, limit=10,
+                         aggregate_note="an aggregate since the extension's last reset")
+    assert [r.calls for r in h.rows] == [250, 1] and h.calls == 251
+    assert h.statements == ["SELECT a FROM t JOIN u ON t.id = u.t_id", "SELECT 1"]
+    weighted = h.weighted_statements()
+    assert weighted.count("SELECT a FROM t JOIN u ON t.id = u.t_id") == CALLS_CAP and weighted.count("SELECT 1") == 1
+    assert h.note.startswith("an aggregate") and h.to_dict()["calls"] == 251
+
+
+def test_postgres_without_the_extension_says_what_installs_one(monkeypatch):
+    from aughor.db import connection as C
+    pg = C.PostgresConnection.__new__(C.PostgresConnection)
+    seen = []
+    def fake_bounded(label, sql, limit, *, sql_dialect=None, internal=False):
+        seen.append((label, sql_dialect, internal))
+        return _Result(error='relation "pg_stat_statements" does not exist')
+    monkeypatch.setattr(pg, "execute_bounded", fake_bounded)
+    h = pg.query_history(hours=24, limit=50)
+    assert not h.supported and "CREATE EXTENSION pg_stat_statements" in h.note and "pg_stat_activity is the moment" in h.note
+    assert seen == [("__query_history__", None, True)]
+
+
+def test_postgres_with_the_extension_reads_the_aggregate_and_names_its_reset(monkeypatch):
+    from aughor.db import connection as C
+    pg = C.PostgresConnection.__new__(C.PostgresConnection)
+    monkeypatch.setattr(pg, "execute_bounded", lambda *a, **k: _Result(rows=[
+        ["2026-11-04 08:02:20+01", "SELECT o.id FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.status = $1", "lux", "40"]]))
+    h = pg.query_history()
+    assert h.supported and h.source == "pg_stat_statements" and h.rows[0].calls == 40 and h.rows[0].user == "lux"
+    assert "last reset (2026-11-04 08:02:20+01)" in h.note and "does not apply" in h.note
+    # the normalised literal is a parameter, not a value: the miner keeps the join and drops the filter
+    out = mine_from_query_log("c1", h.weighted_statements(), dialect="postgres")
+    assert any(c.kind == "join" and c.proposal == "customers.id = orders.customer_id" and "40 of 40" in c.evidence for c in out)
+    assert not any(c.kind == "filter" for c in out)
 
 
 # ── the miner ─────────────────────────────────────────────────────────────────────────────
@@ -208,7 +252,7 @@ def test_the_door_mines_binds_and_writes_nothing(monkeypatch, tmp_path):
 
     out = R.mine_ontology_candidates(None, connection_id="c1", schema_name="main")
     assert out["history"]["supported"] and out["history"]["count"] == 6
-    assert out["statements"] == 5                       # the catalog read taught nothing
+    assert out["statements"] == 5 and out["calls"] == 5   # the catalog read taught nothing; a log row is one call
     proposals = {c["proposal"] for c in out["offered"]} | {c["proposal"] for c in out["refused"]}
     assert "customers.id = orders.customer_id" not in proposals       # the graph already holds it
     assert "orders.region_code = regions.code" in proposals

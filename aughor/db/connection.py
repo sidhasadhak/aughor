@@ -1749,6 +1749,38 @@ class PostgresConnection(DatabaseConnection):
         types = [_pg_type_name(d[1]) for d in desc]
         return columns, rows, types
 
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — the statements run on this database, from `pg_stat_statements` where the extension is installed:
+        an AGGREGATE since its last reset (each normalised statement once, with its call count; literals read as
+        `$1`), top-level SELECTs on the current database, most-called first. ``hours`` does not apply to an aggregate
+        and the note says so. Without the extension the engine keeps no history the platform reads, and the answer
+        says what installs one. `pg_stat_activity` — the moment, not a log — is never read."""
+        from aughor.db.query_history import rows_from_result, unsupported
+        limit = max(1, min(int(limit), 10000))
+        source = "pg_stat_statements"
+        sql = (
+            "SELECT (SELECT stats_reset::text FROM pg_stat_statements_info) AS since, s.query, r.rolname, s.calls "
+            "FROM pg_stat_statements s LEFT JOIN pg_roles r ON r.oid = s.userid "
+            "WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) "
+            "AND s.toplevel AND s.query ILIKE 'select%' AND s.query NOT ILIKE '<insufficient privilege>%' "
+            f"ORDER BY s.calls DESC LIMIT {limit}"
+        )
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+        err = str(getattr(result, "error", "") or "")
+        if "pg_stat_statements" in err and "does not exist" in err:
+            return unsupported(self.dialect, "this database has no pg_stat_statements — the extension "
+                               "(shared_preload_libraries plus CREATE EXTENSION pg_stat_statements) is the history "
+                               "the platform reads on this engine; pg_stat_activity is the moment, never read")
+        history = rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit,
+                                   aggregate_note="an aggregate since the extension's last reset: each statement "
+                                                  "once with its call count, literals normalised to $n — the window "
+                                                  "in hours does not apply")
+        if history.rows:
+            since = history.rows[0].ended_at
+            if since and since != "NULL":
+                history.note = history.note.replace("last reset", f"last reset ({since})")
+        return history
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")

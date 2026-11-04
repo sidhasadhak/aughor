@@ -4495,7 +4495,7 @@ def mine_ontology_candidates(
         if not history.supported or history.error:
             out.update({"summary": history.note or history.error, "offered": [], "refused": [], "mined": 0})
             return out
-        statements = [sql for sql in history.statements if not_platform_statement(sql)]
+        statements = [sql for sql in history.weighted_statements() if not_platform_statement(sql)]
         known = {f"{r.from_table}.{r.from_col} = {r.to_table}.{r.to_col}" for r in graph.relationships.values()}
         tables = {t for e in graph.entities.values() for t in e.source_tables}
 
@@ -4533,7 +4533,8 @@ def mine_ontology_candidates(
                       known_joins=known, binder=_binder)
         out.update(report.to_dict())
         out["mined"] = len(report.candidates)
-        out["statements"] = len(statements)
+        out["statements"] = len({s for s in statements})
+        out["calls"] = len(statements)
         try:
             from aughor.kernel.ledger import Ledger
             Ledger.default().emit("ontology.candidates.mined",
