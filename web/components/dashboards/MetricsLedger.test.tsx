@@ -216,6 +216,35 @@ describe("figures not read against their usual range", () => {
   });
 });
 
+describe("an opened row", () => {
+  const open = async (block: BriefingRangeBlock, name: string) => {
+    show(block);
+    await screen.findByRole("radio", { name: /Key movements \d/ });
+    fireEvent.click(within(screen.getByTestId(/^ledger-row-/)).getByRole("button", { name }));
+    return within(await screen.findByTestId("ledger-reasons"));
+  };
+  const one = (over: Partial<BriefingRangeMeasure>) => ({ ...BLOCK, unmeasured: [],
+    measured: [fig({ name: "Revenue", metric: "aov", area: SALES, ...over })] }) as BriefingRangeBlock;
+
+  it.each([
+    ["Revenue reads a table not yet seen to stop changing.", "Not at equal age: Revenue reads a table not yet seen to stop changing."],
+    ["part of any difference is its age", "Not at equal age: part of any difference is its age."],
+  ])("ends the reason %j with one full stop", async (why, words) => {
+    const reasons = await open(one({ status: "provisional", equal_age: { equal: false, why } }), "Revenue");
+    expect(reasons.getByText(words)).toBeInTheDocument();
+  });
+
+  it("says a point within the source's lag may still move, which is true whether or not it ever settles", async () => {
+    const series = months(FLAT).map((p, i, all) => ({ ...p, settling: i === all.length - 1 }));
+    api.readMetricTrend.mockResolvedValue({ series, usual: { mean: 5, low: 4, high: 6, n: 6, z: 0.1, outside: "" }, why: "", tables: [] });
+    await open(one({}), "Revenue");
+    const titles = [...document.querySelectorAll("svg circle title")].map(t => t.textContent ?? "");
+    expect(titles.at(-1)).toContain("· may still move");
+    expect(titles[0]).not.toContain("may still move");
+    expect(titles.join(" ")).not.toContain("still settling");
+  });
+});
+
 describe("a row", () => {
   it("does not call a figure not at equal age a key movement, and keeps its name readable", async () => {
     const young = fig({ name: "Revenue", metric: "aov", status: "provisional", better: "up", area: SALES, equal_age: { equal: false, why: "part of any difference is its age" } });

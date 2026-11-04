@@ -123,7 +123,7 @@ function Trend({ m, trend, period }: { m: BriefingRangeMeasure; trend: MetricTre
         style={{ stroke: "var(--chart-1)" }} />
       {points.map((p, i) => (
         <circle key={p.start} cx={x(i)} cy={at(p.value)} r={i === last ? 3.2 : 1.8} style={{ fill: "var(--chart-1)" }}>
-          <title>{`${p.label}: ${text(p.value)}${p.settling ? " · still settling" : ""}`}</title>
+          <title>{`${p.label}: ${text(p.value)}${p.settling ? " · may still move" : ""}`}</title>
         </circle>
       ))}
       <text x={x(last) + 8} y={at(points[last].value) + 4} fontSize={11.5} fontWeight={600} style={{ fill: "var(--t1)" }}>{text(points[last].value).replace(" days", "")}</text>
@@ -163,7 +163,7 @@ function Reasons({ m, trend, work, meaning, expected, block, briefing }: {
               : "Too few earlier readings to say what is usual."}
         </p>
         {trend?.same_age && <p className="aug-fs-sm" style={para}>Every range here is read at the same age, so these comparisons are fair.</p>}
-        {m.equal_age && !m.equal_age.equal && <p className="aug-fs-sm" style={para}>{`Not at equal age: ${m.equal_age.why}.`}</p>}
+        {m.equal_age && !m.equal_age.equal && <p className="aug-fs-sm" style={para}>{`Not at equal age: ${m.equal_age.why.replace(/\.+$/, "")}.`}</p>}
       </div>
       <div>
         <div className="aug-fs-xs" style={label}>What the platform knows</div>
