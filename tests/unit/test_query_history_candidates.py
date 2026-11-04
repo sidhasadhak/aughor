@@ -136,7 +136,7 @@ def test_postgres_with_the_extension_reads_the_aggregate_and_names_its_reset(mon
     assert "last reset (2026-11-04 08:02:20+01)" in h.note and "does not apply" in h.note
     # the normalised literal is a parameter, not a value: the miner keeps the join and drops the filter
     out = mine_from_query_log("c1", h.weighted_statements(), dialect="postgres")
-    assert any(c.kind == "join" and c.proposal == "customers.id = orders.customer_id" and "40 of 40" in c.evidence for c in out)
+    assert any(c.kind == "join" and c.proposal == "customers.id = orders.customer_id" and "40 of 40 runs" in c.evidence for c in out)
     assert not any(c.kind == "filter" for c in out)
 
 
@@ -158,11 +158,13 @@ def test_query_history_is_mined_into_typed_candidates_with_frequency_as_evidence
     assert ("join", "orders.region_code = regions.code") in kinds
     assert ("join", "orders.seller_id = sellers.id") not in kinds          # support 1 < QUERY_LOG_MIN_SUPPORT
     assert ("filter", "status IN ('shipped')") in kinds
-    assert any(c.kind == "measure" and c.subject == "net_revenue" and "SUM(o.total) - SUM(o.refund)" in c.proposal
-               for c in out)
+    measure = next(c for c in out if c.kind == "measure")
+    # aliases resolved to the tables they stood for, and the tables carried as the subject, so the formula binds alone
+    assert measure.subject == "orders" and measure.proposal == "SUM(orders.total) - SUM(orders.refund)"
+    assert "computed as `net_revenue` over orders in 2 of 5 runs" in measure.evidence
     join = next(c for c in out if c.proposal == "customers.id = orders.customer_id")
     assert join.origin == "query_log" and join.source_rank == "mined" and join.subject == "customers"
-    assert "2 of 5 statements" in join.evidence and "not in the join map" in join.evidence
+    assert "2 of 5 runs" in join.evidence and "not in the join map" in join.evidence
     for c in out:
         c.validate()
     assert QUERY_LOG_MIN_SUPPORT == 2
@@ -180,6 +182,21 @@ def test_nothing_in_nothing_out_and_unparseable_statements_are_skipped():
     assert mine_from_query_log("c1", []) == []
     assert mine_from_query_log("c1", ["", "   ", None]) == []
     assert mine_from_query_log("c1", ["this is not sql", "SELECT FROM WHERE"]) == []
+
+
+def test_the_platforms_own_aliases_are_not_offered_back_and_a_formula_counts_once_per_statement():
+    """LuxExperience, 2026-11-04: the first live mining offered `_n`, `_first`, `_last`, `_v` — the Briefing's own
+    checks — 25 times, and a formula repeated in a CTE and its outer SELECT counted twice per statement."""
+    log = ["WITH w AS (SELECT MIN(order_date) AS _first, SUM(gmv_eur) AS gmv FROM orders) SELECT _first, gmv FROM w",
+           "SELECT MIN(order_date) AS _first, SUM(gmv_eur) AS gmv FROM orders",
+           "SELECT COUNT(*) AS n_orders FROM orders", "SELECT COUNT(*) AS n_orders FROM orders"]
+    out = mine_from_query_log("c1", log)
+    names = {c.evidence.split("`")[1] for c in out if c.kind == "measure"}
+    assert "_first" not in names and names == {"gmv", "n_orders"}
+    gmv = next(c for c in out if "`gmv`" in c.evidence)
+    assert gmv.subject == "orders" and "in 2 of 4 runs" in gmv.evidence       # once per statement, not per SELECT
+    count = next(c for c in out if "`n_orders`" in c.evidence)
+    assert count.subject == "orders" and count.proposal == "COUNT(*)"          # a column-less formula keeps its table
 
 
 def test_mine_takes_the_query_log_and_binds_each_candidate():
@@ -267,8 +284,9 @@ def test_the_door_mines_binds_and_writes_nothing(monkeypatch, tmp_path):
     refused = {c["proposal"]: c["bind_error"] for c in out["refused"]}
     assert refused["orders.region_code = regions.code"] == "table regions has no column code"
     assert any(c["kind"] == "filter" and c["bound"] for c in out["offered"])
-    measure = next(c for c in out["refused"] if c["kind"] == "measure")
-    assert "alias" in measure["bind_error"]              # `o.total` names an alias: not bindable outside its statement
+    measure = next(c for c in out["offered"] if c["kind"] == "measure")
+    assert measure["proposal"] == "SUM(orders.total) - SUM(orders.refund)" and measure["bound"]
+    assert "SELECT SUM(orders.total) - SUM(orders.refund) FROM orders" in dry_runs   # bound over its own table
     assert any(sql.startswith("SELECT COUNT(*) FROM orders JOIN regions ON") for sql in dry_runs)
     assert out["mined"] == len(out["offered"]) + len(out["refused"]) and closed == [True]
 

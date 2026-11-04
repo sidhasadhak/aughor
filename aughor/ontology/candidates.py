@@ -228,7 +228,7 @@ def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str
         out.append(Candidate(
             connection_id=connection_id, kind="join", subject=left.split(".")[0], proposal=edge,
             origin="query_log", source_rank="mined",
-            evidence=f"joined this way in {n} of {facts.n_parsed} statements in the warehouse's query history; "
+            evidence=f"joined this way in {n} of {facts.n_parsed} runs in the warehouse's query history; "
                      "not in the join map"))
     filters = sorted(((qc, c) for qc, c in facts.filter_values.items() if sum(c.values()) >= min_support),
                      key=lambda kv: sum(kv[1].values()), reverse=True)
@@ -239,13 +239,18 @@ def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str
         out.append(Candidate(
             connection_id=connection_id, kind="filter", subject=qc, proposal=proposal,
             origin="query_log", source_rank="mined",
-            evidence=f"filtered on these values {sum(counter.values())} times in the query history"))
-    formulas = [(k, n) for k, n in facts.named_formulas.most_common() if n >= min_support]
+            evidence=f"filtered on these values in {sum(counter.values())} runs in the query history"))
+    # A formula the platform itself named (`_n`, `_first`, `_v`: the Briefing's checks and the metric probes) is how
+    # Aughor queries, not how the business does; a reviewer gains nothing from being offered it back.
+    formulas = [(k, n) for k, n in facts.named_formulas.most_common()
+                if n >= min_support and not str(k[0]).startswith("_")]
     for (name, expr), n in formulas[:max_per_kind]:
+        tables = sorted(facts.formula_tables.get((name, expr), set()))
         out.append(Candidate(
-            connection_id=connection_id, kind="measure", subject=name, proposal=expr,
+            connection_id=connection_id, kind="measure", subject=", ".join(tables) or name, proposal=expr,
             origin="query_log", source_rank="mined",
-            evidence=f"computed as `{name}` in {n} statements in the query history"))
+            evidence=f"computed as `{name}`" + (f" over {', '.join(tables)}" if tables else "")
+                     + f" in {n} of {facts.n_parsed} runs in the query history"))
     return out
 
 

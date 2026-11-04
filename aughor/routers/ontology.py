@@ -4517,16 +4517,20 @@ def mine_ontology_candidates(
                     tolerate(parse_exc, "a mined formula sqlglot cannot parse is refused, never offered",
                              counter="ontology.candidates_unparsed", conn_id=connection_id)
                     return None
-                refs = {col.table for col in tree.find_all(exp.Column) if col.table}
+                # The miner resolved the statement's aliases and recorded the tables the formula reads (its subject);
+                # the formula's own qualified columns must agree with them, and every one must be this schema's.
+                refs = {t.strip() for t in c.subject.split(",") if t.strip()} | {
+                    col.table for col in tree.find_all(exp.Column) if col.table}
                 if not refs or any(r not in tables for r in refs):
-                    return None        # an alias or an unqualified column: it cannot be read outside its statement
+                    return None
                 return f"SELECT {c.proposal} FROM {', '.join(sorted(refs))}"
             return None
 
         def _binder(c):
             sql = _bind_sql(c)
             if sql is None:
-                return False, "the formula names an alias or a table this schema does not have; it cannot be bound outside its own statement"
+                return False, ("the formula reads no table of this schema, or one it does not have; it cannot be "
+                               "bound outside its own statement")
             return db.dry_run(sql)
 
         report = mine(connection_id, query_log=statements, dialect=getattr(db, "dialect", "duckdb"),
