@@ -4451,6 +4451,109 @@ def rebuild_ontology(
     return out
 
 
+class _MineCandidatesRequest(BaseModel):
+    """Arc NV-3 — what the candidate door reads. Only the warehouse's own history for now; trusted queries and
+    verdicts keep their own miners and arrive here when their doors are wired."""
+    hours: int = Field(default=24 * 14, ge=1, le=24 * 180)
+    limit: int = Field(default=2000, ge=1, le=10000)
+
+
+@router.post("/ontology/candidates/mine", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def mine_ontology_candidates(
+    body: Optional[_MineCandidatesRequest] = None,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc NV-3 (ROADMAP §3.68) — read the warehouse's OWN query history and mine it into typed candidates: join edges
+    the join map lacks, recurring filter values, recurring named formulas (`aughor.ontology.candidates`). Each is
+    EXPLAIN-bound on this connection before it is offered; the report states what was refused. Nothing is written:
+    a candidate is a proposal for a person, and reaches no prompt until declared through the ontology's own doors.
+
+    Said, never implied: refused with 409 while the organisation has not allowed the read (and where to allow it);
+    `supported=false` with the engine's own note when it keeps no history the platform reads; the engine's error
+    when the read failed. No model call."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.db.query_history import not_platform_statement, read_query_history
+    from aughor.ontology.candidates import mine
+    from aughor.orgsettings.allows import WHERE, allows
+
+    body = body or _MineCandidatesRequest()
+    if not allows("read_query_history"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Reading the warehouse's query history is off for this organisation. An admin turns it on under "
+                   f"{WHERE} ('Read each warehouse's own query history'). Statement text is read, never rows.")
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        history = read_query_history(db, hours=body.hours, limit=body.limit)
+        out: dict[str, Any] = {"connection_id": connection_id, "schema_name": graph.schema_name or effective,
+                               "history": history.to_dict()}
+        if not history.supported or history.error:
+            out.update({"summary": history.note or history.error, "offered": [], "refused": [], "mined": 0})
+            return out
+        statements = [sql for sql in history.statements if not_platform_statement(sql)]
+        known = {f"{r.from_table}.{r.from_col} = {r.to_table}.{r.to_col}" for r in graph.relationships.values()}
+        tables = {t for e in graph.entities.values() for t in e.source_tables}
+
+        def _bind_sql(c) -> Optional[str]:
+            """The statement whose EXPLAIN decides whether a candidate binds; None when none can be written."""
+            import sqlglot
+            from sqlglot import exp
+            if c.kind == "join":
+                left, right = [side.strip() for side in c.proposal.split("=", 1)]
+                lt, rt = left.split(".")[0], right.split(".")[0]
+                return f"SELECT COUNT(*) FROM {lt} JOIN {rt} ON {left} = {right}"
+            if c.kind == "filter":
+                return f"SELECT COUNT(*) FROM {c.subject.split('.')[0]} WHERE {c.proposal}"
+            if c.kind == "measure":
+                try:
+                    tree = sqlglot.parse_one(c.proposal, read=getattr(db, "dialect", "duckdb"))
+                except Exception as parse_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(parse_exc, "a mined formula sqlglot cannot parse is refused, never offered",
+                             counter="ontology.candidates_unparsed", conn_id=connection_id)
+                    return None
+                refs = {col.table for col in tree.find_all(exp.Column) if col.table}
+                if not refs or any(r not in tables for r in refs):
+                    return None        # an alias or an unqualified column: it cannot be read outside its statement
+                return f"SELECT {c.proposal} FROM {', '.join(sorted(refs))}"
+            return None
+
+        def _binder(c):
+            sql = _bind_sql(c)
+            if sql is None:
+                return False, "the formula names an alias or a table this schema does not have; it cannot be bound outside its own statement"
+            return db.dry_run(sql)
+
+        report = mine(connection_id, query_log=statements, dialect=getattr(db, "dialect", "duckdb"),
+                      known_joins=known, binder=_binder)
+        out.update(report.to_dict())
+        out["mined"] = len(report.candidates)
+        out["statements"] = len(statements)
+        try:
+            from aughor.kernel.ledger import Ledger
+            Ledger.default().emit("ontology.candidates.mined",
+                                  {"statements": len(statements), "mined": len(report.candidates),
+                                   "offered": len(report.offered), "refused": len(report.refused),
+                                   "source": history.source}, conn_id=connection_id)
+        except Exception as emit_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(emit_exc, "the candidate mining journal is best-effort",
+                     counter="ontology.candidates_journal", conn_id=connection_id)
+        return out
+    finally:
+        try:
+            db.close()
+        except Exception as close_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(close_exc, "closing the connection after a history read is best-effort",
+                     counter="ontology.candidates_close", conn_id=connection_id)
+
+
 @router.get("/ontology/build-status")
 def ontology_build_status(connection_id: str = BUILTIN_ID, limit: int = 5):
     """Surface the ontology build outcome — the WCH-3 observability the original

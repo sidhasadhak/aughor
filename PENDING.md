@@ -1115,3 +1115,36 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     Still open: a new value in an edited card is written as a plain number, with no way to say money or percent short of keeping the column's name.
     No token count for the proof: a scratch API's usage reads 0, so live's Spend will be the first to show one.
 
+74. [~] **What NVIDIA's Auto-Ontology teaches — Arc NV** (the user, 2026-11-04: *"Dont we do something similar or better?
+    Lets compare first at the finest details"*, then on the study's branch *"make sure we have everything well structured
+    and start building based on the study"*) — the study is `docs/NVIDIA_AUTO_ONTOLOGY_STUDY_2026-11-04.md`, the arc
+    ROADMAP §3.68, the calls §6 item 60. Branch `claude/nvidia-auto-ontology-study`, on top of #639.
+    - [x] NV-0 the two finds: `AUGHOR_QUERY_LOG_MINING` — a raw env switch outside `kernel/flags.py` — deleted with a
+      tombstone, its prompt block with it; `saved_sql` / `dbt` dropped from `candidates.ORIGINS` (nothing ever wrote them).
+      Premise corrected on the way: `candidates.mine()` had NO caller — the "door that already EXPLAIN-binds" was inert.
+    - [x] NV-1 a text column's date notation (`tools/date_format.py`; `EntityProperty.format` / `format_note`; the
+      profiler's probe, 2,000 values × 6 columns per table; profile cache `v10-text-dates-2000`; ENTITY MODEL prints the
+      notation or the ambiguity). *Live on Superstore, 2026-11-04 04:58 UTC:* `Order Date` and `Ship Date` =
+      `MM/DD/YYYY`, 1,237 and 1,334 distinct values each parsing; the API log had the cast failing on `"11/8/2016"`
+      minutes before. The first rebuild wrote nothing (a 200-value cap read as eligibility) — fixed, re-run. Two
+      model-enriched rebuilds spent for the proof.
+    - [x] NV-2 the junction mark (`ontology/junction.py`, `Junction`, `OntologyRelationship.via`; both prompt blocks say
+      it; the compiler still refuses the N:N by name). *Measured over HTTP on theLook, Olist and Superstore:* no table
+      qualifies — every bridge-shaped table carries a measure — the study's falsifier HOLDS, so no compiler change.
+    - [~] NV-3 the warehouse's own history → candidates (`db/query_history.py`; `query_history()` on Snowflake,
+      ClickHouse, BigQuery and the lakehouse connector, the base saying "none"; `mine_from_query_log`; the door
+      `POST /ontology/candidates/mine`; the setting `read_query_history`, off by default, in the panel and the client).
+      *Live:* the door refuses 409 by name on theLook while the setting is off. **⚑ Owed, the user's click:** turn the
+      setting on (Settings ▸ Organization ▸ What Aughor may do) and run the door once on theLook (BigQuery
+      `JOBS_BY_PROJECT`, 180 days kept) — the count of join candidates the graph lacked and how many bound is the
+      study's receipt; its falsifier: no join the map lacked and no formula a person confirms, on two connections, and
+      the reader stays a connector method.
+    - [ ] NV-4 a bound candidate staged into the resolve-once inbox, accept = the link declared through the link door's
+      own body (with the frequency as its evidence), reject kept.
+    - [ ] The trust checks read `format`: a text date column compared to a literal says "compare as a date, not as text".
+    - [ ] The compiler traverses an N:N through a marked junction with pre-aggregation on the far side — only once a
+      live connection has a table that qualifies.
+    - [ ] The study's §5.4: 100× scale and integer-division pre-checks as deterministic guards; embedding-assisted
+      foreign-key target proposals for roots that name no table (then the containment probe); "VERIFIED OPTIONS … never
+      shorten the path" on a multi-hop relationship line.
+    - [ ] Ossie depth: `ontology/ossie.py` re-read against NVIDIA's converter before any claim either way (study §6).

@@ -1143,6 +1143,14 @@ class DatabaseConnection(ABC):
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         return ok, reason
 
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — the statements people ran on this warehouse, as text, or the word that this engine keeps no
+        history the platform reads (`aughor.db.query_history`). The engines that keep one override this; the
+        default is the honest answer for a file, DuckDB and Postgres (whose activity view is the moment, not a log).
+        Never rows, and only when the organisation allows the read — the door checks, not the connection."""
+        from aughor.db.query_history import unsupported
+        return unsupported(str(getattr(self, "dialect", "") or "duckdb"))
+
     def translate(self, sql: str) -> str:
         """Rewrite SQL from any dialect to this backend's dialect."""
         if self.dialect == "duckdb":

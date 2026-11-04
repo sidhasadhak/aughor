@@ -1,7 +1,12 @@
 # NVIDIA Auto-Ontology against Aughor's ontology — the finest-detail comparison (study, 2026-11-04)
 
-**Status: STUDY.** Nothing adopted, nothing built. Written at the user's ask: *"https://github.com/NVIDIA/auto-ontology
-— Dont we do something similar or better? Lets compare first at the finest details."*
+**Status: ✅ ADOPTED 2026-11-04 as Arc NV (ROADMAP §3.68, §6 item 60; PENDING item 74) — NV-0 to NV-3 BUILT the same day
+on `claude/nvidia-auto-ontology-study`.** Written at the user's ask: *"https://github.com/NVIDIA/auto-ontology — Dont we
+do something similar or better? Lets compare first at the finest details."*, then built at *"make sure we have everything
+well structured and start building based on the study"*. §5.1 → NV-3, §5.2 → NV-2, §5.3 → NV-1, §6 → NV-0; the live
+receipts and what each wave still owes are in PENDING item 74. Two premises below were wrong when measured: the
+candidate door "that already EXPLAIN-binds" (§5.1) had no caller at all, and the 200-value cap (§5.3) read as
+eligibility would have kept the probe silent on Superstore's 1,237 distinct order dates — the probe reads up to 2,000.
 
 **What was read.** `NVIDIA/auto-ontology` at `caced11e` (2026-11-03, "nemotron-3.5-defaults"), Apache-2.0: 78,836
 non-test Python lines under `auto_ontology/` (122,491 with tests), a Next.js frontend, a FastMCP server, three agent

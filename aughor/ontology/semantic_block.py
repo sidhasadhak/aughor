@@ -116,9 +116,12 @@ def render_relationship_block(
         phrase = ""
         if rel.verb and rel.verb != "RELATES_TO":
             phrase = f" — {rel.from_entity} {rel.verb} {rel.to_entity}"
+        # Arc NV-2 — an N:N the builder declared THROUGH a junction: both hops are in `join_sql`, and the line says
+        # so, because `a.pk → b.pk` alone would read as a direct join that does not exist.
+        via = f" via {rel.via} ({rel.join_sql})" if rel.via else ""
         entries.append((
             rank,
-            f"- {ft}.{rel.from_col} → {tt}.{rel.to_col}"
+            f"- {ft}.{rel.from_col} → {tt}.{rel.to_col}{via}"
             f" [{', '.join(label)}]{phrase}",
         ))
 

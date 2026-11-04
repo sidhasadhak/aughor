@@ -1,8 +1,10 @@
-"""What an organisation allows Aughor to do — the four choices that were flags (ROADMAP §3.65, 2026-10-28).
+"""What an organisation allows Aughor to do — the four choices that were flags (ROADMAP §3.65, 2026-10-28), and the
+ones added since (`read_query_history`, Arc NV-3, 2026-11-04 — born a setting, never a flag).
 
 Each is an admin's setting in the organisation settings, off by default. While a setting has never been set, the
 environment variable of the flag it replaced still answers, so an install that ran one through its env keeps it until
-an admin decides; once set, the setting is the answer and the variable is not read.
+an admin decides; once set, the setting is the answer and the variable is not read. A setting that replaced no flag
+lists no variable: unset reads as off.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ FORMER_ENV: dict[str, tuple[str, ...]] = {
     "outside_row_model": ("AUGHOR_SEMOPS_JEV_CHEAP_TIER",),
     "reason_to_read_runs": ("AUGHOR_GOVERN_JUSTIFICATIONS",),
     "scheduled_model_work": ("AUGHOR_AGENTS_TESTING_CENTRE", "AUGHOR_AGENTS_LEARNING_LOOP"),
+    "read_query_history": (),
 }
 
 #: Where a person changes them, for the sentences that say a thing is off.

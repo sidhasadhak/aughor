@@ -17,11 +17,14 @@ capture → verify → generalize → suggest, with Aughor's binding rigor bolte
    downstream can confuse "we noticed this" with "somebody decided this". J4 unchanged —
    a candidate proposes, it never writes an edge.
 
-**Where candidates come from.** Accepted verdicts, trusted queries, and — at onboarding —
-the source's own saved / dbt / query-log SQL. All three are records of a human having
-already run or approved something, which is what makes mining them defensible: the loop
-generalizes decisions that were made, rather than inventing decisions nobody took (the N1
-line, one layer over).
+**Where candidates come from.** Accepted verdicts, trusted queries, and — Arc NV-3,
+2026-11-04 — the warehouse's OWN query history (`mine_from_query_log`: the SQL people ran
+there, read by the connector's `query_history` when the organisation allows it, parsed by
+`aughor.sql.query_log_miner`). All three are records of a human having already run or
+approved something, which is what makes mining them defensible: the loop generalizes
+decisions that were made, rather than inventing decisions nobody took (the N1 line, one
+layer over). `saved_sql` and `dbt` were listed as origins for two years and never written
+by anything; they are gone, so a reader is not told a source exists that does not.
 
 Deterministic mining; the binder is injected so this module needs no warehouse to test and
 the dialect-specific EXPLAIN lives with the connector.
@@ -40,8 +43,8 @@ from typing import Callable, Iterable, Optional
 CANDIDATE_KINDS: tuple[str, ...] = ("join", "measure", "filter", "synonym", "object_set")
 
 #: Where a candidate was mined from. Each is a record of a human having run or approved
-#: something, which is what makes generalizing it defensible.
-ORIGINS: tuple[str, ...] = ("verdict", "trusted_query", "saved_sql", "dbt", "query_log")
+#: something, which is what makes generalizing it defensible. Every name here has a miner.
+ORIGINS: tuple[str, ...] = ("verdict", "trusted_query", "query_log")
 
 
 class CandidateError(ValueError):
@@ -182,8 +185,73 @@ def mine_from_verdicts(connection_id: str, rows: Iterable[dict]) -> list[Candida
     return out
 
 
+def _edge_key(edge: str) -> str:
+    """`orders.customer_id = customers.id`, either way round, lower-cased → one key."""
+    sides = [s.strip().lower() for s in edge.split("=")]
+    return " = ".join(sorted(sides))
+
+
+def known_join_edges(join_map: dict) -> set[str]:
+    """The join map's edges (`compute_join_map`'s `joins`) as the miner spells them, so a mined edge the map already
+    holds is not proposed again."""
+    out: set[str] = set()
+    for j in (join_map or {}).get("joins", []) or []:
+        if isinstance(j, dict) and all(j.get(k) for k in ("t1", "c1", "t2", "c2")):
+            out.add(_edge_key(f"{j['t1']}.{j['c1']} = {j['t2']}.{j['c2']}"))
+    return out
+
+
+#: A query-history fact must recur to be proposed: one person's one-off join is not how the warehouse is queried.
+QUERY_LOG_MIN_SUPPORT = 2
+
+
+def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str = "duckdb",
+                        known_joins: Iterable[str] = (), min_support: int = QUERY_LOG_MIN_SUPPORT,
+                        max_per_kind: int = 25) -> list[Candidate]:
+    """The warehouse's own query history → join, filter and measure candidates (Arc NV-3).
+
+    Deterministic: `aughor.sql.query_log_miner` parses every statement with sqlglot and counts what recurs. A join
+    edge the name-based join map already holds is skipped — the point is the edges the map LACKS (the AT&T
+    measurement: ~25% more join constraints in the log than in the declared keys). Each candidate's evidence says
+    how often it was seen, so the reviewer judges a frequency, not a claim. Nothing here binds: `mine` does.
+    """
+    from aughor.sql.query_log_miner import mine_query_log
+    sqls = [s for s in sqls if s and str(s).strip()]
+    if not sqls:
+        return []
+    facts = mine_query_log(list(sqls), dialect=dialect)
+    known = {_edge_key(e) for e in known_joins}
+    out: list[Candidate] = []
+    joins = [(e, n) for e, n in facts.join_edges.most_common() if n >= min_support and _edge_key(e) not in known]
+    for edge, n in joins[:max_per_kind]:
+        left = edge.split("=")[0].strip()
+        out.append(Candidate(
+            connection_id=connection_id, kind="join", subject=left.split(".")[0], proposal=edge,
+            origin="query_log", source_rank="mined",
+            evidence=f"joined this way in {n} of {facts.n_parsed} statements in the warehouse's query history; "
+                     "not in the join map"))
+    filters = sorted(((qc, c) for qc, c in facts.filter_values.items() if sum(c.values()) >= min_support),
+                     key=lambda kv: sum(kv[1].values()), reverse=True)
+    for qc, counter in filters[:max_per_kind]:
+        vals = [v for v, _ in counter.most_common(8)]
+        col = qc.split(".")[-1]
+        proposal = f"{col} IN ({', '.join(repr(v) for v in vals)})"
+        out.append(Candidate(
+            connection_id=connection_id, kind="filter", subject=qc, proposal=proposal,
+            origin="query_log", source_rank="mined",
+            evidence=f"filtered on these values {sum(counter.values())} times in the query history"))
+    formulas = [(k, n) for k, n in facts.named_formulas.most_common() if n >= min_support]
+    for (name, expr), n in formulas[:max_per_kind]:
+        out.append(Candidate(
+            connection_id=connection_id, kind="measure", subject=name, proposal=expr,
+            origin="query_log", source_rank="mined",
+            evidence=f"computed as `{name}` in {n} statements in the query history"))
+    return out
+
+
 def mine(connection_id: str, *, trusted_queries: Iterable[dict] = (),
-         verdicts: Iterable[dict] = (), binder: Optional[Binder] = None) -> MiningReport:
+         verdicts: Iterable[dict] = (), query_log: Iterable[str] = (), dialect: str = "duckdb",
+         known_joins: Iterable[str] = (), binder: Optional[Binder] = None) -> MiningReport:
     """Mine every source, bind everything, and report what was refused.
 
     With no binder nothing is offerable — `bound` stays ``None``. That is the correct
@@ -191,7 +259,8 @@ def mine(connection_id: str, *, trusted_queries: Iterable[dict] = (),
     not start showing unverified SQL to reviewers.
     """
     found = (list(mine_from_trusted_queries(connection_id, trusted_queries))
-             + list(mine_from_verdicts(connection_id, verdicts)))
+             + list(mine_from_verdicts(connection_id, verdicts))
+             + list(mine_from_query_log(connection_id, query_log, dialect=dialect, known_joins=known_joins)))
     for c in found:
         c.validate()
     if binder is not None:

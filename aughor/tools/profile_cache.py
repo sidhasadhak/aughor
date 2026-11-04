@@ -74,13 +74,19 @@ def cache_path():
 #     column the catalog under-counts past 2,000 held 500 where it should hold none, and a
 #     timestamp with more than 500 populated months took its `effective_date_range` from
 #     the first 500 of them.
+# v10: Arc NV-1 — a TEXT column gains `date_format` / `date_format_note`, the notation its dates are
+#     written in (or the ambiguity that withheld one), probed from up to 2,000 distinct values. Stored per
+#     column, so the same rule as v5 applies: without the bump every connection keeps serving profiles
+#     that silently lack the fact, and the wave would be built, cached out, and invisible. Spelled
+#     "-2000" because its first spelling went live for one rebuild with a 200-value cap that read as
+#     eligibility and wrote nothing for Superstore's 1,237 distinct order dates (2026-11-04).
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v9-sampled-bounded"
+PROFILE_LOGIC_VERSION = "v10-text-dates-2000"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:

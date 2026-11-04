@@ -12890,6 +12890,71 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   claims) is read by the Briefing and put in every question's context with the platform's earlier work; an exploration
   run now asks up to 300 questions of a dataset across its domains (it asked 15).
 
+### 3.68 · Arc NV — what NVIDIA's Auto-Ontology teaches: three facts measured on the data, and a door for the warehouse's own history (STUDIED 2026-11-04 as `docs/NVIDIA_AUTO_ONTOLOGY_STUDY_2026-11-04.md` at the user's *"Dont we do something similar or better? Lets compare first at the finest details"* · ✅ ADOPTED the same day — §6 item 60, the user: *"make sure we have everything well structured and start building based on the study"* · **NV-0 to NV-3 BUILT 2026-11-04** on `claude/nvidia-auto-ontology-study`, not merged; receipts in PENDING item 74)
+
+The study's one-page answer (its §0): for what Auto-Ontology does, this platform does the same thing measured rather
+than proposed, and then a second storey it has no word for — and NVIDIA is ahead in three small, specific places. Those
+three are this arc, in the study's own order of value over cost, each through the measured tier, none needing a model.
+
+- **Measured first, four premises corrected.** (1) The study said the mined facts would reach a prompt "through the
+  candidate door that already EXPLAIN-binds": the door existed and **nothing called it** — `candidates.mine()` had no
+  caller anywhere, a complete and inert plane (§7's recurring failure). (2) `AUGHOR_QUERY_LOG_MINING` was a raw
+  `os.environ` read in `tools/schema.py` gating a prompt block: a feature flag the 2026-10-28 retirement never saw,
+  because it was registered nowhere. (3) `candidates.ORIGINS` named `saved_sql` and `dbt`, which nothing ever wrote.
+  (4) `EntityProperty` had no notation field and `junction` appeared only in a linker comment — both as the study
+  read. And one the study could not see: the profiler's own API log on Superstore held the trap NV-1 exists for —
+  `invalid date field format: "11/8/2016" … when casting from source column Order Date`.
+- **NV-0 · the two finds (§6 of the study).** The env switch is DELETED with a tombstone in `kernel/flags.py`: the
+  LEARNED FROM QUERY HISTORY block was prose-shaped "more context" of the kind R4 and the DATA PROFILE block's own
+  falsifier retired, never measured, and under §3.65 a prompt block is always on or it is gone; its facts now reach
+  a prompt only as candidates a person confirmed and that bound (NV-3). `saved_sql` and `dbt` are gone from
+  `ORIGINS`; every origin named has a miner. *Both are the builder's calls, open to the user (§6 item 60).*
+- **NV-1 · a text column's date notation as a property fact** (`aughor/tools/date_format.py`, the profiler,
+  `EntityProperty.format` / `format_note`). NVIDIA's method transfers whole: candidates in specificity order, a winner
+  must parse EVERY value read with the year in [1900, 2099], DD/MM against MM/DD refused by name. This repo's rule
+  adds the half NVIDIA leaves out — *withheld is said*: an ambiguous column carries the note naming both readings,
+  and the ENTITY MODEL block prints it ("text dates (cast before comparing): …"). The probe reads up to 2,000
+  distinct values per column, six columns per table, only text columns whose name or values look like dates; the
+  profile cache version moves (`v10-text-dates-2000`), so every connection re-profiles on its next build. Reach grew
+  and is recorded: `format`, `format_note` and now a property's `name` reach the ENTITY MODEL block. **Receipt, live
+  on Superstore (two model-enriched rebuilds, 1:41 and 1:55):** `Order Date` and `Ship Date` both `MM/DD/YYYY`, every
+  one of 1,237 and 1,334 distinct values parsing, on the profile, on the served property and in the rendered block.
+  The first rebuild wrote NOTHING: the 200-value cap had been read as eligibility, not as a read bound, and the
+  column holds 1,237 — the kind of defect only the live run finds. theLook and Olist hold no text date column.
+- **NV-2 · the junction mark as a measured fact** (`aughor/ontology/junction.py`, `Junction`,
+  `OntologyRelationship.via`). An entity minted from one table, carrying no measure, with exactly two value-verified
+  (≥ 0.15, `join_guard`'s floor) or engine-declared foreign keys to two different entities and nothing else but its
+  own key and timestamps, is marked after the cardinality pass, and ONE N:N link is declared between the far entities
+  THROUGH it, both hops in `join_sql`, both overlaps on record; the ENTITY MODEL block says "junction between X and
+  Y (…) — join through it; it carries no measure", the relationship block says "via". No model call. The object
+  compiler keeps refusing every N:N, this one by name. **Receipt, over HTTP on the three served graphs:** no table on
+  theLook (8 entities), Olist (9) or Superstore (1) qualifies — every bridge-shaped table carries a measure
+  (`order_items`, `inventory_items`, `order_payments`), exactly the study's check — so the **falsifier holds**: the
+  mark ships as a fact and the compiler change waits for a live table that qualifies.
+- **NV-3 · the warehouse's own query history, through the candidate door** (`aughor/db/query_history.py`,
+  `query_history()` on every connection, `candidates.mine_from_query_log`, `POST /ontology/candidates/mine`, the
+  organisation setting `read_query_history`). Snowflake's `INFORMATION_SCHEMA.QUERY_HISTORY`, ClickHouse's
+  `system.query_log`, BigQuery's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` (then the caller's own jobs when the project view
+  is refused) and the lakehouse engine's `system.query.history` — finished SELECTs, statement text and when, never
+  rows, through each connection's own door as an internal read; every other engine says it keeps none. The miner the
+  repo already had (`sql/query_log_miner.py`, sqlglot) turns them into typed candidates — join edges the graph lacks,
+  recurring filter values, recurring named formulas, each seen at least twice, each with its frequency as evidence —
+  and the door EXPLAIN-binds every one on the connection before offering it, counts what it refused, and writes
+  nothing. The read is a connection admin's choice, off by default, born a setting and never a flag (§3.65); while
+  off the door refuses with 409 and says where to turn it on. **Receipt so far:** the refusal, live on theLook
+  (`"Reading the warehouse's query history is off for this organisation. An admin turns it on under Settings ▸
+  Organization ▸ What Aughor may do …"`). **Owed:** the allowed read on theLook — the builder's write to the
+  organisation's settings was refused by the session's own classifier, which is the right refusal; the click is the
+  user's (PENDING item 74).
+- **Not built, named:** NV-4, a bound candidate staged into the resolve-once inbox with an accept that declares the
+  link through `POST /ontology/links`' own body — today the door returns the report and a person declares by hand;
+  the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
+  falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
+  study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
+  roots that name no table, the "VERIFIED OPTIONS … never shorten the path" wording on a multi-hop relationship line.
+- **Not taken, by the study's §5.5:** the per-table LLM term pass, the lenient LLM intent validator, a settings table
+  of feature flags, a hosted predictive service the rows are uploaded to.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -15398,6 +15463,20 @@ the browser** · **measure the premise before building.**
     - **The canvas replaces Arc BG's edition page;** controls filter in the browser; the map is the choropleth.
     - **Words:** edition (an *open canvas* in prose only — *Canvas* is the Data Canvas) · block · source of a
       block · drill.
+
+60. ✅ **DECIDED 2026-11-04 — what NVIDIA's Auto-Ontology teaches, Arc NV** (§3.68). The user, on the study's branch:
+    *"make sure we have everything well structured and start building based on the study on Nvidia ontology"* — the
+    study's §5 order taken as the build order (the date notation, the junction mark, the query-history reader, each
+    through the measured tier, none with a model call), its §5.5 refusals kept. Two calls the builder made on the way,
+    each reversible and open to the user:
+    - **The LEARNED FROM QUERY HISTORY prompt block is deleted, not made always-on.** It was gated by a raw env var the
+      flag retirement never saw; made unconditional it would have been an unmeasured prompt change of the class R4 and
+      the DATA PROFILE falsifier retired. Its facts reach a prompt only as confirmed, bound candidates. *To reverse:*
+      restore the auto-collect in `tools/schema.py` behind a measured receipt.
+    - **`saved_sql` and `dbt` are gone from the candidate origins** — names nothing wrote for two years. *To reverse:*
+      add the name back with its miner.
+    - **Owed to the user:** turning on *Read each warehouse's own query history* (Settings ▸ Organization ▸ What Aughor
+      may do) and running the door once on theLook, which the builder's classifier refused to do for them.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

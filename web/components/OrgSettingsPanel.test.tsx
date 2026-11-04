@@ -63,7 +63,7 @@ beforeEach(() => {
   api.getMyAccess.mockResolvedValue(null);
   const off = { allowed: false, set: false };
   api.getOrgAllows.mockResolvedValue({ share_aggregates: off, outside_row_model: off, reason_to_read_runs: off,
-                                       scheduled_model_work: off });
+                                       scheduled_model_work: off, read_query_history: off });
   // The playbook's count is read with a bare fetch; this test is about the figures, so it answers nothing.
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => [] })));
 });
@@ -119,18 +119,18 @@ describe("Settings ▸ Organization", () => {
     await waitFor(() => expect(api.updateOrgSettings).toHaveBeenCalledWith({ ...SETTINGS, company_name: "theLook" }));
   });
 
-  // ROADMAP §3.65 — the four choices an organisation makes, off unless chosen; one the server's environment turns on
+  // ROADMAP §3.65 — the choices an organisation makes (§3.68 added the fifth), off unless chosen; one the server's environment turns on
   // while nobody has chosen says so, rather than looking off.
   it("shows what Aughor may do, says which one is on only through the environment, and saves a choice", async () => {
     const off = { allowed: false, set: false };
     api.getOrgAllows.mockResolvedValue({ share_aggregates: off, reason_to_read_runs: off, scheduled_model_work: off,
-                                         outside_row_model: { allowed: true, set: false } });
+                                         read_query_history: off, outside_row_model: { allowed: true, set: false } });
     render(<OrgSettingsPanel />);
     const card = await screen.findByTestId("org-allows");
     await waitFor(() => expect(screen.getByTestId("org-allows-outside_row_model")).toHaveAttribute("data-on", "true"));
     expect(screen.getByTestId("org-allows-outside_row_model-from-server")).toHaveTextContent(
       "On through this server's environment until you choose here.");
-    for (const k of ["share_aggregates", "reason_to_read_runs", "scheduled_model_work"]) {
+    for (const k of ["share_aggregates", "reason_to_read_runs", "scheduled_model_work", "read_query_history"]) {
       expect(screen.getByTestId(`org-allows-${k}`)).toHaveAttribute("data-on", "false");
       expect(screen.queryByTestId(`org-allows-${k}-from-server`)).toBeNull();
     }

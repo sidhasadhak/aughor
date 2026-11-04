@@ -43,6 +43,17 @@ REPO = Path(__file__).resolve().parents[2]
 GRAPH = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 LUX = REPO / "evals" / "ablation_luxexperience_ontology.json"
 
+
+def _every_recorded_field_unchanged(raw, dumped) -> bool:
+    """Every key the recorded graph holds is byte-identical in the loaded one, nested too; a field the model gained
+    since (Arc NV-1's `format` on a property) may appear in the dump at its default and is not a change."""
+    if isinstance(raw, dict):
+        return isinstance(dumped, dict) and all(k in dumped and _every_recorded_field_unchanged(v, dumped[k]) for k, v in raw.items())
+    if isinstance(raw, list):
+        return isinstance(dumped, list) and len(raw) == len(dumped) and all(
+            _every_recorded_field_unchanged(a, b) for a, b in zip(raw, dumped))
+    return raw == dumped
+
 _EXTRA = """
 CREATE TABLE ecommerce.payments AS
 SELECT printf('PAY%06d', i) AS payment_id, printf('O%06d', i) AS order_id,
@@ -159,7 +170,7 @@ def test_a_graph_built_before_bindings_loads_with_none_and_every_field_unchanged
     for eid, e in g.entities.items():
         assert e.bindings == [] and e.proposed_bindings == []
         dumped = e.model_dump()
-        assert all(dumped[k] == raw["entities"][eid][k] for k in raw["entities"][eid])   # byte-identical, nested too
+        assert _every_recorded_field_unchanged(raw["entities"][eid], dumped)   # byte-identical, nested too
     compiled = compile_({"object_type": "order", "measures": [{"agg": "count"}]}, g)
     assert compiled.bindings == [] and "JOIN" not in compiled.sql
 
