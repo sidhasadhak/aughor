@@ -6323,7 +6323,8 @@ export interface paths {
         /**
          * Drill Briefing Edition
          * @description One level deeper on a block's source (Arc BC-4): the same check broken down by another column — within a
-         *     segment when one is named — compiled, no model call. Written into the edition under the block it came from.
+         *     segment when one is named — compiled, no model call. The page draws it in the card it came from; the edition stays
+         *     as the model wrote it and keeps only the source.
          */
         post: operations["drill_briefing_edition_exploration__conn_id__briefing_edition_drill_post"];
         delete?: never;
@@ -17156,6 +17157,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sheets/{sheet_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History
+         * @description What changed, value by value, newest first — the whole sheet's, or one row's or one cell's story.
+         */
+        get: operations["history_sheets__sheet_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/history/{change_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Change Lines
+         * @description Every line of one change, for a person who asked to see them all.
+         */
+        get: operations["change_lines_sheets__sheet_id__history__change_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sheets/{sheet_id}/links": {
         parameters: {
             query?: never;
@@ -17245,6 +17286,27 @@ export interface paths {
          *     This route calls a model. Nothing changes until the person applies it.
          */
         post: operations["propose_sheets__sheet_id__propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sheets/{sheet_id}/put-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put Back
+         * @description Return one cell, one row or a whole change to what it replaced, and touch nothing else: a new change in the
+         *     history, undone like any other. A whole change skips what was changed since, and says so.
+         */
+        post: operations["put_back_sheets__sheet_id__put_back_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -20204,11 +20266,6 @@ export interface components {
         };
         /** DrillIn */
         DrillIn: {
-            /**
-             * After
-             * @default
-             */
-            after: string;
             /** Column */
             column: string;
             /** Segment */
@@ -22249,6 +22306,20 @@ export interface components {
             to: {
                 [key: string]: unknown;
             }[];
+        };
+        /** PutBackRequest */
+        PutBackRequest: {
+            /** Change */
+            change: string;
+            /**
+             * Column
+             * @default
+             */
+            column: string;
+            /** Current */
+            current?: number | null;
+            /** Row */
+            row?: number | null;
         };
         /**
          * QueryRequest
@@ -55359,6 +55430,77 @@ export interface operations {
             };
         };
     };
+    history_sheets__sheet_id__history_get: {
+        parameters: {
+            query?: {
+                row?: number | null;
+                column?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_lines_sheets__sheet_id__history__change_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     link_keep_sheets__sheet_id__links_post: {
         parameters: {
             query?: never;
@@ -55519,6 +55661,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["aughor__routers__sheets__ProposeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_back_sheets__sheet_id__put_back_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sheet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutBackRequest"];
             };
         };
         responses: {

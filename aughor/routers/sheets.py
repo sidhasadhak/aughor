@@ -503,6 +503,48 @@ def changes(sheet_id: str, request: Request) -> dict:
             "can_redo": undone[-1]["what"] if undone else ""}
 
 
+@router.get("/{sheet_id}/history")
+def history(sheet_id: str, request: Request, row: int | None = None, column: str = "", limit: int = 100) -> dict:
+    """What changed, value by value, newest first — the whole sheet's, or one row's or one cell's story."""
+    from aughor.sheets import service
+    try:
+        return service.history(_sheet(sheet_id, request, VIEW), row=row, column=column, limit=max(1, min(int(limit), 500)))
+    except service.Refused as exc:
+        raise _refused(exc) from None
+
+
+@router.get("/{sheet_id}/history/{change_id}")
+def change_lines(sheet_id: str, change_id: str, request: Request) -> dict:
+    """Every line of one change, for a person who asked to see them all."""
+    from aughor.sheets import service
+    try:
+        return service.change_lines(_sheet(sheet_id, request, VIEW), change_id)
+    except service.Refused as exc:
+        raise _refused(exc) from None
+
+
+class PutBackRequest(BaseModel):
+    #: The change whose edit goes back.
+    change: str
+    #: One row of it, or with ``column`` one cell; neither is the whole change.
+    row: int | None = None
+    column: str = ""
+    #: The version of that value the person read.
+    current: int | None = None
+
+
+@router.post("/{sheet_id}/put-back")
+def put_back(sheet_id: str, req: PutBackRequest, request: Request) -> dict:
+    """Return one cell, one row or a whole change to what it replaced, and touch nothing else: a new change in the
+    history, undone like any other. A whole change skips what was changed since, and says so."""
+    from aughor.sheets import service
+    try:
+        return service.put_back(_sheet(sheet_id, request, EDIT), change=req.change, row=req.row, column=req.column,
+                                current=req.current, by=_who(request))
+    except service.Refused as exc:
+        raise _refused(exc) from None
+
+
 @router.post("/{sheet_id}/undo")
 def undo(sheet_id: str, request: Request, removing: bool = False) -> dict:
     """Take back the person's latest change, whole. ``removing`` is said only to undo the change that made the sheet —

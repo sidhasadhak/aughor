@@ -70,14 +70,6 @@ def _kinds(sheet: Sheet) -> list[dict]:
     return [{"kind": o.kind, "currency": o.currency} for o in sheet.columns][:8]
 
 
-def _title(sheet: Sheet, values: dict) -> str:
-    """What a row is called when it is opened: its key's value, or its first text column's."""
-    first = sheet.column(sheet.key) if sheet.key else None
-    first = first or next((c for c in sheet.columns if c.kind in ("text", "email", "link")), None)
-    v = values.get(first.id) if first else None
-    return "" if v is None else str(v)
-
-
 def _linked(sheet: Sheet, values: dict) -> list[dict]:
     """The rows of other sheets this row links to, and the rows of other sheets that link to it."""
     out: list[dict] = []
@@ -137,7 +129,7 @@ def record(sheet: Sheet, row: int) -> Optional[dict]:
                for h in overlay.sheet_history(sheet.id, row=row, limit=200)]
     from aughor.sheets import views
     marked = set(views.marks(sheet, {row}).get(str(row), []))
-    return {"row": row, "title": _title(sheet, values), "came_from": service.origin_of_row(sheet, row),
+    return {"row": row, "title": service.row_title(sheet, values), "came_from": service.origin_of_row(sheet, row),
             "fields": fields, "linked": _linked(sheet, values), "history": history, "comments": comments(sheet, row),
             "marks": [{"id": r.id, "name": r.name, "tone": r.tone} for r in sheet.rules if r.id in marked]}
 

@@ -8,6 +8,11 @@ person — a model never changes a sheet on its own.
 **Undo is the changes' own history.** Undoing a change writes a new change that puts back what it replaced, with
 ``origin`` ``undo:<id>``; redoing writes the reverse of that. Nothing is deleted to undo, and a change that someone has
 changed over since is refused, naming who, rather than undone over their work.
+
+**Putting back is one value's own history.** Undo takes back a person's latest change, whole. `put_back` reaches any change
+anyone made, down to one cell or one row, and touches nothing else: a new change with ``origin`` ``put_back:<id>``, every
+value it replaces kept in the history. The source file is never written; a sheet's values are its source with these
+changes over it.
 """
 from __future__ import annotations
 
@@ -262,7 +267,7 @@ def set_cells(sheet: Sheet, cells: list[dict], *, by: str, origin: str = "", not
         for column_id, values in choices_added.items():
             col = sheet.column(column_id)
             col.choices = [*col.choices, *dict.fromkeys(values)]
-        model.save(sheet, what="new choices: " + ", ".join(v for vs in choices_added.values() for v in vs)[:200],
+        model.save(sheet, what="new choices: " + ", ".join(dict.fromkeys(v for vs in choices_added.values() for v in vs))[:200],
                    by=by, origin=origin, change_id=cid)
     projection.apply(sheet, rows)
     return {"change_id": cid, "cells": _cells_after(sheet, written)}
@@ -620,7 +625,7 @@ def changes(sheet: Sheet, *, limit: int = 200) -> list[dict]:
                                                   "definition": 0})
         entry["values"] = int(row["edits"] or 0)
         if not entry["what"]:
-            entry["what"] = f"{entry['values']} value{'s' if entry['values'] != 1 else ''} changed"
+            entry["what"] = row["note"] or f"{entry['values']} value{'s' if entry['values'] != 1 else ''} changed"
         entry["at"] = max(str(entry["at"] or ""), str(row["at"] or ""))
     return sorted(out.values(), key=lambda e: str(e["at"]), reverse=True)[:limit]
 
@@ -754,6 +759,14 @@ def _reverse(sheet: Sheet, change: dict, *, by: str, origin: str, what: str) -> 
 
 # ── a cell's and a row's story ───────────────────────────────────────────────────────────────────────────────────────
 
+def row_title(sheet: Sheet, values: dict) -> str:
+    """What a row is called: its key's value, or its first text column's."""
+    first = sheet.column(sheet.key) if sheet.key else None
+    first = first or next((c for c in sheet.columns if c.kind in ("text", "email", "link")), None)
+    v = values.get(first.id) if first else None
+    return "" if v is None else str(v)
+
+
 def value_of(body: str) -> Any:
     try:
         return json.loads(body)
@@ -778,14 +791,265 @@ def cell_history(sheet: Sheet, row: int, column: str) -> dict:
                "previous": value_of(h["previous"]) if h["previous"] else None, "by": h["actor"], "at": h["at"],
                "origin": h["origin"], "version": int(h["version"]), "change_id": h.get("change_id", "")}
               for h in overlay.sheet_history(sheet.id, row=row, column=c.id)]
-    if c.role == "computed":
-        came = f"computed from {c.expression}"
-    elif c.role == "lookup":
-        came = "read from another sheet through a link"
-    elif c.role == "total":
-        came = "a total of another sheet's rows"
-    else:
-        came = origin_of_row(sheet, row) if c.source or row > sheet.source.rows else "a column added in the sheet"
     current = next((e["version"] for e in events), 0)
-    return {"row": row, "column": c.id, "came_from": came, "events": events, "version": current,
+    return {"row": row, "column": c.id, "came_from": _came_from(sheet, c, row), "events": events, "version": current,
             "changed": bool(events) and events[0]["event"] == "set"}
+
+
+def _came_from(sheet: Sheet, c: Column, row: int) -> str:
+    if c.role == "computed":
+        return f"computed from {c.expression}"
+    if c.role == "lookup":
+        return "read from another sheet through a link"
+    if c.role == "total":
+        return "a total of another sheet's rows"
+    return origin_of_row(sheet, row) if c.source or row > sheet.source.rows else "a column added in the sheet"
+
+
+# ── what changed, value by value, and putting one back ───────────────────────────────────────────────────────────────
+
+#: How many of a change's edits the history reads at once, how many lines it shows of each, and the most one change lists.
+CHANGE_READ = 200
+LINES_SHOWN = 5
+LINES_MAX = 1000
+#: The most changes one reading of a row's or a cell's story covers.
+STORY_READ = 2000
+
+
+def _edits_of(rows: list[dict]) -> list[tuple[dict, dict]]:
+    """Each value a change touched, once, as (its last write, its first): a change can write one value twice, and what
+    it replaced is what stood before the first."""
+    last: dict[str, dict] = {}
+    first: dict[str, dict] = {}
+    for h in rows:             # newest first
+        last.setdefault(h["edit_id"], h)
+        first[h["edit_id"]] = h
+    return [(last[k], first[k]) for k in last]
+
+
+def _added_by(edits: list[tuple[dict, dict]]) -> set[str]:
+    """The rows a change brought into being."""
+    return {last["row_key"] for last, first in edits if not last["column"] and last["body"] == "added" and not first["previous"]}
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    if a in (None, "") or b in (None, ""):
+        return a in (None, "") and b in (None, "")
+    try:
+        return float(a) == float(b)
+    except (TypeError, ValueError):
+        return str(a).replace("T", " ") == str(b).replace("T", " ")
+
+
+def _was_there(sheet: Sheet, row: int, state: str) -> bool:
+    """Whether a row stands, given its row edit's state: "added", "removed", or none — what its source says."""
+    return state == "added" or (not state and row <= sheet.source.rows)
+
+
+def _lines(sheet: Sheet, changes_edits: dict[str, list[tuple[dict, dict]]], *, shown: int) -> dict[str, list[dict]]:
+    """Changes' edits as lines a person reads: which cell or row, what it held before and after, what it holds now, and
+    whether it can be put back. A row a change added is one line, the values it came with inside it."""
+    picked: dict[str, list[tuple[dict, dict]]] = {}
+    came_with: dict[str, dict[str, dict]] = {}
+    for cid, edits in changes_edits.items():
+        added = _added_by(edits)
+        came_with[cid] = {r: {} for r in added}
+        for last, _ in edits:
+            if last["column"] and last["row_key"] in added and last["event"] == "set":
+                came_with[cid][last["row_key"]][last["column"]] = value_of(last["body"])
+        picked[cid] = [e for e in edits if not e[0]["column"] or e[0]["row_key"] not in added][:shown]
+    rows = {int(last["row_key"]) for edits in picked.values() for last, _ in edits}
+    standing = projection.rows_by_number(sheet, rows)
+    source = projection.source_rows(sheet, rows)
+    versions = overlay.sheet_versions(sheet.id, rows, with_rows=True)
+    out: dict[str, list[dict]] = {}
+    for cid, edits in picked.items():
+        out[cid] = []
+        for last, first in edits:
+            row = int(last["row_key"])
+            column = last["column"]
+            line: dict[str, Any] = {"row": row, "column": column, "current": versions.get((row, column), 0),
+                                    "stands": versions.get((row, column), 0) == int(last["version"]), "blocked": ""}
+            now = standing.get(row)
+            line["title"] = row_title(sheet, now or source.get(row) or {})
+            if not column:
+                state = last["body"] if last["event"] == "set" else ""
+                before, after = _was_there(sheet, row, first["previous"]), _was_there(sheet, row, state)
+                written = {(c.name if (c := sheet.column(k)) else k): v
+                           for k, v in came_with[cid].get(last["row_key"], {}).items() if v is not None}
+                line.update(kind="row", name="", what="added" if after and not before else "removed" if before and not after
+                            else "", values=written, same=(now is not None) == before)
+            else:
+                c = sheet.column(column)
+                held = (source.get(row) or {}).get(column)
+                was = value_of(first["previous"]) if first["previous"] else held
+                line.update(kind="cell", name=c.name if c else "a column since removed", what="set", **{"from": was},
+                            to=value_of(last["body"]) if last["event"] == "set" else held,
+                            now=(now or {}).get(column), same=now is not None and _same_value((now or {}).get(column), was))
+                if c is None or c.role != "stored":
+                    line["blocked"] = "its column has since been removed"
+                elif now is None:
+                    line["blocked"] = f"row {row:,} has since been removed; put the row back first"
+            out[cid].append(line)
+    return out
+
+
+def _count_words(lines: list[dict]) -> str:
+    """What a change of many lines did, counted as a person would: "3 rows removed", "12 values changed"."""
+    def many(n: int, one: str) -> str:
+        return f"{n:,} {one}{'s' if n != 1 else ''}"
+    cells = sum(1 for ln in lines if ln["kind"] == "cell")
+    added = sum(1 for ln in lines if ln["kind"] == "row" and ln["what"] == "added")
+    removed = sum(1 for ln in lines if ln["kind"] == "row" and ln["what"] == "removed")
+    said = [f"{many(added, 'row')} added" if added else "", f"{many(removed, 'row')} removed" if removed else "",
+            f"{many(cells, 'value')} changed" if cells else ""]
+    return ", ".join(w for w in said if w)
+
+
+def history(sheet: Sheet, *, row: Optional[int] = None, column: str = "", limit: int = 100) -> dict:
+    """What changed, newest first, value by value: every change to the sheet with the first of its lines — or, given a
+    row or a cell, that row's or cell's whole story, from where it came from to what it holds now."""
+    if row is None:
+        rows = changes(sheet, limit=limit + 1)
+        more, rows = len(rows) > limit, rows[:limit]
+        read = overlay.sheet_change_edits(sheet.id, [c["id"] for c in rows if c["values"]], per_change=CHANGE_READ)
+        edits = {cid: _edits_of(got) for cid, got in read.items()}
+        lines = _lines(sheet, edits, shown=LINES_SHOWN)
+        for c in rows:
+            got = edits.get(c["id"], [])
+            added = _added_by(got)
+            total = sum(1 for last, _ in got if not last["column"] or last["row_key"] not in added)
+            whole = len(read.get(c["id"], [])) < CHANGE_READ
+            if not whole:
+                total = overlay.sheet_change_lines(sheet.id, c["id"])
+            c.update(lines=lines.get(c["id"], []), lines_total=total)
+            # the words a change's own lines earn, once all of them are in hand; what a person or a model said stands
+            if whole and total <= LINES_SHOWN and got and not c["definition"] and not got[0][0]["note"]:
+                c["what"] = _count_words(c["lines"]) or c["what"]
+        return {"changes": rows, "more": more, "scope": None}
+    c = None
+    if column:
+        c = sheet.column(column)
+        if c is None:
+            raise Refused(f"{sheet.name} has no column {column!r}")
+    raw = overlay.sheet_history(sheet.id, row=row, column=column, limit=STORY_READ)
+    grouped: dict[str, list[dict]] = {}
+    for h in raw:
+        grouped.setdefault(h["change_id"], []).append(h)
+    edits = {cid: _edits_of(got) for cid, got in grouped.items()}
+    lines = _lines(sheet, edits, shown=STORY_READ)
+    rows = [{"id": cid, "what": got[0]["note"] or "", "by": got[0]["actor"], "at": got[0]["at"], "origin": got[0]["origin"],
+             "values": len(got), "definition": 0, "lines": lines[cid], "lines_total": len(lines[cid])}
+            for cid, got in grouped.items()][:limit]
+    now = projection.rows_by_number(sheet, {row}).get(row)
+    values = now or projection.source_rows(sheet, {row}).get(row) or {}
+    return {"changes": rows, "more": len(grouped) > limit,
+            "scope": {"row": row, "column": column, "name": c.name if c else "", "title": row_title(sheet, values),
+                      "removed": now is None, "now": (now or {}).get(column) if column else None,
+                      "came_from": _came_from(sheet, c, row) if c else origin_of_row(sheet, row)}}
+
+
+def change_lines(sheet: Sheet, change: str) -> dict:
+    """All of one change's lines, up to `LINES_MAX`, for a person who asked to see them all."""
+    edits = _edits_of(overlay.sheet_history(sheet.id, change_id=change, limit=LINES_MAX * 20))
+    if not edits:
+        raise Refused("this change holds no values, or is no longer in the sheet's history")
+    return {"lines": _lines(sheet, {change: edits}, shown=LINES_MAX)[change], "total": overlay.sheet_change_lines(sheet.id, change)}
+
+
+def _brief(value: Any) -> str:
+    if value in (None, ""):
+        return "empty"
+    words = str(value)
+    return words if len(words) <= 40 else f"{words[:39]}…"
+
+
+def _put_back_edit(sheet: Sheet, last: dict, first: dict, *, expected: int) -> SheetEdit:
+    """The edit that returns one value to what ``first`` replaced — and only that value."""
+    row = int(last["row_key"])
+    if not last["column"]:
+        if _was_there(sheet, row, first["previous"]):
+            if row <= sheet.source.rows and first["previous"] != "added":
+                return SheetEdit(kind=SHEET_ROW, row=row, withdraw=True, expected_version=expected)
+            return SheetEdit(kind=SHEET_ROW, row=row, body="added", expected_version=expected)
+        # a row taken out stays superseded with its values, as any removed row does: putting it back brings them too
+        return SheetEdit(kind=SHEET_ROW, row=row, body="removed", expected_version=expected)
+    if not first["previous"]:
+        return SheetEdit(kind=SHEET_CELL, row=row, column=last["column"], withdraw=True, expected_version=expected)
+    return SheetEdit(kind=SHEET_CELL, row=row, column=last["column"], body=first["previous"], expected_version=expected)
+
+
+def put_back(sheet: Sheet, *, change: str, by: str, row: Optional[int] = None, column: str = "",
+             current: Optional[int] = None) -> dict:
+    """Return what a change touched to what it replaced, leaving every other value exactly as it stands: one cell or one
+    row of it (``row``, with ``column`` for a cell), or the whole change.
+
+    **One value** goes back whatever has happened to it since, because the person is looking at it and asked for that
+    state: ``current``, the version they read, refuses it when someone has changed it after they read it. **A whole
+    change** goes back only where it still stands: a value changed since is someone's newer decision, so it is left alone
+    and named. Either way this is a new change in the history, undone like any other."""
+    edits = _edits_of(overlay.sheet_history(sheet.id, change_id=change, limit=1_000_000))
+    if not edits:
+        raise Refused("this change holds no values to put back, or is no longer in the sheet's history")
+    added = _added_by(edits)
+    if row is not None:
+        edits = [e for e in edits if int(e[0]["row_key"]) == int(row) and e[0]["column"] == column]
+        if not edits:
+            raise Refused(f"this change did not touch {'that cell' if column else 'that row'}")
+    else:
+        edits = [e for e in edits if not e[0]["column"] or e[0]["row_key"] not in added]
+    rows = {int(last["row_key"]) for last, _ in edits}
+    versions = overlay.sheet_versions(sheet.id, rows, with_rows=True)
+    present = _rows_present(sheet, rows)
+    writes: list[SheetEdit] = []
+    left: list[dict] = []
+    choices: dict[str, list[str]] = {}
+    for last, first in edits:
+        r, col = int(last["row_key"]), last["column"]
+        at = versions.get((r, col), 0)
+        c = sheet.column(col) if col else None
+        gone = bool(col) and (c is None or c.role != "stored" or r not in present)
+        if row is not None and gone:
+            raise Refused(f"its column has since been removed, so {'this' if c is None else c.name} cannot be put back"
+                          if c is None or c.role != "stored" else f"row {r:,} has since been removed; put the row back first")
+        if row is None and (gone or at != int(last["version"])):
+            newest = next(iter(overlay.sheet_history(sheet.id, row=r, column=col, limit=1)), None) if not gone else None
+            left.append({"row": r, "column": col, "name": c.name if c else "", "by": newest["actor"] if newest else "",
+                         "at": newest["at"] if newest else ""})
+            continue
+        if c is not None and c.kind == kinds.CHOICE and first["previous"]:
+            value = value_of(first["previous"])
+            if value is not None and value not in c.choices:
+                choices.setdefault(c.id, []).append(value)
+        writes.append(_put_back_edit(sheet, last, first, expected=at if row is None or current is None else int(current)))
+    if not writes:
+        raise Refused("every value of this change has been changed since, so there is nothing of it to put back")
+    if row is not None:
+        last, first = edits[0]
+        if column:
+            held = (projection.source_rows(sheet, {int(row)}).get(int(row)) or {}).get(column)
+            what = (f"{sheet.column(column).name} in row {int(row):,} put back to "
+                    f"{_brief(value_of(first['previous']) if first['previous'] else held)}")
+        else:
+            what = f"row {int(row):,} {'put back' if _was_there(sheet, int(row), first['previous']) else 'taken out'}"
+    else:
+        what = f"{len(writes):,} value{'s' if len(writes) != 1 else ''} put back"
+    cid = change_id()
+    try:
+        written = overlay.save_sheet_change(sheet.id, writes, change_id=cid, actor=by, origin=f"put_back:{change}",
+                                            note=what[:200])
+    except EditConflict as exc:
+        raise Conflict(stale_words(sheet, exc, by), exc.current) from None
+    if not written:
+        raise Refused("it already holds that")
+    if choices:
+        for column_id, values in choices.items():
+            col = sheet.column(column_id)
+            col.choices = [*col.choices, *dict.fromkeys(values)]
+        model.save(sheet, what=what, by=by, origin=f"put_back:{change}", change_id=cid)
+    projection.apply(sheet, {w.row for w in writes})
+    # a column's name is said as it is spelled
+    said = what if row is not None and column else what[0].upper() + what[1:]
+    if left:
+        said += f"; {len(left):,} changed since left as {'they are' if len(left) != 1 else 'it is'}"
+    return {"change_id": cid, "put_back": len(written), "left": left, "said": said}

@@ -434,3 +434,203 @@ def test_a_change_still_standing_over_yours_keeps_yours_from_being_undone(env):
     with pytest.raises(service.Refused, match="postcode by user:bo"):
         service.undo(model.get(sheet.id), by="user:ana")
     assert model.get(sheet.id).column(col).name == "price2"
+
+
+# ── the history, value by value, and putting one back ────────────────────────────────────────────────────────────────
+
+def _line(sheet, row, name="", *, change=None):
+    """The line for a cell (or a row, with no name) in its own story: the newest, or the one of ``change``."""
+    from aughor.sheets import service
+    column = sheet.column(name).id if name else ""
+    read = service.history(sheet, row=row, column=column)
+    for ch in read["changes"]:
+        if change is None or ch["id"] == change:
+            found = [ln for ln in ch["lines"] if ln["row"] == row and ln["column"] == column]
+            if found:
+                return ch["id"], found[0]
+    raise AssertionError(f"no line for row {row} {name!r}")
+
+
+def _set(sheet, row, name, value, by="user:ana"):
+    from aughor.actions import overlay
+    from aughor.sheets import service
+    c = sheet.column(name)
+    version = overlay.sheet_versions(sheet.id, {row}).get((row, c.id), 0)
+    return service.set_cells(sheet, [{"row": row, "column": c.id, "value": value, "version": version}], by=by)["change_id"]
+
+
+def test_the_history_says_which_cell_changed_from_what_to_what(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    cid = _set(sheet, 1, "order_status", "returned", by="user:bo")
+    change = next(c for c in service.history(sheet)["changes"] if c["id"] == cid)
+    assert change["lines_total"] == 1
+    line = change["lines"][0]
+    assert (line["kind"], line["row"], line["name"]) == ("cell", 1, "order_status")
+    assert (line["from"], line["to"], line["now"], line["stands"]) == ("delivered", "returned", "returned", True)
+    assert line["title"] and change["by"] == "user:bo"
+
+
+def test_a_cell_goes_back_to_any_state_it_held_and_nothing_else_moves(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    _set(sheet, 1, "order_status", "invoiced")
+    second = _set(sheet, 1, "order_status", "approved")
+    third = _set(sheet, 1, "order_status", "returned")
+    _set(sheet, 1, "customer_id", "c9")
+    _set(sheet, 2, "order_status", "canceled")
+    before = {r: dict(service.projection.read_row(sheet, r)) for r in (1, 2, 3)}
+    _, line = _line(sheet, 1, "order_status", change=third)
+    assert line["from"] == "approved"
+    out = service.put_back(sheet, change=third, row=1, column=sheet.column("order_status").id, current=line["current"],
+                           by="user:cy")
+    assert _cell(sheet, 1, "order_status") == "approved"
+    after = {r: dict(service.projection.read_row(sheet, r)) for r in (1, 2, 3)}
+    status = sheet.column("order_status").id
+    assert {k: v for k, v in after[1].items() if k != status} == {k: v for k, v in before[1].items() if k != status}
+    assert after[2] == before[2] and after[3] == before[3]
+    assert _same(sheet)["same"]
+    # further back, over the put back itself: the second change replaced "invoiced"
+    _, line = _line(sheet, 1, "order_status", change=second)
+    assert (line["from"], line["stands"], line["now"]) == ("invoiced", False, "approved")
+    service.put_back(sheet, change=second, row=1, column=status, current=line["current"], by="user:cy")
+    assert _cell(sheet, 1, "order_status") == "invoiced"
+    assert _same(sheet)["same"]
+    # every state is still in the story, and the put back is a change under the person who made it
+    story = service.history(sheet, row=1, column=status)["changes"]
+    assert len(story) == 5 and story[0]["by"] == "user:cy" and story[0]["origin"] == f"put_back:{second}"
+    assert story[1]["id"] == out["change_id"]
+
+
+def test_a_cell_goes_back_to_what_its_file_said(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    first = _set(sheet, 1, "order_status", "invoiced")
+    _set(sheet, 1, "order_status", "returned")
+    status = sheet.column("order_status").id
+    _, line = _line(sheet, 1, "order_status", change=first)
+    assert line["from"] == "delivered"                       # the file's value, read from its source
+    service.put_back(sheet, change=first, row=1, column=status, current=line["current"], by="user:ana")
+    assert _cell(sheet, 1, "order_status") == "delivered"
+    assert service.cell_history(sheet, 1, status)["changed"] is False     # its edit is withdrawn: the file's value stands
+    assert _same(sheet)["same"]
+    _, line = _line(sheet, 1, "order_status", change=first)
+    assert line["same"] is True                              # nothing to put back now, and the line says so
+
+
+def test_one_removed_row_comes_back_and_the_others_stay_removed(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    _set(sheet, 2, "order_status", "canceled")
+    gone = service.remove_rows(sheet, [1, 2, 3], by="user:ana")["change_id"]
+    assert service.projection.read_row(sheet, 2) is None
+    assert next(c for c in service.history(sheet)["changes"] if c["id"] == gone)["what"] == "3 rows removed"
+    _, line = _line(sheet, 2, change=gone)
+    assert (line["kind"], line["what"], line["same"]) == ("row", "removed", False) and line["title"]
+    service.put_back(sheet, change=gone, row=2, column="", current=line["current"], by="user:ana")
+    assert _cell(sheet, 2, "order_status") == "canceled"     # back, with the value someone had set on it
+    assert service.projection.read_row(sheet, 1) is None and service.projection.read_row(sheet, 3) is None
+    assert _same(sheet)["same"]
+
+
+def test_a_row_added_comes_out_alone_and_goes_back_in_with_its_values(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    added = service.add_row(sheet, {"order_id": "x1", "order_status": "created"}, by="user:ana")
+    other = service.add_row(sheet, {"order_id": "x2"}, by="user:ana")["row"]
+    n = added["row"]
+    change = next(c for c in service.history(sheet)["changes"] if c["id"] == added["change_id"])
+    assert change["lines_total"] == 1                        # the row, its values folded inside it
+    assert change["lines"][0]["what"] == "added"
+    assert change["lines"][0]["values"] == {"order_id": "x1", "order_status": "created"}
+    out = service.put_back(sheet, change=added["change_id"], row=n, column="", current=change["lines"][0]["current"],
+                           by="user:ana")
+    assert service.projection.read_row(sheet, n) is None and service.projection.read_row(sheet, other) is not None
+    assert _same(sheet)["same"]
+    _, line = _line(sheet, n, change=out["change_id"])
+    assert line["what"] == "removed"
+    service.put_back(sheet, change=out["change_id"], row=n, column="", current=line["current"], by="user:ana")
+    assert _cell(sheet, n, "order_id") == "x1"
+    assert _same(sheet)["same"]
+
+
+def test_a_whole_change_goes_back_except_what_was_changed_since_which_is_named(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    cid = service.set_cells(sheet, [{"row": r, "column": status, "value": "held"} for r in (1, 2, 3)], by="user:ana")["change_id"]
+    _set(sheet, 2, "order_status", "returned", by="user:bo")
+    out = service.put_back(sheet, change=cid, by="user:ana")
+    assert out["put_back"] == 2 and [(x["row"], x["name"], x["by"]) for x in out["left"]] == [(2, "order_status", "user:bo")]
+    assert "changed since left as it is" in out["said"]
+    assert _cell(sheet, 1, "order_status") == "delivered" and _cell(sheet, 3, "order_status") == "shipped"
+    assert _cell(sheet, 2, "order_status") == "returned"     # bo's newer decision stands
+    assert _same(sheet)["same"]
+    with pytest.raises(service.Refused, match="nothing of it to put back"):
+        service.put_back(sheet, change=cid, by="user:ana")
+
+
+def test_someone_who_changed_a_cell_after_you_read_it_stops_your_put_back(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    cid = _set(sheet, 1, "order_status", "invoiced")
+    _, line = _line(sheet, 1, "order_status", change=cid)
+    _set(sheet, 1, "order_status", "returned", by="user:bo")
+    with pytest.raises(service.Conflict, match="after you read it"):
+        service.put_back(sheet, change=cid, row=1, column=status, current=line["current"], by="user:ana")
+    assert _cell(sheet, 1, "order_status") == "returned"
+
+
+def test_a_put_back_is_undone_like_any_other_change(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    cid = _set(sheet, 1, "order_status", "invoiced", by="user:bo")
+    _, line = _line(sheet, 1, "order_status", change=cid)
+    service.put_back(sheet, change=cid, row=1, column=status, current=line["current"], by="user:ana")
+    done, _ = service.stacks(sheet, "user:ana")
+    assert done[-1]["what"] == "order_status in row 1 put back to delivered"
+    service.undo(sheet, by="user:ana")
+    assert _cell(sheet, 1, "order_status") == "invoiced"
+    assert _same(sheet)["same"]
+
+
+def test_a_cell_whose_row_or_column_went_says_why_it_cannot_go_back(env):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    status = sheet.column("order_status").id
+    cid = _set(sheet, 1, "order_status", "invoiced")
+    current = _line(sheet, 1, "order_status", change=cid)[1]["current"]
+    service.remove_rows(sheet, [1], by="user:ana")
+    assert "put the row back first" in _line(sheet, 1, "order_status", change=cid)[1]["blocked"]
+    with pytest.raises(service.Refused, match="put the row back first"):
+        service.put_back(sheet, change=cid, row=1, column=status, current=current, by="user:ana")
+
+
+def test_a_change_of_many_cells_lists_a_few_and_counts_them_all(env, monkeypatch):
+    from aughor.sheets import service
+    sheet = _orders(env)
+    sheet = service.add_column(sheet, name="note", kind="text", by="user:ana")
+    note = sheet.column("note").id
+    written = service.set_cells(sheet, [{"row": r, "column": note, "value": f"n{r}"} for r in (1, 2, 3, 4, 5, 6)], by="user:ana")
+    change = next(c for c in service.history(sheet)["changes"] if c["id"] == written["change_id"])
+    assert change["lines_total"] == 6 and len(change["lines"]) == service.LINES_SHOWN
+    assert len(service.change_lines(sheet, written["change_id"])["lines"]) == 6
+    monkeypatch.setattr(service, "CHANGE_READ", 3)      # a change bigger than one reading still counts every cell
+    change = next(c for c in service.history(sheet)["changes"] if c["id"] == written["change_id"])
+    assert change["lines_total"] == 6 and len(change["lines"]) == 3
+
+
+def test_what_was_changed_never_touches_the_file_it_came_from(env):
+    from aughor.sheets import files, service
+    sheet = _orders(env)
+    original = files.sheet_dir(sheet.id) / "original.csv"
+    source = files.source_parquet(sheet.id)
+    before = (original.read_bytes(), source.read_bytes())
+    cid = _set(sheet, 1, "order_status", "invoiced")
+    service.remove_rows(sheet, [2], by="user:ana")
+    service.add_row(sheet, {"order_id": "x1"}, by="user:ana")
+    _, line = _line(sheet, 1, "order_status", change=cid)
+    service.put_back(sheet, change=cid, row=1, column=sheet.column("order_status").id, current=line["current"], by="user:ana")
+    assert (original.read_bytes(), source.read_bytes()) == before
