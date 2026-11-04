@@ -8,7 +8,7 @@ pin-from-insight / Query-Builder convenience doors that compose this primitive.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -350,8 +350,10 @@ def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: 
 
 class CardRunValues(BaseModel):
     """Arc AP-8 — the dashboard's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
-    name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement."""
+    name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement. ``filters`` are the
+    reader's own filters on the table it reads (`queries.narrowed`)."""
     values: Dict[str, Dict[str, Any]] = {}
+    filters: List[Dict[str, Any]] = []
 
 
 @router.post("/cards/{card_id}/run")
@@ -399,13 +401,16 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     base = _metric_statement(metric) or card.sql
     sql, scoped, cut_on = base, None, None
     shown, unread = _shown_of(card)
-    reads = _reads_values(card) if shown is not None else False
-    if spec is not None and reads:
+    reads = (_reads_values(card) or bool(body and body.filters)) if shown is not None else False
+    # A dashboard made from a file reads the whole file: a Briefing's "last month" is no question of it
+    whole_file = shown is not None and isinstance(card.render, dict) and card.render.get("standing") is True
+    if spec is not None and (reads or whole_file):
         # Arc AP-8 — a query that reads the dashboard's values is read as it says: cutting it would rewrite the statement
         # its values are bound into
         from aughor.briefing.ranges import phrases
         scoped = {"covers": phrases(spec)["covers"], "standing": True, "grain": None,
-                  "why": "It reads the dashboard's own values, so it is read as its query says, not cut to the range."}
+                  "why": "It reads the whole file, as its query says." if whole_file else
+                         "It reads the dashboard's own values, so it is read as its query says, not cut to the range."}
     elif spec is not None:
         from aughor.briefing.ranges import phrases
         from aughor.briefing.reask import grain_for
@@ -428,7 +433,8 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     if shown is not None or unread:
         # Arc AP-7 — a card of a person's own query, shown as they asked
         try:
-            return _run_shown(db, card, shown, unread, sql, scoped, values=body.values if body else {})
+            return _run_shown(db, card, shown, unread, sql, scoped, values=body.values if body else {},
+                              filters=body.filters if body else [])
         finally:
             try:
                 db.close()
@@ -498,7 +504,8 @@ def _reads_values(card) -> bool:
     return bool(queries.params_of(card.sql or ""))
 
 
-def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Optional[dict] = None) -> dict:
+def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Optional[dict] = None,
+               filters: Optional[list] = None) -> dict:
     """Arc AP-7 — run a query card as it is shown: refused while a row policy narrows a table it reads (it reads the
     table straight), summed around the person's statement, stopped after the connection's time limit. Arc AP-8 — the
     dashboard's values it reads are bound by the engine, as the page holds them now; one it holds nothing for is said."""
@@ -515,6 +522,12 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Option
             sql, params = queries.bind(sql, values or {})
         except queries.Refused as e:
             return said(str(e))
+    if filters:
+        try:
+            sql, kept = queries.narrowed(sql, [queries.Narrowing.model_validate(f) for f in filters], queries.dialect_of(db))
+        except (queries.Refused, ValueError) as e:
+            return said(str(e))
+        params = {**(params or {}), **kept} or None
     try:
         graph = pieces.served_graph(card.connection_id)
     except Exception:

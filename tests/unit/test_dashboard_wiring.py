@@ -134,6 +134,17 @@ def test_a_wired_cockpit_without_an_ontology_is_refused(monkeypatch):
     assert len(said) == 1 and "no ontology is built for this connection" in said[0], said
 
 
+def test_values_alone_ask_for_no_ontology(monkeypatch):
+    """A dashboard made from a file: its values are the reader's sliders, read as bound parameters, and it has no ontology."""
+    monkeypatch.setattr(pieces, "served_graph", lambda conn: None)
+    only_values = {"root": "r", "values": {"cut": {"label": "Cut", "kind": "number", "value": 0, "from": {"by": "reader"}}},
+                   "elements": {"r": {"type": "Section", "props": {"title": "T"}, "children": []}}}
+    assert wiring.not_resolved("c", only_values, wiring={"sets": {}, "buttons": [], "values": {}}) == []
+    # one element reading a set is enough to need one, whatever the read of it says
+    reads = {**only_values, "elements": {"r": {"type": "ObjectTable", "props": {"set": "placed"}, "children": []}}}
+    assert "no ontology" in wiring.not_resolved("c", reads, wiring={"sets": {}, "buttons": [], "values": {}})[0]
+
+
 def test_sets_that_compile_pass(no_edits):
     read = _read(placed={"entity": "order", "segment": "", "filters": [{"path": "order_date", "op": "in_last", "value": 14}]},
                  active={"entity": "order", "segment": "active_orders",

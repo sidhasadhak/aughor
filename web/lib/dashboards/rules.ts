@@ -642,19 +642,19 @@ export function checkDashboardSpec(spec: unknown): DashboardCheck {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds ${list(stray.map(q))}. `
           + (may.length ? `A ${el.type} holds: ${list(may)}.` : `A ${el.type} holds nothing.`) });
-    } else if (el.type === "Cockpit" && new Set(kinds.filter(k => k !== "ObjectFilters" && k !== "Drawer")).size > 1) {
+    } else if (el.type === "Cockpit" && new Set(kinds.filter(k => k !== "ObjectFilters" && k !== "QueryFilters" && k !== "Drawer")).size > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The dashboard ${q(key)} holds tabs and sections side by side. It holds one Tabs, or sections, not both.` });
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "Tabs").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The dashboard ${q(key)} holds more than one Tabs. It holds one.` });
-    } else if (el.type === "Cockpit" && kinds.filter(k => k === "ObjectFilters").length > 1) {
+    } else if (el.type === "Cockpit" && kinds.filter(k => k === "ObjectFilters" || k === "QueryFilters").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The dashboard ${q(key)} holds more than one filter column. It holds one, as its first child.` });
-    } else if (el.type === "Cockpit" && kinds.includes("ObjectFilters") && kinds[0] !== "ObjectFilters") {
+    } else if (el.type === "Cockpit" && kinds.some(k => k === "ObjectFilters" || k === "QueryFilters") && kinds[0] !== "ObjectFilters" && kinds[0] !== "QueryFilters") {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The dashboard ${q(key)} holds its filter column after its tabs or sections. A filter column is the dashboard's first child, drawn beside the rest.` });
-    } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters" || k === "Drawer")) {
+    } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters" || k === "QueryFilters" || k === "Drawer")) {
       issues.push({ code: "bad_child", elementKey: key,
         message: kinds.includes("ObjectFilters")
           ? `The dashboard ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.`

@@ -39,6 +39,7 @@ const ICON_MODULE = "components/ui/icon.tsx";
 
 /** Files whose `<svg>` is a drawing, not a glyph — each with why. */
 const DRAWINGS = {
+  "components/dashboards/FromFile.tsx": "a drafted card's shape from its run: bars computed per value, for a person to check",
   "components/home/LeadChart.tsx":  "the lead's metric as a line with its unsettled band and restatement, computed per width",
   "components/BrandLogos.tsx":      "vendor trademarks — Snowflake, Stripe, Postgres et al",
   "components/OntologyCanvas.tsx":  "graph edges and node geometry, computed per layout",

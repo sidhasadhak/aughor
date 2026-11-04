@@ -1082,3 +1082,36 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     those fixes. SQL Server and TiDB cannot refuse a write themselves, so the door is the boundary and each says so.
     Still open: the Preview tiles (each needs its server or an account); SQL Server and Oracle read no keys or comments yet.
 
+72. [x] **A dashboard from a file and a sentence** (the user, 2026-11-03, with Google Sheets Canvas as the reference: *"Can you imagine
+    our users uploading a CSV and then such dashboards getting created purely based on the prompt that user gives it? Shouldn't this be
+    part of the Dashboards?"*, then *"All of it"*). New dashboard ▸ From a file: the file becomes a sheet, one short model run drafts the
+    cards, a person checks them and keeps what they tick. Mockup: `design-mockups/dashboard-from-file.html`. Tabs Overview, Rows, What if;
+    a filter column that narrows every card; sliders; Add a row.
+    **This is the one door where a model writes a card's query** (`aughor/sheets/dashboard_draft.py`), on terms code enforces: this sheet's
+    table and nothing else, each card run before it is offered, its definition read off its SQL (`dashboards/definitions.py`), a scenario
+    that must equal the file at its starting values, no figure stated in anything the model writes. The model drafts; the platform lays out.
+    Proven on the real file (20,957 rows cut from theLook) with a real model and through the UI on a scratch API: every figure equals DuckDB on the
+    CSV under five filter sets, a scenario and an added row.
+    Still open: a stacked share is grey, not hatched, on a Vega chart; a card drafted here reads the whole file, so no period picker; the
+    dashboard lives on the Sheets connection, not the one in view.
+
+73. [x] **A model explores the file on demand, and a person edits what it drafts** (the user, 2026-11-03, on From a file: *"I want the
+    feature that model explores the dataset on user's demand and write the draft itself which user can edit as required"*, then *"Lets users
+    be able to create the draft with model or let it explore and draw dashboard right away"*). Two actions beside the words box: **Write the
+    words for me** explores, then fills the box to be changed; **Explore and draw it** explores, then goes on to the cards. Each query shows as it
+    runs, with Stop, and leaving stops the spending at its next step (`aughor/sheets/dashboard_explore.py`, a stream). In the check step a person
+    changes a card's title or query: `check_card` runs it with no model, under the same rules.
+    **Found building it, and on main until this merges:** `SELECT * FROM query('SELECT content FROM read_text(...)')` read a file off the
+    server through the read-only SQL door on a DuckDB connection, because a statement in a string is out of reach of every check. `QUERY` and
+    `QUERY_TABLE` are now denied (`sql/readonly.py`). Separately, From a file's "this table and nothing else" missed table functions, so a card could read
+    another sheet through `query_table()` or list them through `duckdb_tables()`: `queries.reads_beyond` now refuses anything but this table.
+    Proven with a real model on the 99,441-row Olist orders file through the UI on a scratch API: three runs, about 22 model calls, 22 to 29 s
+    to explore, 36 to 53 s to draft, 77 s to explore and draw in one press; every figure and all 870 chart points equal DuckDB on the raw CSV, read
+    by a script sharing no code with Aughor.
+    The real runs found what scripted ones could not, all fixed: 10 of 14 cards had no plain-words definition (date differences, `strftime`, shares;
+    a share now says "out of rows where", since late AND delivered is another number); months ranked by size on a bar; a month filter that
+    silently stopped at its 13th value, so 2018 could not be chosen; a count still written as the percent it replaced (9944100.0%); a note
+    cut mid-word; "Keep 14 cards" for 12 cards and 2 filters.
+    Still open: a new value in an edited card is written as a plain number, with no way to say money or percent short of keeping the column's name.
+    No token count for the proof: a scratch API's usage reads 0, so live's Spend will be the first to show one.
+

@@ -64,6 +64,8 @@ class QueryRequest(BaseModel):
     #: Arc AP-8 — the dashboard's values the query reads as ``{{name}}``, as the page holds them now: name →
     #: ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
     values: dict[str, dict[str, Any]] = {}
+    #: A reader's filters on the table it reads (`queries.narrowed`): a dashboard's filter column reads its counts this way.
+    filters: list[dict[str, Any]] = []
 
 
 class AskRequest(BaseModel):
@@ -295,6 +297,12 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
         db = open_connection_for(connection_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    if req.filters:
+        try:
+            run_sql, kept = queries.narrowed(run_sql, [queries.Narrowing.model_validate(f) for f in req.filters], queries.dialect_of(db))
+        except (queries.Refused, ValueError) as e:
+            return {"refused": [str(e)]}
+        params = {**(params or {}), **kept} or None
     try:
         tables = queries.tables_of(sql, queries.dialect_of(db))
         try:

@@ -166,6 +166,19 @@ export function formatMoney(n: number | null | undefined, symbol: string): strin
   return `${n < 0 ? "-" : ""}${symbol}${amount}`;
 }
 
+/** Money in whole units, for a figure read across a room: "$1,072,874". */
+export function formatWholeMoney(n: number | null | undefined, symbol: string): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return `${n < 0 ? "-" : ""}${symbol}${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+}
+
+/** A file's size: "1.7 MB". */
+export function formatFileSize(bytes: number): string {
+  if (bytes >= 1 << 20) return `${(bytes / (1 << 20)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 /**
  * A MODEL-SPEND tile's value (Arc AO-3): the priced total in USD, "unpriced" when calls ran
  * and not one of them had a price, "—" when nothing is known. `$0.00` on a tile whose every

@@ -96,3 +96,62 @@ describe("a query card's chart", () => {
     expect(seriesColours(["a", "Other", "b"], COLOURS)).toEqual(["#c1", "#grey", "#c2"]);
   });
 });
+
+describe("a chart drafted from a file", () => {
+  it("says a statement's own whole months as months, and a real day as a day", () => {
+    const dated = (xs: string[]) => ({ as: "bar", x: { name: "x", kind: "date", bucket: "" }, series: [""], other: false, said: [], points: xs.map((x, i) => ({ x, s: "", v: i })) }) as unknown as Chart;
+    const stay = { segments: "stacked" as const, labels: false, running: false };
+    const shown = (xs: string[]) => JSON.stringify(queryChartSpec(dated(xs), stay, COLOURS));
+    expect(shown(["2016-09-01", "2016-10-01", "2017-01-01"])).toContain("Sep 2016");
+    expect(shown(["2016-09-01", "2016-10-01", "2017-01-01"])).not.toMatch(/"1 Sept? 2016"/);
+    expect(shown(["2016-09-01", "2016-09-02"])).not.toContain('"Sep 2016"');
+  });
+
+  it("keeps months a statement wrote as text in their own order, and still ranks real categories", () => {
+    const along = (xs: string[]) => ({ as: "bar" as const, x: { name: "x", kind: "text" as const, bucket: null }, series: [""], other: false, said: [], tones: {}, format: "",
+      points: xs.map((x, i) => ({ x, s: "", v: 10 - i })) });
+    const sorted = (spec: Record<string, unknown>) => JSON.stringify(spec).includes('"op":"sum"');
+    const stay = { segments: "stacked" as const, labels: false, running: false };
+    expect(sorted(queryChartSpec(along(["2017-01", "2017-02", "2017-03"]) as unknown as Chart, stay, COLOURS))).toBe(false);
+    expect(sorted(queryChartSpec(along(["2017-01-05", "2017-01-06"]) as unknown as Chart, stay, COLOURS))).toBe(false);
+    expect(sorted(queryChartSpec(along(["2017", "2018"]) as unknown as Chart, stay, COLOURS))).toBe(false);
+    expect(sorted(queryChartSpec(along(["SP", "RJ", "MG"]) as unknown as Chart, stay, COLOURS))).toBe(true);
+    expect(sorted(queryChartSpec(along(["2017-01", "SP"]) as unknown as Chart, stay, COLOURS))).toBe(true);
+  });
+
+  const colours = { palette: ["#a1", "#a2", "#a3", "#a4", "#a5", "#a6"], other: "#grey" };
+  const chart = (over: Record<string, unknown> = {}) => ({
+    as: "bar" as const, x: { name: "channel", kind: "text" as const, bucket: "" }, series: ["Kept", "Came back", "Still open"],
+    points: [{ x: "Search", s: "Kept", v: 10 }, { x: "Search", s: "Came back", v: 2 }, { x: "Search", s: "Still open", v: 5 }],
+    other: false, said: [], tones: { "Came back": "adverse", "Still open": "open" }, ...over,
+  }) as Extract<QueryShaped, { as: "bar" }>;
+  const setup = { segments: "stacked" as const, labels: false, running: false };
+  const first = (spec: Record<string, unknown>) => (spec.layer as { encoding: Record<string, { scale?: { range: string[] }; field?: string; axis?: { format?: string } }> }[])[0].encoding;
+
+  it("wears what went wrong in the palette's red and what is not known yet in its grey, and skips no colour for the rest", () => {
+    expect(first(queryChartSpec(chart(), setup, colours)).color.scale?.range).toEqual(["#a1", "#a6", "#grey"]);
+    expect(seriesColours(["A", "B"], colours)).toEqual(["#a1", "#a2"]);
+  });
+
+  it("wears a lone series' tone on the mark, since it has no scale to carry it", () => {
+    const lone = chart({ series: [""], tones: { Returned: "adverse" }, points: [{ x: "Jeans", s: "", v: 5 }] });
+    const mark = (queryChartSpec(lone, setup, colours).layer as { mark: { color?: string } }[])[0].mark;
+    expect(mark.color).toBe("#a6");
+  });
+
+  it("runs sideways when asked, the category down the side", () => {
+    const on = first(queryChartSpec(chart(), { ...setup, across: true }, colours));
+    expect(on.y.field).toBe("x");
+    expect(on.x.field).toBe("v");
+    expect(first(queryChartSpec(chart(), setup, colours)).x.field).toBe("x");
+  });
+
+  it("says a share as a percent and money with its symbol, and never 50m for 0.05", () => {
+    const small = chart({ series: [""], tones: {}, points: [{ x: "Jeans", s: "", v: 0.05 }] });
+    expect(first(queryChartSpec(chart({ series: [""], tones: {}, points: [{ x: "Jeans", s: "", v: 0.05 }], format: "percent" }), setup, colours)).y.axis?.format).toBe(".0%");
+    expect(first(queryChartSpec(chart({ format: "money" }), setup, colours)).y.axis?.format).toBe("$.3~s");
+    expect(first(queryChartSpec(small, setup, colours)).y.axis?.format).toBe(".2~f");
+    expect(first(queryChartSpec(chart(), setup, colours)).y.axis?.format).toBe(".3~s");
+  });
+});
+

@@ -25,6 +25,8 @@ from typing import Any, Optional
 PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure",
           "ObjectChart", "ObjectBreakdown", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne",
           "ObjectSearch", "Drawer")
+#: The pieces of a dashboard made from a file (`sheets/dashboard_draft.py`): they read a table and a sheet, never the ontology.
+FILE_PIECES = ("QueryFilters", "ScenarioInputs", "AddRow")
 #: The pieces of a dashboard started from an object — each read checked as its own (`_from_object_read`).
 FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart", "ObjectBreakdown")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",

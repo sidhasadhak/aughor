@@ -33,6 +33,9 @@ export const KIND_WORDS: Record<ComponentName, string> = {
   ChooseOne: "choose one",
   ObjectSearch: "search",
   Question: "question",
+  QueryFilters: "filter column",
+  ScenarioInputs: "scenario",
+  AddRow: "add a row",
   Drawer: "drawer",
 };
 

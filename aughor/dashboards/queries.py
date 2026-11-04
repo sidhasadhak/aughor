@@ -17,7 +17,7 @@ import contextlib
 import re
 import threading
 import time
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -51,11 +51,29 @@ class Refused(ValueError):
     """A query card that cannot be kept or run as asked; ``str(exc)`` is the sentence to show."""
 
 
+#: What a series is, beyond its place in the palette: what went wrong is the palette's adverse red, what is not known yet
+#: its grey (CLARITY §4). Nothing else takes a colour by meaning.
+TONES = ("", "adverse", "open")
+#: How a figure's value beside it is written.
+BESIDE_FORMATS = ("percent", "money", "number")
+
+
 class Series(BaseModel):
     """One thing a chart sums — or, drawn as the statement returns, one column it draws."""
     model_config = ConfigDict(extra="forbid")
     column: str = ""
     agg: str = "sum"
+    tone: str = ""
+    #: What the series is called on the chart, when the statement's column does not say it for a reader.
+    label: str = ""
+
+
+class Beside(BaseModel):
+    """A second value a figure's statement returns, said small beside it: "26.2% of finished"."""
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    column: str
+    words: str = ""
+    format: str = "number"
 
 
 class Shown(BaseModel):
@@ -81,6 +99,12 @@ class Shown(BaseModel):
     descending: bool = True
     #: A figure's label.
     label: str = ""
+    #: Bars that run sideways, the category down the side: a ranking, or a list of shares.
+    across: bool = False
+    #: A second value of a figure's statement, said beside it. Only a figure drawn as its statement returns has one.
+    beside: Optional[Beside] = None
+    #: How a figure's value is written, when its statement says what it is: money, a percent, or a plain number (the default).
+    format: str = ""
 
     def said(self) -> dict:
         return self.model_dump(by_alias=True)
@@ -145,6 +169,20 @@ def check(shown: Shown, columns: list[dict]) -> list[str]:
 
     if shown.as_ not in SHOWN:
         return [f"A card is shown as a table, a figure, a bar, a line, an area or a scatter — not “{shown.as_}”."]
+    for s in shown.series:
+        if s.tone not in TONES:
+            out.append(f"“{s.tone}” is not a tone: adverse, open or none.")
+    if shown.across and shown.as_ != "bar":
+        out.append("Only bars run sideways.")
+    if shown.format and (shown.as_ == "table" or shown.format not in BESIDE_FORMATS):
+        out.append(f"“{shown.format}” is not how a value is written: percent, money or number, on a figure or a chart.")
+    if shown.beside is not None:
+        if shown.as_ != "figure" or shown.summed:
+            out.append("Only a figure drawn as its statement returns says a second value.")
+        elif shown.beside.format not in BESIDE_FORMATS:
+            out.append(f"“{shown.beside.format}” is not how a value beside a figure is written: percent, money or number.")
+        else:
+            column(shown.beside.column, "Beside the figure")
     if shown.as_ == "table":
         for c in shown.columns:
             column(c, "The table")
@@ -305,6 +343,50 @@ def bind(sql: str, values: dict) -> tuple[str, dict]:
     return PARAM.sub(_placed, sql), params
 
 
+# ── a reader's filters: the table a statement reads, narrowed ──────────────────────────────
+
+class Narrowing(BaseModel):
+    """One filter a reader has on: this column of this table holds one of these. ``grain`` "month" compares a date's month."""
+    model_config = ConfigDict(extra="forbid")
+    table: str
+    column: str
+    values: list[Union[str, int, float]] = Field(default_factory=list)
+    grain: str = ""
+
+
+def narrowed(sql: str, filters: list[Narrowing], dialect: str) -> tuple[str, dict]:
+    """The statement reading only the rows a reader's filters keep, and the values to bind: each table it reads is answered by
+    a CTE of the same name, so every card obeys a filter it never wrote. The statement itself is not rewritten, and each
+    value is bound, never pasted in. A filter on a table the statement does not read leaves it as it was."""
+    from sqlglot import exp
+
+    read = set(tables_of(sql, dialect))
+    conditions: dict[str, list[str]] = {}
+    params: dict = {}
+
+    def quote(name: str) -> str:
+        return exp.to_identifier(name, quoted=True).sql(dialect=dialect or None)
+
+    for i, f in enumerate(filters or []):
+        if f.table.lower() not in read or not f.values:
+            continue
+        if f.grain and (f.grain != "month" or dialect != "duckdb"):
+            raise Refused(f"A filter compares a date by its month, on a sheet: “{f.grain}” cannot be read here.")
+        if len(f.values) > MAX_LIST:
+            raise Refused(f"A filter holds at most {MAX_LIST} values.")
+        target = f"strftime({quote(f.column)}, '%Y-%m')" if f.grain else quote(f.column)
+        names = [f"flt_{i}_{j}" for j in range(len(f.values))]
+        params.update(dict(zip(names, f.values)))
+        conditions.setdefault(f.table, []).append(f"{target} IN ({', '.join(':' + n for n in names)})")
+    if not conditions:
+        return sql, {}
+    head = ", ".join(f"{quote(t)} AS (SELECT * FROM {quote(t)} WHERE {' AND '.join(cs)})" for t, cs in conditions.items())
+    inner = _inner(sql)
+    if re.match(r"\s*WITH\b", inner, re.I):
+        return re.sub(r"^\s*WITH\b", f"WITH {head},", inner, count=1, flags=re.I), params
+    return f"WITH {head} {inner}", params
+
+
 # ── the statement around a person's own ───────────────────────────────────────────────────────────────────────────────
 
 def _inner(sql: str) -> str:
@@ -409,6 +491,8 @@ def _order(v: Any) -> tuple:
 
 
 def series_name(s: Series) -> str:
+    if s.label:
+        return s.label
     return AGG_WORDS.get(s.agg, s.agg) + (f" of {s.column}" if s.column else "")
 
 
@@ -441,7 +525,10 @@ def shape(columns: list[dict], rows: list[list], shown: Shown) -> dict:
             v = _num(rows[0][at[s.column]]) if rows and s.column in at else None
             if len(rows) > 1:
                 said.append("The query returns more than one row; the figure is its first.")
-        return {"as": "figure", "value": v, "label": shown.label or series_name(s), "said": said}
+        beside = None
+        if shown.beside is not None and rows and shown.beside.column in at:
+            beside = {"value": _num(rows[0][at[shown.beside.column]]), "words": shown.beside.words, "format": shown.beside.format}
+        return {"as": "figure", "value": v, "label": shown.label or series_name(s), "said": said, "beside": beside, "format": shown.format}
     # a date or a time put in buckets is said by the day each bucket starts on
     xk = "date" if shown.summed and shown.bucket else kind_of(
         next((str(c.get("type") or "") for c in columns if c.get("name") == ("x" if shown.summed else shown.x)), ""))
@@ -518,7 +605,8 @@ def shape(columns: list[dict], rows: list[list], shown: Shown) -> dict:
             acc[p["s"]] = acc.get(p["s"], 0.0) + (p["v"] or 0.0)
             p["v"] = acc[p["s"]]
     return {"as": shown.as_, "x": {"name": shown.x, "kind": xk, "bucket": shown.bucket},
-            "series": order + (["Other"] if other else []), "points": points, "other": other, "said": said}
+            "series": order + (["Other"] if other else []), "points": points, "other": other, "said": said,
+            "tones": {series_name(s): s.tone for s in shown.series if s.tone}, "format": shown.format}
 
 
 # ── reading a statement, and where its tables come from ───────────────────────────────────────────────────────────────
@@ -539,6 +627,41 @@ def tables_of(sql: str, dialect: str) -> list[str]:
         found = re.search(rf"\b{re.escape(name)}\b", text)
         return found.start() if found else len(text)
     return sorted(names, key=lambda n: (first(n), n))       # in the order the statement names them
+
+
+#: Table functions that make their rows from their arguments and read nothing.
+_MADE_FROM_ARGUMENTS = frozenset({"generate_series", "range", "unnest"})
+
+
+def reads_beyond(sql: str, table: str, dialect: str) -> list[str]:
+    """Everything a statement reads besides ``table``, which it must read: another table, a name in another schema, a table
+    function. `tables_of` names tables, so a table function is invisible to it, and `FROM t, query_table('other')` reads as t
+    alone; here anything that is not plainly this table or the statement's own CTE is named. Empty means it reads this table
+    and nothing else."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(PARAM.sub("NULL", _inner(sql)), read=dialect or None)
+    except Exception:
+        return ["a statement that cannot be read"]
+    ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    beyond: list[str] = []
+    found = False
+    for read in tree.find_all(exp.Table):
+        source = read.this
+        if isinstance(source, exp.Func):
+            name = (source.name if isinstance(source, exp.Anonymous) else source.sql_name()).lower()
+            if name not in _MADE_FROM_ARGUMENTS:
+                beyond.append(f"{name}()")
+            continue
+        name = (read.name or "").lower()
+        if read.db or read.catalog or not name:
+            beyond.append(read.sql())
+        elif name == table.lower():
+            found = True
+        elif name not in ctes:
+            beyond.append(name)
+    return list(dict.fromkeys(beyond if found else [*beyond, "no table"]))
 
 
 def policy_refusal(graph: Any, tables: list[str]) -> Optional[str]:

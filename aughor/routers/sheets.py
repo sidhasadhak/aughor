@@ -12,7 +12,7 @@ Part of the platform (ROADMAP §3.65), each wave's routes always served:
   do first (`_sheet`) — read, change, or (its maker) reshare and remove — so a sheet shared with chosen people is
   refused to anyone else with a 403 that says it exists and who to ask.
 
-No route here calls a model but the chat's. Every write is recorded under the person the request acts for — never a
+No route here calls a model but the chat's and a dashboard's draft and exploring, each marked ⚑. Every write is recorded under the person the request acts for — never a
 name a client sends — and a refusal is an HTTP error carrying its sentence, never a 200 with nothing done.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/sheets", tags=["sheets"])
@@ -644,6 +644,81 @@ def dashboard_proposal(sheet_id: str, request: Request, view: str = "") -> dict:
     try:
         return dashboard.propose(sheet, chosen)
     except projection.FilterRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+class DashboardDraftRequest(BaseModel):
+    #: What the person says the dashboard should show.
+    words: str
+    #: What exploring the file noticed, when it was explored first.
+    noticed: list[str] = Field(default_factory=list)
+
+
+@router.post("/{sheet_id}/dashboard/draft")
+def dashboard_draft(sheet_id: str, req: DashboardDraftRequest, request: Request) -> dict:
+    """⚑ Spends model calls. A dashboard from this sheet and a sentence: one short model run with one tool. What comes back is
+    a proposal, each card already run on the sheet and defined in words read off its statement, or the reasons there is
+    none. Nothing is kept: the person ticks what they want and keeps it below."""
+    from aughor.sheets import dashboard_draft as drafts
+    return drafts.draft(_sheet(sheet_id, request, VIEW), req.words, noticed=req.noticed)
+
+
+class DashboardExploreRequest(BaseModel):
+    #: What the person has written so far, for the exploring to start from. Often nothing.
+    focus: str = ""
+    #: Go on to draft the cards from what it wrote, instead of handing the words back to be changed.
+    draw: bool = False
+
+
+@router.post("/{sheet_id}/dashboard/explore")
+def dashboard_explore(sheet_id: str, req: DashboardExploreRequest, request: Request) -> StreamingResponse:
+    """⚑ Spends model calls, and more than a draft does: a model runs its own queries on this sheet, reads what they return, and
+    writes what a dashboard of it should show. A stream, because this takes a minute or two and a person should see what it is
+    doing; leaving stops the spending at the next step. Nothing is kept."""
+    from aughor.sheets import dashboard_explore as explores
+    return StreamingResponse(explores.frames(_sheet(sheet_id, request, VIEW), focus=req.focus, draw=req.draw),
+                             media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class DashboardCardRequest(BaseModel):
+    #: The card as the person changed it: ``{key, title, sql, shown}``.
+    card: dict[str, Any]
+    scenario: Optional[dict[str, Any]] = None
+    #: The other card of the scenario this one belongs to, which it must still equal at the starting values.
+    twin: Optional[dict[str, Any]] = None
+
+
+@router.post("/{sheet_id}/dashboard/card")
+def dashboard_card(sheet_id: str, req: DashboardCardRequest, request: Request) -> dict:
+    """A drafted card a person changed, its title or its query, run on the sheet and held to the rules. No model is asked, and
+    nothing is kept."""
+    from aughor.sheets import dashboard_draft as drafts
+    return drafts.check_card(_sheet(sheet_id, request, VIEW), req.card, scenario=req.scenario, twin=req.twin)
+
+
+class DashboardKeepRequest(BaseModel):
+    title: str
+    #: What was ticked: each ``{key, title, sql, shown}``. Held to the rules and run again, whatever was offered.
+    cards: list[dict[str, Any]] = Field(default_factory=list)
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    scenario: Optional[dict[str, Any]] = None
+    add_row: bool = True
+
+
+@router.post("/{sheet_id}/dashboard/keep", status_code=201)
+def dashboard_keep(sheet_id: str, req: DashboardKeepRequest, request: Request) -> dict:
+    """Keep what a person ticked of a drafted dashboard, all of it or none, as a dashboard of theirs on the Sheets connection."""
+    from aughor.dashboards.home import Home, approver, new_id, person_of
+    from aughor.sheets import dashboard_draft as drafts
+    from aughor.sheets import model
+    sheet = _sheet(sheet_id, request, VIEW)
+    owner = person_of(request)
+    dashboard_id = new_id(req.title or sheet.name)
+    home = Home(model.SHEETS_CONNECTION, owner, dashboard_id)
+    try:
+        return drafts.keep(sheet, home, title=req.title, cards=req.cards, filters=req.filters, scenario=req.scenario,
+                           add_row=req.add_row, approved_by=approver(owner), dashboard_id=dashboard_id)
+    except drafts.Refused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
