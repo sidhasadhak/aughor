@@ -4523,7 +4523,10 @@ def mine_ontology_candidates(
                     col.table for col in tree.find_all(exp.Column) if col.table}
                 if not refs or any(r not in tables for r in refs):
                     return None
-                return f"SELECT {c.proposal} FROM {', '.join(sorted(refs))}"
+                # A normalised constant ($1) is a hole EXPLAIN cannot plan; NULL stands in it for the bind alone.
+                bindable = tree.transform(
+                    lambda n: exp.Null() if isinstance(n, (exp.Parameter, exp.Placeholder)) else n)
+                return f"SELECT {bindable.sql(dialect=getattr(db, 'dialect', 'duckdb'))} FROM {', '.join(sorted(refs))}"
             return None
 
         def _binder(c):

@@ -207,6 +207,13 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
             for proj in sel.expressions:
                 if isinstance(proj, exp.Alias) and _is_computation(proj.this):
                     expr = proj.this.copy()
+                    if not list(expr.find_all(exp.Column)):
+                        continue          # COUNT(*), a constant: a row count is not a business formula to propose
+                    # An aggregate's history normalises every constant to a numbered parameter ($62), so one formula
+                    # reads as six. Renumbered per formula ($1, $2 …) they are one key, and the text keeps the engine's
+                    # own notation for "a value went here".
+                    for i, param in enumerate(list(expr.find_all(exp.Parameter, exp.Placeholder)), start=1):
+                        param.replace(exp.Parameter(this=exp.Literal.number(i)))
                     tables: set = set()
                     unqualified = False
                     for col in expr.find_all(exp.Column):
@@ -219,7 +226,7 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                             unqualified = True
                     if unqualified or not list(expr.find_all(exp.Column)):
                         tables |= {single} if single else (all_tables if len(all_tables) <= 3 else set())
-                    key = (proj.alias, expr.sql())
+                    key = (proj.alias, expr.sql(dialect=dialect))
                     if key in seen_formulas:
                         continue
                     seen_formulas.add(key)
