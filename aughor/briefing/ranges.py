@@ -539,14 +539,18 @@ def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None) -> dic
     With ``spec``, the reason is the true one for a table still moving. "What it is compared
     with has settled" is false there: on theLook no age settles, and the slide of a table redrawn
     at each refresh reads as growth (measured 2026-11-04).
+
+    A cohort on such a table is not exempt: its as-of bounds the outcomes, not the rows it divides
+    them by. Every past week of theLook read as an edition reads it, the same day: sell-through flat
+    at 32-36% for ten weeks, then 66.4% in the very week the edition read, its unsold rows halved
+    near the refresh; and of 21 weeks of return rate outside their usual range on either side of one
+    refresh, 1 on both. Lux, read the same way, shows neither.
     """
     from aughor.semantic import metric_time as mt
 
     if status == "final":
         return {"equal": True, "why": ""}
     # A guide's check that writes its own aggregate is a dict (`guide.measurable`), an approved metric an object.
-    if mt._get(metric, "time_kind") == "cohort":
-        return {"equal": True, "why": ""}
     label = mt._get(metric, "label") or mt._get(metric, "name") or "this figure"
     if spec is not None and mt.reads_any(metric, spec.rewrites):
         return {"equal": False, "why": (
@@ -556,6 +560,8 @@ def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None) -> dic
         return {"equal": False, "why": (
             f"{label} reads a table this platform has not seen stop changing at any age it has read, so neither it nor "
             "what it is compared with has settled. Part of any difference may be that, not a move.")}
+    if mt._get(metric, "time_kind") == "cohort":
+        return {"equal": True, "why": ""}
     return {"equal": False, "why": (
         f"{label} is still {'to date' if status == 'to_date' else 'provisional'}, and what it is "
         "compared with has settled — part of any difference is the difference in age, not a move. "

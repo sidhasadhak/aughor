@@ -165,15 +165,28 @@ def return_rate(con, monkeypatch):
     monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [rate])
 
 
-def test_a_cohort_on_a_table_still_settling_stays_news(con, settling_week, return_rate):
-    """A cohort is read at each window's own age, so it IS at equal age, as theLook's sell-through is: the guard must
-    leave it floor. A cohort only arrives as an approved metric; a check's own aggregate has no outcome to read."""
-    spec = replace(settling_week, still_moving=("items",))
-    out = E.measure_edition("c1", spec, RETURNS, published=False, run_sql=_run(con), dialect="duckdb")
+def test_a_cohort_on_settled_tables_is_at_equal_age_and_stays_news(con, week, return_rate):
+    """A cohort is read at each window's own age, so it IS at equal age, as Lux's return rate is: still provisional
+    until its outcomes arrive, and still news. A cohort only arrives as an approved metric; a check's own aggregate has
+    no outcome to read."""
+    out = E.measure_edition("c1", week, RETURNS, published=False, run_sql=_run(con), dialect="duckdb")
     (fig,) = out["figures"]
     assert fig["time_kind"] == "cohort" and fig["status"] == "provisional" and fig["equal_age"]["equal"] is True
     assert fig["outside"] and fig["floor"] and out["floor"] == ["returns"] and fig["z"] > 2
     assert not [n for n in out["not_read"] if "usual range" in n["label"]]
+
+
+@pytest.mark.parametrize("rewrites,words", [((), "not seen stop changing"), (("items",), "rewrites its whole history")])
+def test_a_cohort_on_a_table_still_moving_is_not_read_against_usual(con, settling_week, return_rate, rewrites, words):
+    """Its as-of bounds the outcomes, not the rows it divides them by. theLook, measured 2026-11-04: sell-through flat at
+    32-36% for ten weeks, then 66.4% in the very week the edition read, floor on every range."""
+    spec = replace(settling_week, still_moving=("items",), rewrites=rewrites)
+    out = E.measure_edition("c1", spec, RETURNS, published=False, run_sql=_run(con), dialect="duckdb")
+    (fig,) = out["figures"]
+    assert fig["time_kind"] == "cohort" and fig["equal_age"]["equal"] is False and words in fig["equal_age"]["why"]
+    assert fig["z"] is None and not fig["outside"] and not fig["floor"] and out["floor"] == []
+    assert fig["current"] > fig["usual"]["high"]                                # the rows did fire: shown, and not called news
+    assert [n["label"] for n in out["not_read"] if "usual range" in n["label"]] == ["Return rate against its usual range"]
 
 
 def test_a_cohort_still_under_way_is_outside_but_not_on_every_readers_page(con, settling_week, return_rate):
