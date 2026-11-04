@@ -1155,6 +1155,22 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       candidates — every join in the history is in the graph**, and the history is Aughor's own SQL so far: the
       falsifier (no join the map lacked, on two connections) is not decided until the ETL's nightly statements are in.
       Not yet right: a formula's parameters renumber in walk order (`$2` before `$1` in the text) — cosmetic.
+    - [x] NV-5 a feature's prerequisite on the engine, said and provisioned (the user, 2026-11-04: *"make sure that
+      similar features like pg_stat_statements are enabled by default in our platform"*): what each engine needs before
+      its history can be read is declared in the admin's words (`db/query_history.PREREQUISITES`); `check_query_history`
+      gives one of three verdicts — ready, not readable yet with the step and whether the platform can take it, not
+      applicable; Postgres reports where `pg_stat_statements` stands (available · preloaded · created) and
+      `enable_query_history` runs CREATE EXTENSION once preloaded — the one DDL the platform writes to a warehouse, in
+      its own READ WRITE transaction under a read-only session, gated by `read_query_history`, journaled as
+      `connection.prerequisite_enabled` (a governance change). Said where a person looks: the Test button, the
+      declared-metadata read, the candidate door's refusal, a `prerequisites` birth step that also provisions.
+      Doors `GET /connections/{id}/prerequisites`, `POST …/prerequisites/enable`. *Live, 2026-11-04 08:00–08:10 UTC:*
+      Lux "ready — 65+ runs"; theLook "not readable yet … needs the connection's service account granted
+      `bigquery.jobs.list` …"; Superstore "duckdb keeps no query history". Provisioning proven by dropping the
+      extension on Lux and letting the platform re-create it through the door — which took two live defects to get
+      there: `SHOW` is a command the read door refuses (now `current_setting()`), and CREATE EXTENSION is refused in a
+      read-only transaction (now one explicit READ WRITE transaction). The server setting and its restart stay the
+      admin's; the platform says so.
     - [ ] NV-4 a bound candidate staged into the resolve-once inbox, accept = the link declared through the link door's
       own body (with the frequency as its evidence), reject kept.
     - [ ] The trust checks read `format`: a text date column compared to a literal says "compare as a date, not as text".

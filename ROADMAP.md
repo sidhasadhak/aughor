@@ -12961,6 +12961,18 @@ three are this arc, in the study's own order of value over cost, each through th
   binding (PENDING item 74). Three live runs found what no fixture had: the unqualified read of a view in `public`,
   formulas kept without their tables, the Briefing's own `_n`/`_first` offered back, one formula six times over as
   `$2 … $57`.
+- **NV-5 · a feature's prerequisite on the engine, said and provisioned** (the user, the same day, after
+  `pg_stat_statements` had to be switched on by hand for the Lux receipt: *"make sure that similar features … are
+  enabled by default in our platform"*). What each engine needs before its history can be read is declared in the
+  admin's words; a connection is probed once and answers ready, not readable yet (with the step, and whether the
+  platform can take it), or not applicable; Postgres says where `pg_stat_statements` stands and the platform creates
+  it once the library is preloaded — the one DDL it writes to a warehouse, in its own READ WRITE transaction under
+  the read-only session, gated by the organisation's setting and journaled as a governance change; the server setting
+  and its restart remain the admin's, said as such. The verdict is where a person looks: the Test button, the
+  declared-metadata read, the door's refusal, and a `prerequisites` step of the birth rite that provisions too.
+  **Receipt, live:** Lux ready, theLook refused with the grant in words, Superstore keeping none; the extension
+  dropped on Lux and re-created by the platform through its door — after two live defects the fakes had admitted
+  (`SHOW` refused by the read door; DDL refused in a read-only transaction).
 - **Not built, named:** NV-4, a bound candidate staged into the resolve-once inbox with an accept that declares the
   link through `POST /ontology/links`' own body — today the door returns the report and a person declares by hand;
   the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
