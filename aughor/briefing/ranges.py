@@ -634,6 +634,43 @@ def areas_of(conn_id: str, metrics: list, schema: Optional[str] = None) -> dict[
         return {}
 
 
+def directions_of(conn_id: str, metrics: list, schema: Optional[str] = None) -> dict[str, str]:
+    """name → which way is good for each metric, ``up`` or ``down``, where anyone has said: the dataset's guide, which a
+    person publishes, then the industry's knowledge base. A metric nobody has said this of is not in it, and carries no
+    colour: good or bad would be a judgement the data does not hold."""
+    out: dict[str, str] = {}
+    if not metrics:
+        return out
+    try:
+        from aughor.semantic.metric_map import holding_pattern, map_for, match_pattern
+        patterns = map_for(conn_id, schema).patterns()
+        by_id = {p.id: p for p in patterns}
+        for m in metrics:
+            name, label = str(m.name or ""), str(m.label or "")
+            cited = next((by_id.get(str(line).rsplit("·", 1)[-1].strip()) for line in (m.lineage or [])
+                          if str(line).startswith("coverage:")), None)
+            pattern = cited or match_pattern(name, label, patterns) or holding_pattern(name, label, patterns)
+            if pattern is not None and pattern.direction in ("up", "down"):
+                out[m.name] = pattern.direction
+    except Exception as exc:  # noqa: BLE001 — no direction is no colour, never a wrong one
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the industry's directions could not be read", counter="briefing.directions")
+    try:
+        from aughor.briefing import guide as G
+        guide, _rev = G.current(conn_id, schema)
+        for check in (guide.checks if guide else []):
+            if check.metric and check.better in ("up", "down"):
+                out[check.metric] = check.better
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the guide's directions could not be read", counter="briefing.directions")
+    return out
+
+
+def _area_said(area: dict) -> dict:
+    return {"id": area["id"], "name": area["name"], "order": area.get("order", 10 ** 6)}
+
+
 def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
     """The connection's approved metrics in reading order (§6 item 43(d)): sales first, profit
     last, the industry's own order within. Ordered BEFORE any cap, so a connection past it keeps
@@ -861,6 +898,7 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     approved, over_cap = governed[:cap], governed[cap:]
     line_of = statement_lines(conn_id)
     area_of = areas_of(conn_id, approved, schema)
+    better_of = directions_of(conn_id, approved, schema)
     windows = spec.windows()
     measured: list[dict] = []
     unmeasured: list[dict] = []
@@ -883,7 +921,9 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             continue
         row = _figure_row(m, name, spec, got, dialect=dialect, line_of=line_of)
         if m.name in area_of:
-            row["area"] = {"id": area_of[m.name]["id"], "name": area_of[m.name]["name"]}
+            row["area"] = _area_said(area_of[m.name])
+        if m.name in better_of:
+            row["better"] = better_of[m.name]
         measured.append(row)
     # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
     # definitions against a cap of eight, and the two it dropped fell through to the north-star
@@ -900,13 +940,20 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     seen = {_norm(m.name) for m in governed} | {_norm(m.label) for m in governed}
     # A north star whose definition was deprecated — theLook's Item Return Rate, a second name for
     # Return rate (2026-10-08) — is not missing one: "approve one" would ask for the duplicate back.
-    retired = {_norm(x) for m in _deprecated(conn_id, schema) for x in (m.name, m.label)}
+    deprecated = _deprecated(conn_id, schema)
+    retired = {_norm(x): m for m in deprecated for x in (m.name, m.label)}
     for ns in north_stars or []:
         ns_name = ns.get("name") if isinstance(ns, dict) else getattr(ns, "name", "")
         if ns_name and _norm(ns_name) not in seen:
             unmeasured.append({"name": ns_name, "reason": (
                 "its definition was deprecated, so it is not measured under this name" if _norm(ns_name) in retired
                 else "no approved definition; approve one in the Semantic Layer to measure it")})
+    # what was not measured still reads in its area: said where a person would look for it
+    placed = {**area_of, **areas_of(conn_id, [*over_cap, *deprecated], schema)}
+    for row in unmeasured:
+        known = placed.get(row.get("metric") or "") or placed.get(getattr(retired.get(_norm(row["name"])), "name", ""))
+        if known:
+            row["area"] = _area_said(known)
     return {"measured": measured, "unmeasured": unmeasured}
 
 
@@ -1229,7 +1276,34 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     # table still moving is not at equal age either (`equal_age`), and "so these comparisons are fair" sat
     # above "Not at equal age" on theLook's two.
     return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort" and not unsettled,
-            "lag_days": spec.lag_days, "never_settled": _spec_answer(spec).about(m).says() if unsettled else ""}
+            "lag_days": spec.lag_days, "never_settled": _spec_answer(spec).about(m).says() if unsettled else "",
+            "usual": _usual_of(conn_id, schema, spec, values)}
+
+
+def _usual_of(conn_id: str, schema: Optional[str], spec: RangeSpec, values: list) -> Optional[dict]:
+    """A metric's usual range for this range, by the Briefing's own definition (`briefing.edition`, the guide's settings
+    where a dataset has a guide): the mean and spread of the ranges before it, and which side of that range it stands
+    on. None with too few earlier readings to say."""
+    import statistics
+
+    from aughor.briefing import edition as E
+    from aughor.briefing import guide as G
+
+    try:
+        guide, _rev = G.current(conn_id, schema)
+    except Exception as exc:  # noqa: BLE001 — a guide that cannot be read leaves the default settings standing
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the guide could not be read; the usual range keeps its default settings", counter="briefing.range.usual")
+        guide = None
+    news = guide.news if guide else G.NewsRule()
+    now = values[-1] if values else None
+    earlier = [v for v in values[:-1][-news.usual_for(E._period(spec)):] if v is not None]
+    if now is None or len(earlier) < E.MIN_USUAL:
+        return None
+    mean, sd = statistics.fmean(earlier), statistics.stdev(earlier)
+    z = (now - mean) / sd if sd > 0 else 0.0
+    return {"mean": mean, "low": mean - sd, "high": mean + sd, "n": len(earlier), "z": z,
+            "outside": "" if abs(z) < news.outside_sd or sd == 0 else "above" if z > 0 else "below"}
 
 
 def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domain_data: dict,

@@ -7834,8 +7834,10 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Arc MC — the area of the map it reads on; the Briefing reads by area. */
-  area?: { id: string; name: string } | null;
+  /** Arc MC — the area of the map it reads on: the industry's domain. The Briefing and the Metrics dashboard read by it. */
+  area?: { id: string; name: string; order?: number } | null;
+  /** Which way is good, where the guide or the industry's knowledge base says. Absent, nobody has said. */
+  better?: "up" | "down";
   /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
    *  the range; `ownFigures` reads it as not measured, as the server now says it. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
@@ -7848,6 +7850,8 @@ export interface BriefingRangeUnmeasured {
   reason: string;
   metric?: string;
   data_ends?: string;
+  /** The domain it reads in, when it was measured. */
+  area?: { id: string; name: string; order?: number } | null;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
@@ -8462,6 +8466,8 @@ export interface MetricTrend {
   /** What is true of a table this metric reads that has never been seen to settle; "" when there is none. */
   never_settled?: string;
   lag_days?: number;
+  /** Its usual range, by the Briefing's definition, and which side of it the range stands on. Null with too few readings. */
+  usual?: { mean: number; low: number; high: number; n: number; z: number; outside: "above" | "below" | "" } | null;
   period: BriefingRangeBlock;
 }
 
@@ -8532,6 +8538,11 @@ export interface ExpectedBand {
   scored_against: "inside" | "above" | "below" | "cannot_tell" | null;
   must_say: string[];
   n: number;
+  /** How often this band's own method held on the metric's earlier ranges, of how many it could be tried on. */
+  held: number;
+  cases: number;
+  /** How often it says it will hold, as a share. */
+  coverage: number | null;
 }
 
 /** `target` is null — with `why` — for a range that has no next one to predict (a range to date).

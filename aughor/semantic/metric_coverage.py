@@ -12,9 +12,12 @@ ones a person declined.
 - the METRICS that read it — a table a metric reads is placed in that metric's area, so a table with a metric is never
   left in no area (MC-2's falsifier).
 
-A metric is placed by its lineage (a proposal adopted from an area keeps it), then by the pattern it IS (its name or
-label word for word a pattern's title or intent tag), then by its own words, then by the tables it reads, and last in
-the generic layer's area — said, never guessed.
+A metric is placed by the industry's knowledge first: the pattern it was adopted from (a proposal keeps its pattern's
+area), the pattern it IS (its name or label word for word a pattern's title or intent tag), or the pattern its name holds
+whole. Then by the area a proposal with no pattern was written for, then by its own words, then by the tables it reads,
+and last in the generic layer's area — said, never guessed. So one proposal's area never overrules the industry's metrics:
+"Gross Margin on Items", written while Orders & sales was being read, is Gross Margin, and reads with it (the user, 2026-11-04:
+"We already have industry metrics.. let it be based on that").
 
 **Covered** means an approved metric that MOVES: its figures read over its last six months, the MC-0 gate's verdict, so
 an area is never said covered by a metric that reads 1 in every month (the falsifier). An approved metric whose figures
@@ -28,7 +31,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from aughor.semantic.metric_map import OTHER, Area, MetricMap, best_areas, match_pattern
+from aughor.semantic.metric_map import OTHER, Area, MetricMap, best_areas, holding_pattern, match_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -169,16 +172,24 @@ def place_metric(m: Any, mmap: MetricMap, table_areas: dict[str, list[Placement]
     """The one area a metric reads on, and why."""
     from aughor.semantic.metric_time import tables_read
 
+    proposed_in = ""
     for line in (getattr(m, "lineage", None) or []):
         text = str(line)
         if text.startswith("coverage:"):
             area = text.split(":", 1)[1].strip().split(" ")[0]
             if mmap.area(area):
-                return Placement(area, "it was adopted from this area's proposals")
+                if text.rsplit("·", 1)[-1].strip() != "area":      # it cites a pattern: the industry's own word
+                    return Placement(area, "it was adopted from this area's proposals")
+                proposed_in = area
     name, label = str(getattr(m, "name", "") or ""), str(getattr(m, "label", "") or "")
     pattern = match_pattern(name, label, mmap.patterns())
     if pattern is not None:
         return Placement(pattern.area, f"it is the knowledge base's {pattern.title}")
+    pattern = holding_pattern(name, label, mmap.patterns())
+    if pattern is not None:
+        return Placement(pattern.area, f"its name holds the knowledge base's {pattern.title}")
+    if proposed_in:
+        return Placement(proposed_in, "it was adopted from this area's proposals")
     named = [a for a in mmap.areas if not a.generic]
     hits = best_areas(f"{name} {label}", named)
     if hits:

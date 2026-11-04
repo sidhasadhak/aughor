@@ -801,6 +801,11 @@ def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
             audit = {"metric": new_name, "connection": req.connection, "schema_name": target_ds,
                      "action": "edit_reproposed", "from": "approved", "to": "proposed",
                      "version": existing.version}
+        elif existing.status == "approved" and any(getattr(existing, f, None) and data.get(f) != getattr(existing, f)
+                                                   for f in ("time_kind", "time_column", "outcome_column")):
+            # It stays approved, and its figure now reads differently: work done before this has to be able to say so.
+            audit = {"metric": new_name, "connection": req.connection, "schema_name": target_ds,
+                     "action": "edit_dates_changed", "version": existing.version}
     from aughor.semantic.metric_time import with_dates
     m = with_dates(req.connection, MetricDefinition(**data))
     if moved:

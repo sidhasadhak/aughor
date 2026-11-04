@@ -32,11 +32,16 @@ export interface MetricOpened {
 }
 type OpenMetric = (what: MetricOpened) => void;
 
-const Opener = createContext<{ open: OpenMetric; close: () => void; shown: MetricOpened | null } | null>(null);
+const Opener = createContext<{ open: OpenMetric; close: () => void; shown: MetricOpened | null; ask?: (question: string) => void } | null>(null);
 
 /** The function that opens a metric beside the page, or null where no page offers the drawer. */
 export function useOpenMetric(): OpenMetric | null {
   return useContext(Opener)?.open ?? null;
+}
+
+/** Hands a question to the Agent, where the page offers that. */
+export function useAskWhy(): ((question: string) => void) | null {
+  return useContext(Opener)?.ask ?? null;
 }
 
 /**
@@ -102,7 +107,7 @@ export function MetricDetailHost({ connectionId, schema, workspaceId, pageKey, t
   const openMetric = useCallback<OpenMetric>(what => setOpen({ what, on: pageKey }), [pageKey]);
   const close = useCallback(() => setOpen(null), []);
   useEscape(!!shown, close);
-  const offered = useMemo(() => ({ open: openMetric, close, shown }), [openMetric, close, shown]);
+  const offered = useMemo(() => ({ open: openMetric, close, shown, ask: onAskWhy }), [openMetric, close, shown, onAskWhy]);
   return (
     <Opener.Provider value={offered}>
       <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>

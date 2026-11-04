@@ -6,7 +6,10 @@ import type { BriefingRangeBlock } from "@/lib/api";
 
 import { MetricsDashboard } from "./MetricsDashboard";
 
-const api = vi.hoisted(() => ({ measureRange: vi.fn(), readExpectedNext: vi.fn() }));
+const api = vi.hoisted(() => ({
+  measureRange: vi.fn(), readExpectedNext: vi.fn(), readMetricTrend: vi.fn(async () => ({ series: [], why: "" })),
+  readBriefingEdition: vi.fn(async () => ({ built: false })), getMetricCoverage: vi.fn(async () => ({ areas: [] })),
+}));
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 
 const block = (key: string, covers: string, value: string): BriefingRangeBlock => ({
@@ -23,8 +26,8 @@ describe("the metrics dashboard while a new period is read", () => {
     api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
     api.measureRange.mockResolvedValueOnce({ period: block("k1", "September 2026", "$300"), from_briefing: false, measured_at: "2026-10-08T10:00:00Z", scope_key: "c" });
     const view = render(<MetricsDashboard connectionId="c" value={{ preset: "previous_month" }} onChange={() => {}} />);
-    // the figure on its card (the full table, behind Details, holds it too)
-    expect(await within(await screen.findByTestId("dashboard-figures")).findByText("$300")).toBeTruthy();
+    // the figure in its row
+    expect(await within(await screen.findByTestId("metrics-ledger")).findByText("$300")).toBeTruthy();
     expect(screen.getByTestId("dashboard-range").textContent).toBe("September 2026 · final");
 
     let arrive: (v: unknown) => void = () => {};
@@ -36,7 +39,7 @@ describe("the metrics dashboard while a new period is read", () => {
 
     arrive({ period: { ...block("k2", "the week of 2026-10-05 so far, 2026-10-05 to 2026-10-07", "$90"), under_way: true },
       from_briefing: false, measured_at: "2026-10-08T10:01:00Z", scope_key: "c" });
-    expect(await within(await screen.findByTestId("dashboard-figures")).findByText("$90")).toBeTruthy();
+    expect(await within(await screen.findByTestId("metrics-ledger")).findByText("$90")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Loading the metrics for Current week…")).toBeNull());
     expect(screen.getByTestId("dashboard-range").textContent).toBe("the week of 2026-10-05 so far, 2026-10-05 to 2026-10-07 · to date");
     expect(screen.getByTestId("metrics-body").getAttribute("aria-busy")).toBeNull();
@@ -73,7 +76,7 @@ describe("the metrics dashboard when the data cannot be reached (LuxExperience, 
     api.measureRange.mockResolvedValueOnce({ period: block("k3", "September 2026", "$300"), from_briefing: false,
                                              measured_at: "2026-10-23T05:00:00Z", scope_key: "c" });
     within(said).getByRole("button", { name: "Try again" }).click();
-    expect(await within(await screen.findByTestId("dashboard-figures")).findByText("$300")).toBeTruthy();
+    expect(await within(await screen.findByTestId("metrics-ledger")).findByText("$300")).toBeTruthy();
     expect(screen.queryByTestId("metrics-unreachable")).toBeNull();
   });
 });

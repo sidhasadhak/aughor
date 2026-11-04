@@ -1117,3 +1117,15 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     Still open: a new value in an edited card is written as a plain number, with no way to say money or percent short of keeping the column's name.
     No token count for the proof: a scratch API's usage reads 0, so live's Spend will be the first to show one.
 
+74. [~] **The Metrics dashboard as a ledger** (the user, 2026-11-04, with another data expert's prototype: *"Lets move our Metrics
+    Dashboards in this manner"*, then *"I like it"* with All split by area and a Key movements tab) — BUILT on
+    `claude/metric-domains-from-exploration`, proven on a copy of the state and then live, not yet in a PR, ROADMAP §3.62.
+    LIVE 2026-11-04, with LuxExperience's Net revenue and Gross profit per order moved to the same age on the user's word: October's Net revenue
+    read +22% and is −2.1%; Gross profit per order read +42% and is +15%. Their Expected Nov bands stay on the old basis until the next period is booked.
+    October's edition was rewritten on the user's word (5 model steps, 1 query, and it started a deep analysis of its own, `bc903cbe`).
+    An edition now knows when a deep analysis finished before a metric it names changed: the model is told, and code says so on the page and on the
+    row whatever the model wrote (`known_analyses`, `as_it_stands`). October's kept edition carries that note, but its lead was written before the fix
+    and still says part of the improvement is returns not yet arrived, until it is written again.
+    Still open: the Briefing's own `outside` calls a figure not at equal age news (`briefing/edition.py`), as the ledger did until it stopped.
+    Still open: no way to move a metric between areas by hand. On theLook, Daily Active Users reads under Clienteling & events because of the
+    table `events`, and Units Sold under Inventory & merchandising.

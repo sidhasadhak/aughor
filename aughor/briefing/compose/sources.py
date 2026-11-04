@@ -318,9 +318,62 @@ def _analysis_source(source_id: str, run: dict, report: dict) -> Source:
                          "closing": _short(report.get("closing_summary"), 400),
                          "confidence": str(report.get("confidence") or ""),
                          "licence": str(causal.get("licence") or ""),
-                         "recommendations": recs[:3], "gaps": _short(report.get("gaps"), 300), "completed": done},
+                         "recommendations": recs[:3], "gaps": _short(report.get("gaps"), 300), "completed": done,
+                         "completed_at": str(run.get("completed_at") or "")},
                   status="final" if run.get("status") == "complete" else str(run.get("status") or ""),
                   note="a deep analysis the platform ran: its verdict, its confidence and what it can and cannot say")
+
+
+def definitions_changed(conn_id: str) -> list[dict]:
+    """Each of the connection's metrics whose figure reads differently since its definition last changed, ``{"metric",
+    "label", "at"}``, from the governance trail, the record of who changed what and when. A trail that cannot be read
+    marks nothing, and is counted."""
+    from aughor.kernel.errors import tolerate
+    from aughor.kernel.ledger import Ledger
+    from aughor.semantic.governance import DEFINITION_CHANGES
+    from aughor.semantic.metrics import list_metrics
+    try:
+        latest: dict[str, str] = {}
+        for event in Ledger.default().events(kind="metric.governance", limit=1000):
+            p = event.get("payload") or {}
+            if p.get("action") in DEFINITION_CHANGES and p.get("connection") == conn_id and p.get("metric") and p.get("at"):
+                latest[p["metric"]] = max(latest.get(p["metric"], ""), str(p["at"]))
+        if not latest:
+            return []
+        labels = {m.name: m.label or m.name for m in list_metrics(connection_id=conn_id)}
+        return [{"metric": name, "label": labels.get(name, name), "at": at} for name, at in latest.items()]
+    except Exception as exc:  # noqa: BLE001 — the analysis still reads; it only cannot say what changed since
+        tolerate(exc, "the metrics' governance trail could not be read; no deep analysis is marked as measured before a "
+                      "change", counter="known.definitions_changed")
+        return []
+
+
+def _words(text: object) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", str(text).lower()).split())
+
+
+def _named_as(metric: dict) -> list[str]:
+    """How prose names a metric: its label without its parenthesis, that without its first word when three or more
+    remain ("profit per order"), an acronym it carries, its name in words."""
+    label = str(metric.get("label") or "")
+    base = _words(re.sub(r"\([^)]*\)", " ", label))
+    words = base.split()
+    acronym = re.search(r"\(([A-Za-z]{2,6})\)", label)
+    return [n for n in (base, " ".join(words[1:]) if len(words) >= 4 else "", _words(acronym.group(1)) if acronym else "",
+                        _words(metric.get("metric") or "")) if n]
+
+
+def marked_measured_before(src: Source, changes: list[dict]) -> Source:
+    """A deep analysis with ``definitions_changed``: the metrics it names whose definitions changed after it finished,
+    so what it says of them is about the old figures. Its numbers stay as it found them; this only says what they read.
+    A change on the day it finished, where only that day is known, is not claimed."""
+    done = str(src.facts.get("completed_at") or src.facts.get("completed") or "")
+    if src.kind != "analysis" or not done or not changes:
+        return src
+    said = f' {_words(" ".join(str(src.facts.get(k) or "") for k in ("question", "headline", "summary")))} '
+    before = [{"metric": c["metric"], "label": c["label"], "on": str(c["at"])[:10]} for c in changes
+              if str(c["at"])[:len(done)] > done and any(f" {n} " in said for n in _named_as(c))]
+    return src.model_copy(update={"facts": {**src.facts, "definitions_changed": before}}) if before else src
 
 
 def known_analyses(conn_id: str, *, limit: int = 6, list_runs=None, get_run=None) -> list[Source]:
@@ -344,7 +397,8 @@ def known_analyses(conn_id: str, *, limit: int = 6, list_runs=None, get_run=None
         out.append(_analysis_source(f"analysis_{run['id']}", run, full.get("report") or {}))
         if len(out) >= limit:
             break
-    return out
+    changes = definitions_changed(conn_id)
+    return [marked_measured_before(a, changes) for a in out]
 
 
 def known_decisions(conn_id: str, spec, *, limit: int = 6, list_fn=None) -> list[Source]:
@@ -485,8 +539,11 @@ def known_context(conn_id: str, schema: Optional[str] = None, *, today: Optional
 
     for a in read("deep analyses", lambda: known_analyses(conn_id, limit=limit)):
         f = a.facts
+        changed = ", ".join(c["label"] for c in f.get("definitions_changed") or [])
         lines.append(f"- Deep analysis ({f.get('completed')}, {str(f.get('confidence') or '?').lower()} confidence, "
-                     f"claims licensed {f.get('licence') or 'descriptive'}): \"{f.get('question')}\" — {f.get('headline')}")
+                     f"claims licensed {f.get('licence') or 'descriptive'}): \"{f.get('question')}\" — {f.get('headline')}"
+                     + (f" (finished before the definition of {changed} changed: what it says of that is about the old figures, "
+                        "not today's)" if changed else ""))
     for d in read("decisions", lambda: known_decisions(conn_id, window, limit=limit)):
         f = d.facts
         lines.append(f"- Decision (decided {f.get('decided')}, {f.get('state')}): {f.get('question')} — chosen: {f.get('chosen')}")
