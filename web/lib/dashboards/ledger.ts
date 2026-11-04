@@ -8,7 +8,7 @@ import type {
   BriefingEdition, BriefingRange, BriefingRangeBlock, BriefingRangeMeasure, EditionBlock, EditionSource, ExpectedBand, ExpectedNext,
   MetricTrend, RangePreset,
 } from "@/lib/api";
-import { SYMBOL, parseCited, rangeWord } from "@/lib/briefingEdition";
+import { SYMBOL, measuredBeforeWords, parseCited, rangeWord } from "@/lib/briefingEdition";
 import { endsWords, periodShort, sentence } from "@/lib/dashboards/figures";
 
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -257,6 +257,8 @@ export interface Work {
   kind: string;
   when: string;
   text: string;
+  /** What the platform says of it, whatever the words around it say. */
+  note?: string;
   /** How to open it. */
   run?: string;
   decision?: string;
@@ -287,7 +289,7 @@ function workOf(block: EditionBlock, src: EditionSource): Work | null {
   if (src.kind === "analysis") {
     const confidence = facts(src, "confidence").toLowerCase();
     return { kind: "Deep analysis", when: [facts(src, "completed"), confidence && `${confidence} confidence`].filter(Boolean).join(" · "),
-             text, run: facts(src, "inv_id") || undefined };
+             text, run: facts(src, "inv_id") || undefined, ...(measuredBeforeWords(src) ? { note: measuredBeforeWords(src) } : {}) };
   }
   if (src.kind === "decision") return { kind: "Decision", when: facts(src, "state"), text, decision: facts(src, "decision_id") || undefined };
   if (src.kind === "finding") return { kind: "Explorer finding", when: facts(src, "area"), text };

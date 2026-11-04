@@ -310,6 +310,16 @@ describe("BriefingEdition", () => {
              { id: "k4", type: "context", source: "discussion_1" }],
     known: { analyses: 3, findings: 4, decisions: 2, discussions: 1, started: "analysis_started" } };
 
+  it("says of a deep analysis that it finished before a metric it names changed, whatever the model wrote", async () => {
+    const stale = { ...KNOWN.analysis_a1, facts: { ...KNOWN.analysis_a1.facts,
+      definitions_changed: [{ metric: "net_revenue_eur", label: "Net Revenue (EUR, after refunds)", on: "2026-11-04" }] } };
+    api.readBriefingEdition.mockResolvedValue({ ...WITH_KNOWN, sources: { ...WITH_KNOWN.sources, analysis_a1: stale } });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    expect(await screen.findByTestId("edition-measured-before")).toHaveTextContent(
+      "Finished before the definition of Net Revenue changed on 4 Nov 2026, so what it says of it is about the old figures.");
+    expect(screen.getAllByTestId("edition-measured-before")).toHaveLength(1);    // the one it is true of
+  });
+
   it("draws what the platform already knew — a deep analysis, one being looked into, a decision — each to open", async () => {
     api.readBriefingEdition.mockResolvedValue(WITH_KNOWN);
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);

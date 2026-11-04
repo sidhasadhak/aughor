@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BriefingEdition, BriefingRangeBlock, BriefingRangeMeasure, ExpectedBand, MetricTrend } from "@/lib/api";
+import { measuredBeforeWords } from "@/lib/briefingEdition";
 import {
   bandBasisWords, bandDoubt, bandWords, briefingRangeOf, changeWords, areasOf, editionFor, expectedWords, figureWords, keyMove, namesOfMetric,
   rankWords, readoutOf, shortOf, targetWords, toneOfMove, twinsOf, unitOf, workFor,
@@ -291,6 +292,33 @@ describe("a range in a person's words", () => {
 
   it("names the range a band is for as the columns do", () => {
     expect(targetWords({ start: "2026-11-01", last_day: "2026-11-30", label: "2026-11-01 to 2026-11-30", settles_on: "" }, "month")).toBe("Nov 2026");
+  });
+});
+
+describe("work done before a definition changed", () => {
+  const analysis = (changed: unknown) => ({ id: "a", kind: "analysis", facts: { inv_id: "b52", completed: "2026-11-03", definitions_changed: changed } });
+  const edition = (changed: unknown) => ({
+    built: true, scope_key: "c", period: { measured: [] }, sources: { a: analysis(changed) },
+    blocks: [{ id: "x", type: "context", source: "a", text: "Unarrived returns explain the rise in net revenue." }],
+  }) as unknown as BriefingEdition;
+  const net = { metric: "net_revenue_eur", label: "Net Revenue (EUR, after refunds)", on: "2026-11-04" };
+
+  it("says so on the metric's row, whatever the words around it say", () => {
+    expect(workFor(m({ metric: "net", name: "Net Revenue" }), edition([net]))[0].note)
+      .toBe("Finished before the definition of Net Revenue changed on 4 Nov 2026, so what it says of it is about the old figures.");
+  });
+
+  it("names every metric, and the last day when they changed on different ones", () => {
+    const gp = { metric: "gp", label: "Gross Profit per Order (excl. returned items)", on: "2026-10-30" };
+    expect(measuredBeforeWords(analysis([net, gp]) as never))
+      .toBe("Finished before the definition of Net Revenue and Gross Profit per Order changed, last on 4 Nov 2026, so what it says of them is about the old figures.");
+  });
+
+  it("says nothing of work that was not, or of another kind of source", () => {
+    expect(workFor(m({ metric: "net", name: "Net Revenue" }), edition([]))[0].note).toBeUndefined();
+    expect(measuredBeforeWords(analysis(undefined) as never)).toBe("");
+    expect(measuredBeforeWords({ kind: "finding", facts: { definitions_changed: [net] } } as never)).toBe("");
+    expect(measuredBeforeWords(undefined)).toBe("");
   });
 });
 

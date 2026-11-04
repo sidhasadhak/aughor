@@ -2203,7 +2203,7 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
                 **({"canvas": canvas} if canvas else {})}
     moved = {"lag_now": block.get("lag_days")} if kept.get("lag_days") != block.get("lag_days") else {}
     from aughor.briefing.compose.write import as_it_stands
-    return {**as_it_stands(entry), "built": True, "scope_key": scope_key, **moved,
+    return {**as_it_stands(entry, conn_id), "built": True, "scope_key": scope_key, **moved,
             **({"canvas": canvas} if canvas else {})}
 
 

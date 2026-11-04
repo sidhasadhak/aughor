@@ -180,6 +180,7 @@ function Reasons({ m, trend, work, meaning, expected, block, briefing }: {
               <Chip>{w.kind}</Chip>{w.when && <span>{w.when}</span>}
             </div>
             <p className="aug-fs-sm" style={{ ...para, color: "var(--t1)", marginBottom: 6 }}>{w.text}</p>
+            {w.note && <p data-testid="ledger-work-note" className="aug-fs-xs" style={{ ...para, color: "var(--amb4)", marginBottom: 6 }}>{w.note}</p>}
             {(w.run || w.decision) && (
               <Button size="xs" variant="ghost" onClick={() => openWork(w)}>{w.run ? "Open the deep analysis" : "Open the decision"}</Button>
             )}

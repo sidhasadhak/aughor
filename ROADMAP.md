@@ -12250,6 +12250,13 @@ made all 10 metrics key movements; those rows now say they are not read against 
 "last month", only when both name the same days. Applying a metric's definition drops the connection's kept Briefings by design
 (`routers/metrics.py`), so what the platform knows of a metric is gone from the row until one is written again.
 
+**Work done before a definition changed says so (the user, 2026-11-04, "Yes, fix it").** Lux's October edition told its reader to take a rise as
+partly an artefact, citing a deep analysis of the old +22% and +42%, after the same-age definitions had removed that rise. A deep analysis now carries
+`definitions_changed`: the metrics it names whose formula or dates changed after it finished, read from the governance trail, an approval alone not
+counting (`DEFINITION_CHANGES`; a date edit on an approved metric now goes on that trail). The model is told and given a rule; a question asked in chat is
+told too; and code says it on the page and on the ledger's row whatever the model wrote, on a kept edition as well. It tells; it cannot rewrite what
+was kept, and a sentence that cites nothing has no note to carry.
+
 ### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted — **SV-3 BUILT 2026-10-28** at the user's *"proceed with the rest"* · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
 **The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them

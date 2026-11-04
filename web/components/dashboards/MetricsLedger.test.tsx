@@ -211,6 +211,15 @@ describe("a row", () => {
     expect(await screen.findByTestId("ledger-reasons")).toBeInTheDocument();
   });
 
+  it("says when the platform's work was finished before the metric's definition changed", async () => {
+    const stale = { id: "a1", kind: "analysis", facts: { completed: "3 Nov", inv_id: "b52cba32", definitions_changed: [{ metric: "net", label: "Net Revenue (EUR, after refunds)", on: "2026-11-04" }] } };
+    api.readBriefingEdition.mockResolvedValue({ ...EDITION, sources: { a1: stale } });
+    show();
+    await settled();
+    fireEvent.click(await within(screen.getByTestId("ledger-row-net")).findByRole("button", { name: "deep analysis" }));
+    expect(await screen.findByTestId("ledger-work-note")).toHaveTextContent("Finished before the definition of Net Revenue changed on 4 Nov 2026");
+  });
+
   it("says plainly when the platform has nothing, and tells apart no Briefing from none of its words", async () => {
     show();
     await settled();
