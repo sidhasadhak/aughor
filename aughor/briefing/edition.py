@@ -264,6 +264,20 @@ def score(fig: dict, *, watched: bool) -> float:
     return z + (0.75 if watched else 0.0) + (0.25 * min(abs(fig.get("streak") or 0), 4) if z >= 1 else 0.0)
 
 
+def _not_at_equal_age(figures: list[dict]) -> list[dict]:
+    """The figures whose distance from usual was not read, as one row: on theLook eight figures gave one sentence eight
+    times. One range's figures still settling all share a status, so one sentence holds for each."""
+    young = [f for f in figures if not f["equal_age"]["equal"]]
+    if not young:
+        return []
+    names = [f["label"] for f in young]
+    label = " and ".join(filter(None, [", ".join(names[:-1]), names[-1]]))
+    said = young[0]["equal_age"]["why"].removeprefix(names[0])
+    one = len(young) == 1
+    return [{"label": f"{label} against {'its' if one else 'their'} usual range",
+             "reason": f"{'it' if one else 'each'}{said}", "tables": []}]
+
+
 def measure_edition(conn_id: str, spec, guide: BriefingGuide, *, published: bool, run_sql: RunSql,
                     dialect: str, schema: Optional[str] = None, currency: str = "") -> dict:
     """Every check of ``guide`` measured for ``spec``. No model call."""
@@ -292,8 +306,7 @@ def measure_edition(conn_id: str, spec, guide: BriefingGuide, *, published: bool
     not_read = ([{"label": c.text, "reason": "", "tables": c.tables} for c in guide.care]
                 + [{"label": u["label"], "reason": u["reason"], "tables": []} for u in unmeasured]
                 + [{"label": d.label, "reason": d.reason, "tables": []} for d in guide.dropped]
-                + [{"label": f"{f['label']} against its usual range", "reason": f["equal_age"]["why"], "tables": []}
-                   for f in figures if not f["equal_age"]["equal"]])
+                + _not_at_equal_age(figures))
     return {"figures": figures, "unmeasured": unmeasured, "not_read": not_read,
             "floor": [f["id"] for f in figures if f["floor"]],
             "usual_n": guide.news.usual_for(_period(spec))}

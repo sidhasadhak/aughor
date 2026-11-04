@@ -164,7 +164,9 @@ def test_a_figure_still_settling_is_not_put_on_the_page_by_code_and_the_model_is
     assert "still settling" in seen[0]["system"] and "never lead with it" in seen[0]["system"]
     kept = entry["sources"]["sales"]                         # what the page's evidence panel draws, in amber
     assert kept["status"] == "provisional" and "Sales is still provisional" in " ".join(kept["caveats"])
-    assert {"Sales against its usual range", "Average order against its usual range"} <= {n["label"] for n in entry["not_read"]}
+    (said,) = [n for n in entry["not_read"] if "usual range" in n["label"]]        # one row, not one sentence twice
+    assert said["label"] == "Sales and Average order against their usual range"
+    assert said["reason"].startswith("each is still provisional, and what it is compared with has settled")
 
 
 def test_an_edition_drawn_by_code_says_a_figure_is_still_settling_too(setup, monkeypatch):

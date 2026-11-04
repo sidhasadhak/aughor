@@ -222,6 +222,26 @@ describe("BriefingEdition", () => {
     expect(within(card()).getByTestId("edition-drill-trail")).toBeTruthy();
   });
 
+  it("says what the edition did not read and why, and leaves the guide's own notes to the guide", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, withheld: [], left_out: [], not_read: [
+      { label: "Join on the full id.", reason: "", tables: ["order_items"] },
+      { label: "Refund rate", reason: "its query failed", tables: [] },
+      { label: "Sales and Units against their usual range", reason: "each is still provisional", tables: [] }] });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    const said = await screen.findByTestId("edition-withheld");
+    expect(said.textContent).toContain("Not read: Refund rate — its query failed");
+    expect(said.textContent).toContain("Not read: Sales and Units against their usual range — each is still provisional");
+    expect(said.textContent).not.toContain("Join on the full id");
+  });
+
+  it("adds nothing to the page when only the guide's own notes are kept", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, withheld: [], left_out: [],
+      not_read: [{ label: "Join on the full id.", reason: "", tables: ["order_items"] }] });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByTestId("edition-dateline");
+    expect(screen.queryByTestId("edition-withheld")).toBeNull();
+  });
+
   it("puts a decision away on Not now", async () => {
     api.readBriefingEdition.mockResolvedValue(WRITTEN);
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);

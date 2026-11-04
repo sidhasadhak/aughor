@@ -180,6 +180,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const teams = useMemo(() => groups.filter(g => g.kind === "function").map(g => ({ id: g.id, name: g.name }))
     .sort((a, b) => a.name.localeCompare(b.name)), [groups]);
   const hasGuide = !!guide?.available;
+  // What the edition did not read, each with why. A row with no reason is one of the guide's own notes for reading the
+  // data (LuxExperience's ten, 2026-11-04: "Join on the full id"): the guide panel lists those, and a reader needs neither.
+  const notRead = (edition?.not_read ?? []).filter(n => n.reason);
   const ownCanvas = edition?.canvas?.own ? edition.canvas : null;
   const blocks = useMemo(() => (edition?.blocks ?? []).filter(b => !hidden.has(b.id)), [edition, hidden]);
   const drilled = trails[writing] ?? NO_TRAILS;
@@ -294,12 +297,13 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                 onCite={onCite} onDrill={(card, b, c, s) => void onDrill(card, b, c, s)} onDrillBack={onDrillBack}
                 onDecide={onDecide} drilling={drilling} trails={drilled}
                 teams={teams} given={edition.given} onGive={(b, g) => void onGive(b, g)} giving={giving} />
-              {(!!edition.withheld?.length || !!edition.left_out?.length) && (
+              {(!!edition.withheld?.length || !!edition.left_out?.length || notRead.length > 0) && (
                 <section data-testid="edition-withheld" className="aug-fs-xs" style={{ color: "var(--t3)", borderTop: RULE, paddingTop: 10, marginTop: 18 }}>
                   {edition.withheld?.map((w, i) => (
                     <div key={`w-${i}`}>Held back{w.sentence ? `: “${w.sentence}”` : " a block"} — {w.why}</div>
                   ))}
                   {edition.left_out?.map((l, i) => <div key={`l-${i}`}>Left out: {l}</div>)}
+                  {notRead.map((n, i) => <div key={`n-${i}`}>Not read: {n.label} — {n.reason}</div>)}
                 </section>
               )}
               {period && (

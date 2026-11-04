@@ -144,7 +144,7 @@ def test_a_flow_still_settling_is_shown_but_not_read_against_its_usual_range(con
     assert aov["z"] is None and aov["extreme"] is None and E.score(aov, watched=False) == 0.0
     assert aov["current"] == settled["current"] and aov["usual"] == settled["usual"]       # the number and band stay
     assert [n["reason"] for n in out["not_read"] if n["label"] == "Average order against its usual range"] \
-        == [aov["equal_age"]["why"]]
+        == [aov["equal_age"]["why"].replace("Average order is", "it is")]
 
 
 RETURNS = G.BriefingGuide(checks=[G.Check(id="returns", label="Return rate", metric="return_rate")])
