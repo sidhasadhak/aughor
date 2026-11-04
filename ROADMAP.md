@@ -12973,9 +12973,16 @@ three are this arc, in the study's own order of value over cost, each through th
   **Receipt, live:** Lux ready, theLook refused with the grant in words, Superstore keeping none; the extension
   dropped on Lux and re-created by the platform through its door — after two live defects the fakes had admitted
   (`SHOW` refused by the read door; DDL refused in a read-only transaction).
-- **Not built, named:** NV-4, a bound candidate staged into the resolve-once inbox with an accept that declares the
-  link through `POST /ontology/links`' own body — today the door returns the report and a person declares by hand;
-  the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
+- **NV-4 · a bound candidate is a proposal in the ONE inbox; accept declares it** (the user: *"Keep building"*). The
+  mining door's `stage` puts every bound candidate into the resolve-once inbox, idempotent by the candidate's own
+  text, with what an accept would declare resolved against the served graph first — a join a link spec, a measure
+  over one entity a computed property, a filter a segment — and a candidate the graph cannot back left out, with why,
+  because Accept must mean something. Accepting declares through the doors that already exist: the link door's own
+  body (measured and bound before it is written, origin human, the mining as provenance), the computed-property and
+  segment overrides (bound before they earn `verified`), into the draft as the accepting person's declaration; a
+  door's refusal is the outcome, verbatim; a rejection is kept and never re-staged. **Receipt, live on Lux:** 19
+  bound, 16 staged, 3 said unstageable (formulas over several tables); the accept is the user's click (PENDING item 74).
+- **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
   falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
   study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
   roots that name no table, the "VERIFIED OPTIONS … never shorten the path" wording on a multi-hop relationship line.

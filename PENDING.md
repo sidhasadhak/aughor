@@ -1171,8 +1171,18 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       there: `SHOW` is a command the read door refuses (now `current_setting()`), and CREATE EXTENSION is refused in a
       read-only transaction (now one explicit READ WRITE transaction). The server setting and its restart stay the
       admin's; the platform says so.
-    - [ ] NV-4 a bound candidate staged into the resolve-once inbox, accept = the link declared through the link door's
-      own body (with the frequency as its evidence), reject kept.
+    - [~] NV-4 a bound candidate staged into the resolve-once inbox (`stage: true` on the mining door; kind
+      `ontology_candidate`, idempotent by the candidate's text, J10's ONE queue), what an accept declares resolved
+      against the served graph first (`candidates.proposal_detail`: a join → a link spec, a one-entity measure → a
+      computed property, a filter → a segment; a candidate the graph cannot back is not staged, with why); accept
+      declares through the doors that exist (`declare_link_core` with origin human and the mining as provenance;
+      `bind_and_persist_override` for the property and the segment) into the draft as the person's declaration; a
+      door's refusal is the outcome; reject kept; the ProposalCard says what is proposed, how often seen, what an accept
+      declares. *Live on Lux, 2026-11-04 08:34 UTC:* 19 bound → **16 staged** (all computed properties: `gmv_eur`,
+      `aov_eur`, `contribution_margin_eur`, …), 3 not staged — formulas over several tables, "declare it by hand" —
+      and 0 joins, as the history still holds only Aughor's own SQL. **⚑ Owed, the user's click:** accept one (the
+      `gmv_eur` property on Order, proposal `f95aa24a`) — the builder's accept was refused by the session's classifier
+      as a change to the user's ontology, which it is.
     - [ ] The trust checks read `format`: a text date column compared to a literal says "compare as a date, not as text".
     - [ ] The compiler traverses an N:N through a marked junction with pre-aggregation on the far side — only once a
       live connection has a table that qualifies.
