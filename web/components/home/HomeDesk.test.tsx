@@ -83,6 +83,20 @@ describe("HomeDesk", () => {
     expect(screen.getByText("medium confidence")).toHaveAttribute("title", "a refutation challenged it");
   });
 
+  it("does not read a day's difference as a move on a table never seen to settle, and says why", async () => {
+    const { leadDetail } = await import("@/lib/home");
+    const api = await import("@/lib/api");
+    const says = "order_items was still changing 28 days after a day ended and has not been seen to stop.";
+    vi.mocked(leadDetail).mockResolvedValueOnce({ summary: "", confidence: "HIGH", why: "",
+      figure: { metric: "Revenue", day: "2026-10-02", value: "$19,087.76", change: "+$209.55", pct: 0.0111, verdict: "significant (anomaly)", unusual: true } });
+    vi.mocked(api.getMetrics).mockResolvedValueOnce([{ name: "revenue", label: "Revenue", status: "approved" }] as never);
+    const trend = vi.spyOn(api, "readMetricTrend").mockResolvedValueOnce({ why: "", unit: "$", never_settled: says, series: [] } as never);
+    render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} />);
+    await waitFor(() => expect(screen.getByText("not read as a move")).toHaveAttribute("title", says));
+    expect(screen.getByTestId("home-lead")).not.toHaveTextContent("Significant");
+    trend.mockRestore();
+  });
+
   it("books a person's answer about the analysis that asked it, without asking their name", async () => {
     render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} />);
     // who the answer is recorded as is the server's word, shown — there is no name to type

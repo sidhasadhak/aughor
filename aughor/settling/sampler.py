@@ -19,13 +19,18 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from aughor.settling.store import record_observations
+from aughor.settling.store import record_observations, record_old_readings
 
 logger = logging.getLogger(__name__)
 
 #: How many recent days each reading counts. Long enough to see a source that settles a
 #: week out; short enough that the daily query stays a scan of one column over two weeks.
 HORIZON_DAYS = 14
+#: A week about six months old, read for every table not yet shown to hold: far older than any late row, so days this old
+#: moving means the source rewrites its past (`learn.rewrites_history`), and reading further back will not help. Read from
+#: a table's first day, so a new source is recognised at its second refresh, and until they have held for a month
+#: (`learn.old_days_held`): one more scan of one column a day, per table, and only until then.
+OLD_DAYS = (180, 187)
 #: The largest tables carry the signal; a lookup table's count never moves.
 MAX_TABLES_PER_CONNECTION = 8
 
@@ -66,11 +71,14 @@ def time_tables(connection_id: str) -> list[tuple[str, str, int]]:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "no profile cache means no time tables to read", counter="settling.profile_cache")
         return []
+    from aughor.semantic.metric_time import bare_name
+
+    dates = _metric_dates(connection_id)
     out: list[tuple[str, str, int]] = []
     for name, tp in ((latest or {}).get("tables") or {}).items():
         if not isinstance(tp, dict):
             continue
-        col = str(tp.get("primary_timestamp") or "").strip()
+        col = str(tp.get("primary_timestamp") or dates.get(bare_name(str(name))) or "").strip()
         if not col:
             continue
         try:
@@ -78,8 +86,35 @@ def time_tables(connection_id: str) -> list[tuple[str, str, int]]:
         except (TypeError, ValueError):
             rows = 0
         out.append((str(name), col, rows))
-    out.sort(key=lambda t: (-t[2], t[0]))
-    return out[:MAX_TABLES_PER_CONNECTION]
+    # A table a metric reads comes first, and always: unread, its figures would read as settled for want of evidence.
+    needed = sum(bare_name(t[0]) in dates for t in out)      # every one of these has a date, or it was left out above
+    out.sort(key=lambda t: (bare_name(t[0]) not in dates, -t[2], t[0]))
+    return out[:max(MAX_TABLES_PER_CONNECTION, needed)]
+
+
+def _metric_dates(connection_id: str) -> dict[str, str]:
+    """Each table an approved metric of this connection reads, by bare name, with the column that dates it: "" for a table
+    it joins but is not dated by, which the profile's own date reads, or which cannot be read."""
+    try:
+        from aughor.semantic.metric_statement import split_grain
+        from aughor.semantic.metric_time import bare_name, tables_read
+        from aughor.semantic.metrics import list_metrics
+        out: dict[str, str] = {}
+        for m in list_metrics(connection_id=connection_id):
+            if m.status != "approved" or m.connection != connection_id:
+                continue
+            read = tables_read(m)
+            table, col = split_grain(getattr(m, "time_column", None))
+            table = table or next(iter(read), "")
+            if table and col:
+                out[bare_name(table)] = out.get(bare_name(table)) or col
+            for joined in read:
+                out.setdefault(bare_name(joined), "")
+        return out
+    except Exception as exc:  # noqa: BLE001 — the largest tables are read as they were
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the tables approved metrics read are unknown; the largest are read", counter="settling.metric_tables")
+        return {}
 
 
 def _as_date(value) -> Optional[date]:
@@ -91,6 +126,43 @@ def _as_date(value) -> Optional[date]:
         return date.fromisoformat(str(value)[:10])
     except (TypeError, ValueError):
         return None
+
+
+def _day_counts(rows: list, start: date, stop: date) -> dict[str, float]:
+    """Each day's count in [start, stop) from a `count_by_day_sql` result."""
+    counts: dict[str, float] = {}
+    for r in rows or []:
+        vals = list(r.values()) if isinstance(r, dict) else list(r)
+        if len(vals) < 2:
+            continue
+        day = _as_date(vals[0])
+        if day is None or not (start <= day < stop):
+            continue
+        try:
+            counts[day.isoformat()] = float(vals[1] or 0)
+        except (TypeError, ValueError) as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a count that is not a number is not a reading; the day is left out",
+                     counter="settling.unreadable_count")
+            continue
+    # A day with no rows is a reading too — zero is a value, and a day that later
+    # gains rows is exactly a day that was still settling.
+    for i in range((stop - start).days):
+        counts.setdefault((start + timedelta(days=i)).isoformat(), 0.0)
+    return counts
+
+
+def _read_old_days(connection_id: str, table: str, col: str, run_sql: RunSql, today: date) -> str:
+    """File one reading of `OLD_DAYS`. Returns why it could not be read, or "": the day's reading already stands."""
+    start, stop = today - timedelta(days=OLD_DAYS[1]), today - timedelta(days=OLD_DAYS[0])
+    try:
+        _columns, rows, error = run_sql(count_by_day_sql(table, col, start, stop))
+    except Exception as exc:  # noqa: BLE001 — reported by the caller with the table's other errors
+        rows, error = [], str(exc)
+    if error:
+        return str(error)[:200]
+    record_old_readings(connection_id, table, today, _day_counts(rows, start, stop))
+    return ""
 
 
 def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[date] = None,
@@ -105,13 +177,16 @@ def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[da
     # grows — so read it twice as far back (theLook's order_items was still moving at 14 on
     # 2026-09-25). One wider scan of one column a day; the others keep the short horizon.
     try:
-        from aughor.settling.store import verdicts
-        moving = {t for t, v in verdicts(connection_id).items() if v.still_moving}
+        from aughor.settling.learn import old_days_held
+        from aughor.settling.store import old_readings, verdicts
+        known = verdicts(connection_id)
+        moving = {t for t, v in known.items() if v.still_moving}
+        settled = {t for t, v in known.items() if v.lag_days is not None and old_days_held(old_readings(connection_id, t))}
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "unreadable verdicts: every table is read at the short horizon",
                  counter="settling.horizon_verdicts")
-        moving = set()
+        moving, settled = set(), set()
     for table, col, _rows in time_tables(connection_id):
         span = horizon_days * 2 if table in moving else horizon_days
         start = today - timedelta(days=span)
@@ -122,27 +197,12 @@ def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[da
         if error:
             errors[table] = str(error)[:200]
             continue
-        counts: dict[str, float] = {}
-        for r in rows or []:
-            vals = list(r.values()) if isinstance(r, dict) else list(r)
-            if len(vals) < 2:
-                continue
-            day = _as_date(vals[0])
-            if day is None or not (start <= day < stop):
-                continue
-            try:
-                counts[day.isoformat()] = float(vals[1] or 0)
-            except (TypeError, ValueError) as exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(exc, "a count that is not a number is not a reading; the day is left out",
-                         counter="settling.unreadable_count")
-                continue
-        # A day with no rows is a reading too — zero is a value, and a day that later
-        # gains rows is exactly a day that was still settling.
-        for i in range(span):
-            counts.setdefault((start + timedelta(days=i)).isoformat(), 0.0)
-        record_observations(connection_id, table, col, today, counts)
+        record_observations(connection_id, table, col, today, _day_counts(rows, start, stop))
         sampled.append(table)
+        if table not in settled:
+            why = _read_old_days(connection_id, table, col, run_sql, today)
+            if why:
+                errors[f"{table}, its old days"] = why
     return {"connection_id": connection_id, "sampled": sampled, "errors": errors,
             "measured_on": today.isoformat()}
 

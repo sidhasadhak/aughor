@@ -514,8 +514,12 @@ _HYPOTHESIS_STATE = {"confirmed": "supported", "refuted": "refuted", "inconclusi
 _SETTLE_WORDS = re.compile(r"settl|partial (final )?period|still filling|late rows|holds \d+ of \d+ days", re.I)
 
 
-def _settled_by(gap: str, lag: Optional[int]) -> str:
+def _settled_by(gap: str, lag: Optional[int], said: Any = None) -> str:
     if _SETTLE_WORDS.search(gap or ""):
+        if said is not None and said.kind == "rewrites":
+            return "nothing will: this source rewrites its history at each refresh"
+        if said is not None and said.never_settled:
+            return f"reading it again may not: {said.clause()}"
         return (f"the connection's settling lag: {lag} day{'s' if lag != 1 else ''}" if lag
                 else "the source's settling lag, not yet learned for this connection")
     return ""
@@ -579,7 +583,9 @@ def attach_run_result(*, run_id: str, connection_id: str, question: str, report:
     except Exception:  # noqa: BLE001
         lag = None
     gaps = [str(g) for g in (report.get("data_gaps") or []) if str(g).strip()]
-    q.open = [OpenItem(what=g[:500], settled_by=_settled_by(g, lag) or "unstated — the report named the gap "
+    from aughor.settling.answer import settling_answer
+    said = settling_answer(connection_id)
+    q.open = [OpenItem(what=g[:500], settled_by=_settled_by(g, lag, said) or "unstated — the report named the gap "
                                                                         "without what would close it") for g in gaps]
     # verdict
     refuted = (report.get("causal_checks") or {}).get("refutation") if isinstance(report.get("causal_checks"), dict) else {}
@@ -593,7 +599,8 @@ def attach_run_result(*, run_id: str, connection_id: str, question: str, report:
     # state
     if q.open:
         q.state = "waiting"
-        q.waiting_for = ("days to settle" if any(_SETTLE_WORDS.search(o.what) for o in q.open)
+        q.waiting_for = (("a later reading: this source has not been seen to settle" if said.never_settled else "days to settle")
+                         if any(_SETTLE_WORDS.search(o.what) for o in q.open)
                          else "data that would settle the open items")
         q.next_check = (now + _dt.timedelta(days=int(lag) if lag else DEFAULT_WAKE_DAYS)).date().isoformat()
     else:

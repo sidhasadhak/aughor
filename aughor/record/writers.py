@@ -255,7 +255,11 @@ def restate_answer_observation(answer: dict, entry: dict, *, text: str = "") -> 
     restated = _claims.restate(key, new, conn_id=conn_id)
     # Phase 2 of the 2027 study — an inquiry that established the restated claim wakes, and a
     # decision that relied on it reopens.
-    consequences = _claims.restated_consequences(prior.id, restated, how="restated by the re-check")
+    # A source redrawn at each refresh moves every answer at each refresh: that is no news of the business, and would
+    # reopen a decision a person had just answered, daily. The restatement stands, and says why nothing followed from it.
+    consequences = ({"nothing_followed": "the source rewrites its history at each refresh, so this is no news of the business"}
+                    if entry.get("cause") == "rewrites"
+                    else _claims.restated_consequences(prior.id, restated, how="restated by the re-check"))
     return {"restated": restated, "superseded": prior.id, "recheck_receipt": receipt, **consequences}
 
 

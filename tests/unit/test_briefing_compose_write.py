@@ -7,7 +7,9 @@ edition per reader, and — when the model never composes — draws an edition f
 from __future__ import annotations
 
 import contextlib
+import json
 from datetime import date
+from types import SimpleNamespace
 
 import duckdb
 import pytest
@@ -127,6 +129,97 @@ def test_a_floor_figure_the_page_left_out_is_added_by_code(setup, monkeypatch):
     assert set(entry["floor"]) == {"sales", "aov"}
     assert [b["source"] for b in added] == ["aov"]                 # sales is cited in the lead; aov was left out
     assert all(b["type"] == "figure" for b in added)
+
+
+def _settling_week():
+    spec, _ = ranges.resolve_range("last_week", today=OCT29, lag_days=1, lag_source="beyond_horizon",
+                                   still_moving=("orders",))
+    return spec
+
+
+def _given(seen) -> dict:
+    return json.loads(seen[0]["question"].split("\n\nSCHEMA (for query):")[0])
+
+
+def test_a_figure_still_settling_is_not_put_on_the_page_by_code_and_the_model_is_told_why(setup, monkeypatch):
+    blocks = [{"type": "lead", "text": "A week to read with care."}, {"type": "figure", "source": "sales"}]
+    loop, seen = _loop([("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    settled = W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                        run_query=_top_orders)
+    assert set(settled["floor"]) == {"sales", "aov"} and [b["source"] for b in settled["blocks"] if b["by_code"]] == ["aov"]
+    assert {c["id"] for c in _given(seen)["checks"] if "z" in c["facts"] and "caveats" not in c} == {"sales", "aov"}
+
+    loop, seen = _loop([("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+
+    assert entry["floor"] == [] and not [b for b in entry["blocks"] if b["by_code"]]    # "Also outside its usual range"
+    given = _given(seen)
+    assert given["floor"] == [] and {c["id"] for c in given["checks"]} == {"sales", "aov"}
+    for c in given["checks"]:
+        assert c["status"] == "provisional" and "z" not in c["facts"] and "extreme" not in c["facts"]
+        assert c["facts"]["at_equal_age"] is False
+        said = " ".join(c.get("caveats") or [])
+        assert "Part of any difference may be that, not a move" in said and said.endswith("So it is not called outside its usual range.")
+    assert "at_equal_age false" in seen[0]["system"] and "never lead with it" in seen[0]["system"]
+    kept = entry["sources"]["sales"]                         # what the page's evidence panel draws, in amber
+    assert kept["status"] == "provisional" and "Sales reads a table" in " ".join(kept["caveats"])
+    (said,) = [n for n in entry["not_read"] if "usual range" in n["label"]]        # one row, not one sentence twice
+    assert said["label"] == "Sales and Average order against their usual range"
+    assert said["reason"].startswith("each reads a table this platform has not seen stop changing")
+
+
+def test_a_sentence_reading_such_a_figure_against_usual_goes_back_then_is_left_out(setup, monkeypatch):
+    claim = {"type": "lead", "text": "Sales reached {€42.1k|sales}, above its usual range. A week to read with care."}
+    loop, seen = _loop([("compose", {"blocks": [claim]}), ("compose", {"blocks": [claim]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+    assert "not at equal age" in " ".join(seen[1]["compose"]["refused"])        # back to the model first, with why
+    assert [w["sentence"] for w in entry["withheld"]] == ["Sales reached €42.1k, above its usual range."]
+    assert "not at equal age" in entry["withheld"][0]["why"]
+    assert entry["blocks"][0]["text"] == "A week to read with care."
+
+
+def test_a_breakdown_and_a_drill_of_such_a_figure_carry_it(setup, monkeypatch):
+    blocks = [{"type": "lead", "text": "A week to read with care."}, {"type": "figure", "source": "sales"},
+              {"type": "compare", "source": "sales_by_platform", "title": "Sales by platform"}]
+    loop, seen = _loop([("breakdown", {"check_id": "sales", "column": "platform"}), ("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"], run_query=_top_orders)
+    given = seen[1]["breakdown"]
+    assert given["facts"]["at_equal_age"] is False and "Sales reads a table" in " ".join(given["caveats"])
+    kept = entry["sources"]["sales_by_platform"]
+    assert kept["better"] == "none" and kept["caveats"]                       # no good or bad colour on the page
+    out = W.drill("compose_c1", _settling_week(), scope_key="compose_c1", source_id="sales", column="is_top", runner=setup["runner"])
+    assert out["source"]["facts"]["at_equal_age"] is False and out["source"]["better"] == "none" and out["source"]["caveats"]
+    assert "against usual" not in out["block"]["title"]
+    deeper = W.drill("compose_c1", _settling_week(), scope_key="compose_c1", source_id=out["source"]["id"], column="platform",
+                     segment=True, runner=setup["runner"])
+    assert deeper["source"]["facts"]["at_equal_age"] is False and "against usual" not in deeper["block"]["title"]
+
+
+def test_a_breakdown_and_a_drill_on_settled_tables_say_nothing_of_it(setup, monkeypatch):
+    blocks = [{"type": "lead", "text": "A week."}, {"type": "figure", "source": "sales"}]
+    loop, seen = _loop([("breakdown", {"check_id": "sales", "column": "platform"}), ("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"], run_query=_top_orders)
+    assert "at_equal_age" not in seen[1]["breakdown"]["facts"] and "caveats" not in seen[1]["breakdown"]
+    out = W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="sales", column="is_top", runner=setup["runner"])
+    assert out["block"]["title"].endswith(", against usual") and out["source"]["better"] == "up"
+
+
+def test_an_edition_drawn_by_code_says_a_figure_is_still_settling_too(setup, monkeypatch):
+    loop, _ = _loop([])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+    assert entry["drawn_by_code"] and entry["floor"] == []
+    drawn = [b["source"] for b in entry["blocks"]]
+    assert set(drawn) == {"sales", "aov"} and all(entry["sources"][s]["caveats"] for s in drawn)
+    assert not [b for b in entry["blocks"] if b["kicker"]]    # no block says it is outside anything
 
 
 def test_a_model_that_does_not_finish_leaves_an_edition_drawn_by_code_that_says_so(setup, monkeypatch):
@@ -521,3 +614,166 @@ def test_a_read_shows_a_started_deep_analysis_as_it_stands(setup, monkeypatch):
     monkeypatch.setattr(S, "refreshed", lambda src, **kw: src.model_copy(update={"status": "final"}))
     assert W.as_it_stands(entry)["sources"]["analysis_started"]["status"] == "final"
     assert entry["sources"]["analysis_started"]["status"] == "running"             # a read keeps nothing
+
+
+# ── a deep analysis finished before a metric it names changed ───────────────────────────────
+
+CHANGE_AT = "2026-11-04T09:27:46+00:00"
+
+
+def _trail(monkeypatch, events=None, metrics=None, broken=False):
+    from aughor.kernel import ledger
+    from aughor.semantic import metrics as M
+
+    class _Ledger:
+        def events(self, kind=None, limit=0):
+            if broken:
+                raise OSError("the ledger is not there")
+            assert kind == "metric.governance"
+            return [{"payload": e} for e in (events if events is not None else [
+                {"metric": "net_revenue_eur", "action": "edit_reproposed", "connection": "compose_c1", "at": CHANGE_AT}])]
+    monkeypatch.setattr(ledger.Ledger, "default", classmethod(lambda cls: _Ledger()))
+    labels = metrics if metrics is not None else {"net_revenue_eur": "Net Revenue (EUR, after refunds)"}
+    monkeypatch.setattr(M, "list_metrics", lambda **k: [SimpleNamespace(name=n, label=v) for n, v in labels.items()])
+
+
+def _analysis(question="How much of the rise in net revenue after refunds is returns not yet arrived?", at="2026-11-03T15:08:29+00:00", **facts):
+    from aughor.briefing.compose import sources as S
+    return S.Source(id="analysis_a1", label="x", kind="analysis", status="final", columns=[], rows=[],
+                    facts={"question": question, "headline": "Mostly returns", "completed": at[:10], "completed_at": at, **facts})
+
+
+def test_an_analysis_finished_before_a_metric_it_names_changed_says_so(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    _trail(monkeypatch)
+    got = S.marked_measured_before(_analysis(), S.definitions_changed("compose_c1"))
+    assert got.facts["definitions_changed"] == [{"metric": "net_revenue_eur", "label": "Net Revenue (EUR, after refunds)", "on": "2026-11-04"}]
+    assert "definitions_changed" not in _analysis().facts                      # the source itself stays as it was
+
+
+@pytest.mark.parametrize("over", [
+    {"at": "2026-11-04T09:30:00+00:00"},                                       # finished after the change
+    {"question": "Why did refunds rise?"},                                     # never named it
+    {"question": "Why did net revenues fall?"},                                # another word, only spelled alike
+])
+def test_an_analysis_that_is_not_measured_before_the_change_says_nothing(monkeypatch, over):
+    from aughor.briefing.compose import sources as S
+    _trail(monkeypatch)
+    assert "definitions_changed" not in S.marked_measured_before(_analysis(**over), S.definitions_changed("compose_c1")).facts
+
+
+def test_the_same_day_is_told_apart_only_where_the_hour_is_known(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    _trail(monkeypatch)
+    changes = S.definitions_changed("compose_c1")
+    earlier = _analysis(at="2026-11-04T08:00:00+00:00")
+    assert S.marked_measured_before(earlier, changes).facts["definitions_changed"][0]["on"] == "2026-11-04"
+    dated_only = _analysis(at="2026-11-04")                                    # an edition kept before the hour was
+    assert "definitions_changed" not in S.marked_measured_before(dated_only, changes).facts
+
+
+def test_only_a_change_to_what_a_figure_reads_counts_on_this_connection_and_the_latest_is_kept(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    _trail(monkeypatch, events=[                                               # the trail reads newest first
+        {"metric": "net_revenue_eur", "action": "approve", "connection": "compose_c1", "at": "2026-11-09T00:00:00+00:00"},
+        {"metric": "net_revenue_eur", "action": "edit_reproposed", "connection": "compose_c1", "at": CHANGE_AT},
+        {"metric": "net_revenue_eur", "action": "edit_dates_changed", "connection": "compose_c1", "at": "2026-11-01T00:00:00+00:00"},
+        {"metric": "gmv", "action": "edit_reproposed", "connection": "another", "at": CHANGE_AT},
+    ])
+    assert S.definitions_changed("compose_c1") == [{"metric": "net_revenue_eur", "label": "Net Revenue (EUR, after refunds)", "at": CHANGE_AT}]
+
+
+def test_a_change_to_the_dates_a_figure_reads_by_counts_as_a_formula_does(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    _trail(monkeypatch, events=[{"metric": "net_revenue_eur", "action": "edit_dates_changed", "connection": "compose_c1", "at": CHANGE_AT}])
+    assert [c["at"] for c in S.definitions_changed("compose_c1")] == [CHANGE_AT]
+
+
+def test_an_analysis_keeps_its_hour_so_a_change_later_that_day_is_seen(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    monkeypatch.setattr(S, "definitions_changed", lambda c: [{"metric": "net_revenue_eur", "label": "Net Revenue", "at": CHANGE_AT}])
+    got = S.known_analyses("compose_c1", list_runs=lambda: [
+        {"id": "a1", "connection_id": "compose_c1", "kind": "investigation", "status": "complete",
+         "completed_at": "2026-11-04T08:00:00+00:00", "question": "Why did net revenue rise?", "headline": "Returns"}],
+        get_run=lambda i: {"report": {"headline": "Returns"}})
+    assert got[0].facts["definitions_changed"][0]["on"] == "2026-11-04"
+
+
+def test_a_trail_that_cannot_be_read_marks_nothing_and_the_analysis_still_reads(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    _trail(monkeypatch, broken=True)
+    assert S.definitions_changed("compose_c1") == []
+
+
+def test_the_model_is_told_and_told_what_it_means(setup, monkeypatch):
+    from aughor.briefing.compose import sources as S
+    monkeypatch.setattr(S, "definitions_changed", lambda c: [
+        {"metric": "net_revenue_eur", "label": "Net Revenue (EUR, after refunds)", "at": CHANGE_AT}])
+    def known(conn_id, schema, spec, tables):
+        return S.known_analyses("compose_c1", list_runs=lambda: [
+            {"id": "a1", "connection_id": "compose_c1", "kind": "investigation", "status": "complete",
+             "completed_at": "2026-11-03T15:08:29+00:00", "question": "How much of the rise in net revenue is returns?", "headline": "Mostly returns"}],
+            get_run=lambda i: {"report": {"headline": "Mostly returns", "confidence": "MEDIUM"}})
+    loop, seen = _loop([("compose", {"blocks": [LEAD, {"type": "context", "source": "analysis_a1"}]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders, known=known, start_analysis=lambda q, s: _Run())
+    told = json.loads(seen[0]["question"].split("\n\nSCHEMA (for query):")[0])["what_the_platform_already_knows"]["deep_analyses"]
+    assert told[0]["measured_before"] == [{"metric": "Net Revenue (EUR, after refunds)", "definition_changed_on": "2026-11-04"}]
+    assert "carrying measured_before" in seen[0]["system"] and "artefact" in seen[0]["system"]
+    assert entry["sources"]["analysis_a1"]["facts"]["definitions_changed"][0]["metric"] == "net_revenue_eur"   # kept with it
+
+
+def test_a_model_is_told_nothing_of_a_change_that_does_not_touch_the_analysis(setup, monkeypatch):
+    from aughor.briefing.compose import sources as S
+    monkeypatch.setattr(S, "definitions_changed", lambda c: [{"metric": "gmv", "label": "GMV", "at": CHANGE_AT}])
+    loop, seen = _loop([("compose", {"blocks": [LEAD]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+              run_query=_top_orders, known=_known_stub, start_analysis=lambda q, s: _Run())
+    assert '"measured_before"' not in seen[0]["question"]
+
+
+def test_a_read_marks_an_edition_kept_before_it_could_say_so(monkeypatch):
+    _trail(monkeypatch)
+    kept = _analysis().model_dump(mode="json")
+    entry = {"blocks": [], "sources": {"analysis_a1": kept, "sales": {"kind": "check", "id": "sales"}}}
+    got = W.as_it_stands(entry, "compose_c1")
+    assert got["sources"]["analysis_a1"]["facts"]["definitions_changed"][0]["on"] == "2026-11-04"
+    assert got["sources"]["sales"] == {"kind": "check", "id": "sales"}
+    assert "definitions_changed" not in entry["sources"]["analysis_a1"]["facts"]    # a read keeps nothing
+    assert "definitions_changed" not in W.as_it_stands(entry)["sources"]["analysis_a1"]["facts"]
+
+
+def test_the_page_is_shown_it_through_the_route_it_reads(setup, monkeypatch):
+    from aughor.briefing.compose import sources as S
+    from aughor.knowledge.briefing import keep_entry
+    from aughor.routers import exploration as R
+
+    monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (_week(), ""))
+    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda conn, schema: schema)
+    monkeypatch.setattr(R, "briefing_off_for", lambda *a, **k: None)
+    monkeypatch.setattr(S, "definitions_changed", lambda c: [
+        {"metric": "net_revenue_eur", "label": "Net Revenue", "at": CHANGE_AT}] if c == "compose_c1" else [])
+    keep_entry(f"compose_c1#{_week().key}@_organisation", {
+        "composed": True, "period": ranges.range_block(_week()), "blocks": [],
+        "sources": {"analysis_a1": _analysis().model_dump(mode="json")}})
+    got = R.read_briefing_edition("compose_c1", preset="last_week", reader="")
+    assert got["built"] is True and got["sources"]["analysis_a1"]["facts"]["definitions_changed"][0]["on"] == "2026-11-04"
+
+
+def test_a_read_of_an_edition_with_no_analysis_does_not_read_the_trail(monkeypatch):
+    _trail(monkeypatch, broken=True)
+    from aughor.briefing.compose import sources as S
+    monkeypatch.setattr(S, "definitions_changed", lambda c: pytest.fail("no analysis, nothing to mark"))
+    assert W.as_it_stands({"blocks": [], "sources": {"sales": {"kind": "check", "id": "sales"}}}, "compose_c1")["sources"]
+
+
+def test_a_question_asked_in_chat_is_told_too(monkeypatch):
+    from aughor.briefing.compose import sources as S
+    monkeypatch.setattr(S, "known_analyses", lambda c, limit=0: [S.marked_measured_before(_analysis(), [
+        {"metric": "net_revenue_eur", "label": "Net Revenue", "at": CHANGE_AT}])])
+    monkeypatch.setattr(S, "known_decisions", lambda *a, **k: [])
+    monkeypatch.setattr(S, "known_discussions", lambda *a, **k: [])
+    monkeypatch.setattr("aughor.knowledge.period_brief.findings_for", lambda *a, **k: ([], ""))
+    assert "finished before the definition of Net Revenue changed" in S.known_context("compose_c1")

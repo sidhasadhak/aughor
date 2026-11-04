@@ -610,7 +610,7 @@ def _metric_card_for_range(card, metric, spec, compare: bool) -> Optional[dict]:
     if compare:
         pv = None if why else read_value(got.get("previous"))
         out["previous"] = {"covers": words["compared_with"], "word": compared_word(spec),
-                           "equal_age": status_of(spec) == FINAL, "value": pv,
+                           "equal_age": status_of(spec, metric) == FINAL, "value": pv,
                            "why": "" if pv is not None else "it has no figure there"}
     return out
 
@@ -624,7 +624,7 @@ def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute
     from aughor.semantic.metric_time import window_predicate
 
     said = {"covers": phrases(spec)["compared_with"], "word": compared_word(spec),
-            "equal_age": status_of(spec) == FINAL, "value": None, "why": ""}
+            "equal_age": status_of(spec, {"sql": sql or card.sql, "time_column": f"{table}.{col}"}) == FINAL, "value": None, "why": ""}
     cut, why, _ = scoped_statement(sql or card.sql, table, window_predicate(col, spec.previous_start, spec.previous_end),
                                    dialect=dialect)
     if cut is None:

@@ -36,6 +36,9 @@ describe("readers", () => {
     const fig = { better: "up", current: 645, usual: { mean: 590 } } as unknown as EditionFigure;
     expect(toneOf(fig)).toBe("good");
     expect(toneOf({ ...fig, better: "none" })).toBe("neutral");
+    // not read against its usual range, so not good or bad against it
+    expect(toneOf({ ...fig, equal_age: { equal: false, why: "x" } })).toBe("neutral");
+    expect(toneOf({ ...fig, equal_age: { equal: true, why: "" } })).toBe("good");
   });
 });
 

@@ -105,7 +105,13 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
         "place there, and do not compare it with any period other than the one named.",
     ]
     lag = int(block.get("lag_days") or 1)
-    if block.get("data_ended"):
+    if block.get("data_ended") and block.get("still_moving"):
+        lines.append(
+            f"No data has arrived since {block.get('data_through')}, more than a month before today "
+            f"({today.isoformat()}), and {', '.join(block['still_moving'])} had not settled when it stopped: this "
+            f"{block['period']} is read as if today were the day after it, and its figures may still move. Say so in one "
+            "plain sentence, and do not call any of those figures final.")
+    elif block.get("data_ended"):
         # Gap 38 (the Olist run): an unconditional settling sentence was written about a range eight
         # years settled. Data that ENDED has no lag; its figures are final, and that is what is said.
         lines.append(
@@ -113,6 +119,12 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
             f"({today.isoformat()}): this {block['period']} is read as if today were the day after it, "
             "and every figure in it is final. Say so once, plainly. Do not mention settling, late rows "
             "or confirming a figure later.")
+    elif lag > 1 and block.get("rewrites"):
+        from aughor.settling.answer import answer_of_block
+        lines.append(
+            f"The {block['period']} ends {lag} days before today ({today.isoformat()}). {answer_of_block(block).says()} Say so "
+            "in one plain sentence, do not call any figure from it final, and do not read a difference against an earlier "
+            "period as a move.")
     elif lag > 1 and block.get("lag_source") == "beyond_horizon":
         moving = list(block.get("still_moving") or [])
         tables, verb, it = (", ".join(moving) or "a table",
@@ -121,7 +133,8 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
             f"The {block['period']} ends {lag} days before today ({today.isoformat()}) because "
             f"{tables} {verb} still changing {lag - 1} days after a day ended, and the platform has "
             f"not yet seen {it} stop: figures read from {it} may still move. Say so in one plain "
-            "sentence, and do not call any of those figures final.")
+            "sentence, do not call any of those figures final, and do not read a difference against an earlier period as "
+            "a move.")
     elif lag > 1:
         why = ("the platform measured" if block.get("lag_source") == "learned"
                else "this source is configured with")

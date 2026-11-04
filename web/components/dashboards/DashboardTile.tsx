@@ -229,12 +229,12 @@ function Moved({ value, previous, card }: { value: number; previous: CardRunPrev
   if (!moved) return null;
   return (
     <div className="aug-fs-sm" data-testid="tile-change" title={`Against ${previous.covers}`}
-      style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", color: moveColour(moved.sign, card) }}>
+      style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", color: previous.equal_age ? moveColour(moved.sign, card) : "var(--t2)" }}>
       {moved.sign !== 0 && <Icon name={moved.sign > 0 ? "rises" : "falls"} size={13} />}
       <span>{moved.text}</span>
       {!previous.equal_age && (
         <span data-testid="tile-not-equal-age" style={{ color: "var(--amb4)" }}
-          title="The range has not settled and what it is compared with has, so part of the difference is age, not a move.">
+          title="This range's days may still change, so part of the difference may not be a move.">
           · not at equal age
         </span>
       )}

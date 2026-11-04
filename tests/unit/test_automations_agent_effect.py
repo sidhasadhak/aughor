@@ -85,6 +85,20 @@ def _capture_ask(monkeypatch):
 
 # ── the unbound path is untouched ────────────────────────────────────────────────
 
+@pytest.mark.parametrize("lag, told", [
+    ({"days": 29, "source": "beyond_horizon", "still_moving": ["items"], "horizon": 28, "rewrites": ["items"]}, True),
+    ({"days": 15, "source": "beyond_horizon", "still_moving": ["items"], "horizon": 14, "rewrites": []}, True),
+    ({"days": 3, "source": "learned", "still_moving": [], "horizon": 14, "rewrites": []}, False),
+])
+def test_a_scheduled_run_is_told_of_a_source_never_seen_to_settle(monkeypatch, lag, told):
+    monkeypatch.setattr("aughor.settling.store.connection_lag", lambda cid: lag)
+    submitted = _capture_submit(monkeypatch)
+    seen = _capture_ask(monkeypatch)
+    _dispatch_investigate(Effect(kind="investigate", config={"question": "why did refunds spike?"}), _automation())
+    submitted[0]["work"]()
+    assert ("do not read a difference against an earlier period as a move" in seen[0].question) is told
+
+
 def test_an_investigate_effect_without_an_agent_is_byte_identical(monkeypatch):
     submitted = _capture_submit(monkeypatch)
     seen = _capture_ask(monkeypatch)

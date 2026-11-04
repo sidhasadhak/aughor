@@ -1,8 +1,6 @@
 /**
- * The Metrics dashboard read as figures (`design-mockups/cockpit-day-figures.html`, the user 2026-10-12: "that is how
- * I'd like my COCKPITS to look"): which figure moved most, what each is compared with in a few words, what cannot be
- * measured and why, and which metrics' data ended before the period. Every figure is the period's own (the user,
- * 2026-10-23). Pure: nothing here fetches.
+ * A range's figures in the words a dashboard uses for them: each period in a few words, and the rule that every figure is
+ * the period's own (the user, 2026-10-23). The Metrics dashboard's rows are `ledger.ts`. Pure: nothing here fetches.
  */
 import type { BriefingRangeBlock, BriefingRangeMeasure } from "@/lib/api";
 
@@ -38,43 +36,6 @@ export function figurePeriods(block: BriefingRangeBlock): { current: string; pre
     current: periodShort(block.start, block.end, block.period),
     previous: periodShort(block.previous_start, block.previous_end, block.period),
   };
-}
-
-/** How far a figure moved against its comparison, as a share of where it was — the one scale every unit shares. */
-export function moveOf(m: BriefingRangeMeasure): number | null {
-  if (m.current === null || m.previous === null) return null;
-  if (m.rel !== null && Number.isFinite(m.rel)) return m.rel;
-  if (m.previous === 0) return null;
-  return (m.current - m.previous) / Math.abs(m.previous);
-}
-
-/**
- * What moved: the figure with the largest change. A part-covered or not-yet-equal-age reading is not a like-for-like
- * change, so it never leads. Null when nothing moved.
- */
-export function heroOf(block: BriefingRangeBlock): BriefingRangeMeasure | null {
-  let best: BriefingRangeMeasure | null = null;
-  let size = 0;
-  for (const m of block.measured) {
-    if (m.current_partial || m.previous_partial || (m.equal_age && !m.equal_age.equal)) continue;
-    const move = moveOf(m);
-    if (move === null || move === 0) continue;
-    if (Math.abs(move) > size) { best = m; size = Math.abs(move); }
-  }
-  return best;
-}
-
-/** The metrics a person can make measurable, one row per reason: the same reason for four metrics is said once. A
- *  metric whose data ended is not among them — no setting brings its rows back (`endedMetrics`). */
-export function unmeasuredByReason(block: BriefingRangeBlock): { reason: string; names: string[] }[] {
-  const out = new Map<string, string[]>();
-  for (const u of block.unmeasured) if (!u.data_ends) out.set(u.reason, [...(out.get(u.reason) ?? []), u.name]);
-  return [...out].map(([reason, names]) => ({ reason, names }));
-}
-
-/** The metrics whose data ended before the period, so it has no figure for them. */
-export function endedMetrics(block: BriefingRangeBlock): { name: string; dataEnds: string }[] {
-  return block.unmeasured.filter(u => u.data_ends).map(u => ({ name: u.name, dataEnds: u.data_ends! }));
 }
 
 /** A range's figures as both pages print them: its own and nothing else. A block stored before 2026-10-23 kept an

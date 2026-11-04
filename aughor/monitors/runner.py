@@ -176,7 +176,7 @@ def _reading_sql(monitor: Monitor, db) -> tuple[Optional[str], Optional[str]]:
     spec = settled_period(monitor.conn_id, grain, today=datetime.now(timezone.utc).date(),
                           schema=getattr(metric, "schema_name", None) or None)
     if spec is None:
-        raise PeriodUnreadable(f"no settled {grain} of {label} could be read")
+        raise PeriodUnreadable(f"no {grain} of {label} old enough to read could be read")
     dialect = getattr(db, "dialect", None) or "duckdb"
     sql, why = mt.measure_sql(metric, [mt.Window("current", spec.start, spec.end, as_of=spec.as_of)],
                               dialect=dialect)
@@ -803,7 +803,10 @@ def _check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     # SQL to the fired alert.
     if alert is not None:
         try:
-            _cav = _guard_caveats(monitor, db)
+            from aughor.settling.answer import settling_answer
+            _source = settling_answer(monitor.conn_id).about({"sql": monitor.custom_sql} if (monitor.custom_sql or "").strip()
+                                                             else _metric_of(monitor))
+            _cav = " ".join(filter(None, [_guard_caveats(monitor, db), _source.says() if _source.never_settled else ""]))
             if _cav:
                 alert.caveat = _cav
         except Exception:

@@ -36,5 +36,6 @@ def test_a_nan_from_the_warehouse_is_no_figure_and_the_range_still_answers(monke
 
     assert out["measured"] == []
     assert out["unmeasured"] == [{"name": "Ride Completion Rate", "metric": "ride_completion_rate",
+                                  "area": {"id": "other", "name": "Everything else the data holds", "order": 17},
                                   "reason": "its data has no rows in this range"}]
     json.dumps(out, allow_nan=False)  # what the API's response does — it raised on the NaN

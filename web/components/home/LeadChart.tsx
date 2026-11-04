@@ -62,7 +62,7 @@ export function LeadChart({ points, day, reported }: {
   const every = Math.max(1, Math.round(points.length / 4));
   const held = hover === null ? null : points[hover];
   const said = `${points.length} days of this metric, from ${dayMonth(points[0]?.day ?? "")} to ${dayMonth(points[points.length - 1]?.day ?? "")}`
-    + (usual !== null ? `. Settled days average ${money(usual)}` : "")
+    + (usual !== null ? `. Older days average ${money(usual)}` : "")
     + (reported && at >= 0 ? `. ${dayMonth(day)} was reported at ${reported.text} on ${reported.on} and reads ${money(points[at].value)} now` : "");
 
   return (
@@ -96,7 +96,7 @@ export function LeadChart({ points, day, reported }: {
           {firstSettling >= 0 && (
             <>
               <rect x={x(Math.max(firstSettling - 0.5, 0))} y={TOP} width={width - RIGHT - x(Math.max(firstSettling - 0.5, 0))} height={H - TOP - BOTTOM} fill="url(#lead-hatch)" />
-              <text x={width - RIGHT - 4} y={TOP + 14} textAnchor="end" fill="var(--t2)" className="aug-fs-sm">still settling</text>
+              <text x={width - RIGHT - 4} y={TOP + 14} textAnchor="end" fill="var(--t2)" className="aug-fs-sm">may still move</text>
             </>
           )}
           {lastSure >= 1 && (
@@ -109,7 +109,7 @@ export function LeadChart({ points, day, reported }: {
             <path d={line(Math.max(firstSettling - 1, 0), points.length - 1)} fill="none" stroke="var(--t2)" strokeWidth="2" strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" />
           )}
           {usual !== null && (
-            <text x={LEFT + 6} y={y(usual) - 34} fill="var(--t3)" className="aug-fs-sm">Settled days average {money(usual)}</text>
+            <text x={LEFT + 6} y={y(usual) - 34} fill="var(--t3)" className="aug-fs-sm">Older days average {money(usual)}</text>
           )}
           {peak !== at && points[peak].value > (usual ?? 0) * 1.5 && (
             <text x={x(peak) - 10} y={y(points[peak].value) + 4} textAnchor="end" fill="var(--t2)" className="aug-fs-sm">{money(points[peak].value)} on {dayMonth(points[peak].day)}</text>
@@ -144,7 +144,7 @@ export function LeadChart({ points, day, reported }: {
           left: Math.max(70, Math.min(width - 70, x(hover))), top: Math.max(44, y(held.value)), transform: "translate(-50%, -120%)",
           background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: "4px 8px", color: "var(--t1)",
           fontVariantNumeric: "tabular-nums" }}>
-          <div style={{ color: "var(--t3)" }}>{dayMonth(held.day)}{held.settling ? " · still settling" : ""}</div>
+          <div style={{ color: "var(--t3)" }}>{dayMonth(held.day)}{held.settling ? " · may still move" : ""}</div>
           {money(held.value)}
         </div>
       )}

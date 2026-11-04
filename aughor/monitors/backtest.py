@@ -136,7 +136,7 @@ def _sentence(bt: Backtest) -> str:
     if bt.quieter_sigma is not None:
         head += f"; {bt.quieter_sigma}σ would have fired at most {MAX_FIRINGS_PER_YEAR} times"
     if bt.settle_days > 1:
-        head += f" (the youngest {bt.settle_days} days are still settling and were not replayed)"
+        head += f" (the youngest {bt.settle_days} days are too new to score and were not replayed)"
     return head + "."
 
 

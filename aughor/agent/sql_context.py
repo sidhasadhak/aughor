@@ -87,11 +87,11 @@ def sql_context(conn=None, *, dialect: str = "", today: str = "", coverage_end: 
     settled = settled_day(t, coverage_end, settle_days)
     clock = f"TODAY: {t} (UTC)."
     if coverage_end:
-        clock += (f" The data runs to {(coverage_end or '')[:10]}; its last SETTLED day is {settled} — "
-                  "rows dated after it are still arriving, so no period ending later is complete.")
+        clock += (f" The data runs to {(coverage_end or '')[:10]}; the newest day to read is {settled} — "
+                  "rows dated after it may still change, so no period ending later is complete.")
     else:
-        clock += f" The last settled day is {settled}."
-    clock += (" A relative period (\"last 6 months\", \"recent\") counts back from the settled day, "
+        clock += f" The newest day to read is {settled}."
+    clock += (" A relative period (\"last 6 months\", \"recent\") counts back from that day, "
               "never from a sample value. Never anchor a window on CURRENT_DATE or NOW(): use "
               "the literal dates you are given.")
     lines.append(clock)

@@ -31,6 +31,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from aughor.semantic.metric_time import Window
+from aughor.settling.answer import answer_from
 
 #: The Dashboard's periods (the user, 2026-10-08): the day, week, month or year under way — "current" —
 #: and the one before it — "last". Each is read only over days whose data has ARRIVED (``data_through``,
@@ -90,13 +91,18 @@ class RangeSpec:
     fiscal_start_month: int = 1
     #: The data ENDED: its newest day is more than ``STOPPED_DAYS`` before today, so the range was read
     #: as if today were the day after it (the Olist run, 2026-10-22: a 2016–2018 dataset read every
-    #: edition off today and could only ever be empty). Its figures are final; it has no settling lag.
+    #: edition off today and could only ever be empty). It has no settling lag, and its figures are final
+    #: unless a table was still moving when it stopped.
     data_ended: bool = False
     #: The first day the data holds, when it was read with the edge.
     data_from: Optional[date] = None
     #: Why the range is not compared with the one before, in words ("" when it is): the earlier
     #: range starts before the data does, so it holds only part of its days.
     compare_withheld: str = ""
+    #: The tables of ``still_moving`` whose source keeps rewriting their old days (`settling.learn.rewrites_history`).
+    rewrites: tuple = field(default_factory=tuple)
+    #: The oldest age those tables were read at; ``lag_days`` is not it when another table's learned lag is longer.
+    horizon: int = 0
 
     @property
     def last_day(self) -> date:
@@ -340,7 +346,7 @@ def compared_word(spec: RangeSpec) -> str:
 
 def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
                   end: Optional[date] = None, today: date, lag_days: int = 1,
-                  lag_source: str = "default", still_moving: tuple = (),
+                  lag_source: str = "default", still_moving: tuple = (), rewrites: tuple = (), horizon: int = 0,
                   fiscal_start_month: int = 1, edge: Optional[dict] = None) -> tuple[Optional[RangeSpec], str]:
     """The range a Briefing reads, or ``(None, why)``. ``end`` is the LAST day, inclusive, as a
     calendar picks it; the spec's ``end`` is exclusive. Pure: no clock, no store.
@@ -355,10 +361,11 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
     ended = _ended(edge, today)
     if ended is not None and preset != "custom":
         return _ended_range(preset, today=today, through=ended, edge=edge or {},
-                            fiscal_start_month=fiscal_start_month)
+                            fiscal_start_month=fiscal_start_month, still_moving=still_moving, rewrites=rewrites, horizon=horizon)
     lag = clamp_lag(lag_days)
     anchor = today - timedelta(days=lag)          # the newest settled day
-    common = dict(as_of=today, lag_days=lag, lag_source=lag_source, still_moving=tuple(still_moving))
+    common = dict(as_of=today, lag_days=lag, lag_source=lag_source, still_moving=tuple(still_moving),
+                  rewrites=tuple(rewrites), horizon=horizon)
     fiscal = fiscal_start_month if 1 <= int(fiscal_start_month or 1) <= 12 else 1
     edge = edge or {}
     through = edge.get("through")
@@ -408,7 +415,7 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
         year = timedelta(days=364)
         return RangeSpec("custom", start, e, start - shift, e - shift, start - year, e - year, as_of=today,
                          lag_days=0, lag_source="data_ended", data_through=ended, data_ended=True,
-                         data_from=edge.get("from"),
+                         data_from=edge.get("from"), still_moving=tuple(still_moving), rewrites=tuple(rewrites), horizon=horizon,
                          edge_note=_ended_note(ended, edge, asked_to=end if e <= end else None)), ""
     if through is not None:
         # Days whose data has not arrived are not read: a range asked to today against a whole
@@ -451,10 +458,12 @@ def _ended_note(through: date, edge: dict, *, asked_to: Optional[date] = None, c
     return said
 
 
-def _ended_range(preset: str, *, today: date, through: date, edge: dict,
-                 fiscal_start_month: int) -> tuple[Optional[RangeSpec], str]:
+def _ended_range(preset: str, *, today: date, through: date, edge: dict, fiscal_start_month: int,
+                 still_moving: tuple = (), rewrites: tuple = (), horizon: int = 0) -> tuple[Optional[RangeSpec], str]:
     """A preset over data that has ENDED: resolved as if read the day after its last day, with a
-    one-day floor (the newest settled day IS the last day), then dated today and made final.
+    one-day floor (the newest settled day IS the last day), then dated today and made final — unless a
+    table was still moving when it stopped: a pause is not an ending, and theLook, unrefreshed since
+    2026-10-29, would otherwise go final on 11-30 with its newest days still inflated.
 
     The decision (the user, 2026-10-23, on the Olist mockup): anchor to the data's LAST ROW, not to
     the last day that looks whole by volume. A comparison whose earlier range starts before the data
@@ -474,10 +483,34 @@ def _ended_range(preset: str, *, today: date, through: date, edge: dict,
                     "part of its days")
     if data_from is not None and ly_s is not None and ly_s < data_from:
         ly_s, ly_e = None, None
-    spec = replace(spec, as_of=today, lag_days=0, lag_source="data_ended", still_moving=(),
+    spec = replace(spec, as_of=today, lag_days=0, lag_source="data_ended", still_moving=tuple(still_moving),
+                   rewrites=tuple(rewrites), horizon=horizon,
                    data_through=through, data_ended=True, data_from=data_from,
                    compare_withheld=withheld, last_year_start=ly_s, last_year_end=ly_e)
     return replace(spec, edge_note=_ended_note(through, edge, covers=phrases(spec)["covers"])), ""
+
+
+def not_read_rows(figures: list[dict], name_key: str, against_usual: bool = True) -> list[dict]:
+    """The figures whose difference was not read as a move, one row per reason: on theLook eight figures gave one
+    sentence eight times. ``against_usual`` says what an edition read them against; a send with no guide read only the
+    period before."""
+    by_reason: dict[str, list[str]] = {}
+    for f in figures:
+        age = f.get("equal_age") or {}
+        if age.get("equal") is False:
+            by_reason.setdefault(str(age.get("why") or "").removeprefix(f[name_key]), []).append(f[name_key])
+    rows = []
+    for said, names in by_reason.items():
+        label = " and ".join(filter(None, [", ".join(names[:-1]), names[-1]]))
+        one = len(names) == 1
+        rows.append({"label": f"{label} against {'its' if one else 'their'} usual range" if against_usual else label,
+                     "reason": f"{'it' if one else 'each'}{said}", "tables": []})
+    return rows
+
+
+def _spec_answer(spec: RangeSpec):
+    return answer_from({"days": spec.lag_days, "source": spec.lag_source, "still_moving": spec.still_moving,
+                        "rewrites": spec.rewrites, "horizon": spec.horizon})
 
 
 def range_block(spec: RangeSpec) -> dict:
@@ -498,6 +531,9 @@ def range_block(spec: RangeSpec) -> dict:
             "data_ended": spec.data_ended,
             "data_from": _d(spec.data_from) if spec.data_from else None,
             "compare_withheld": spec.compare_withheld,
+            "rewrites": list(spec.rewrites), "horizon": spec.horizon,
+            # a dataset that ended and had settled has nothing left to say of its days
+            "settling": None if spec.data_ended and not spec.still_moving else _spec_answer(spec).as_block(),
             "measured": [], "unmeasured": []}
 
 
@@ -513,7 +549,7 @@ def _rel(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
     return (cur - prev) / abs(prev)
 
 
-def equal_age(metric: Any, status: str) -> dict:
+def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None, *, label: str = "") -> dict:
     """Is this figure's comparison read at the same age as the figure itself? (BR-6)
 
     `RangeSpec.windows` gives every comparison its OWN as-of — August read on 15 September is
@@ -523,27 +559,42 @@ def equal_age(metric: Any, status: str) -> dict:
     both periods have stopped moving.
 
     What is left is the case §3.48 names and nothing said out loud. A **flow** figure that is
-    still provisional — theLook restates its recent days for eight — is compared with a period
-    that has finished restating. Its rows arrive late with no outcome date, so there is nothing
-    to bound; the honest reading needs BR-8's daily readings, which do not exist yet. Until
-    then the comparison SAYS it is not at equal age rather than letting a reader take a
-    difference of maturity for a move. The number is still shown: a stated caveat beside a
-    figure is worth more than a blank.
+    still provisional is compared with a period that has finished restating. Its rows arrive
+    late with no outcome date, so there is nothing to bound; the honest reading needs BR-8's
+    daily readings, which do not exist yet. Until then the comparison SAYS it is not at equal
+    age rather than letting a reader take a difference of maturity for a move. The number is
+    still shown: a stated caveat beside a figure is worth more than a blank.
+
+    With ``spec``, the reason is the true one for a table still moving. "What it is compared
+    with has settled" is false there: on theLook no age settles, and the slide of a table redrawn
+    at each refresh reads as growth (measured 2026-11-04).
+
+    A cohort on such a table is not exempt: its as-of bounds the outcomes, not the rows it divides
+    them by. Every past week of theLook read as an edition reads it, the same day: sell-through flat
+    at 32-36% for ten weeks, then 66.4% in the very week the edition read, its unsold rows halved
+    near the refresh; and of 21 weeks of return rate outside their usual range on either side of one
+    refresh, 1 on both. Lux, read the same way, shows neither.
     """
+    from aughor.semantic import metric_time as mt
+
     if status == "final":
         return {"equal": True, "why": ""}
-    kind = str(_get_kind(metric) or "")
-    if kind == "cohort":
+    # A guide's check that writes its own aggregate is a dict (`guide.measurable`), an approved metric an object.
+    label = label or mt._get(metric, "label") or mt._get(metric, "name") or "this figure"
+    if spec is not None and mt.reads_any(metric, spec.rewrites):
+        return {"equal": False, "why": (
+            f"{label} reads a source that rewrites its whole history at each refresh, so nothing in it settles and an "
+            "older range can read lower just for being older. Part of any difference is that, not a move.")}
+    if spec is not None and mt.reads_any(metric, spec.still_moving):
+        return {"equal": False, "why": (
+            f"{label} reads a table this platform has not seen stop changing at any age it has read, so neither it nor "
+            "what it is compared with has settled. Part of any difference may be that, not a move.")}
+    if mt._get(metric, "time_kind") == "cohort":
         return {"equal": True, "why": ""}
-    label = getattr(metric, "label", "") or getattr(metric, "name", "") or "this figure"
     return {"equal": False, "why": (
         f"{label} is still {'to date' if status == 'to_date' else 'provisional'}, and what it is "
         "compared with has settled — part of any difference is the difference in age, not a move. "
         "Comparing them at the same age needs a daily reading this source does not keep yet.")}
-
-
-def _get_kind(metric: Any) -> str:
-    return str(getattr(metric, "time_kind", "") or "")
 
 
 def metric_cap(conn_id: str) -> int:
@@ -581,6 +632,43 @@ def areas_of(conn_id: str, metrics: list, schema: Optional[str] = None) -> dict[
         tolerate(exc, "the Briefing's metrics could not be placed by area; the statement's order holds",
                  counter="briefing.areas")
         return {}
+
+
+def directions_of(conn_id: str, metrics: list, schema: Optional[str] = None) -> dict[str, str]:
+    """name → which way is good for each metric, ``up`` or ``down``, where anyone has said: the dataset's guide, which a
+    person publishes, then the industry's knowledge base. A metric nobody has said this of is not in it, and carries no
+    colour: good or bad would be a judgement the data does not hold."""
+    out: dict[str, str] = {}
+    if not metrics:
+        return out
+    try:
+        from aughor.semantic.metric_map import holding_pattern, map_for, match_pattern
+        patterns = map_for(conn_id, schema).patterns()
+        by_id = {p.id: p for p in patterns}
+        for m in metrics:
+            name, label = str(m.name or ""), str(m.label or "")
+            cited = next((by_id.get(str(line).rsplit("·", 1)[-1].strip()) for line in (m.lineage or [])
+                          if str(line).startswith("coverage:")), None)
+            pattern = cited or match_pattern(name, label, patterns) or holding_pattern(name, label, patterns)
+            if pattern is not None and pattern.direction in ("up", "down"):
+                out[m.name] = pattern.direction
+    except Exception as exc:  # noqa: BLE001 — no direction is no colour, never a wrong one
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the industry's directions could not be read", counter="briefing.directions")
+    try:
+        from aughor.briefing import guide as G
+        guide, _rev = G.current(conn_id, schema)
+        for check in (guide.checks if guide else []):
+            if check.metric and check.better in ("up", "down"):
+                out[check.metric] = check.better
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the guide's directions could not be read", counter="briefing.directions")
+    return out
+
+
+def _area_said(area: dict) -> dict:
+    return {"id": area["id"], "name": area["name"], "order": area.get("order", 10 ** 6)}
 
 
 def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
@@ -730,7 +818,15 @@ def _unsettled(m: Any, spec: RangeSpec) -> bool:
     """Whether a figure reads a table the platform has not yet seen stop changing — by the tables its
     statement reads, which a statement's empty `tables` field never named."""
     from aughor.semantic import metric_time as mt
-    return bool({mt.bare_name(t) for t in mt.tables_read(m)} & set(spec.still_moving))
+    return mt.reads_any(m, spec.still_moving)
+
+
+def range_status(m: Any, spec: RangeSpec) -> str:
+    """A figure's status for ``spec``, one answer wherever it is read. The edition asked without ``_unsettled`` until
+    2026-11-04: eight of theLook's flows read final there and provisional on the Dashboard, and it told the model so."""
+    from aughor.semantic import metric_time as mt
+    return mt.figure_status(m, spec.windows()[0], as_of=spec.as_of, lag_days=spec.lag_days,
+                            unsettled=_unsettled(m, spec))
 
 
 def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
@@ -751,7 +847,7 @@ def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
     if read.compare_withheld:
         pv, prev_partial = None, None
     lv = read_value(ly) if m.time_kind != "stock" else (ly["value"] if ly else None)
-    status = mt.figure_status(m, at[0], as_of=read.as_of, lag_days=read.lag_days, unsettled=_unsettled(m, read))
+    status = range_status(m, read)
     return {
         "name": name, "metric": m.name, "unit": m.unit or "", "time_kind": m.time_kind,
         "time_source": m.time_source, "confirmed": bool(m.time_confirmed_by),
@@ -762,7 +858,7 @@ def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
         "current_partial": cur_partial, "previous_partial": prev_partial,
         # BR-6 — said, never implied: a provisional flow figure against a settled comparison
         # is not a fair move, and the reader is told so beside the number.
-        "equal_age": equal_age(m, status),
+        "equal_age": equal_age(m, status, read),
         "sql": mt.measure_sql(m, at, dialect=dialect)[0] or "",
         "compare_withheld": read.compare_withheld,
         "line": line_of(m),
@@ -802,6 +898,7 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     approved, over_cap = governed[:cap], governed[cap:]
     line_of = statement_lines(conn_id)
     area_of = areas_of(conn_id, approved, schema)
+    better_of = directions_of(conn_id, approved, schema)
     windows = spec.windows()
     measured: list[dict] = []
     unmeasured: list[dict] = []
@@ -824,7 +921,9 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             continue
         row = _figure_row(m, name, spec, got, dialect=dialect, line_of=line_of)
         if m.name in area_of:
-            row["area"] = {"id": area_of[m.name]["id"], "name": area_of[m.name]["name"]}
+            row["area"] = _area_said(area_of[m.name])
+        if m.name in better_of:
+            row["better"] = better_of[m.name]
         measured.append(row)
     # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
     # definitions against a cap of eight, and the two it dropped fell through to the north-star
@@ -841,18 +940,25 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
     seen = {_norm(m.name) for m in governed} | {_norm(m.label) for m in governed}
     # A north star whose definition was deprecated — theLook's Item Return Rate, a second name for
     # Return rate (2026-10-08) — is not missing one: "approve one" would ask for the duplicate back.
-    retired = {_norm(x) for m in _deprecated(conn_id, schema) for x in (m.name, m.label)}
+    deprecated = _deprecated(conn_id, schema)
+    retired = {_norm(x): m for m in deprecated for x in (m.name, m.label)}
     for ns in north_stars or []:
         ns_name = ns.get("name") if isinstance(ns, dict) else getattr(ns, "name", "")
         if ns_name and _norm(ns_name) not in seen:
             unmeasured.append({"name": ns_name, "reason": (
                 "its definition was deprecated, so it is not measured under this name" if _norm(ns_name) in retired
                 else "no approved definition; approve one in the Semantic Layer to measure it")})
+    # what was not measured still reads in its area: said where a person would look for it
+    placed = {**area_of, **areas_of(conn_id, [*over_cap, *deprecated], schema)}
+    for row in unmeasured:
+        known = placed.get(row.get("metric") or "") or placed.get(getattr(retired.get(_norm(row["name"])), "name", ""))
+        if known:
+            row["area"] = _area_said(known)
     return {"measured": measured, "unmeasured": unmeasured}
 
 
 _STATUS_WORDS = {
-    "provisional": "provisional — its newest days are still settling",
+    "provisional": "provisional — its newest days may still change",
     "to_date": "to date — the range is still under way",
 }
 
@@ -868,6 +974,15 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
     from aughor.knowledge import period_brief
 
     share = m.get("unit") == "ratio 0..1"
+    if (m.get("equal_age") or {}).get("equal") is False:
+        # Not "moved from X to Y": that is the phrase the triage ranks a move by, and this is not read as one. Why is said
+        # once, in the send's own section (`sheet_lines`).
+        if share and m.get("previous") is not None:
+            line = (f"{m['name']} was {_share(m['current'])} in {block['covers']}, against {_share(m['previous'])} in "
+                    f"{block['compared_with']}.")
+        else:
+            line = period_brief.metric_line({**m, "rel": None}, block, currency_code)
+        return line.rstrip(".") + " — not read as a move."
     if share and m.get("rel") is not None and m.get("previous") is not None:
         pts = (m["current"] - m["previous"]) * 100
         line = (f"{m['name']} moved from {_share(m['previous'])} to {_share(m['current'])} "
@@ -892,10 +1007,13 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
 
 def range_findings(measured: list[dict], block: dict, currency_code: Optional[str]) -> list[dict]:
     """The measured metrics as candidate findings, shaped like explorer findings so the triage
-    ranks them — the range's biggest move leads on its size."""
+    ranks them — the range's biggest move leads on its size. A figure not at equal age is no candidate: a difference
+    that may be its age would lead on its size too."""
     import re
     out = []
     for m in measured:
+        if (m.get("equal_age") or {}).get("equal") is False:
+            continue
         slug = re.sub(r"[^a-z0-9]+", "_", m["name"].lower()).strip("_")[:40]
         out.append({"id": f"range-move::{block['key']}::{slug}", "domain": "Key Metrics",
                     "angle": "Range", "finding": metric_line(m, block, currency_code),
@@ -1141,6 +1259,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     unit = _read_unit(m.time_kind, m.unit or "", values)
     currency, slack = _currency(conn_id, schema), _slack(spec.days)
     settled_by = spec.as_of - timedelta(days=max(int(spec.lag_days or 1), 1))
+    unsettled = _unsettled(m, spec)
     series = []
     for w, v in zip(windows, values):
         row = got.get(w.label)
@@ -1149,13 +1268,42 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
         series.append({"start": _d(w.start), "last_day": _d(w.last_day), "label": _span(w.start, w.end),
                        "value": v, "value_text": _figure_text(v, name, unit, currency) if v is not None else None,
                        "partial": partial, "current": w is windows[-1],
-                       # inside the days this source keeps changing: its figure may still move
-                       "settling": w.last_day > settled_by})
+                       # inside the days this source keeps changing, or read from a table with no such days: its figure may still move
+                       "settling": w.last_day > settled_by or unsettled})
     # Only a cohort's comparisons are bounded to an equal age (its outcomes, by each window's
     # as-of). A flow or a level is read as its rows stand today, so a range still settling is
-    # not at the age of the ones before it — and the drawer said they all were (2026-10-08).
-    return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort",
-            "lag_days": spec.lag_days}
+    # not at the age of the ones before it — and the drawer said they all were (2026-10-08). A cohort on a
+    # table still moving is not at equal age either (`equal_age`), and "so these comparisons are fair" sat
+    # above "Not at equal age" on theLook's two.
+    return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort" and not unsettled,
+            "lag_days": spec.lag_days, "never_settled": _spec_answer(spec).about(m).says() if unsettled else "",
+            "usual": _usual_of(conn_id, schema, spec, values)}
+
+
+def _usual_of(conn_id: str, schema: Optional[str], spec: RangeSpec, values: list) -> Optional[dict]:
+    """A metric's usual range for this range, by the Briefing's own definition (`briefing.edition`, the guide's settings
+    where a dataset has a guide): the mean and spread of the ranges before it, and which side of that range it stands
+    on. None with too few earlier readings to say."""
+    import statistics
+
+    from aughor.briefing import edition as E
+    from aughor.briefing import guide as G
+
+    try:
+        guide, _rev = G.current(conn_id, schema)
+    except Exception as exc:  # noqa: BLE001 — a guide that cannot be read leaves the default settings standing
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the guide could not be read; the usual range keeps its default settings", counter="briefing.range.usual")
+        guide = None
+    news = guide.news if guide else G.NewsRule()
+    now = values[-1] if values else None
+    earlier = [v for v in values[:-1][-news.usual_for(E._period(spec)):] if v is not None]
+    if now is None or len(earlier) < E.MIN_USUAL:
+        return None
+    mean, sd = statistics.fmean(earlier), statistics.stdev(earlier)
+    z = (now - mean) / sd if sd > 0 else 0.0
+    return {"mean": mean, "low": mean - sd, "high": mean + sd, "n": len(earlier), "z": z,
+            "outside": "" if abs(z) < news.outside_sd or sd == 0 else "above" if z > 0 else "below"}
 
 
 def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domain_data: dict,
@@ -1236,8 +1384,18 @@ def resolve_for(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
     # its last day. Until 2026-10-23 only the Dashboard's periods and a recent custom range read it, and
     # Olist's six editions anchored to 2026 over data that stops in 2018.
     edge = data_edge(conn_id, schema, today=today)
+    rewrites: list = []
+    horizon = 0
+    try:
+        from aughor.settling.store import connection_lag
+        reading = connection_lag(conn_id)
+        rewrites, horizon = list(reading.get("rewrites") or []), int(reading.get("horizon") or 0)
+    except Exception as exc:  # noqa: BLE001 — unread, a figure gives the plainer reason; its guard reads still_moving
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "whether this source rewrites its history is unread", counter="briefing.range.rewrites")
     return resolve_range(preset, start=start, end=end, today=today, lag_days=lag,
-                         lag_source=lag_source, still_moving=tuple(moving), fiscal_start_month=fiscal,
+                         lag_source=lag_source, still_moving=tuple(moving), rewrites=tuple(rewrites), horizon=horizon,
+                         fiscal_start_month=fiscal,
                          edge=edge)
 
 
@@ -1261,7 +1419,10 @@ def sheet_lines(brief: dict, currency_code: Optional[str] = None) -> list[tuple[
     early = block.get("early") or {}
     if early.get("figures"):
         figs = "; ".join(f"{f['name']} {f.get('value_text') or f['value']}" for f in early["figures"])
-        sections.append(("early", [f"Still settling (early), {early['start']} to {early['end']}: {figs}."]))
+        sections.append(("early", [f"Newer days (early), {early['start']} to {early['end']}: {figs}."]))
+    unread = not_read_rows(block.get("measured") or [], "name", against_usual=False)
+    if unread:
+        sections.append(("not_read", [f"{r['label']}: {r['reason']}" for r in unread]))
     if block.get("unreachable"):
         sections.append(("unmeasured", [f"Nothing was measured: the data could not be reached — {block['unreachable']}."]))
     by_reason: dict[str, list[str]] = {}

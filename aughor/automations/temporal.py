@@ -357,7 +357,8 @@ def unsettled_note(lag: int, learned_lag: Optional[int]) -> str:
 
 def scheduled_grounding(automation, effect_config: dict,
                         now: Optional[datetime] = None,
-                        learned_lag: Optional[int] = None) -> str:
+                        learned_lag: Optional[int] = None,
+                        never_settles: str = "") -> str:
     """The full grounding block for one scheduled investigate dispatch, or ''.
 
     '' whenever the automation carries no ``schedule`` condition — a webhook-, a
@@ -365,7 +366,8 @@ def scheduled_grounding(automation, effect_config: dict,
     manual "Run now" of a SCHEDULED automation still grounds: the person is
     rehearsing the scheduled behaviour, and the partial-day trap does not care who
     pressed the button. ``learned_lag`` is the connection's learned settling lag
-    (`settling.learned_lag_days`), read only when the step sets no lag of its own."""
+    (`settling.learned_lag_days`), read only when the step sets no lag of its own. ``never_settles`` is what
+    `settling.settling_answer` tells an agent of a source never seen to settle, said whatever lag the step reads at."""
     cron = ""
     for cond in getattr(automation, "conditions", None) or []:
         if getattr(cond, "kind", "") == "schedule":
@@ -379,6 +381,8 @@ def scheduled_grounding(automation, effect_config: dict,
     unsettled = unsettled_note(lag, learned_lag)
     if unsettled:
         parts[0] = parts[0] + "\n" + unsettled
+    if never_settles:
+        parts[0] = parts[0] + "\n" + never_settles
     prev = previous_report_note(getattr(automation, "id", ""))
     if prev:
         parts.append(prev)

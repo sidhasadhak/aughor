@@ -779,7 +779,7 @@ def _metric_moves_provider(conn_id: str, profile, schema: str | None = None):
             now = datetime.now(timezone.utc)
             moves = compute_metric_moves(metrics, run_sql, currency, scope=schema or "",
                                          settled_through=now.date() - timedelta(days=_settled_lag(conn_id)),
-                                         measured_at=now.isoformat())
+                                         measured_at=now.isoformat(), still_moving=_still_moving(conn_id))
             _record_moves(conn_id, schema, moves)
             return moves
         finally:
@@ -790,6 +790,13 @@ def _metric_moves_provider(conn_id: str, profile, schema: str | None = None):
                 tolerate(_e, "metric-move: best-effort connection close", counter="brief.metric_move.close_failed")
 
     return _provider
+
+
+def _still_moving(conn_id: str) -> tuple:
+    """The tables of this connection not yet seen to stop changing."""
+    from aughor.settling.answer import settling_answer
+    said = settling_answer(conn_id)
+    return said.moving
 
 
 def _settled_lag(conn_id: str) -> int:
@@ -2203,7 +2210,7 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
                 **({"canvas": canvas} if canvas else {})}
     moved = {"lag_now": block.get("lag_days")} if kept.get("lag_days") != block.get("lag_days") else {}
     from aughor.briefing.compose.write import as_it_stands
-    return {**as_it_stands(entry), "built": True, "scope_key": scope_key, **moved,
+    return {**as_it_stands(entry, conn_id), "built": True, "scope_key": scope_key, **moved,
             **({"canvas": canvas} if canvas else {})}
 
 

@@ -171,7 +171,7 @@ def test_the_period_is_said_with_its_comparison_and_settling(_cache):
     block = brief_block_for_scope("workspace", "uber_ncr", period_key=AUGUST_KEY)
     assert "PERIOD: the monthly Briefing for August 2026, compared with July 2026" in block
     assert "2026-08-01 up to but not including 2026-09-01" in block
-    assert "newest 12 days of data are not settled yet" in block
+    assert "not settled" not in block and "rides was still changing at the oldest age read" in block
     assert "STILL MOVING" in block and "rides" in block
 
 
@@ -245,3 +245,13 @@ def test_a_standing_brief_renders_exactly_as_before():
         "  - [Marketing] Paid search closes 3,704 direct-first orders.\n"
         "  - [Finance] Womenswear is the largest cost driver at 24,508,769.\n"
     )
+
+
+def test_a_pause_is_not_told_as_an_ending_with_every_figure_final():
+    from aughor.knowledge.brief_context import _period_lines
+
+    period = {"covers": "October 2026", "lag_days": 0, "data_ended": True, "data_through": "2026-10-29"}
+    assert "so every figure is final" in _period_lines(period)[0]
+    paused = _period_lines({**period, "still_moving": ["orders"]})
+    assert "so every figure is final" not in paused[0] and "no data has arrived since 2026-10-29" in paused[0]
+    assert paused[1].startswith("STILL MOVING") and "orders" in paused[1]

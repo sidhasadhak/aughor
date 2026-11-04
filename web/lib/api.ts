@@ -7740,7 +7740,9 @@ export interface AnswerRecheck {
   /** Rows the answer gave that the query no longer returns, and the first few of their labels. */
   missing_rows?: number;
   missing?: Record<string, unknown>[];
-  cause: "late_rows" | "restated" | "unknown" | "none";
+  cause: "late_rows" | "restated" | "moving" | "rewrites" | "unknown" | "none";
+  /** What is true of a source never seen to settle, when that is why the numbers moved. */
+  settling_says?: string;
   lag_days: number | null;
   told?: { door?: string; status?: string; note?: string };
 }
@@ -7832,8 +7834,10 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Arc MC — the area of the map it reads on; the Briefing reads by area. */
-  area?: { id: string; name: string } | null;
+  /** Arc MC — the area of the map it reads on: the industry's domain. The Briefing and the Metrics dashboard read by it. */
+  area?: { id: string; name: string; order?: number } | null;
+  /** Which way is good, where the guide or the industry's knowledge base says. Absent, nobody has said. */
+  better?: "up" | "down";
   /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
    *  the range; `ownFigures` reads it as not measured, as the server now says it. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
@@ -7846,6 +7850,8 @@ export interface BriefingRangeUnmeasured {
   reason: string;
   metric?: string;
   data_ends?: string;
+  /** The domain it reads in, when it was measured. */
+  area?: { id: string; name: string; order?: number } | null;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
@@ -7880,6 +7886,10 @@ export interface BriefingRangeBlock {
   lag_days: number;
   lag_source: "learned" | "beyond_horizon" | "default" | "data_ended";
   still_moving: string[];
+  /** The tables of `still_moving` whose source rewrites its history. */
+  rewrites?: string[];
+  /** What can be said of this source's days, from its own readings (`settling/answer.py`). */
+  settling?: { kind: "unknown" | "settles" | "moving" | "rewrites"; days: number | null; tables: string[]; says: string };
   covers: string;
   compared_with: string;
   last_year_label: string | null;
@@ -8075,12 +8085,15 @@ export interface EditionFigure {
   rel_last_year: number | null;
   n: number;
   status: string;
+  /** False when the figure is not read against its usual range, with why; absent on an edition kept before that rule. */
+  equal_age?: { equal: boolean; why: string };
   usual: { mean: number; low: number; high: number; n: number; mean_text: string | null;
            low_text: string | null; high_text: string | null } | null;
   z: number | null;
   outside: boolean;
   floor: boolean;
-  streak: number;
+  /** Null when the figure is not at equal age: a run of rises would be the same claim as a distance from usual. */
+  streak: number | null;
   extreme: { which: "highest" | "lowest"; of: number } | null;
   series: { label: string; start: string; value: number | null }[];
   cells: Record<string, { cells: EditionCell[]; why: string }>;
@@ -8450,7 +8463,11 @@ export interface MetricTrend {
   series: MetricTrendPoint[];
   why: string;
   same_age?: boolean;
+  /** What is true of a table this metric reads that has never been seen to settle; "" when there is none. */
+  never_settled?: string;
   lag_days?: number;
+  /** Its usual range, by the Briefing's definition, and which side of it the range stands on. Null with too few readings. */
+  usual?: { mean: number; low: number; high: number; n: number; z: number; outside: "above" | "below" | "" } | null;
   period: BriefingRangeBlock;
 }
 
@@ -8521,6 +8538,11 @@ export interface ExpectedBand {
   scored_against: "inside" | "above" | "below" | "cannot_tell" | null;
   must_say: string[];
   n: number;
+  /** How often this band's own method held on the metric's earlier ranges, of how many it could be tried on. */
+  held: number;
+  cases: number;
+  /** How often it says it will hold, as a share. */
+  coverage: number | null;
 }
 
 /** `target` is null — with `why` — for a range that has no next one to predict (a range to date).

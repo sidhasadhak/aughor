@@ -5086,7 +5086,7 @@ def _last_n_start(question: str, end: str) -> str:
 
 
 def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str = "",
-                              settle_days: int = 1):
+                              settle_days: int = 1, settle_clause: str = ""):
     """Deterministically fit the intake's windows to the data that actually exists.
     The LLM-retry path merely *asks* for a correction; this enforces it. Returns a
     coverage note (str) when anything was adjusted, else None.
@@ -5157,6 +5157,7 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
     # daily counts, `settling.learned_lag_days`). With the default of 1, every line below
     # reads exactly as it did — "unsettled from" is today, the last settled day yesterday.
     _settle = max(1, int(settle_days or 1))
+    _settle_why = settle_clause or f"its numbers keep moving for {_settle} days after a day ends, learned from observation"
     try:
         _unsettled_from = (datetime.fromisoformat(_today)
                            - timedelta(days=_settle - 1)).date().isoformat()
@@ -5173,11 +5174,10 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
                 if _question_pins_period(question, _os_p, _oe_p):
                     if _settle > 1:
                         notes.append(
-                            f"the observation window ends on {_oe_p}, a day this source is "
-                            f"still restating (its numbers keep moving for {_settle} days after "
-                            f"a day ends, learned from observation) — kept because the question "
+                            f"the observation window ends on {_oe_p}, a day this source may "
+                            f"still change ({_settle_why}) — kept because the question "
                             f"names it explicitly, but totals for that day are PROVISIONAL and "
-                            f"must not be read as a decline against settled days"
+                            f"must not be read as a decline against older days"
                         )
                     else:
                         notes.append(
@@ -5193,11 +5193,10 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str
                         intake.observation_start[:10], _last_complete)
                     if _settle > 1:
                         notes.append(
-                            f"the observation window reached into days this source is still "
-                            f"restating ({dmax[:10]} is the data's latest point; its numbers keep "
-                            f"moving for {_settle} days after a day ends, learned from observation) "
-                            f"— it now ends at the last settled day {_last_complete}: totals over a "
-                            f"still-settling day read as a false collapse against settled days"
+                            f"the observation window reached into days this source may still "
+                            f"change ({dmax[:10]} is the data's latest point; {_settle_why}) "
+                            f"— it now ends at the newest day to read, {_last_complete}: totals over a "
+                            f"newer day read as a false collapse against older days"
                         )
                     else:
                         notes.append(
@@ -6718,6 +6717,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # clamp then cut the end to 1 September, and the spec said five months (2026-09-30).
     from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
     _settle_days = learned_settle_days(state.get("connection_id") or "")
+    from aughor.settling.answer import settling_answer
+    _settle_clause = settling_answer(state.get("connection_id") or "").clause()
     # P2 — a capable binding reads the ask (`INTAKE_ASK`); a baseline one the long form. The
     # profile block is a section only when there is one: on the analyst path it is empty, and
     # the long form told the model to read it anyway. Resolution fails to the long form — the
@@ -7198,7 +7199,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _cmin = min([d for d in (_smin, _cov_min) if d], default="")
         _cmax = max([d for d in (_smax, _cov_max) if d], default="")
         _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""),
-                                              settle_days=_settle_days)
+                                              settle_days=_settle_days, settle_clause=_settle_clause)
         if _cov_note and intake.cross_sectional:
             _record_intake_note(
                 intake, "coverage", _cov_note.replace(_POP_MISMATCH_SIGNATURE, _POP_MISMATCH_SIGNATURE.lower()),

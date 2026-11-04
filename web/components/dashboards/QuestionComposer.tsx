@@ -22,7 +22,7 @@ const RHYTHMS: { value: QuestionRhythm; label: string }[] = [
 ];
 /** What each rhythm reads, in words — the period is written into the question by code, each time. */
 export const RHYTHM_PERIOD: Record<QuestionRhythm, string> = {
-  daily: "Every day at 09:00 UTC, for the newest settled day against the day before.",
+  daily: "Every day at 09:00 UTC, for the newest day old enough to read against the day before.",
   weekly: "Mondays at 09:00 UTC, for the last complete week against the week before.",
   monthly: "The 1st of each month at 09:00 UTC, for the last complete month against the month before.",
   ask: "Only when you ask — nothing runs on its own.",

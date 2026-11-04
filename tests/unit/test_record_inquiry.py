@@ -113,6 +113,32 @@ def test_a_completed_run_books_its_hypotheses_as_claims_and_leaves_the_inquiry_w
     assert "pending_runs" not in q.extra
 
 
+def test_an_inquiry_on_a_source_never_seen_to_settle_does_not_wait_for_days_to_settle(monkeypatch):
+    monkeypatch.setattr("aughor.settling.store.connection_lag",
+                        lambda cid: {"days": 29, "source": "beyond_horizon", "still_moving": ["items"], "horizon": 28, "rewrites": ["items"]})
+    conn = _conn()
+    inv_id = create_investigation("Why did returns rise?", conn)
+    I.open_inquiry(question="Why did returns rise?", connection_id=conn, opened_by="person:ana", run_id=inv_id, now=NOW)
+    complete_investigation(inv_id, report={"headline": "Returns rose", "data_gaps": ["September is still settling: 21 of 30 days"]},
+                           hypotheses=[], query_history=[], question="Why did returns rise?", connection_id=conn,
+                           skip_index=True, cache=False)
+    q = I.for_run(inv_id, conn_id=conn)
+    assert q.state == "waiting" and q.waiting_for == "a later reading: this source has not been seen to settle"
+    assert q.open[0].settled_by == "nothing will: this source rewrites its history at each refresh"
+
+
+def test_a_settled_source_still_waits_for_days_to_settle(monkeypatch):
+    monkeypatch.setattr("aughor.settling.store.connection_lag",
+                        lambda cid: {"days": 3, "source": "learned", "still_moving": [], "horizon": 14, "rewrites": []})
+    conn = _conn()
+    inv_id = create_investigation("Why did margin fall?", conn)
+    I.open_inquiry(question="Why did margin fall?", connection_id=conn, opened_by="person:ana", run_id=inv_id, now=NOW)
+    complete_investigation(inv_id, report={"headline": "Margin fell", "data_gaps": ["September is still settling: 21 of 30 days"]},
+                           hypotheses=[], query_history=[], question="Why did margin fall?", connection_id=conn,
+                           skip_index=True, cache=False)
+    assert I.for_run(inv_id, conn_id=conn).waiting_for == "days to settle"
+
+
 def test_a_run_with_nothing_open_closes_its_inquiry_as_answered_and_a_refuted_cause_is_contradicted():
     conn = _conn()
     inv_id = create_investigation("q", conn)

@@ -5,6 +5,7 @@
  * offer are decided once, in one place a test can hold.
  */
 import type { AccessGroup, EditionBlock, EditionFigure, EditionSource } from "@/lib/api";
+import { dayWords } from "@/lib/dashboards/figures";
 import { compactNumber, formatCount, pct } from "@/lib/format";
 
 /** A cell's value in words. */
@@ -41,8 +42,9 @@ export function rangeWord(period: string, n = 1): string {
 /** Good, bad or neither: a figure's distance from its usual range, read in the direction the guide
  *  calls good. A figure whose good direction is not declared is neither — colour would be a judgement
  *  the data does not carry. */
-export function toneOf(fig: Pick<EditionFigure, "better" | "current" | "usual">): "good" | "bad" | "neutral" {
-  if (fig.better === "none" || fig.current === null || !fig.usual) return "neutral";
+export function toneOf(fig: Pick<EditionFigure, "better" | "current" | "usual" | "equal_age">): "good" | "bad" | "neutral" {
+  // a figure not read against its usual range is not good or bad against it either
+  if (fig.better === "none" || fig.current === null || !fig.usual || fig.equal_age?.equal === false) return "neutral";
   const up = fig.current > fig.usual.mean;
   return (up === (fig.better === "up")) ? "good" : "bad";
 }
@@ -59,7 +61,7 @@ export function groupIdOf(name: string): string {
 
 // ── Arc BC · an edition composed from blocks ─────────────────────────────────────────────────
 
-const SYMBOL: Record<string, string> = { EUR: "€", USD: "$", GBP: "£", BRL: "R$", JPY: "¥", CHF: "CHF " };
+export const SYMBOL: Record<string, string> = { EUR: "€", USD: "$", GBP: "£", BRL: "R$", JPY: "¥", CHF: "CHF " };
 
 /** A source's value worded by its unit: a share as a percentage (two places under 10%), money with its symbol. */
 export function fmtValue(v: unknown, unit = ""): string {
@@ -87,6 +89,19 @@ export function fmtChange(now: number | null, base: number | null, unit = ""): s
 }
 
 /** Words with citations ({words|source_id}) as runs a renderer draws — plain text, or a cited number. */
+/** Where a deep analysis finished before a metric it names changed: what it says of that metric is about the old figures.
+ *  Code says this, from the governance trail, whatever the model wrote around it. "" for any other source. */
+export function measuredBeforeWords(src: EditionSource | undefined): string {
+  const changed = src?.kind === "analysis" ? src.facts?.definitions_changed : undefined;
+  if (!Array.isArray(changed) || changed.length === 0) return "";
+  const rows = changed as { metric?: string; label?: string; on?: string }[];
+  const names = rows.map(c => (c.label || c.metric || "").replace(/\s*\([^)]*\)/g, "").trim());
+  const listed = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  const days = [...new Set(rows.map(c => c.on ?? ""))].sort();
+  return `Finished before the definition of ${listed} changed${days.length > 1 ? ", last" : ""} on ${dayWords(days[days.length - 1])}, `
+    + `so what it says of ${names.length > 1 ? "them" : "it"} is about the old figures.`;
+}
+
 export function parseCited(text: string | undefined): { text: string; source?: string }[] {
   const out: { text: string; source?: string }[] = [];
   const re = /\{([^{}|]+)\|([A-Za-z0-9_-]+)\}/g;

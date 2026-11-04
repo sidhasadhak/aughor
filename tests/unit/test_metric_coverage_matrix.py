@@ -168,3 +168,56 @@ def test_the_generic_area_is_placed_and_said_but_never_written_for(lux):
     other = next(a for a in out["areas"] if a["id"] == M.OTHER)
     assert other["tables"] and other["writable"] is False
     assert all(a["writable"] is False for a in out["areas"] if not a["has_data"])
+
+
+# ── the industry's metrics place a metric, not the proposal it came from ─────────────────────────────────────────────
+
+def _adopted(name, label, lineage):
+    m = _m(name, label, "SELECT 1 FROM order_items")
+    m.lineage = [lineage]
+    return m
+
+
+def test_a_metric_that_holds_an_industry_pattern_reads_with_it_whatever_area_proposed_it(lux):
+    mmap, _ = lux
+    got = C.place_metric(_adopted("item_gross_margin_pct", "Gross Margin on Items", "coverage: orders_sales · area"), mmap, {})
+    assert got.area == "margin_pricing"
+    assert got.why == "its name holds the knowledge base's Gross Margin"
+
+
+def _pattern(id_, title, kind="metric"):
+    return M.Pattern(id=id_, title=title, pack_id="p", area=f"area_of_{id_}", kind=kind, direction="up")
+
+
+def test_a_name_holds_the_longest_pattern_it_can_whichever_comes_first():
+    short, long_ = _pattern("short", "Gross Margin"), _pattern("long", "Gross Margin Return on Inventory")
+    for patterns in ([short, long_], [long_, short]):
+        assert M.holding_pattern("x", "Gross Margin Return on Inventory by Store", patterns) is long_
+
+
+def test_a_name_holds_a_pattern_only_as_whole_words_and_never_an_analysis():
+    margin = _pattern("margin", "Gross Margin")
+    assert M.holding_pattern("x", "Ungross Marginal Rate", [margin]) is None
+    assert M.holding_pattern("x", "Gross Margin by Store", [margin]) is margin
+    assert M.holding_pattern("x", "Gross Margin by Store", [_pattern("study", "Gross Margin", kind=M.ANALYSIS)]) is None
+
+
+def test_a_proposal_that_cites_a_pattern_keeps_its_area(lux):
+    mmap, _ = lux
+    got = C.place_metric(_adopted("net_revenue_eur", "Net Revenue (EUR, after refunds)", "coverage: orders_sales · ec_net_revenue"), mmap, {})
+    assert (got.area, got.why) == ("orders_sales", "it was adopted from this area's proposals")
+
+
+def test_a_proposal_of_no_pattern_keeps_its_area_when_no_pattern_says_otherwise(lux):
+    mmap, _ = lux
+    got = C.place_metric(_adopted("marketing_consent_rate", "Marketing consent rate", "coverage: crm_consent · area"), mmap, {})
+    assert got.area == "crm_consent"                  # its words alone would say Marketing
+
+
+def test_one_word_of_a_title_is_not_holding_the_pattern(lux):
+    mmap, _ = lux
+    assert M.holding_pattern("clienteling_gmv", "Clienteling GMV per Interaction", mmap.patterns()) is None
+    assert M.holding_pattern("", "Gross Margin on Items", mmap.patterns()).title == "Gross Margin"
+    # the longest title it holds wins
+    longest = M.holding_pattern("", "Average Order Value by Channel", mmap.patterns())
+    assert "Average Order Value" in longest.title

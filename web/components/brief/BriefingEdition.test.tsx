@@ -222,6 +222,50 @@ describe("BriefingEdition", () => {
     expect(within(card()).getByTestId("edition-drill-trail")).toBeTruthy();
   });
 
+  it("says on the figure's own card when it is not read against usual; an edition kept before that rule draws as it was", async () => {
+    const why = "Sales reads a table this platform has not seen stop changing.";
+    const figure = { id: "sales", label: "Sales", metric: "sales", unit: "EUR", better: "up", why: "", current: 102818, previous: 97989,
+      last_year: null, rel: 0.05, rel_last_year: null, n: 900, status: "provisional", z: null, outside: false, floor: false, streak: 2,
+      extreme: null, series: [], cells: {}, current_text: "€102.8k", previous_text: "€98.0k", last_year_text: null, like_for_like: "", sql: "",
+      usual: { mean: 86000, low: 78682, high: 93515, n: 8, mean_text: "€86.0k", low_text: "€78.7k", high_text: "€93.5k" } };
+    const edition = (fig: object): Edition => ({ ...WRITTEN, period: { ...PERIOD, measured: [fig as never] },
+      blocks: [{ id: "lead", type: "lead", text: "A week." }, { id: "f", type: "figure", source: "sales" }] });
+    api.readBriefingEdition.mockResolvedValue(edition({ ...figure, equal_age: { equal: false, why } }));
+    const { unmount } = render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    const line = await screen.findByTestId("edition-figure-not-read");
+    expect(line.textContent).toContain("not read against usual");
+    expect(line.getAttribute("title")).toBe(why);
+    expect(line.closest('[data-testid="edition-block"]')?.textContent).toContain("usual €78.7k–€93.5k");       // the band stays
+    unmount();
+    for (const age of [{ equal_age: { equal: true, why: "" } }, {}]) {
+      api.readBriefingEdition.mockResolvedValue(edition({ ...figure, ...age }));
+      const again = render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+      await screen.findByText("€102.8k");
+      expect(screen.queryByTestId("edition-figure-not-read")).toBeNull();
+      again.unmount();
+    }
+  });
+
+  it("says what the edition did not read and why, and leaves the guide's own notes to the guide", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, withheld: [], left_out: [], not_read: [
+      { label: "Join on the full id.", reason: "", tables: ["order_items"] },
+      { label: "Refund rate", reason: "its query failed", tables: [] },
+      { label: "Sales and Units against their usual range", reason: "each is still provisional", tables: [] }] });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    const said = await screen.findByTestId("edition-withheld");
+    expect(said.textContent).toContain("Not read: Refund rate — its query failed");
+    expect(said.textContent).toContain("Not read: Sales and Units against their usual range — each is still provisional");
+    expect(said.textContent).not.toContain("Join on the full id");
+  });
+
+  it("adds nothing to the page when only the guide's own notes are kept", async () => {
+    api.readBriefingEdition.mockResolvedValue({ ...WRITTEN, withheld: [], left_out: [],
+      not_read: [{ label: "Join on the full id.", reason: "", tables: ["order_items"] }] });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByTestId("edition-dateline");
+    expect(screen.queryByTestId("edition-withheld")).toBeNull();
+  });
+
   it("puts a decision away on Not now", async () => {
     api.readBriefingEdition.mockResolvedValue(WRITTEN);
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
@@ -288,7 +332,7 @@ describe("BriefingEdition", () => {
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     await screen.findByTestId("edition-lead");
     expect(screen.getByTestId("edition-lag-moved").textContent).toContain(
-      "Written when this data's rows arrived within 3 days; they now arrive within 1 day");
+      "Written when this data was read 3 days behind; it is now read 1 day behind");
   });
 
   const KNOWN: Record<string, EditionSource> = {
@@ -309,6 +353,16 @@ describe("BriefingEdition", () => {
              { id: "k2", type: "context", source: "analysis_started" }, { id: "k3", type: "context", source: "decision_d1" },
              { id: "k4", type: "context", source: "discussion_1" }],
     known: { analyses: 3, findings: 4, decisions: 2, discussions: 1, started: "analysis_started" } };
+
+  it("says of a deep analysis that it finished before a metric it names changed, whatever the model wrote", async () => {
+    const stale = { ...KNOWN.analysis_a1, facts: { ...KNOWN.analysis_a1.facts,
+      definitions_changed: [{ metric: "net_revenue_eur", label: "Net Revenue (EUR, after refunds)", on: "2026-11-04" }] } };
+    api.readBriefingEdition.mockResolvedValue({ ...WITH_KNOWN, sources: { ...WITH_KNOWN.sources, analysis_a1: stale } });
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    expect(await screen.findByTestId("edition-measured-before")).toHaveTextContent(
+      "Finished before the definition of Net Revenue changed on 4 Nov 2026, so what it says of it is about the old figures.");
+    expect(screen.getAllByTestId("edition-measured-before")).toHaveLength(1);    // the one it is true of
+  });
 
   it("draws what the platform already knew — a deep analysis, one being looked into, a decision — each to open", async () => {
     api.readBriefingEdition.mockResolvedValue(WITH_KNOWN);

@@ -100,20 +100,27 @@ _SHEET_TITLES = {"measured": "Headline metrics", "unmeasured": "Not measured",
                  "alerts": "Alerts in this {period}", "records": "Recorded in this {period}",
                  "narrative": "The briefing",
                  # Arc BR-4/5 — a range recipe's own sections
-                 "moves": "What moved", "early": "Still settling — early read"}
+                 "moves": "What moved", "early": "Newer days — early read", "not_read": "Not read as a move"}
 
 
 def render_period_markdown(block: dict, sections: list, cut: int) -> str:
     """A period briefing as it leaves: what it covers and against what, why it ends where it
     does, then each surviving section. Same shape as the alert summary's markdown."""
+    from aughor.settling.answer import answer_of_block
+
     period = block.get("period", "period")
     withheld = block.get("compare_withheld")
     lines = [f"# {block.get('label', '')} Briefing — {block.get('covers', '')}",
              (f"*Not compared: {withheld}. All dates UTC.*" if withheld
               else f"*Compared with {block.get('compared_with', '')}. All dates UTC.*")]
     lag = int(block.get("lag_days") or 1)
-    if block.get("data_ended"):
+    if block.get("data_ended") and block.get("still_moving"):
+        lines.append(f"*No data has arrived since {block.get('data_through')}, and its tables had not settled when it "
+                     "stopped: figures read from them may still move.*")
+    elif block.get("data_ended"):
         lines.append(f"*The data ended on {block.get('data_through')}: every figure here is final.*")
+    elif answer_of_block(block).never_settled:
+        lines.append(f"*This {period} ends {lag} days before today. {answer_of_block(block).says()}*")
     elif lag > 1:
         lines.append(f"*This {period} ends {lag} days before today: newer days are still "
                      "settling as late rows arrive"

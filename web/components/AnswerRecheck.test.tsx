@@ -32,6 +32,14 @@ describe("AnswerRecheck", () => {
     expect(screen.getByText(/Late rows: this source settles after 3 days/)).toBeTruthy();
   });
 
+  it("says what is true of a source never seen to settle, not late rows and not a restatement", () => {
+    const says = "This source rewrites its history at each refresh: items changes at every age.";
+    render(<AnswerRecheck recheck={entry({ cause: "rewrites", settling_says: says })} />);
+    expect(screen.getByText(says)).toBeTruthy();
+    expect(screen.queryByText(/late rows/i)).toBeNull();
+    expect(screen.queryByText(/restated/i)).toBeNull();
+  });
+
   it("does not guess a cause it cannot know", () => {
     render(<AnswerRecheck recheck={entry({ cause: "unknown", lag_days: null })} />);
     expect(screen.getByText(/cannot say whether these are late rows or a restatement/)).toBeTruthy();

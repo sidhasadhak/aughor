@@ -36,14 +36,14 @@ def test_the_engine_is_named_as_the_statement_must_be_written():
     block = C.sql_context(_Native(), today="2026-09-30", coverage_end="2026-10-02")
     assert block.startswith("SQL DIALECT: BigQuery (GoogleSQL) — write every statement for this engine")
     assert "TODAY: 2026-09-30 (UTC)." in block
-    assert "The data runs to 2026-10-02; its last SETTLED day is 2026-09-29" in block
-    assert "CURRENT_DATE" in block and "counts back from the settled day" in block
+    assert "The data runs to 2026-10-02; the newest day to read is 2026-09-29" in block
+    assert "CURRENT_DATE" in block and "counts back from that day" in block
 
 
 def test_no_engine_known_means_no_engine_line_and_still_a_clock():
     block = C.sql_context(None, today="2026-09-30")
     assert "SQL DIALECT" not in block
-    assert block.startswith("TODAY: 2026-09-30 (UTC). The last settled day is 2026-09-29.")
+    assert block.startswith("TODAY: 2026-09-30 (UTC). The newest day to read is 2026-09-29.")
 
 
 @pytest.mark.parametrize("today, end, settle, expected", [
@@ -188,10 +188,41 @@ def test_an_empty_intake_reply_is_asked_once_more(monkeypatch):
              "scan_context": "", "events_context": "", "investigation_phases": []}
     out = I.ada_intake(state, None)
     assert len(calls) == 2 and "TODAY: " in calls[0]           # the date rides the intake prompt
-    assert f"The last settled day is {C.settled_day(C.today_utc(), '', 29)}." in calls[0]
+    assert f"The newest day to read is {C.settled_day(C.today_utc(), '', 29)}." in calls[0]
     assert not out.get("_intake_failed")
     assert out["_ada_intake"]["metric_sql"] == "SUM(sale_price)"
     assert "TODAY: " in out["_ada_intake"]["sql_context"]
+
+
+def test_an_intake_is_cut_in_the_words_of_what_is_true_of_its_source(monkeypatch):
+    """The clamp is handed the answer's clause, so a source never seen to settle is not said to settle at a learned lag."""
+    from aughor.agent import investigate as I
+    from aughor.agent.prompts_investigate import IntakeAsk
+    told = {}
+
+    def clamp(intake, *a, **k):
+        told.update(k)
+        return None
+
+    class _Prov:
+        def complete(self, *, system, user, response_model=None, **kw):
+            return IntakeAsk(metric_label="revenue", metric_sql="SUM(sale_price)",
+                             observation_start="2026-07-01", observation_end="2026-07-31",
+                             observation_label="July 2026", comparison_start="2026-06-01",
+                             comparison_end="2026-06-30", comparison_label="June 2026 (MoM)",
+                             date_column="order_items.created_at", metric_table="order_items",
+                             dimensions=[], intake_notes="")
+    monkeypatch.setattr(I, "_provider", lambda role="coder": _Prov())
+    monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: (None, None))
+    monkeypatch.setattr("aughor.agent.explore.build_analysis_ledger", lambda *a, **k: "")
+    monkeypatch.setattr(I, "_clamp_intake_to_coverage", clamp)
+    monkeypatch.setattr("aughor.settling.store.connection_lag",
+                        lambda cid: {"days": 29, "source": "beyond_horizon", "still_moving": ["order_items"], "horizon": 28, "rewrites": ["order_items"]})
+    state = {"question": "What was total revenue in July 2026?", "connection_id": "c1",
+             "schema_context": "TABLE: order_items (1 rows) [id INTEGER, sale_price FLOAT, created_at TIMESTAMP]",
+             "scan_context": "", "events_context": "", "investigation_phases": []}
+    I.ada_intake(state, None)
+    assert told.get("settle_clause") == "order_items rewrites its history at each refresh, so no day in it settles" and told.get("settle_days") == 29
 
 
 # ── The last two model prompts GM-2's census named `unstated` ─────────────────────────

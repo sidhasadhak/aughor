@@ -166,12 +166,17 @@ def _last_day(start: date, span: int) -> date:
     return start + timedelta(days=span - 1)
 
 
-def classify(changes: list[dict], answered_on: date, lag_days: Optional[int]) -> str:
+def classify(changes: list[dict], answered_on: date, lag_days: Optional[int], kind: str = "") -> str:
     """Why the numbers moved: ``late_rows`` — every changed day was still settling when the
     answer was given; ``restated`` — at least one had already settled; ``unknown`` — no
-    learned lag, or no date to place the change in. Marks each change with its own cause."""
+    learned lag, or no date to place the change in. Marks each change with its own cause. On a source
+    that has never been seen to settle (``kind``, `settling.answer`) neither can be said: that is the cause."""
     if not changes:
         return "none"
+    if kind in ("moving", "rewrites"):
+        for c in changes:
+            c["cause"] = kind
+        return kind
     causes = set()
     for c in changes:
         day = c.get("day")
@@ -233,6 +238,9 @@ def correction_text(answer: dict, recheck: dict) -> str:
     cause, lag = recheck.get("cause"), recheck.get("lag_days")
     if not changes:
         return "\n".join(lines)                    # only rows that vanished: nothing to place in time
+    if cause in ("moving", "rewrites"):
+        lines.append(str(recheck.get("settling_says") or ""))
+        return "\n".join(lines)
     late = sorted({c["day"] for c in changes if c.get("cause") == "late_rows"})
     restated = sorted({c["day"] for c in changes if c.get("cause") == "restated"})
     if cause == "late_rows":
@@ -325,14 +333,16 @@ def measure_answer(answer: dict, *, run_sql: Optional[RunSql] = None,
         from aughor.kernel.errors import tolerate
         tolerate(exc, "no learned lag; a change is reported with its cause unknown",
                  counter="answers.recheck.lag")
+    from aughor.settling.answer import settling_answer
+    said = settling_answer(answer["connection_id"]).about({"sql": sql})
     changes = diff["changes"]
     moved = bool(changes or diff["missing_rows"])     # a row that vanished is a change too
     entry.update(status="changed" if moved else "unchanged", changes=changes[:10],
                  changed=len(changes), compared=diff["compared"],
                  missing_rows=diff["missing_rows"], missing=diff.get("missing", []),
-                 new_rows=diff["new_rows"], lag_days=lag,
-                 cause=classify(changes, _answered_on(answer), lag) if changes else
-                 ("none" if not moved else "unknown"))
+                 new_rows=diff["new_rows"], lag_days=lag, settling_says=said.says() if said.never_settled else "",
+                 cause=classify(changes, _answered_on(answer), lag, said.kind) if changes else
+                 ("none" if not moved else said.kind if said.never_settled else "unknown"))
     return entry
 
 
@@ -352,7 +362,8 @@ def restated_statement(answer: dict, recheck: dict) -> str:
     gone = int(recheck.get("missing_rows") or 0)
     if gone:
         parts.append(f"{gone} row{'s' if gone != 1 else ''} the answer gave {'is' if gone == 1 else 'are'} no longer returned")
-    cause = {"late_rows": "late rows", "restated": "the source restated settled days"}.get(
+    cause = {"late_rows": "late rows", "restated": "the source restated settled days", "moving": "the source has not been "
+             "seen to stop changing", "rewrites": "the source rewrites its history at each refresh"}.get(
         str(recheck.get("cause") or ""), "")
     first = str((answer.get("report") or {}).get("headline") or answer.get("headline") or "").strip()
     line = "Restated: " + "; ".join(parts) + "."
@@ -474,7 +485,8 @@ def recheck_and_tell(answer: dict, *, run_sql: Optional[RunSql] = None,
     ``notify`` is off — a person re-checking on screen is already looking), then record the
     entry, told outcome and all, on the answer. Returns the recorded entry."""
     entry = measure_answer(answer, run_sql=run_sql, now=now)
-    if notify and entry.get("status") == "changed":
+    # A source redrawn at each refresh changes every answer at each refresh: recorded, and said on the answer, not sent.
+    if notify and entry.get("status") == "changed" and entry.get("cause") != "rewrites":
         entry["told"] = tell(answer, entry)
     _record(answer, entry)
     return entry

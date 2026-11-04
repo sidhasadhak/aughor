@@ -129,7 +129,7 @@ def _wait_for_period(d: _dec.Decision, grain: str, current, label: str, lag: int
     cur.extra["review_by"] = grain
     cur.extra["review_on_why"] = (f"thirty days after the decision held no rows of {label}, which is dated by the "
                                   f"{grain}: the review reads the first whole {grain} after it ({_label(current)}), "
-                                  f"once it has ended" + (f" and settled ({lag} days)" if lag else ""))
+                                  f"once it has ended" + (f" and {lag} days have passed for its rows to arrive" if lag else ""))
     _dec.book_decision(cur)
 
 

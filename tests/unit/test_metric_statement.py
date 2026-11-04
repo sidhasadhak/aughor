@@ -336,6 +336,42 @@ def test_the_doors_require_a_statement_for_a_new_formula_and_keep_an_old_express
     assert res.status_code == 200
 
 
+def _approved(name, **over):
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(**{"name": name, "label": name, "sql": "SELECT COUNT(*) AS n FROM orders", "tables": ["orders"],
+                                    "connection": "stmt-conn", "status": "approved", "approved_by": "test", "version": 1, **over}))
+
+
+def _actions(client, name):
+    return [e["action"] for e in client.get(f"/metrics/{name}/audit?connection_id=stmt-conn").json()["audit"]]
+
+
+def _row(client, name):
+    return next(m for m in client.get("/metrics?connection_id=stmt-conn").json() if m["name"] == name)
+
+
+def test_changing_the_dates_an_approved_figure_reads_by_goes_on_its_trail_and_it_stays_approved(client):
+    _approved("dated_a", time_kind="flow", time_column="orders.created_at")
+    res = client.put("/metrics/dated_a", json={**_row(client, "dated_a"), "time_column": "orders.updated_at"})
+    assert res.status_code == 200 and res.json()["status"] == "approved"
+    assert _actions(client, "dated_a") == ["edit_dates_changed"]
+
+
+def test_setting_or_confirming_dates_changes_no_figure_so_nothing_goes_on_its_trail(client):
+    _approved("dated_b", time_kind="flow", time_column="orders.created_at")
+    assert client.put("/metrics/dated_b", json={**_row(client, "dated_b"), "caveats": "read with care"}).status_code == 200
+    _approved("dated_c")
+    assert client.put("/metrics/dated_c", json={**_row(client, "dated_c"), "time_kind": "flow", "time_column": "orders.created_at"}).status_code == 200
+    assert _actions(client, "dated_b") == [] and _actions(client, "dated_c") == []
+
+
+def test_changing_the_formula_goes_on_its_trail_once(client):
+    _approved("dated_d", time_kind="flow", time_column="orders.created_at")
+    row = {**_row(client, "dated_d"), "sql": "SELECT COUNT(id) AS n FROM orders", "time_column": "orders.updated_at"}
+    assert client.put("/metrics/dated_d", json=row).json()["status"] == "proposed"
+    assert _actions(client, "dated_d") == ["edit_reproposed"]
+
+
 def test_the_value_path_still_wraps_an_old_expression_the_same_way():
     from aughor.semantic.metrics import MetricDefinition, value_query
     m = MetricDefinition(name="rev", label="Rev", sql="SUM(amount)", tables=["orders"], filters=["a = 1"])
