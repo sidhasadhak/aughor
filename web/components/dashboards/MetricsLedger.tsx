@@ -390,7 +390,7 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
         <span style={{ marginLeft: "auto" }}><TableActions name={`Metrics ${current}`} read={flat} /></span>
       </div>
 
-      <div style={{ border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", background: "var(--bg-2)", overflow: "clip" }}>
+      <div className="aug-ledger-frame" style={{ border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
         <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "25%" }} /><col style={{ width: "9%" }} /><col style={{ width: 96 }} /><col style={{ width: "8%" }} />
