@@ -4493,7 +4493,11 @@ def mine_ontology_candidates(
         out: dict[str, Any] = {"connection_id": connection_id, "schema_name": graph.schema_name or effective,
                                "history": history.to_dict()}
         if not history.supported or history.error:
-            out.update({"summary": history.note or history.error, "offered": [], "refused": [], "mined": 0})
+            # Arc NV-5 — not readable: say the admin's step, and whether the platform can take it itself.
+            from aughor.db.query_history import check_query_history
+            readiness = check_query_history(db)
+            out.update({"summary": readiness.sentence(), "readiness": readiness.as_dict(),
+                        "offered": [], "refused": [], "mined": 0})
             return out
         statements = [sql for sql in history.weighted_statements() if not_platform_statement(sql)]
         known = {f"{r.from_table}.{r.from_col} = {r.to_table}.{r.to_col}" for r in graph.relationships.values()}

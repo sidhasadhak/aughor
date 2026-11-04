@@ -121,6 +121,100 @@ def read_query_history(conn: Any, *, hours: int = DEFAULT_HOURS, limit: int = DE
     return reader(hours=hours, limit=limit)
 
 
+# ── Arc NV-5 — a feature's prerequisite on the engine, said with its fix and provisioned where the platform can ──
+
+#: What each engine needs before its history can be read, in the words an admin acts on. An engine absent here keeps
+#: no history the platform reads, and the readiness says so.
+PREREQUISITES: dict[str, str] = {
+    "postgres": ("the pg_stat_statements extension: `shared_preload_libraries = 'pg_stat_statements'` on the server "
+                 "(a restart), then CREATE EXTENSION pg_stat_statements — the platform creates it itself once the "
+                 "library is preloaded"),
+    "bigquery": ("the connection's service account granted `bigquery.jobs.list` on the project (BigQuery User or "
+                 "BigQuery Resource Viewer; a dataset-level grant cannot carry it) — the principal is the key file's "
+                 "client_email"),
+    "snowflake": "the connection's role allowed to read INFORMATION_SCHEMA.QUERY_HISTORY (MONITOR on the warehouse, "
+                 "or ACCOUNT_USAGE access)",
+    "clickhouse": "`system.query_log` kept by the server (on by default) and readable by the connection's user",
+    "databricks": "the workspace's system tables enabled by an account admin (`system.query.history`)",
+}
+
+
+@dataclass
+class Readiness:
+    """Whether a connection's history can be read now — and when not, exactly what makes it readable."""
+    engine: str = ""
+    ok: bool = False
+    source: str = ""        # the view read when ok
+    note: str = ""          # what was found: a count, or why nothing could be read
+    fix: str = ""           # the admin's step, in the engine's own terms; "" when ok or when the engine keeps none
+    can_enable: bool = False   # the platform can provision it itself, now (`POST …/prerequisites/enable`)
+    applies: bool = True    # False for an engine that keeps no history the platform reads
+
+    def sentence(self) -> str:
+        """One line for a Test button or a birth step."""
+        if not self.applies:
+            return f"Query history: {self.note}"
+        if self.ok:
+            return f"Query history: ready — {self.note}"
+        head = "Query history: not readable yet"
+        tail = (" — the platform can enable it" if self.can_enable else f" — needs {self.fix}") if self.fix else ""
+        return f"{head}: {self.note}{tail}"
+
+    def as_dict(self) -> dict:
+        return {"engine": self.engine, "ok": self.ok, "source": self.source, "note": self.note, "fix": self.fix,
+                "can_enable": self.can_enable, "applies": self.applies, "sentence": self.sentence()}
+
+
+def _fix_from_error(engine: str, error: str) -> str:
+    low = (error or "").lower()
+    if engine == "bigquery" and ("jobs.list" in low or "access denied" in low):
+        return PREREQUISITES["bigquery"]
+    if engine == "snowflake" and ("insufficient privileges" in low or "not authorized" in low):
+        return PREREQUISITES["snowflake"]
+    return PREREQUISITES.get(engine, "")
+
+
+def check_query_history(conn: Any) -> Readiness:
+    """Probe a connection's history once (one row) and say what stands between the platform and it.
+
+    Three answers: ready (with how much is there); not readable yet, with the admin's step in the engine's words and
+    whether the platform can take it itself; or not applicable — this engine keeps none, which is a fact, not a gap.
+    Never raises: a failed probe is a not-ready verdict carrying the engine's words."""
+    engine = str(getattr(conn, "dialect", "") or type(conn).__name__)
+    try:
+        h = read_query_history(conn, limit=1)
+    except Exception as exc:  # noqa: BLE001 — the verdict carries the failure
+        return Readiness(engine=engine, ok=False, note=f"the probe failed: {exc}", fix=PREREQUISITES.get(engine, ""))
+    if not h.supported:
+        if engine not in PREREQUISITES:
+            return Readiness(engine=engine, ok=False, applies=False, note=h.note)
+        can_enable = False
+        note = h.note
+        probe = getattr(conn, "query_history_prerequisite", None)
+        if probe is not None:
+            try:
+                state = probe()
+            except Exception as exc:  # noqa: BLE001 — the probe's failure is part of the verdict
+                state = {"error": str(exc)}
+            if state.get("error"):
+                note = f"{h.note} (the prerequisite probe failed: {state['error']})"
+            elif not state.get("available", True):
+                note = "pg_stat_statements is not available on this server (the contrib package is not installed)"
+            elif not state.get("preloaded"):
+                note = ("pg_stat_statements is available but not preloaded: `shared_preload_libraries` must name it and "
+                        "the server restart, before CREATE EXTENSION can run")
+            elif not state.get("created"):
+                note = "pg_stat_statements is preloaded and not yet created on this database"
+                can_enable = True
+        return Readiness(engine=engine, ok=False, note=note, fix=PREREQUISITES[engine], can_enable=can_enable)
+    if h.error:
+        return Readiness(engine=engine, ok=False, source=h.source, note=f"the engine refused: {h.error.strip().splitlines()[0][:300]}",
+                         fix=_fix_from_error(engine, h.error))
+    what = (f"{h.rows[0].calls:,}+ runs on record in {h.source}" if h.rows and h.rows[0].calls > 1
+            else f"statements on record in {h.source}") if h.rows else f"readable; nothing on record yet in {h.source}"
+    return Readiness(engine=engine, ok=True, source=h.source, note=what)
+
+
 def not_platform_statement(sql: str) -> bool:
     """Whether a statement is somebody's question rather than a catalog read: the platform's own metadata and history
     reads, and an engine's system views, teach the miner nothing about how the business is queried."""

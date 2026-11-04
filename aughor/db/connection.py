@@ -1796,6 +1796,51 @@ class PostgresConnection(DatabaseConnection):
                 history.note = history.note.replace("last reset", f"last reset ({since})")
         return history
 
+    def query_history_prerequisite(self) -> dict:
+        """Arc NV-5 — where pg_stat_statements stands on this server: available (the contrib package), preloaded
+        (`shared_preload_libraries`), created on this database. Three reads through the door; a failure is the
+        dict's `error`."""
+        state: dict = {"available": False, "preloaded": False, "created": False}
+        r = self.execute_bounded("__prerequisite__",
+                                 "SELECT count(*) FROM pg_available_extensions WHERE name = 'pg_stat_statements'",
+                                 1, sql_dialect=None, internal=True)
+        if r.error:
+            return {"error": r.error}
+        state["available"] = bool(r.rows and str(r.rows[0][0]) not in ("0", "NULL"))
+        r = self.execute_bounded("__prerequisite__", "SHOW shared_preload_libraries", 1, sql_dialect=None, internal=True)
+        if r.error:
+            return {"error": r.error}
+        state["preloaded"] = bool(r.rows and "pg_stat_statements" in str(r.rows[0][0]).lower())
+        r = self.execute_bounded("__prerequisite__",
+                                 "SELECT count(*) FROM pg_extension WHERE extname = 'pg_stat_statements'",
+                                 1, sql_dialect=None, internal=True)
+        if r.error:
+            return {"error": r.error}
+        state["created"] = bool(r.rows and str(r.rows[0][0]) not in ("0", "NULL"))
+        return state
+
+    def enable_query_history(self) -> tuple[bool, str]:
+        """Arc NV-5 — CREATE EXTENSION pg_stat_statements on this database, the one statement the platform writes to a
+        warehouse: DDL, no row touched, run only when the library is already preloaded (the probe says so) and only
+        from the prerequisites door, which the organisation's `read_query_history` setting gates and the ledger
+        journals. Refused, in words, when the server setting is missing — that step is the admin's, with a restart."""
+        state = self.query_history_prerequisite()
+        if state.get("error"):
+            return False, f"could not read where pg_stat_statements stands: {state['error']}"
+        if not state.get("available"):
+            return False, "pg_stat_statements is not available on this server — the contrib package is not installed"
+        if not state.get("preloaded"):
+            return False, ("pg_stat_statements is not preloaded: set `shared_preload_libraries = 'pg_stat_statements'` on "
+                           "the server and restart it; the platform creates the extension after that")
+        if state.get("created"):
+            return True, "pg_stat_statements is already created on this database"
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+            return True, "pg_stat_statements created; statements are kept from now on"
+        except Exception as e:
+            return False, f"CREATE EXTENSION pg_stat_statements was refused: {e}"
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")

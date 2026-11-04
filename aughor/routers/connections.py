@@ -29,6 +29,7 @@ from aughor.routers._shared import (
 )
 from aughor.tools.schema import norm_type
 from aughor.security.authz import connection_owner_guard
+from aughor.licensing import Capability, gate
 
 logger = logging.getLogger(__name__)
 
@@ -212,19 +213,105 @@ async def create_connection(req: AddConnectionRequest,
 
 @router.post("/connections/{conn_id}/test")
 async def test_connection(conn_id: str):
+    """The connection answers — and, where the organisation reads warehouse history (Arc NV-5), whether this
+    engine's history is readable now, with the admin's step when it is not: the Test button is where a person looks."""
     loop = asyncio.get_running_loop()
     try:
         def _test():
             db = open_connection_for(conn_id)
-            ok, msg = db.test()
-            db.close()
-            return ok, msg
-        ok, msg = await loop.run_in_executor(None, _test)
-        return {"ok": ok, "message": msg}
+            try:
+                ok, msg = db.test()
+                readiness = None
+                if ok:
+                    from aughor.orgsettings.allows import allows
+                    if allows("read_query_history"):
+                        from aughor.db.query_history import check_query_history
+                        readiness = check_query_history(db).as_dict()
+                return ok, msg, readiness
+            finally:
+                db.close()
+        ok, msg, readiness = await loop.run_in_executor(None, _test)
+        out = {"ok": ok, "message": msg}
+        if readiness is not None:
+            out["message"] = f"{msg}. {readiness['sentence']}"
+            out["query_history"] = readiness
+        return out
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     except Exception as e:
         return {"ok": False, "message": str(e)}
+
+
+@router.get("/connections/{conn_id}/prerequisites")
+async def connection_prerequisites(conn_id: str):
+    """Arc NV-5 — what a feature needs from this engine and whether it is there now: today the query history's
+    prerequisite (`aughor.db.query_history.check_query_history`), said with the admin's step and whether the platform
+    can take it itself. Read-only; no model call."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from aughor.db.query_history import check_query_history
+        try:
+            return {"connection_id": conn_id, "query_history": check_query_history(db).as_dict()}
+        finally:
+            try:
+                db.close()
+            except Exception as close_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(close_exc, "connections/prerequisites: best-effort connection close",
+                         counter="connections.prerequisites.close_failed", conn_id=conn_id)
+    return await loop.run_in_executor(None, _work)
+
+
+@router.post("/connections/{conn_id}/prerequisites/enable", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+async def enable_connection_prerequisite(conn_id: str):
+    """Arc NV-5 — provision the query history's prerequisite where the platform can: on Postgres, CREATE EXTENSION
+    pg_stat_statements once the library is preloaded. The one statement the platform writes to a warehouse — DDL, no
+    row touched — so it runs only while the organisation reads warehouse history (409 otherwise, saying where to turn
+    it on), is refused in words where the server setting is the admin's, and is journaled."""
+    from aughor.orgsettings.allows import WHERE, allows
+    if not allows("read_query_history"):
+        raise HTTPException(status_code=409, detail=f"Reading the warehouse's query history is off for this organisation; "
+                            f"nothing is provisioned for it. An admin turns it on under {WHERE}.")
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from aughor.db.query_history import check_query_history
+        try:
+            enabler = getattr(db, "enable_query_history", None)
+            if enabler is None:
+                before = check_query_history(db)
+                return {"ok": False, "enabled": False, "message": (
+                    "nothing the platform can provision on this engine" + (f" — needs {before.fix}" if before.fix else "")),
+                    "query_history": before.as_dict()}
+            ok, message = enabler()
+            after = check_query_history(db)
+            try:
+                from aughor.kernel.ledger import Ledger
+                Ledger.default().emit("connection.prerequisite_enabled",
+                                      {"prerequisite": "query_history", "engine": after.engine, "ok": ok,
+                                       "message": message[:300]}, conn_id=conn_id)
+            except Exception as emit_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(emit_exc, "the prerequisite journal is best-effort",
+                         counter="connections.prerequisites.journal", conn_id=conn_id)
+            return {"ok": ok, "enabled": ok and after.ok, "message": message, "query_history": after.as_dict()}
+        finally:
+            try:
+                db.close()
+            except Exception as close_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(close_exc, "connections/prerequisites/enable: best-effort connection close",
+                         counter="connections.prerequisites.close_failed", conn_id=conn_id)
+    return await loop.run_in_executor(None, _work)
 
 
 def _warm_profiles(conn_id: str, schema: Optional[str] = None) -> dict:
@@ -451,8 +538,12 @@ async def connection_declared_metadata(conn_id: str):
 
     def _work():
         from aughor.db.metadata import read_declared_metadata
+        from aughor.db.query_history import check_query_history
         try:
-            return read_declared_metadata(db, cache_key=conn_id).as_dict()
+            out = read_declared_metadata(db, cache_key=conn_id).as_dict()
+            # Arc NV-5 — a fifth fact of the engine, probed rather than declared: whether its query history is readable.
+            out["query_history"] = check_query_history(db).as_dict()
+            return out
         finally:
             try:
                 db.close()

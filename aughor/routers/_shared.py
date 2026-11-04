@@ -407,6 +407,36 @@ async def run_birth(
             _emit("intelligence", "failed", error=str(exc)[:300])
             return False
 
+    # Arc NV-5 — what the query-history feature needs from this engine, probed at birth and provisioned where the
+    # platform can (Postgres: CREATE EXTENSION once preloaded) while the organisation reads warehouse history; the
+    # admin's step is journaled otherwise, so a connection says at birth what would make a feature whole.
+    async def _prerequisites_step() -> None:
+        _emit("prerequisites", "started")
+        try:
+            def _probe() -> dict:
+                from aughor.db.connection import open_connection_for
+                from aughor.db.query_history import check_query_history
+                from aughor.orgsettings.allows import allows
+                db = open_connection_for(conn_id)
+                try:
+                    readiness = check_query_history(db)
+                    enabled = None
+                    if readiness.can_enable and allows("read_query_history") and hasattr(db, "enable_query_history"):
+                        ok, message = db.enable_query_history()
+                        enabled = {"ok": ok, "message": message}
+                        readiness = check_query_history(db)
+                    return {"readiness": readiness.as_dict(), "enabled": enabled}
+                finally:
+                    db.close()
+            res = await loop.run_in_executor(None, _probe)
+            r = res["readiness"]
+            _emit("prerequisites", "done", query_history=r["sentence"], ok=r["ok"], applies=r["applies"],
+                  fix=r["fix"], enabled=res["enabled"])
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth prerequisites step is best-effort", counter="birth.job", conn_id=conn_id)
+            _emit("prerequisites", "failed", error=str(exc)[:300])
+
     # R14 — mine query popularity (deterministic, sqlglot only). A mining hiccup never
     # dents the rite.
     async def _popularity_step() -> None:
@@ -484,7 +514,7 @@ async def run_birth(
     # is resilient by contract — the job fails only when NOTHING was accomplished), and a
     # TaskGroup would cancel the sibling on the first raise, turning a best-effort mining
     # hiccup into a lost intelligence build.
-    intelligence_ok, _ = await asyncio.gather(_intelligence_step(), _popularity_step())
+    intelligence_ok, _, _ = await asyncio.gather(_intelligence_step(), _popularity_step(), _prerequisites_step())
 
     # PENDING item 11 — the BUSINESS layer, once the build it reads exists: the explorer that
     # proposes entities, links, processes and rules (`POST /ontology/explore`, one model call),
