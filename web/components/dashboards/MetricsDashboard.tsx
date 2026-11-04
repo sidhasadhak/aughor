@@ -66,9 +66,9 @@ export function MetricsDashboard({ connectionId, schema, value, onChange }: {
               {`vs ${periodShort(block.previous_start, block.previous_end, block.period) || block.compared_with}`}
             </Chip>
             {block.lag_days > 1 && (
-              <Chip tone="amber" testId="metrics-lag" title={block.lag_source === "beyond_horizon"
+              <Chip tone="amber" testId="metrics-lag" title={block.settling?.kind === "rewrites" || block.settling?.kind === "moving" ? block.settling.says : block.lag_source === "beyond_horizon"
                 ? `${block.still_moving.join(", ") || "A table"} ${block.still_moving.length > 1 ? "were" : "was"} still changing ${block.lag_days - 1} days after a day ended, so recent figures may still move`
-                : "Newer days are still settling"}>
+                : "Newer days may still change"}>
                 {`data ${block.lag_days} days behind`}
               </Chip>
             )}

@@ -133,7 +133,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
                                   value=round(mu, 6), unit="" if unit == "%" else unit,
                                   range_start=R._d(target.start), range_end=last_day),
             status="To date", as_of=today.isoformat(), author="system", author_kind="system", state="open",
-            falsifier="the metric measured for that range the Briefing's way, once it has settled: a figure "
+            falsifier=f"the metric measured for that range the Briefing's way on {settles_on}: a figure "
                       "outside the band scores this wrong",
             next_check=settles_on,
             extra={"method": "history", "low": round(low, 6), "mid": round(mu, 6), "high": round(high, 6),
@@ -154,7 +154,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
 
 
 def score_due(*, runner_for: Optional[Callable[[str], Any]] = None, now: Optional[_dt.datetime] = None) -> list[str]:
-    """Score every open Briefing prediction whose range has settled: the metric measured for the
+    """Score every open Briefing prediction whose range has reached its date: the metric measured for the
     predicted range the Briefing's way, at the age it was predicted for. A metric that can no longer
     be measured scores ``cannot_tell`` and says why. Returns the restated claim ids."""
     from aughor.knowledge import period_brief

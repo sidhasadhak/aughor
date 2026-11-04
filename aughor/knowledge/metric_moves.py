@@ -416,6 +416,7 @@ def compute_metric_moves(
     settled_through: Optional[date] = None,
     scope: str = "",
     measured_at: str = "",
+    still_moving: tuple = (),
 ) -> list[dict]:
     """Run each north-star metric's ``chart_sql`` and return synthetic findings for the
     MATERIAL time-trend moves, biggest move first.
@@ -435,6 +436,10 @@ def compute_metric_moves(
         name, chart_sql, unit, definition = get("name"), get("chart_sql"), get("unit_or_range"), get("definition")
         if not name or not chart_sql.strip():
             continue
+        if still_moving:
+            from aughor.semantic.metric_time import reads_any
+            if reads_any({"sql": chart_sql}, still_moving):
+                continue      # a table not seen to stop changing has no move to report; the range's own note says so
         try:
             columns, rows, error = run_sql(chart_sql)
         except Exception as _e:

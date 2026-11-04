@@ -229,8 +229,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           )}
           {edition?.built && period && edition.lag_now !== undefined && edition.lag_now !== period.lag_days && (
             <p className="aug-fs-xs" data-testid="edition-lag-moved" style={{ color: "var(--amb4)", margin: "0 0 4px" }}>
-              Written when this data&apos;s rows arrived within {countNoun(period.lag_days, "day")}; they now arrive within{" "}
-              {countNoun(edition.lag_now, "day")}, so a figure marked provisional may have settled since. Write it again to read
+              Written when this data was read {countNoun(period.lag_days, "day")} behind; it is now read{" "}
+              {countNoun(edition.lag_now, "day")} behind, so a figure marked provisional may have changed since. Write it again to read
               them as they stand.
             </p>
           )}

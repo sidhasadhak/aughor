@@ -102,7 +102,18 @@ def tables(connection_id: str) -> list[str]:
 
 
 def verdicts(connection_id: str) -> dict[str, SettlingVerdict]:
-    return {t: settle_lag(observations(connection_id, t)) for t in tables(connection_id)}
+    return {t: settle_lag(observations(connection_id, t)) for t in _still_read(connection_id)}
+
+
+def _still_read(connection_id: str) -> list[str]:
+    """The tables whose readings still speak for this connection. Readings age out only when a table is written, so one the
+    sampler has stopped reading (a metric's table took its place) would hold the connection's answer for good."""
+    stamps = {t: str((_store().get(_key(connection_id, t)) or {}).get("last_measured_on") or "") for t in tables(connection_id)}
+    newest = max(stamps.values(), default="")
+    if not newest:
+        return list(stamps)
+    floor = (date.fromisoformat(newest) - timedelta(days=KEEP_DAYS)).isoformat()
+    return [t for t, stamp in stamps.items() if not stamp or stamp >= floor]
 
 
 def connection_lag(connection_id: str) -> dict:
@@ -124,15 +135,18 @@ def connection_lag(connection_id: str) -> dict:
     except Exception:
         return out
     lags = [v.lag_days for v in vs.values() if v.lag_days is not None]
-    moving = sorted(t for t, v in vs.items() if v.still_moving)
+    # Old days moving says it directly, where recent days cannot: between a redraw and the next they hold still and read as
+    # settled (measured in simulation, for a refresh every 3 days or more). A table is still moving whatever they show.
+    rewriting = sorted(t for t in vs if rewrites_history(old_readings(connection_id, t)))
+    moving = sorted({t for t, v in vs.items() if v.still_moving} | set(rewriting))
     floors = [vs[t].horizon_days + 1 for t in moving]
     if not lags and not floors:
         return out
     out["days"] = max(lags + floors)
     out["source"] = "beyond_horizon" if floors else "learned"
     out["still_moving"] = moving
-    out["horizon"] = max((v.horizon_days for v in vs.values()), default=0)
-    out["rewrites"] = [t for t in moving if rewrites_history(old_readings(connection_id, t))]
+    out["horizon"] = max((vs[t].horizon_days for t in moving or vs), default=0)
+    out["rewrites"] = rewriting
     return out
 
 

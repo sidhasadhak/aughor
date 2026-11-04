@@ -404,8 +404,10 @@ def _context(conn_id: str, schema: Optional[str], *, today: date) -> str:
         from aughor.settling.store import connection_lag
         lag = connection_lag(conn_id)
         if lag.get("days") is not None:
-            parts.append(f"SETTLING LAG: {lag['days']} days ({lag.get('source')}); still moving: "
-                         f"{', '.join(lag.get('still_moving') or []) or 'none'}")
+            from aughor.settling.answer import answer_from
+            said = answer_from(lag)
+            parts.append(f"{'READ BEHIND' if said.never_settled else 'SETTLING LAG'}: {lag['days']} days ({lag.get('source')}); "
+                         f"still moving: {', '.join(lag.get('still_moving') or []) or 'none'}. {said.says()}")
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "the settling lag could not be read for the guide", counter="briefing.guide.lag")
     try:

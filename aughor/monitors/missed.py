@@ -222,7 +222,7 @@ def is_miss(review: MissReview) -> bool:
     """Whether the review found a miss: the day was a move by the series' own spread and nothing
     that watched it fired — not an ordinary day, not a day still settling, not a move that WAS flagged."""
     v = review.verdict or ""
-    if review.value is None or "It WAS flagged" in v or "still settling" in v or "ordinary day" in v:
+    if review.value is None or "It WAS flagged" in v or "too new to score" in v or "still settling" in v or "ordinary day" in v:
         return False
     return any(p in v for p in _MISS_PHRASES)
 
@@ -255,9 +255,9 @@ def _decide(review: MissReview, cand, points, today: date, stage: bool) -> None:
              + (f"{z:.1f}σ from the {len([1 for d, _ in points if d < when][-sentinel.HISTORY_DAYS:])} days before it"
                 if z is not None else "with too little history before it to score"))
     if when + timedelta(days=review.settle_days) > today:
-        review.verdict = (f"{moved}. That day is still settling — this source's days stop changing "
-                          f"after {review.settle_days} days, and a watch scores a day only once it "
-                          f"has; it will be scored on {(when + timedelta(days=review.settle_days)).isoformat()}.")
+        review.verdict = (f"{moved}. That day is too new to score — a watch scores a day only "
+                          f"{review.settle_days} days after it ends on this source; it will be scored on "
+                          f"{(when + timedelta(days=review.settle_days)).isoformat()}.")
         return
     fired = [w for w in review.watches if w.fired]
     if fired:
@@ -308,7 +308,7 @@ def _decide(review: MissReview, cand, points, today: date, stage: bool) -> None:
                                        today=when + timedelta(days=review.settle_days),
                                        settle_days=review.settle_days)
     if dist is None:
-        review.verdict = f"{moved}. Nothing was watching it, and there are too few settled days to tune one."
+        review.verdict = f"{moved}. Nothing was watching it, and there are too few days old enough to score to tune one."
         return
     if z is None or z < dist.sigma:
         review.verdict = (f"{moved}. Nothing was watching it — and a watch quiet enough to propose "

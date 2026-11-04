@@ -157,7 +157,7 @@ def test_the_watcher_stages_a_monitor_bundle_with_its_evidence_and_an_open_desti
     assert result["settle_days"] == 8 and result["candidates"] == 3
     assert [s["metric"] for s in result["staged"]] == ["Revenue"]
     assert result["skipped"] == {
-        "Orders": "too few settled days (10 points; needs 21 settled)",
+        "Orders": "too few days old enough to score (10 points; needs 21)",
         "Breakdown": "no daily series (the query returned no (day, value) rows)"}
     staged = result["staged"][0]
     assert staged["sigma"] == 2.5 and staged["would_have_fired"] == 1
@@ -173,7 +173,7 @@ def test_the_watcher_stages_a_monitor_bundle_with_its_evidence_and_an_open_desti
     assert p.detail["to_fill"], "an open choice must be named, or Accept would post nowhere"
     assert p.detail["distribution"]["would_have_fired"] == 1
     assert p.detail["distribution"]["settle_days"] == 8
-    assert "would have fired 1 time" in p.reasoning and "still settling" in p.reasoning
+    assert "would have fired 1 time" in p.reasoning and "too new to score" in p.reasoning
     assert "SQL only" in p.reasoning
 
 

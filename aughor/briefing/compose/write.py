@@ -467,7 +467,12 @@ def sheet_lines(entry: dict) -> list[tuple[str, list[str]]]:
         words = " ".join(P.plain(x) for x in (b.get("title"), b.get("text"), b.get("sub")) if x)
         if words.strip():
             prose.append(words.strip())
-    return [("narrative", prose)] if prose else []
+    out: list[tuple[str, list[str]]] = [("narrative", prose)] if prose else []
+    # What the edition did not read goes out with it, or a reader of the send is told less than a reader of the page.
+    unread = [f"{n['label']}: {n['reason']}" for n in entry.get("not_read") or [] if n.get("reason")]
+    if unread:
+        out.append(("not_read", unread))
+    return out
 
 
 # ── BC-4 · a drill, drawn in its card ────────────────────────────────────────────────────────

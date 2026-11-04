@@ -57,7 +57,8 @@ def settling_signal(before: dict, after: dict) -> Optional[dict]:
     moved = abs(float(a_days) - float(b_days))
     if moved >= SETTLING_MIN_DAYS_MOVED and moved >= SETTLING_MIN_REL * max(float(b_days), 1.0):
         return {"signal": "settling_lag", "before": b_days, "after": a_days, "source": a_src,
-                "text": f"the settling lag moved from {b_days} to {a_days} days"
+                "text": (f"how far behind this source is read moved from {b_days} to {a_days} days" if a_src == "beyond_horizon"
+                         else f"the settling lag moved from {b_days} to {a_days} days")
                         + (f" (still moving: {', '.join(after.get('still_moving') or [])})" if after.get("still_moving") else "")}
     if b_src == "learned" and a_src == "beyond_horizon":
         return {"signal": "settling_lag", "before": b_days, "after": a_days, "source": a_src,
@@ -74,7 +75,7 @@ def on_settling_sampled(connection_id: str, before: dict, after: dict):
         return None
     try:
         from aughor.record.inquiry import open_inquiry
-        q = open_inquiry(question=f"Why did the data's settling lag change on this connection — {signal['text']}?"[:500],
+        q = open_inquiry(question=f"Why did this change on this connection — {signal['text']}?"[:500],
                          connection_id=connection_id, opened_by="settling", subject="settling-lag")
         _emit(connection_id, signal, q.id)
         return q

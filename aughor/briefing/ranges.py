@@ -31,6 +31,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from aughor.semantic.metric_time import Window
+from aughor.settling.answer import answer_from
 
 #: The Dashboard's periods (the user, 2026-10-08): the day, week, month or year under way — "current" —
 #: and the one before it — "last". Each is read only over days whose data has ARRIVED (``data_through``,
@@ -100,6 +101,8 @@ class RangeSpec:
     compare_withheld: str = ""
     #: The tables of ``still_moving`` whose source keeps rewriting their old days (`settling.learn.rewrites_history`).
     rewrites: tuple = field(default_factory=tuple)
+    #: The oldest age those tables were read at; ``lag_days`` is not it when another table's learned lag is longer.
+    horizon: int = 0
 
     @property
     def last_day(self) -> date:
@@ -343,7 +346,7 @@ def compared_word(spec: RangeSpec) -> str:
 
 def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
                   end: Optional[date] = None, today: date, lag_days: int = 1,
-                  lag_source: str = "default", still_moving: tuple = (), rewrites: tuple = (),
+                  lag_source: str = "default", still_moving: tuple = (), rewrites: tuple = (), horizon: int = 0,
                   fiscal_start_month: int = 1, edge: Optional[dict] = None) -> tuple[Optional[RangeSpec], str]:
     """The range a Briefing reads, or ``(None, why)``. ``end`` is the LAST day, inclusive, as a
     calendar picks it; the spec's ``end`` is exclusive. Pure: no clock, no store.
@@ -358,11 +361,11 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
     ended = _ended(edge, today)
     if ended is not None and preset != "custom":
         return _ended_range(preset, today=today, through=ended, edge=edge or {},
-                            fiscal_start_month=fiscal_start_month, still_moving=still_moving, rewrites=rewrites)
+                            fiscal_start_month=fiscal_start_month, still_moving=still_moving, rewrites=rewrites, horizon=horizon)
     lag = clamp_lag(lag_days)
     anchor = today - timedelta(days=lag)          # the newest settled day
     common = dict(as_of=today, lag_days=lag, lag_source=lag_source, still_moving=tuple(still_moving),
-                  rewrites=tuple(rewrites))
+                  rewrites=tuple(rewrites), horizon=horizon)
     fiscal = fiscal_start_month if 1 <= int(fiscal_start_month or 1) <= 12 else 1
     edge = edge or {}
     through = edge.get("through")
@@ -412,7 +415,7 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
         year = timedelta(days=364)
         return RangeSpec("custom", start, e, start - shift, e - shift, start - year, e - year, as_of=today,
                          lag_days=0, lag_source="data_ended", data_through=ended, data_ended=True,
-                         data_from=edge.get("from"), still_moving=tuple(still_moving), rewrites=tuple(rewrites),
+                         data_from=edge.get("from"), still_moving=tuple(still_moving), rewrites=tuple(rewrites), horizon=horizon,
                          edge_note=_ended_note(ended, edge, asked_to=end if e <= end else None)), ""
     if through is not None:
         # Days whose data has not arrived are not read: a range asked to today against a whole
@@ -456,7 +459,7 @@ def _ended_note(through: date, edge: dict, *, asked_to: Optional[date] = None, c
 
 
 def _ended_range(preset: str, *, today: date, through: date, edge: dict, fiscal_start_month: int,
-                 still_moving: tuple = (), rewrites: tuple = ()) -> tuple[Optional[RangeSpec], str]:
+                 still_moving: tuple = (), rewrites: tuple = (), horizon: int = 0) -> tuple[Optional[RangeSpec], str]:
     """A preset over data that has ENDED: resolved as if read the day after its last day, with a
     one-day floor (the newest settled day IS the last day), then dated today and made final — unless a
     table was still moving when it stopped: a pause is not an ending, and theLook, unrefreshed since
@@ -481,10 +484,33 @@ def _ended_range(preset: str, *, today: date, through: date, edge: dict, fiscal_
     if data_from is not None and ly_s is not None and ly_s < data_from:
         ly_s, ly_e = None, None
     spec = replace(spec, as_of=today, lag_days=0, lag_source="data_ended", still_moving=tuple(still_moving),
-                   rewrites=tuple(rewrites),
+                   rewrites=tuple(rewrites), horizon=horizon,
                    data_through=through, data_ended=True, data_from=data_from,
                    compare_withheld=withheld, last_year_start=ly_s, last_year_end=ly_e)
     return replace(spec, edge_note=_ended_note(through, edge, covers=phrases(spec)["covers"])), ""
+
+
+def not_read_rows(figures: list[dict], name_key: str, against_usual: bool = True) -> list[dict]:
+    """The figures whose difference was not read as a move, one row per reason: on theLook eight figures gave one
+    sentence eight times. ``against_usual`` says what an edition read them against; a send with no guide read only the
+    period before."""
+    by_reason: dict[str, list[str]] = {}
+    for f in figures:
+        age = f.get("equal_age") or {}
+        if age.get("equal") is False:
+            by_reason.setdefault(str(age.get("why") or "").removeprefix(f[name_key]), []).append(f[name_key])
+    rows = []
+    for said, names in by_reason.items():
+        label = " and ".join(filter(None, [", ".join(names[:-1]), names[-1]]))
+        one = len(names) == 1
+        rows.append({"label": f"{label} against {'its' if one else 'their'} usual range" if against_usual else label,
+                     "reason": f"{'it' if one else 'each'}{said}", "tables": []})
+    return rows
+
+
+def _spec_answer(spec: RangeSpec):
+    return answer_from({"days": spec.lag_days, "source": spec.lag_source, "still_moving": spec.still_moving,
+                        "rewrites": spec.rewrites, "horizon": spec.horizon})
 
 
 def range_block(spec: RangeSpec) -> dict:
@@ -505,6 +531,9 @@ def range_block(spec: RangeSpec) -> dict:
             "data_ended": spec.data_ended,
             "data_from": _d(spec.data_from) if spec.data_from else None,
             "compare_withheld": spec.compare_withheld,
+            "rewrites": list(spec.rewrites), "horizon": spec.horizon,
+            # a dataset that ended and had settled has nothing left to say of its days
+            "settling": None if spec.data_ended and not spec.still_moving else _spec_answer(spec).as_block(),
             "measured": [], "unmeasured": []}
 
 
@@ -882,7 +911,7 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
 
 
 _STATUS_WORDS = {
-    "provisional": "provisional — its newest days are still settling",
+    "provisional": "provisional — its newest days may still change",
     "to_date": "to date — the range is still under way",
 }
 
@@ -898,6 +927,15 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
     from aughor.knowledge import period_brief
 
     share = m.get("unit") == "ratio 0..1"
+    if (m.get("equal_age") or {}).get("equal") is False:
+        # Not "moved from X to Y": that is the phrase the triage ranks a move by, and this is not read as one. Why is said
+        # once, in the send's own section (`sheet_lines`).
+        if share and m.get("previous") is not None:
+            line = (f"{m['name']} was {_share(m['current'])} in {block['covers']}, against {_share(m['previous'])} in "
+                    f"{block['compared_with']}.")
+        else:
+            line = period_brief.metric_line({**m, "rel": None}, block, currency_code)
+        return line.rstrip(".") + " — not read as a move."
     if share and m.get("rel") is not None and m.get("previous") is not None:
         pts = (m["current"] - m["previous"]) * 100
         line = (f"{m['name']} moved from {_share(m['previous'])} to {_share(m['current'])} "
@@ -922,10 +960,13 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
 
 def range_findings(measured: list[dict], block: dict, currency_code: Optional[str]) -> list[dict]:
     """The measured metrics as candidate findings, shaped like explorer findings so the triage
-    ranks them — the range's biggest move leads on its size."""
+    ranks them — the range's biggest move leads on its size. A figure not at equal age is no candidate: a difference
+    that may be its age would lead on its size too."""
     import re
     out = []
     for m in measured:
+        if (m.get("equal_age") or {}).get("equal") is False:
+            continue
         slug = re.sub(r"[^a-z0-9]+", "_", m["name"].lower()).strip("_")[:40]
         out.append({"id": f"range-move::{block['key']}::{slug}", "domain": "Key Metrics",
                     "angle": "Range", "finding": metric_line(m, block, currency_code),
@@ -1171,6 +1212,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     unit = _read_unit(m.time_kind, m.unit or "", values)
     currency, slack = _currency(conn_id, schema), _slack(spec.days)
     settled_by = spec.as_of - timedelta(days=max(int(spec.lag_days or 1), 1))
+    unsettled = _unsettled(m, spec)
     series = []
     for w, v in zip(windows, values):
         row = got.get(w.label)
@@ -1179,15 +1221,15 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
         series.append({"start": _d(w.start), "last_day": _d(w.last_day), "label": _span(w.start, w.end),
                        "value": v, "value_text": _figure_text(v, name, unit, currency) if v is not None else None,
                        "partial": partial, "current": w is windows[-1],
-                       # inside the days this source keeps changing: its figure may still move
-                       "settling": w.last_day > settled_by})
+                       # inside the days this source keeps changing, or read from a table with no such days: its figure may still move
+                       "settling": w.last_day > settled_by or unsettled})
     # Only a cohort's comparisons are bounded to an equal age (its outcomes, by each window's
     # as-of). A flow or a level is read as its rows stand today, so a range still settling is
     # not at the age of the ones before it — and the drawer said they all were (2026-10-08). A cohort on a
     # table still moving is not at equal age either (`equal_age`), and "so these comparisons are fair" sat
     # above "Not at equal age" on theLook's two.
-    return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort" and not _unsettled(m, spec),
-            "lag_days": spec.lag_days}
+    return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort" and not unsettled,
+            "lag_days": spec.lag_days, "never_settled": _spec_answer(spec).about(m).says() if unsettled else ""}
 
 
 def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domain_data: dict,
@@ -1269,14 +1311,16 @@ def resolve_for(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
     # Olist's six editions anchored to 2026 over data that stops in 2018.
     edge = data_edge(conn_id, schema, today=today)
     rewrites: list = []
+    horizon = 0
     try:
         from aughor.settling.store import connection_lag
-        rewrites = list(connection_lag(conn_id).get("rewrites") or [])
+        reading = connection_lag(conn_id)
+        rewrites, horizon = list(reading.get("rewrites") or []), int(reading.get("horizon") or 0)
     except Exception as exc:  # noqa: BLE001 — unread, a figure gives the plainer reason; its guard reads still_moving
         from aughor.kernel.errors import tolerate
         tolerate(exc, "whether this source rewrites its history is unread", counter="briefing.range.rewrites")
     return resolve_range(preset, start=start, end=end, today=today, lag_days=lag,
-                         lag_source=lag_source, still_moving=tuple(moving), rewrites=tuple(rewrites),
+                         lag_source=lag_source, still_moving=tuple(moving), rewrites=tuple(rewrites), horizon=horizon,
                          fiscal_start_month=fiscal,
                          edge=edge)
 
@@ -1301,7 +1345,10 @@ def sheet_lines(brief: dict, currency_code: Optional[str] = None) -> list[tuple[
     early = block.get("early") or {}
     if early.get("figures"):
         figs = "; ".join(f"{f['name']} {f.get('value_text') or f['value']}" for f in early["figures"])
-        sections.append(("early", [f"Still settling (early), {early['start']} to {early['end']}: {figs}."]))
+        sections.append(("early", [f"Newer days (early), {early['start']} to {early['end']}: {figs}."]))
+    unread = not_read_rows(block.get("measured") or [], "name", against_usual=False)
+    if unread:
+        sections.append(("not_read", [f"{r['label']}: {r['reason']}" for r in unread]))
     if block.get("unreachable"):
         sections.append(("unmeasured", [f"Nothing was measured: the data could not be reached — {block['unreachable']}."]))
     by_reason: dict[str, list[str]] = {}

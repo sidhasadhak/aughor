@@ -81,7 +81,7 @@ export function PaperDateline({ today, covers, lagDays, records, endedOn, stillM
       )}
       {!endedOn && typeof lagDays === "number" && lagDays >= 7 && (
         <span className="aug-fs-xs" style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--amb1)", color: "var(--amb4)" }}>
-          data settles {lagDays} days late
+          {stillMoving?.length ? `data ${lagDays} days behind` : `data settles ${lagDays} days late`}
         </span>
       )}
       {records > 0 && <span style={{ marginLeft: "auto" }}>grounded in {records} record{records === 1 ? "" : "s"}</span>}

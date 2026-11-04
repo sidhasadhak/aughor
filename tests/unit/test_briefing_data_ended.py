@@ -280,7 +280,7 @@ def test_a_live_source_still_moving_is_not_sent_as_settling_as_late_rows_arrive(
     today = date(2026, 11, 4)
     moving, _ = ranges.resolve_range("last_week", today=today, lag_days=29, lag_source="beyond_horizon", still_moving=("orders",))
     md = render_period_markdown(ranges.range_block(moving), [], 0)
-    assert "settling as late rows arrive" not in md and "has not seen them stop" in md and "may still move" in md
+    assert "settling as late rows arrive" not in md and "not been seen to stop" in md and "may still move" in md
     learned, _ = ranges.resolve_range("last_week", today=today, lag_days=8, lag_source="learned")
     assert "settling as late rows arrive, a lag the platform measured" in render_period_markdown(ranges.range_block(learned), [], 0)
 

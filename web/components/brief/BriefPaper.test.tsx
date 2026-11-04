@@ -45,6 +45,12 @@ describe("the paper on data that ended (design-mockups/briefing-data-ended.html)
     expect(screen.queryByTestId("paper-final")).toBeNull();
   });
 
+  it("does not say a source settles when its tables have not been seen to stop", () => {
+    render(<PaperDateline today="Friday 23 October 2026" covers="covering 20 October" lagDays={29} records={0} stillMoving={["items"]} />);
+    expect(screen.getByText("data 29 days behind")).toBeInTheDocument();
+    expect(screen.queryByText(/settles/)).toBeNull();
+  });
+
   it("says where the data ended in one line, with a door to the editions table", () => {
     const onCovers = vi.fn();
     render(<PaperEdgeNotice note="The data ended on 2018-10-17 (Wednesday)." onCovers={onCovers} />);

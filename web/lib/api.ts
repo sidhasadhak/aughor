@@ -7740,7 +7740,9 @@ export interface AnswerRecheck {
   /** Rows the answer gave that the query no longer returns, and the first few of their labels. */
   missing_rows?: number;
   missing?: Record<string, unknown>[];
-  cause: "late_rows" | "restated" | "unknown" | "none";
+  cause: "late_rows" | "restated" | "moving" | "rewrites" | "unknown" | "none";
+  /** What is true of a source never seen to settle, when that is why the numbers moved. */
+  settling_says?: string;
   lag_days: number | null;
   told?: { door?: string; status?: string; note?: string };
 }
@@ -7880,6 +7882,10 @@ export interface BriefingRangeBlock {
   lag_days: number;
   lag_source: "learned" | "beyond_horizon" | "default" | "data_ended";
   still_moving: string[];
+  /** The tables of `still_moving` whose source rewrites its history. */
+  rewrites?: string[];
+  /** What can be said of this source's days, from its own readings (`settling/answer.py`). */
+  settling?: { kind: "unknown" | "settles" | "moving" | "rewrites"; days: number | null; tables: string[]; says: string };
   covers: string;
   compared_with: string;
   last_year_label: string | null;
@@ -8453,6 +8459,8 @@ export interface MetricTrend {
   series: MetricTrendPoint[];
   why: string;
   same_age?: boolean;
+  /** What is true of a table this metric reads that has never been seen to settle; "" when there is none. */
+  never_settled?: string;
   lag_days?: number;
   period: BriefingRangeBlock;
 }

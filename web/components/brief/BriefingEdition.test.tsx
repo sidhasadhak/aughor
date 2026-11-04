@@ -332,7 +332,7 @@ describe("BriefingEdition", () => {
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     await screen.findByTestId("edition-lead");
     expect(screen.getByTestId("edition-lag-moved").textContent).toContain(
-      "Written when this data's rows arrived within 3 days; they now arrive within 1 day");
+      "Written when this data was read 3 days behind; it is now read 1 day behind");
   });
 
   const KNOWN: Record<string, EditionSource> = {

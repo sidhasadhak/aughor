@@ -28,6 +28,9 @@ MIN_AGES = 3
 MAGNITUDE_FLOOR = 50.0
 #: Readings that must rewrite old days before a source is said to rewrite its history: one is a backfill.
 MIN_REWRITES = 2
+#: How long after the last reading that moved a source is still called one that rewrites its history. Past it, it reads as
+#: a table still moving, which claims less and holds the same guard: no refresh is promised daily.
+STILL_A_HABIT_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -146,15 +149,24 @@ def rewrites_history(observations: Iterable[Observation], *, tolerance: float = 
     Measured on theLook 2026-11-04, every row across one refresh by BigQuery time travel: a fixed-size table redrawn
     whole, about 99.9% of rows on a different day afterwards, four-year-old days moving as much as last month's. A
     reading rewrites when at least half the days it read again moved past the tolerance; one such reading is a backfill,
-    a second means the source does this."""
+    a second means the source does this, unless that was long ago: a backfill of two days is not a habit a month later."""
     by_reading: dict[date, dict[date, float]] = {}
     for o in observations:
         by_reading.setdefault(o.measured_on, {})[o.day] = float(o.value)
     readings = sorted(by_reading)
-    rewrites = 0
+    rewrites, last = 0, None
     for earlier, later in zip(readings, readings[1:]):
         a, b = by_reading[earlier], by_reading[later]
         days = [d for d in a.keys() & b.keys() if a[d] or b[d]]
         if len(days) >= MIN_DAYS and 2 * sum(not _stable(a[d], b[d], tolerance) for d in days) >= len(days):
-            rewrites += 1
-    return rewrites >= min_rewrites
+            rewrites, last = rewrites + 1, later
+    return rewrites >= min_rewrites and (readings[-1] - last).days <= STILL_A_HABIT_DAYS
+
+
+def old_days_held(observations: Iterable[Observation], *, days: int = STILL_A_HABIT_DAYS) -> bool:
+    """Whether days far older than anything still arriving have been read for ``days`` and none of those readings moved them.
+    Only then has a table shown it is not redrawn at each refresh: recent days holding still shows nothing, as they do
+    between one refresh and the next."""
+    obs = list(observations)
+    readings = sorted({o.measured_on for o in obs})
+    return bool(readings) and (readings[-1] - readings[0]).days >= days and not rewrites_history(obs, min_rewrites=1)

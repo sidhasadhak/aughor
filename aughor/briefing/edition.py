@@ -267,19 +267,8 @@ def score(fig: dict, *, watched: bool) -> float:
 
 
 def _not_at_equal_age(figures: list[dict]) -> list[dict]:
-    """The figures whose distance from usual was not read, one row per reason: on theLook eight figures gave one
-    sentence eight times."""
-    by_reason: dict[str, list[str]] = {}
-    for f in figures:
-        if not f["equal_age"]["equal"]:
-            by_reason.setdefault(f["equal_age"]["why"].removeprefix(f["label"]), []).append(f["label"])
-    rows = []
-    for said, names in by_reason.items():
-        label = " and ".join(filter(None, [", ".join(names[:-1]), names[-1]]))
-        one = len(names) == 1
-        rows.append({"label": f"{label} against {'its' if one else 'their'} usual range",
-                     "reason": f"{'it' if one else 'each'}{said}", "tables": []})
-    return rows
+    from aughor.briefing.ranges import not_read_rows
+    return not_read_rows(figures, "label")
 
 
 def measure_edition(conn_id: str, spec, guide: BriefingGuide, *, published: bool, run_sql: RunSql,

@@ -7,7 +7,7 @@ status is read off the dates.
 
     standing     no range was chosen: every card runs as it was written
     final        the range's days have all settled
-    provisional  the range is over, and some of its days have not settled yet
+    provisional  the range is over, and some of its days have not settled yet, or its tables never have
     to_date      the range is still under way
 
 The four words are the web's (``web/lib/dashboards/hostState.ts``); a test holds the two lists
@@ -28,14 +28,18 @@ RANGE_STATUSES = (STANDING, FINAL, PROVISIONAL, TO_DATE)
 _TO_DATE_PRESETS = ("month_to_date", "year_to_date")
 
 
-def status_of(spec: Any) -> str:
-    """The status of a resolved range (a ``RangeSpec``), from its own dates."""
+def status_of(spec: Any, reads: Any = None) -> str:
+    """The status of a resolved range (a ``RangeSpec``), from its own dates and whether its tables have been seen to stop
+    changing. ``reads`` is what a card reads: its own tables decide, not the connection's others."""
+    from aughor.semantic.metric_time import reads_any
+
     if spec.preset in _TO_DATE_PRESETS or getattr(spec, "under_way", False):
         return TO_DATE
     settled = spec.as_of - timedelta(days=int(spec.lag_days or 0))   # the newest settled day
     if spec.last_day >= spec.as_of:
         return TO_DATE
-    if spec.last_day > settled:
+    moving = tuple(getattr(spec, "still_moving", ()) or ())
+    if spec.last_day > settled or (moving and (reads is None or reads_any(reads, moving))):
         return PROVISIONAL
     return FINAL
 

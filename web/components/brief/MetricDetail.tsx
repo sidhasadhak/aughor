@@ -135,16 +135,18 @@ function MetricDetail({ what, connectionId, schema, workspaceId, top, onClose, o
   const yearChange = m.last_year !== null ? changeOf(m, "last_year") : "";
   const moves = (block.moves ?? []).filter(c => c.metric === m.metric);
   const partial = m.current_partial || m.previous_partial;
+  // A difference this page does not read as a move has no "why it moved": asked, it spends a deep analysis on the premise.
+  const askable = onAskWhy && m.equal_age?.equal !== false;
   return (
     <Beside kind="Metric" top={top} onClose={onClose} testId="metric-detail" focusKey={`${block.key}:${m.metric}`}
       foot={<>
-        {onAskWhy && (
+        {askable && (
           <Button size="xs" variant="outline" style={{ width: "100%" }} onClick={() => onAskWhy(whyQuestion(m, block))}>
             Ask why it moved
           </Button>
         )}
         <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-          Esc closes it.{onAskWhy ? " Asking starts a deep analysis by the Agent." : ""}
+          Esc closes it.{askable ? " Asking starts a deep analysis by the Agent." : ""}
         </span>
       </>}>
       <Title marks={<StatusMark status={STATUS_LABEL[m.status]} />}>{m.name}</Title>
@@ -207,7 +209,7 @@ function Trend({ trend }: { trend: MetricTrend }) {
   if (read.length === 0) return <Absent>No range before this one has rows.</Absent>;
   const columns: LedgerColumn<MetricTrendPoint>[] = [
     { head: "Range", width: 210,
-      cell: p => `${p.label}${p.current ? " (this range)" : ""}${p.settling && !trend.same_age ? " · still settling" : ""}` },
+      cell: p => `${p.label}${p.current ? " (this range)" : ""}${p.settling && !trend.same_age ? " · may still move" : ""}` },
     { head: "Value", cell: p => p.value_text ?? "no rows", num: true },
   ];
   const short = trend.series.filter(p => p.partial);
@@ -225,7 +227,7 @@ function Trend({ trend }: { trend: MetricTrend }) {
         {countNoun(trend.series.length, "range")}, oldest first,{" "}
         {trend.same_age
           ? "each read at the same age as this one."
-          : <>each read as its rows stand today.{settling > 0
+          : <>each read as its rows stand today.{trend.never_settled ? ` ${trend.never_settled}` : settling > 0
               ? ` ${settling === 1 ? "The newest is" : `The newest ${settling} are`} inside the ${trend.lag_days ?? ""} days this source keeps changing, so ${settling === 1 ? "it is" : "they are"} not at the age of the ones before — part of any difference is age, not a move.`
               : ""}</>}
         {short.length > 0 ? ` ${countNoun(short.length, "range")} had rows for only part of its days: ${short.map(p => p.label).join("; ")}.` : ""}

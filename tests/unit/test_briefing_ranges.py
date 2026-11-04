@@ -401,6 +401,7 @@ def test_each_metric_is_expected_once_from_its_own_past_and_read_back_without_me
     assert " to " in rev["text"] and "6 earlier ranges" in rev["must_say"][0]
     claim = C.get(rev["claim_id"])
     assert claim.kind == "prediction" and claim.extra["settles_on"] == "2026-09-18" and claim.next_check == "2026-09-18"
+    assert "on 2026-09-18" in claim.falsifier and "once it has settled" not in claim.falsifier   # the date it is scored on, on any source
     assert claim.extra["briefing"] == {"metric": "revenue", "start": "2026-08-27", "end": "2026-09-06",
                                        "as_of": "2026-09-18", "preset": "custom"}
     # a share that never moved is one figure, not a band, and its unit is kept beside the claim
@@ -646,6 +647,9 @@ def test_a_cohorts_earlier_ranges_are_read_at_one_age_unless_its_table_is_still_
     read = lambda spec: ranges.metric_trend("c1", spec, "reached", runner=_runner(con))
     assert read(settled).get("why", "") == "" and read(settled)["same_age"] is True
     assert read(moving)["same_age"] is False
+    # every range of a table never seen to stop may still move, however old, and the drawer is told why in the answer's words
+    assert read(settled)["never_settled"] == "" and not all(p["settling"] for p in read(settled)["series"])
+    assert all(p["settling"] for p in read(moving)["series"]) and "orders was still changing" in read(moving)["never_settled"]
 
 
 def test_a_cohorts_band_says_same_age_only_on_a_table_that_settles(con, approved):

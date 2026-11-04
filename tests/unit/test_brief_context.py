@@ -171,7 +171,7 @@ def test_the_period_is_said_with_its_comparison_and_settling(_cache):
     block = brief_block_for_scope("workspace", "uber_ncr", period_key=AUGUST_KEY)
     assert "PERIOD: the monthly Briefing for August 2026, compared with July 2026" in block
     assert "2026-08-01 up to but not including 2026-09-01" in block
-    assert "newest 12 days of data are not settled yet" in block
+    assert "not settled" not in block and "rides was still changing at the oldest age read" in block
     assert "STILL MOVING" in block and "rides" in block
 
 

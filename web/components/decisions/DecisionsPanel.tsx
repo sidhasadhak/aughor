@@ -277,7 +277,7 @@ function KindForm({ onDeclared }: { onDeclared: (k: DecisionKind) => void }) {
       <label className="aug-fs-sm" htmlFor="kind-d">Reviewed after</label>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <Input id="kind-d" value={days} onChange={e => setDays(e.target.value)} inputMode="numeric" style={{ width: 80 }} />
-        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>days, plus how long this connection&apos;s days take to settle</span>
+        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>days, plus how far behind this connection is read</span>
       </div>
       <span />
       <label className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -515,7 +515,7 @@ function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQu
         <label className="aug-fs-sm" htmlFor="dec-r">Review on</label>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Input id="dec-r" type="date" value={reviewOn} onChange={e => setReviewOn(e.target.value)} style={{ width: 170 }} />
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>left empty, the date is proposed from how long this connection&apos;s days take to settle</span>
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>left empty, the date is proposed from how far behind this connection is read</span>
         </div>
         <label className="aug-fs-sm" htmlFor="dec-d">Decided on</label>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -788,7 +788,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
         ) : (
           <Absent>
             Its review date is {d.review_on ? `${day(d.review_on)} (${dayDistance(d.review_on)})` : "not set"}. On that date the outcome
-            is measured on settled days, against the expectation and against the metric&apos;s own baseline.
+            is measured on days old enough to read, against the expectation and against the metric&apos;s own baseline.
           </Absent>
         )}
       </Section>

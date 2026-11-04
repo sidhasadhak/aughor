@@ -50,6 +50,16 @@ describe("the metrics dashboard when the data cannot be reached (LuxExperience, 
   const down = { ...block("k3", "September 2026", "$1"), measured: [], unmeasured: [],
                  unreachable: "the connection could not be opened (OperationalError)" };
 
+  it("gives the lag's title in the server's words for a source that rewrites its history", async () => {
+    const says = "This source rewrites its history at each refresh: items changes at every age.";
+    api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
+    api.measureRange.mockResolvedValueOnce({ period: { ...block("k", "June 2026", "$1"), lag_days: 29, lag_source: "beyond_horizon",
+      still_moving: ["items"], rewrites: ["items"], settling: { kind: "rewrites", days: 29, tables: ["items"], says } },
+      from_briefing: false, measured_at: "2026-10-08T10:00:00Z", scope_key: "c" });
+    render(<MetricsDashboard connectionId="c" value={{ preset: "previous_month" }} onChange={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("metrics-lag").getAttribute("title")).toBe(says));
+  });
+
   it("says the data could not be reached — never a metric to approve or date — and reads again on Try again", async () => {
     api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
     api.measureRange.mockResolvedValueOnce({ period: down, from_briefing: false, measured_at: "2026-10-23T04:16:10Z", scope_key: "c" });
