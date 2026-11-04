@@ -1183,8 +1183,10 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
                        "settling": w.last_day > settled_by})
     # Only a cohort's comparisons are bounded to an equal age (its outcomes, by each window's
     # as-of). A flow or a level is read as its rows stand today, so a range still settling is
-    # not at the age of the ones before it — and the drawer said they all were (2026-10-08).
-    return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort",
+    # not at the age of the ones before it — and the drawer said they all were (2026-10-08). A cohort on a
+    # table still moving is not at equal age either (`equal_age`), and "so these comparisons are fair" sat
+    # above "Not at equal age" on theLook's two.
+    return {**about, "unit": unit, "series": series, "same_age": m.time_kind == "cohort" and not _unsettled(m, spec),
             "lag_days": spec.lag_days}
 
 

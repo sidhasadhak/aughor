@@ -632,6 +632,22 @@ def test_every_range_reads_the_edge_and_live_data_resolves_as_before(monkeypatch
     assert day.last_day == date(2026, 10, 7) and not day.data_ended
 
 
+def test_a_cohorts_earlier_ranges_are_read_at_one_age_unless_its_table_is_still_moving(con, approved):
+    """Its as-of bounds the outcomes, not the rows they are divided by (theLook, measured 2026-11-04). The ledger and the
+    Briefing's detail both print this: "so these comparisons are fair" sat above "Not at equal age" on theLook's two."""
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(name="reached", connection="c1", label="Reached", tables=["orders"], status="approved",
+                                 sql="AVG(CASE WHEN created_at IS NOT NULL THEN 1.0 ELSE 0.0 END)", approved_by="test",
+                                 time_column="orders.created_at", time_kind="cohort", outcome_column="orders.created_at",
+                                 time_confirmed_by="user:test"))     # or its dates are re-derived on read, as a flow's
+    days = dict(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    settled, _ = ranges.resolve_range(**days)
+    moving, _ = ranges.resolve_range(**days, still_moving=("orders",))
+    read = lambda spec: ranges.metric_trend("c1", spec, "reached", runner=_runner(con))
+    assert read(settled).get("why", "") == "" and read(settled)["same_age"] is True
+    assert read(moving)["same_age"] is False
+
+
 def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved):
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
     seen = ranges.metric_trend("c1", spec, "revenue", profile=_profile(), runner=_runner(con))
