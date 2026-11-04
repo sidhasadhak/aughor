@@ -443,6 +443,12 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
 #: also read it was deleted 2026-10-04, kill 8 of the 2027 study.)
 served_ontology_graph = _get_ontology_graph
 
+#: Arc NV-4 — the doors an accepted candidate declares through (`actions/inbox._accept_ontology_candidate`), public
+#: by name so the inbox reads an interface and not this router's internals. Bound below, after each is defined.
+declare_link_core = None   # set after _declare_link_core
+bind_and_persist_override = None   # set after _bind_and_persist
+served_scope = None   # set after _served_scope
+
 
 def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -> Optional[str]:
     from aughor.ontology.store import _load, _schema_prefix
@@ -4453,9 +4459,40 @@ def rebuild_ontology(
 
 class _MineCandidatesRequest(BaseModel):
     """Arc NV-3 — what the candidate door reads. Only the warehouse's own history for now; trusted queries and
-    verdicts keep their own miners and arrive here when their doors are wired."""
+    verdicts keep their own miners and arrive here when their doors are wired. Arc NV-4 — `stage` puts every bound
+    candidate into the resolve-once inbox, where a person accepts (it is declared) or rejects (kept)."""
     hours: int = Field(default=24 * 14, ge=1, le=24 * 180)
     limit: int = Field(default=2000, ge=1, le=10000)
+    stage: bool = False
+
+
+def stage_candidates(candidates, graph, connection_id: str, schema_name: str) -> dict:
+    """Arc NV-4 — every bound candidate into the resolve-once inbox (J10: ONE queue), idempotent by the candidate's own
+    text so a second mining never duplicates and never resurrects one a person already resolved. A candidate whose
+    declaration cannot be resolved against the served graph is not staged, and the answer says why."""
+    import hashlib
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.ontology.candidates import proposal_detail
+    staged: list[dict] = []
+    unstageable: list[dict] = []
+    seen_before = 0
+    for c in candidates:
+        detail, why = proposal_detail(c, graph.table_to_entity or {})
+        if detail is None:
+            unstageable.append({"kind": c.kind, "proposal": c.proposal, "why": why})
+            continue
+        call_id = hashlib.sha1(f"{c.kind}|{c.proposal}|{c.subject}".encode()).hexdigest()[:16]
+        p = StagedProposal(
+            kind="ontology_candidate", connection_id=connection_id, schema_name=schema_name,
+            action_id=f"ontology.{c.kind}", params=c.to_dict(), detail=detail,
+            reasoning=c.evidence, proposer="query_history", source="candidates:query_history",
+            run_id=f"candidates:{connection_id}:{schema_name}", call_id=call_id)
+        row = stage_proposal(p)
+        if row.id != p.id:
+            seen_before += 1
+        staged.append({"id": row.id, "kind": c.kind, "proposal": c.proposal, "status": row.status,
+                       "declares": detail["declares"]})
+    return {"proposals": staged, "already_staged": seen_before, "unstageable": unstageable}
 
 
 @router.post("/ontology/candidates/mine", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -4543,6 +4580,8 @@ def mine_ontology_candidates(
         report = mine(connection_id, query_log=statements, dialect=getattr(db, "dialect", "duckdb"),
                       known_joins=known, binder=_binder)
         out.update(report.to_dict())
+        if body.stage:
+            out["staged"] = stage_candidates(report.offered, graph, connection_id, graph.schema_name or effective)
         out["mined"] = len(report.candidates)
         out["statements"] = len({s for s in statements})
         out["calls"] = len(statements)
@@ -4906,3 +4945,9 @@ def withdraw_sensitive_property(entity_id: str, prop: str, connection_id: str = 
         raise HTTPException(status_code=404, detail=f"{entity_id}.{prop} is not declared sensitive")
     current.pop(prop)
     return _set_entity_field(connection_id, effective, entity_id, "sensitive", current)
+
+
+# Arc NV-4 — the public names the inbox declares through (see their declaration near `served_ontology_graph`).
+declare_link_core = _declare_link_core
+bind_and_persist_override = _bind_and_persist
+served_scope = _served_scope

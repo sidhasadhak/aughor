@@ -7221,7 +7221,8 @@ export interface StagedProposal {
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
       | "agent_bundle" | "automation_state" | "agent_grant"
       | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
-      | "agent_limit" | "cockpit_draft" | "cockpit_publish";
+      | "agent_limit" | "cockpit_draft" | "cockpit_publish"
+    | "ontology_candidate";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;

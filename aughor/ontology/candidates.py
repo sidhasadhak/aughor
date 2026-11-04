@@ -273,6 +273,57 @@ def mine(connection_id: str, *, trusted_queries: Iterable[dict] = (),
     return MiningReport(candidates=found)
 
 
+def _slug(text: str) -> str:
+    import re
+    s = re.sub(r"[^A-Za-z0-9]+", "_", text or "").strip("_").lower()
+    return s[:48] or "candidate"
+
+
+def proposal_detail(c: Candidate, table_to_entity: dict[str, str]) -> tuple[Optional[dict], str]:
+    """Arc NV-4 — what ACCEPTING this candidate declares, resolved against the served graph, or why it cannot be
+    staged. A join becomes a link spec for the link door (`from_entity`, `to_entity`, the two columns, a name); a
+    measure over ONE entity a computed property on it; a filter a segment on its entity. A candidate whose tables
+    the graph does not know, or a formula over several entities, is not staged — said, with why — because the
+    inbox offers Accept, and an accept that could not declare anything is a lie in a button."""
+    def entity_of(table: str) -> str:
+        t = (table or "").strip()
+        return table_to_entity.get(t) or table_to_entity.get(t.split(".")[-1]) or ""
+
+    if c.kind == "join":
+        try:
+            left, right = [side.strip() for side in c.proposal.split("=", 1)]
+            lt, lc = left.rsplit(".", 1)
+            rt, rc = right.rsplit(".", 1)
+        except ValueError:
+            return None, "the join edge is not `table.column = table.column`"
+        fe, te = entity_of(lt), entity_of(rt)
+        if not fe or not te:
+            return None, f"no entity backs {lt if not fe else rt} in the served graph"
+        if fe == te:
+            return None, "both sides are the same entity"
+        return {"declares": "link", "from_entity": fe, "to_entity": te, "from_column": lc, "to_column": rc,
+                "name": f"{_slug(fe)}_to_{_slug(te)}_from_history"}, ""
+    if c.kind == "measure":
+        tables = [t.strip() for t in c.subject.split(",") if t.strip()]
+        entities = sorted({entity_of(t) for t in tables if entity_of(t)})
+        if len(tables) != 1 or len(entities) != 1:
+            return None, ("the formula reads several tables; a computed property lives on one entity — declare it by hand"
+                          if len(tables) > 1 else f"no entity backs {c.subject or 'the formula'} in the served graph")
+        name = c.evidence.split("`")[1] if c.evidence.count("`") >= 2 else _slug(c.proposal)
+        return {"declares": "computed_property", "entity_id": entities[0], "prop_id": _slug(name), "label": name,
+                "formula_sql": c.proposal}, ""
+    if c.kind == "filter":
+        table = c.subject.rsplit(".", 1)[0] if "." in c.subject else c.subject
+        col = c.subject.rsplit(".", 1)[-1]
+        e = entity_of(table)
+        if not e:
+            return None, f"no entity backs {table} in the served graph"
+        return {"declares": "segment", "entity_id": e, "segment_id": _slug(f"{col}_from_history"),
+                "display_name": f"{col} as queried", "filter_sql": c.proposal,
+                "description": "the values this column is filtered on in the warehouse's query history"}, ""
+    return None, f"a {c.kind} candidate has no declaration to make"
+
+
 def to_inbox_items(candidates: Iterable[Candidate]) -> list[dict]:
     """Shape offerable candidates for the A4 resolve-once inbox.
 

@@ -200,7 +200,12 @@ class StagedProposal(BaseModel):
                   "cockpit_publish",
                   # AO-7e — a crystallised skill, staged by memory at L2+ autonomy; accept
                   # saves it through the governed door, never before.
-                  "skill_draft"] = "declared_action"
+                  "skill_draft",
+                  # Arc NV-4 — a candidate mined from the warehouse's own query history and EXPLAIN-bound
+                  # (`ontology/candidates.py`): params carry the candidate, `detail["declares"]` what an accept
+                  # declares — a link through the link door's own body, a computed property, a segment — each
+                  # landing in the ontology's draft as the accepting person's declaration. Reject is kept.
+                  "ontology_candidate"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -769,6 +774,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return _accept_dashboard_publish(p, actor=actor), ""
     if p.kind == "skill_draft":
         return _accept_skill_draft(p, actor=actor), ""
+    if p.kind == "ontology_candidate":
+        return _accept_ontology_candidate(p, actor=actor), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -1359,6 +1366,58 @@ def _accept_agent_grant(p: StagedProposal, *, actor: str):
                    message=f"agent '{agent.name}' may now PROPOSE {action_id} — "
                            f"proposals still land in this inbox for a human",
                    outcome=out, detail=out)
+
+
+def _accept_ontology_candidate(p: StagedProposal, *, actor: str):
+    """Arc NV-4 — declare what a mined candidate proposes, through the ontology's own doors: a join as a link
+    (`routers.ontology.declare_link_core`, measured and bound before it is written, origin `human` — the person who
+    accepted — with the mining as its provenance), a measure as a computed property, a filter as a segment (both
+    through `bind_and_persist_override`, so unbound SQL never earns `verified`). The door's refusal is the outcome,
+    verbatim; nothing is written outside those doors."""
+    _Result = _executor_result()
+    from fastapi import HTTPException
+
+    d = dict(p.detail or {})
+    cand = dict(p.params or {})
+    declares = str(d.get("declares") or "")
+    evidence = str(cand.get("evidence") or "")[:160]
+    try:
+        import aughor.routers.ontology as RO
+        if declares == "link":
+            spec = {"from_entity": d["from_entity"], "to_entity": d["to_entity"], "from_column": d["from_column"],
+                    "to_column": d["to_column"], "name": d["name"], "origin": "human",
+                    "provenance": f"mined from the warehouse's query history — {evidence}"[:200]}
+            out = RO.declare_link_core(spec, p.connection_id, p.schema_name or None)
+            summary = f"link {d['from_entity']} → {d['to_entity']} declared on {d['from_column']} = {d['to_column']}"
+        elif declares == "computed_property":
+            from aughor.ontology.overrides import OntologyOverride
+            ov = OntologyOverride(target_kind="computed_property", target_id=f"{d['entity_id']}::{d['prop_id']}",
+                                  fields={"label": d["label"], "formula_sql": d["formula_sql"]})
+            ov, graph = RO.bind_and_persist_override(p.connection_id, RO.served_scope(p.connection_id, p.schema_name or None), ov)
+            out = {"target": ov.target_id, "verified": bool(getattr(ov, "binding", None) or {}) or None}
+            summary = f"computed property {d['label']} declared on {d['entity_id']}"
+        elif declares == "segment":
+            from aughor.ontology.overrides import OntologyOverride
+            ov = OntologyOverride(target_kind="object_set", target_id=f"{d['entity_id']}::{d['segment_id']}",
+                                  fields={"display_name": d["display_name"], "filter_sql": d["filter_sql"],
+                                          "description": d.get("description", "")})
+            ov, graph = RO.bind_and_persist_override(p.connection_id, RO.served_scope(p.connection_id, p.schema_name or None), ov)
+            out = {"target": ov.target_id}
+            summary = f"segment {d['display_name']} declared on {d['entity_id']}"
+        else:
+            _record_outcome(p.id, "failed", f"nothing to declare for {declares or cand.get('kind')!r}", {})
+            return _Result("dispatch_error", False, p.action_id,
+                           message=f"this candidate declares nothing the doors accept ({declares or cand.get('kind')!r})")
+    except HTTPException as exc:
+        _record_outcome(p.id, "failed", str(exc.detail), {})
+        return _Result("dispatch_error", False, p.action_id, message=f"the ontology door refused: {exc.detail}")
+    except Exception as exc:  # noqa: BLE001 — the door's failure is the proposal's outcome, by name
+        _record_outcome(p.id, "failed", f"{type(exc).__name__}: {exc}", {})
+        return _Result("dispatch_error", False, p.action_id, message=f"declaring failed: {exc}")
+    outcome = {"declares": declares, **{k: v for k, v in (out or {}).items() if k in ("relationship", "target", "verified")}}
+    _record_outcome(p.id, "executed", summary, outcome)
+    return _Result("executed", True, p.action_id, message=f"{summary} — in the ontology's draft, as {actor}'s declaration",
+                   outcome=outcome, detail=outcome)
 
 
 def _owner_of(source: str) -> tuple[str, str]:
