@@ -347,7 +347,7 @@ class BigQueryConnection(Connector):
                 f"AND creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {hours} HOUR) "
                 f"ORDER BY end_time DESC LIMIT {limit}"
             )
-            result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=self.dialect, internal=True)
+            result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
             last = rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)
             if not last.error or "permission" not in last.error.lower():
                 return last

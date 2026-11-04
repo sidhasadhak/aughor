@@ -47,5 +47,5 @@ class ClickHouseConnection(DbApiWarehouse):
             f"WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = {literal(self._schema_name)} "
             f"AND event_time > now() - INTERVAL {hours} HOUR ORDER BY event_time DESC LIMIT {limit}"
         )
-        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=self.dialect, internal=True)
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
         return rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)

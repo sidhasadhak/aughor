@@ -46,5 +46,5 @@ class DatabricksConnection(DbApiWarehouse):
             "WHERE statement_type = 'SELECT' AND execution_status = 'FINISHED' "
             f"AND end_time > current_timestamp() - INTERVAL {hours} HOURS ORDER BY end_time DESC LIMIT {limit}"
         )
-        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=self.dialect, internal=True)
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
         return rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)

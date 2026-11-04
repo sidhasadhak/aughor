@@ -1134,11 +1134,16 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     - [~] NV-3 the warehouse's own history → candidates (`db/query_history.py`; `query_history()` on Snowflake,
       ClickHouse, BigQuery and the lakehouse connector, the base saying "none"; `mine_from_query_log`; the door
       `POST /ontology/candidates/mine`; the setting `read_query_history`, off by default, in the panel and the client).
-      *Live:* the door refuses 409 by name on theLook while the setting is off. **⚑ Owed, the user's click:** turn the
-      setting on (Settings ▸ Organization ▸ What Aughor may do) and run the door once on theLook (BigQuery
-      `JOBS_BY_PROJECT`, 180 days kept) — the count of join candidates the graph lacked and how many bound is the
-      study's receipt; its falsifier: no join the map lacked and no formula a person confirms, on two connections, and
-      the reader stays a connector method.
+      *Live:* the door refuses 409 by name on theLook while the setting is off. The user turned the setting on
+      (2026-11-04, "Yes, turn it on"; it stays on) and the door ran on theLook in 4 s: the read reached BigQuery and
+      the engine refused both `JOBS_BY_PROJECT` and the caller's own `JOBS_BY_USER` — the service account lacks
+      `bigquery.jobs.list` at the project level — and the door returned the engine's words as a value, nothing mined,
+      nothing written. Found on the way: the four readers declared the engine's dialect where the door's contract wants
+      none (`sql_for_engine` raised on the first live call); fixed, pinned. **⚑ Owed, the user's grant:** give
+      theLook's service account `bigquery.jobs.list` on the project (`roles/bigquery.resourceViewer`), run the door
+      again — the count of join candidates the graph lacked and how many bound is the study's receipt; its falsifier:
+      no join the map lacked and no formula a person confirms, on two connections, and the reader stays a connector
+      method.
     - [ ] NV-4 a bound candidate staged into the resolve-once inbox, accept = the link declared through the link door's
       own body (with the frequency as its evidence), reject kept.
     - [ ] The trust checks read `format`: a text date column compared to a literal says "compare as a date, not as text".

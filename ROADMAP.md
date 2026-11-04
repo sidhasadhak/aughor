@@ -12941,11 +12941,14 @@ three are this arc, in the study's own order of value over cost, each through th
   recurring filter values, recurring named formulas, each seen at least twice, each with its frequency as evidence —
   and the door EXPLAIN-binds every one on the connection before offering it, counts what it refused, and writes
   nothing. The read is a connection admin's choice, off by default, born a setting and never a flag (§3.65); while
-  off the door refuses with 409 and says where to turn it on. **Receipt so far:** the refusal, live on theLook
+  off the door refuses with 409 and says where to turn it on. **Receipt, live on theLook:** the refusal while off
   (`"Reading the warehouse's query history is off for this organisation. An admin turns it on under Settings ▸
-  Organization ▸ What Aughor may do …"`). **Owed:** the allowed read on theLook — the builder's write to the
-  organisation's settings was refused by the session's own classifier, which is the right refusal; the click is the
-  user's (PENDING item 74).
+  Organization ▸ What Aughor may do …"`); then, the user having turned it on (*"Yes, turn it on"*), the read reached
+  BigQuery in 4 s and the engine refused — the service account lacks `bigquery.jobs.list` on the project, for the
+  project view and the caller's own alike — and the door handed back the engine's words as a value, nothing mined,
+  nothing written. The first live call had raised instead: the four readers declared the engine's dialect where the
+  door wants none (a statement written for the engine declares nothing); fixed and pinned. **Owed:** the grant, then
+  the count of join candidates the graph lacked and how many bound (PENDING item 74).
 - **Not built, named:** NV-4, a bound candidate staged into the resolve-once inbox with an accept that declares the
   link through `POST /ontology/links`' own body — today the door returns the report and a person declares by hand;
   the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
@@ -15475,8 +15478,9 @@ the browser** · **measure the premise before building.**
       restore the auto-collect in `tools/schema.py` behind a measured receipt.
     - **`saved_sql` and `dbt` are gone from the candidate origins** — names nothing wrote for two years. *To reverse:*
       add the name back with its miner.
-    - **Owed to the user:** turning on *Read each warehouse's own query history* (Settings ▸ Organization ▸ What Aughor
-      may do) and running the door once on theLook, which the builder's classifier refused to do for them.
+    - **The user turned on *Read each warehouse's own query history*** the same day (*"Yes, turn it on"*); the door ran
+      on theLook and BigQuery refused for a missing `bigquery.jobs.list`. **Owed to the user:** that grant on the
+      project, then one more run of the door for the study's receipt.
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

@@ -83,6 +83,9 @@ def test_the_four_engines_carry_a_reader_and_the_files_say_so():
         assert "query_history" in klass.__dict__, cls
         src = inspect.getsource(klass.__dict__["query_history"])
         assert "internal=True" in src and "rows_from_result" in src, cls
+        # The door's contract (`db.dialects.sql_for_engine`): a statement written for the engine declares NOTHING;
+        # declaring the engine's own dialect raised on the first live call (theLook, 2026-11-04).
+        assert "sql_dialect=None" in src and "sql_dialect=self.dialect" not in src, cls
 
 
 # ── the miner ─────────────────────────────────────────────────────────────────────────────

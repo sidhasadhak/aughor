@@ -141,7 +141,7 @@ class SnowflakeConnection(Connector):
             f"END_TIME_RANGE_START => DATEADD('hour', -{hours}, CURRENT_TIMESTAMP()), RESULT_LIMIT => {limit})) "
             "WHERE QUERY_TYPE = 'SELECT' AND EXECUTION_STATUS = 'SUCCESS' ORDER BY END_TIME DESC"
         )
-        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=self.dialect, internal=True)
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
         return rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)
 
     def export_csv(self, sql: str, path: str, *, statement_timeout: int = 60) -> tuple[bool, str]:
