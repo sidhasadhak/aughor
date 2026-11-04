@@ -12951,8 +12951,16 @@ three are this arc, in the study's own order of value over cost, each through th
   BigQuery in 4 s and the engine refused — the service account lacks `bigquery.jobs.list` on the project, for the
   project view and the caller's own alike — and the door handed back the engine's words as a value, nothing mined,
   nothing written. The first live call had raised instead: the four readers declared the engine's dialect where the
-  door wants none (a statement written for the engine declares nothing); fixed and pinned. **Owed:** the grant, then
-  the count of join candidates the graph lacked and how many bound (PENDING item 74).
+  door wants none (a statement written for the engine declares nothing); fixed and pinned. The user's grant did not
+  reach the connection's own service account (four runs, the same 403 through the plain query door). **Receipt, live on
+  LuxExperience** (the user: *"Yes, do it"* — `pg_stat_statements` enabled on its warehouse, a Postgres reader built
+  over it the same hour): 165 statements and 546 calls read, 25 candidates mined, **19 bound and offerable** — the
+  business's own formulas, `gmv_eur`, `aov_eur`, `contribution_margin_eur`, `gross_margin_pct`, the return rate — 6
+  refused with the engine's words; **0 join candidates, every join in the history already in the graph**, on a
+  history that is so far Aughor's own SQL. The falsifier waits for the ETL's nightly statements and for theLook's
+  binding (PENDING item 74). Three live runs found what no fixture had: the unqualified read of a view in `public`,
+  formulas kept without their tables, the Briefing's own `_n`/`_first` offered back, one formula six times over as
+  `$2 … $57`.
 - **Not built, named:** NV-4, a bound candidate staged into the resolve-once inbox with an accept that declares the
   link through `POST /ontology/links`' own body — today the door returns the report and a person declares by hand;
   the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the

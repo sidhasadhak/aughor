@@ -1139,11 +1139,22 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       the engine refused both `JOBS_BY_PROJECT` and the caller's own `JOBS_BY_USER` — the service account lacks
       `bigquery.jobs.list` at the project level — and the door returned the engine's words as a value, nothing mined,
       nothing written. Found on the way: the four readers declared the engine's dialect where the door's contract wants
-      none (`sql_for_engine` raised on the first live call); fixed, pinned. **⚑ Owed, the user's grant:** give
-      theLook's service account `bigquery.jobs.list` on the project (`roles/bigquery.resourceViewer`), run the door
-      again — the count of join candidates the graph lacked and how many bound is the study's receipt; its falsifier:
-      no join the map lacked and no formula a person confirms, on two connections, and the reader stays a connector
-      method.
+      none (`sql_for_engine` raised on the first live call); fixed, pinned. The user's grant on theLook (*"Fixed, run
+      again"*) did not reach the service account the connection runs as: four more runs, the same 403 through the plain
+      query door too; the principal is the key file's `client_email`, which the platform masks in results and the
+      session's classifier refused to read. **Owed:** that binding, then one run.
+      *LuxExperience instead (the user: "Yes, do it"), 2026-11-04 07:14 UTC:* `pg_stat_statements` 1.10 enabled on
+      `lux-postgres` (ALTER SYSTEM, a container restart, CREATE EXTENSION; `lux-etl` undisturbed) and a Postgres reader
+      built over it — an aggregate, each statement weighed by its calls up to 100, found in its own schema since the
+      connection pins its search path. Three runs, each finding what only live data shows: the unqualified read said
+      "does not exist" of a view in `public`; 25 formulas offered and none bound because the miner kept no table and 20
+      were the Briefing's own `_n`/`_first`; `aov_eur` six times over as `$2 … $57`. **The receipt:** 165 statements,
+      546 calls read; 25 mined, **19 bound and offerable** (`gmv_eur`, `aov_eur`, `contribution_margin_eur`,
+      `gross_margin_pct`, `gross_profit_per_order`, `rev`, `refund`, the return and conversion rates, …), 6 refused with
+      the engine's words (a CTE's alias, a CASE over parameters planned as `sum(text)`, a CTE column); **0 join
+      candidates — every join in the history is in the graph**, and the history is Aughor's own SQL so far: the
+      falsifier (no join the map lacked, on two connections) is not decided until the ETL's nightly statements are in.
+      Not yet right: a formula's parameters renumber in walk order (`$2` before `$1` in the text) — cosmetic.
     - [ ] NV-4 a bound candidate staged into the resolve-once inbox, accept = the link declared through the link door's
       own body (with the frequency as its evidence), reject kept.
     - [ ] The trust checks read `format`: a text date column compared to a literal says "compare as a date, not as text".
