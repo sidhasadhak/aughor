@@ -150,8 +150,12 @@ export function noKeyMoveWords(read: number, unread: number): string {
  *  part of a month reads low against whole ones, and neither is a figure covering part of its range or one not at equal
  *  age with what it would be measured against. */
 export function keyMove(m: BriefingRangeMeasure, trend: MetricTrend | undefined): "above" | "below" | "" {
-  if (m.status === "to_date" || m.current_partial || unequal(m)) return "";
-  return trend?.usual?.outside ?? "";
+  return readAgainstUsual(m, trend) ? trend?.usual?.outside ?? "" : "";
+}
+
+/** Whether a figure was read against its usual range at all, which is what "nothing left it" can be said of. */
+export function readAgainstUsual(m: BriefingRangeMeasure, trend: MetricTrend | undefined): boolean {
+  return !(m.status === "to_date" || m.current_partial || unequal(m)) && !!trend?.usual;
 }
 
 /** Good, bad or neither for a row that moved. Colour marks only key movements, and only where someone has said which way

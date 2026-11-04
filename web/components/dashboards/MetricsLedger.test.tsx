@@ -16,6 +16,7 @@ const nav = vi.hoisted(() => ({ requestTab: vi.fn() }));
 vi.mock("@/lib/navigate", async original => ({ ...(await original<typeof import("@/lib/navigate")>()), ...nav }));
 
 const { MetricsLedger } = await import("@/components/dashboards/MetricsLedger");
+const { MetricDetailHost } = await import("@/components/brief/MetricDetail");
 
 const SALES = { id: "orders_sales", name: "Orders & sales", order: 0 }, RETURNS = { id: "returns", name: "Returns", order: 1 };
 const MARGIN = { id: "margin_pricing", name: "Margin & pricing", order: 2 }, TRAFFIC = { id: "traffic", name: "Traffic & conversion", order: 5 };
@@ -155,9 +156,12 @@ describe("Key movements", () => {
 
   it("does not count a month still under way", async () => {
     show({ ...BLOCK, measured: BLOCK.measured.map(m => ({ ...m, status: "to_date" as const })) });
-    await settled();
-    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("0 key movements");
+    await screen.findByRole("radio", { name: /Key movements 0/ });
+    // none of it was read, so it is not said that nothing left its usual range, nor that any of it is settling
+    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("7 measured · 7 not read against usual · 4 not measured");
     expect(within(screen.getByTestId("ledger-row-conv")).getByTestId("ledger-readout")).toHaveTextContent("Under way, so not read against its usual range");
+    fireEvent.click(screen.getByRole("radio", { name: /Key movements 0/ }));
+    expect(screen.getByTestId("ledger-none")).toHaveTextContent("None of the 7 metrics here was read against its usual range");
   });
 });
 
@@ -186,6 +190,15 @@ describe("figures not read against their usual range", () => {
     expect(screen.getByTestId("ledger-tally")).toHaveTextContent("3 measured · 0 key movements · 1 not read against usual");
     expect(screen.getByTestId("ledger-none")).toHaveTextContent("None of the 2 read against their usual range left it.");
     expect(screen.getByTestId("ledger-not-read")).toHaveTextContent(`Average Order Value is not read against its usual range: it ${SAID}`);
+  });
+
+  it("does not count a figure with too few earlier readings as read", async () => {
+    api.readMetricTrend.mockImplementation(async (_c: string, metric: string) =>
+      metric === "net" ? { series: months(FLAT), usual: null, why: "", tables: [] } : TRENDS[metric]);
+    show({ ...BLOCK, measured: [at("gmv"), { ...at("net"), status: "final" as const }], unmeasured: [] });
+    await keyTab();
+    expect(screen.getByTestId("ledger-tally")).toHaveTextContent("2 measured · 0 key movements · 1 not read against usual");
+    expect(screen.getByTestId("ledger-none")).toHaveTextContent("The one read against its usual range did not leave it.");
   });
 
   it("says nothing left its usual range when every figure was read", async () => {
@@ -232,6 +245,22 @@ describe("an opened row", () => {
   ])("ends the reason %j with one full stop", async (why, words) => {
     const reasons = await open(one({ status: "provisional", equal_age: { equal: false, why } }), "Revenue");
     expect(reasons.getByText(words)).toBeInTheDocument();
+  });
+
+  it("offers to ask why a figure moved only when it was read as a move", async () => {
+    const ask = vi.fn();
+    const hosted = (block: BriefingRangeBlock) => render(
+      <MetricDetailHost connectionId="c" schema="lux" pageKey="p" onAskWhy={ask}><MetricsLedger connectionId="c" schema="lux" block={block} /></MetricDetailHost>);
+    const opened = async () => {
+      await screen.findByRole("radio", { name: /Key movements \d/ });
+      fireEvent.click(within(screen.getByTestId(/^ledger-row-/)).getByRole("button", { name: "Revenue" }));
+      return within(await screen.findByTestId("ledger-reasons"));
+    };
+    const read = hosted(one({}));
+    expect((await opened()).getByRole("button", { name: "Ask why it moved" })).toBeInTheDocument();
+    read.unmount();
+    hosted(one({ status: "provisional", equal_age: { equal: false, why: "part of any difference is its age" } }));
+    expect((await opened()).queryByRole("button", { name: "Ask why it moved" })).toBeNull();
   });
 
   it("says a point within the source's lag may still move, which is true whether or not it ever settles", async () => {
