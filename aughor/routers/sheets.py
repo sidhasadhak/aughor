@@ -38,12 +38,13 @@ VIEW, EDIT, OWN = "view", "edit", "own"
 
 
 def _sheet(sheet_id: str, request: Optional[Request] = None, need: str = VIEW):
-    """The sheet, when the person asking may do what the route asks of it: 404 when there is none, 403 — saying it
-    exists, and who to ask — when it is not shared with them, or not to change."""
+    """The sheet, when the person asking may do what the route asks of it: 404 when there is none — saying who removed it
+    and when, for one removed — 403 — saying it exists, and who to ask — when it is not shared with them, or not to change."""
     from aughor.sheets import model, sharing
     sheet = model.get(sheet_id)
     if sheet is None:
-        raise HTTPException(status_code=404, detail="No such sheet")
+        from aughor.sheets.dependents import removed_sentence
+        raise HTTPException(status_code=404, detail=removed_sentence(sheet_id) or "No such sheet")
     try:
         sharing.require(sheet, _who(request) if request is not None else sharing.acting(), need)
     except sharing.NotShared as exc:
@@ -91,9 +92,12 @@ def _definition(sheet, reader: str) -> dict:
     """A sheet as the person reading it sees it: its columns, the views they see — every shared view and their own
     own — how many rows each view shows, its rules and the rows each marks."""
     from aughor.sheets import views as _views
+    from aughor.sheets.dependents import removed_reads
     out = _summary(sheet, reader)
     seen = sheet.views_for(reader)
-    out.update({"columns": [c.model_dump() for c in sheet.columns], "views": [v.model_dump() for v in seen],
+    gone = removed_reads(sheet)
+    out.update({"columns": [{**c.model_dump(), **({"reads_removed": gone[c.id]} if c.id in gone else {})}
+                            for c in sheet.columns], "views": [v.model_dump() for v in seen],
                 "key": sheet.key, "rules": [r.model_dump() for r in sheet.rules],
                 "view_rows": _views.view_rows(sheet, seen), "rule_rows": _views.rule_rows(sheet), "me": reader})
     return out
@@ -214,6 +218,15 @@ def read(sheet_id: str, request: Request) -> dict:
     return _definition(_sheet(sheet_id, request, VIEW), _who(request))
 
 
+@router.get("/{sheet_id}/dependents")
+def dependents(sheet_id: str, request: Request) -> dict:
+    """What reads a sheet, for its maker to read before removing it: other sheets' links and totals, and the dashboards
+    holding a card over its table, its filters or its Add a row. Only its maker asks: no one else may remove it."""
+    from aughor.dashboards.home import person_of
+    from aughor.sheets.dependents import dependents_of
+    return dependents_of(_sheet(sheet_id, request, OWN), _who(request), person_of(request))
+
+
 @router.delete("/{sheet_id}")
 def remove(sheet_id: str, request: Request) -> dict:
     """Remove a sheet: its tombstone first, then its table, its values and their history, and its files."""
@@ -284,13 +297,13 @@ def rows(sheet_id: str, request: Request, view: str = "", filter: str = "", sort
 
 @router.get("/{sheet_id}/csv")
 def csv(sheet_id: str, request: Request, view: str = "", filter: str = "", sort: str = "", search: str = "") -> Response:
-    from aughor.sheets import projection
+    from aughor.sheets import model, projection
     sheet = _sheet(sheet_id, request, VIEW)
     args = _view_args(sheet, view, filter, sort, search, _who(request))
     text = projection.to_csv(sheet, conditions=args["conditions"], sort=args["sort"], search=args["search"],
                              hidden=args["hidden"])
     return Response(content=text, media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{sheet.table}.csv"'})
+                    headers={"Content-Disposition": f'attachment; filename="{model.table_name(sheet.name, set())}.csv"'})
 
 
 @router.get("/{sheet_id}/check")

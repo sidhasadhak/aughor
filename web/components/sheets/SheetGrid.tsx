@@ -66,8 +66,8 @@ export const MAX_WIDTH = 800;
  *  column carries and its ⓘ. */
 export function width(c: ShownColumn): number {
   if (typeof c.width === "number") return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, c.width));
-  const extra = (c.role !== "stored" ? 58 : 0) + (c.description || c.role !== "stored" ? 20 : 0) + (c.made_by ? 66 : 0)
-    + (c.model_writes ? 116 : 0);
+  const extra = (c.reads_removed ? 136 : c.role !== "stored" ? 58 : 0) + (c.description || c.role !== "stored" || c.reads_removed ? 20 : 0)
+    + (c.made_by ? 66 : 0) + (c.model_writes ? 116 : 0);
   return Math.min(320, Math.max(WIDTH[c.kind] ?? 160, Math.min(260, c.name.length * 8 + 44)) + extra);
 }
 
@@ -133,12 +133,19 @@ export function CellValue({ column, value }: { column: SheetColumn; value: unkno
   );
 }
 
+/** Why a column that read a removed sheet holds what it holds, said where a person looks for it. */
+function removedWords(c: SheetColumn): string {
+  return c.role === "stored" ? `It linked to ${c.reads_removed}, which was removed: it keeps its own values and links to nothing.`
+    : `It read ${c.reads_removed}, which was removed, so it is empty.`;
+}
+
 /** What a derived or described column is, said where its header is. */
 export function aboutColumn(sheet: Sheet, c: SheetColumn): string[] {
   const nameOf = (id: string) => sheet.columns.find(x => x.id === id)?.name ?? id;
   const lines = [`${KIND_LABEL[c.kind]}${c.role !== "stored" ? ` · ${mark(c)}` : ""}`];
+  if (c.reads_removed) lines.push(removedWords(c));
   if (c.role === "computed") lines.push(`Computed from ${c.expression}.`);
-  if (c.role === "lookup") lines.push(`Read from another sheet through ${nameOf(c.via)}; it follows that sheet.`);
+  if (c.role === "lookup" && !c.reads_removed) lines.push(`Read from another sheet through ${nameOf(c.via)}; it follows that sheet.`);
   if (c.role === "total" && !c.description) lines.push(`The ${c.how} of another sheet's rows per ${nameOf(c.by)}.`);
   if (c.description) lines.push(c.description.charAt(0).toUpperCase() + c.description.slice(1)
     + (c.description.endsWith(".") ? "" : "."));
@@ -318,14 +325,15 @@ export function GridHeader({ sheet, shown, sort = [], onSort, onWidth, onFit, on
               )}
             </span>
           </Button>
-          {mark(c) && <Chip tone="accent">{mark(c)}</Chip>}
+          {c.reads_removed ? <Chip tone="amber" title={removedWords(c)}>sheet removed</Chip>
+            : mark(c) && <Chip tone="accent">{mark(c)}</Chip>}
           {c.made_by && <Chip tone="violet" title="Proposed by the assistant, applied by a person">proposed</Chip>}
           {c.model_writes && (
             <Chip tone="violet" title="Each value is a model's reading, not a fact — nothing is counted from it">
               written by a model
             </Chip>
           )}
-          {(c.description || c.role !== "stored") && (
+          {(c.description || c.role !== "stored" || c.reads_removed) && (
             <Button variant="ghost" size="icon-xs" aria-label={`What ${c.name} is`} aria-expanded={about === c.id}
               onClick={() => setAbout(about === c.id ? "" : c.id)} style={{ ...MUTED }}>
               <Icon name="info" size={11} />
@@ -458,6 +466,7 @@ export function cellOrigin(sheet: Sheet, c: SheetColumn, row: number,
     return `Set by ${who(set.by, sheet.me)} · ${formatTimestamp(set.at, "short")}`
       + (set.version > 1 ? ` · changed ${formatCount(set.version)} times` : "");
   }
+  if (c.reads_removed && c.role !== "stored") return removedWords(c);
   if (c.role === "computed") return `Computed from ${c.expression}`;
   if (c.role === "lookup") return `Read from another sheet through ${sheet.columns.find(x => x.id === c.via)?.name ?? "a link"}`;
   if (c.role === "total") {

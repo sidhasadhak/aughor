@@ -2,14 +2,15 @@
 
 /**
  * The Spreadsheets home (mockup screen 1): how to start a sheet, the workspace's sheets — rows, columns, where each came
- * from, its last change and who it is shared with — and the files already uploaded to the Workspace, each one click
- * from becoming a sheet.
+ * from, its last change and who it is shared with, and for its maker, removing it — and the files already uploaded to the
+ * Workspace, each one click from becoming a sheet.
  */
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Chip, Empty, Label, MUTED, NUM, ONE_LINE } from "@/components/clarity/kit";
 import { NewSheetDialog, type NewSheetStart } from "@/components/sheets/NewSheetDialog";
 import { NewSheetChat } from "@/components/sheets/SheetChat";
+import { RemoveSheetConfirm } from "@/components/sheets/SheetRemove";
 import { SharePop } from "@/components/sheets/SheetSharing";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -17,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount, formatTimestamp } from "@/lib/format";
 import {
-  isWithheld, lastChangeWords, listSheets, sharedWords, type SheetSummary, type UploadedFile, type WithheldSheet,
+  isWithheld, lastChangeWords, listSheets, sharedWords, type SheetSummary, type UploadedFile, type WithheldSheet, who,
 } from "@/lib/sheets";
 
 const BAR: CSSProperties = {
@@ -41,6 +42,8 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
   const [find, setFind] = useState("");
   const [sharing, setSharing] = useState<string>("");
   const [moreFiles, setMoreFiles] = useState(false);
+  const [removing, setRemoving] = useState<string>("");
+  const [removed, setRemoved] = useState<string>("");
 
   const read = useCallback(() => {
     listSheets().then(d => {
@@ -120,10 +123,11 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
             </div>
           </section>
 
-          <section>
+          <section style={{ containerType: "inline-size" }}>
             <Label right={find ? `${formatCount(shown.length)} of ${formatCount(data.sheets.length)}` : undefined}>
               Sheets in this workspace
             </Label>
+            {removed && <div role="status" className="aug-fs-sm" style={{ ...MUTED, padding: "0 8px 6px" }}>{removed} was removed.</div>}
             {data.sheets.length === 0 && data.withheld.length === 0 ? (
               <Empty>No sheet yet. Start one from a file, from nothing, or from a query&apos;s rows.</Empty>
             ) : (
@@ -136,11 +140,13 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
                     <th style={{ padding: "6px 8px", fontWeight: 500 }}>From</th>
                     <th style={{ padding: "6px 8px", fontWeight: 500 }}>Last change</th>
                     <th style={{ padding: "6px 8px", fontWeight: 500 }}>Shared with</th>
+                    <th aria-label="Remove" style={{ padding: "6px 8px" }} />
                   </tr>
                 </thead>
                 <tbody>
                   {shown.map(s => (
-                    <tr key={s.id} style={{ borderTop: "1px solid var(--b0)", height: 34 }}>
+                    <Fragment key={s.id}>
+                    <tr style={{ borderTop: "1px solid var(--b0)", height: 34 }}>
                       <td style={{ padding: "4px 8px" }}>
                         <Button variant="link" size="sm" onClick={() => onOpen(s.id)}
                           style={{ fontWeight: 600, padding: "0 4px" }}>
@@ -165,7 +171,31 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
                         {sharing === s.id && <SharePop name={s.name} sheetId={s.id} me={data.me}
                           onDone={() => setSharing("")} onChanged={read} />}
                       </td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                        {s.access === "own" ? (
+                          <Button variant="outline" size="xs" aria-label={`Remove ${s.name}`} aria-expanded={removing === s.id}
+                            onClick={() => { setSharing(""); setRemoved(""); setRemoving(removing === s.id ? "" : s.id); }}>
+                            Remove
+                          </Button>
+                        ) : (
+                          <span className="aug-fs-xs" style={MUTED}>
+                            Only {s.created_by ? who(s.created_by, data.me) : "its maker"} can remove it
+                          </span>
+                        )}
+                      </td>
                     </tr>
+                    {removing === s.id && (
+                      <tr>
+                        <td colSpan={7} style={{ padding: "4px 8px 10px" }}>
+                          {/* the table can be wider than the page: what is asked stays in view, every word of it */}
+                          <div style={{ position: "sticky", left: 8, width: "min(100%, calc(100cqw - 16px))" }}>
+                            <RemoveSheetConfirm sheet={s} uploads={data.uploads} onKeep={() => setRemoving("")}
+                              onRemoved={() => { setRemoving(""); setRemoved(s.name); read(); }} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                   {notShared.map(s => (
                     <tr key={s.id} style={{ borderTop: "1px solid var(--b0)", height: 34 }}>
@@ -177,7 +207,7 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
                       <td colSpan={4} style={{ padding: "4px 8px", ...MUTED, ...ONE_LINE, maxWidth: 640 }} title={s.withheld}>
                         {s.withheld}
                       </td>
-                      <td style={{ padding: "4px 8px" }}><Chip>Not shared with you</Chip></td>
+                      <td colSpan={2} style={{ padding: "4px 8px" }}><Chip>Not shared with you</Chip></td>
                     </tr>
                   ))}
                 </tbody>

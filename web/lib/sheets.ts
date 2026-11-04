@@ -47,6 +47,8 @@ export interface SheetColumn {
   made_by: string;
   /** SH-5 — set on a column a model writes: its instruction, and the columns of each row it reads. */
   model_writes?: { instruction: string; reads: string[] } | null;
+  /** The name of a removed sheet this column read: a link to it, a column looked up through one, a total of it. */
+  reads_removed?: string;
 }
 
 export interface Condition { column: string; op: string; value?: unknown }
@@ -347,6 +349,17 @@ export const createFromRows = (name: string, connectionId: string, sql: string, 
 
 export const removeSheet = (id: string) =>
   call<{ removed: string }>(`/${id}`, { method: "DELETE" }, "Removing the sheet");
+
+/** What reads a sheet, for its maker before removing it. A sheet or a dashboard not shared with them is named and counted,
+ *  never read (`withheld`). */
+export interface SheetDependents {
+  sheets: { id: string; name: string; maker: string; empties: string[]; links: string[]; withheld: boolean }[];
+  dashboards: { title: string; yours: boolean; owner: string; cards: string[]; count: number; pieces: string[]; withheld: boolean }[];
+  cards: { title: string; yours: boolean }[];
+}
+
+export const readDependents = (id: string) =>
+  call<SheetDependents>(`/${id}/dependents`, undefined, "Reading what reads the sheet");
 
 export interface RowsQuery {
   view?: string; filter?: Condition[]; sort?: { column: string; desc: boolean }[]; search?: string;
@@ -670,6 +683,53 @@ export function asksForAChange(words: string): boolean {
 /** The view's name, then how many rows it shows of the sheet's: "Overdue, still open · 1,729 of 99,441". */
 export function viewCount(shown: number, all: number): string {
   return shown === all ? `${formatCount(all)} rows` : `${formatCount(shown)} of ${formatCount(all)} rows`;
+}
+
+function named(names: string[]): string {
+  const shown = names.slice(0, 6).join(", ");
+  return names.length > 6 ? `${shown} and ${formatCount(names.length - 6)} more` : shown;
+}
+
+const cardsWord = (n: number) => `${formatCount(n)} card${n === 1 ? "" : "s"}`;
+
+/** What reads a sheet, a line each, in what happens to it when the sheet goes; [] when nothing does. */
+export function dependentWords(d: SheetDependents): string[] {
+  const lines: string[] = [];
+  for (const s of d.sheets) {
+    if (s.withheld) {
+      lines.push(`The sheet ${s.name}, made by ${s.maker} and not shared with you: what it reads from this one goes empty.`);
+      continue;
+    }
+    const said = [
+      s.empties.length ? `${named(s.empties)} ${s.empties.length === 1 ? "goes" : "go"} empty` : "",
+      s.links.length ? `${named(s.links)} ${s.links.length === 1 ? "keeps its" : "keep their"} values and ${s.links.length === 1 ? "links" : "link"} to nothing` : "",
+    ].filter(Boolean);
+    lines.push(`The sheet ${s.name}: ${said.join("; ")}.`);
+  }
+  for (const b of d.dashboards) {
+    const whose = b.yours ? "Your dashboard" : b.owner ? `${b.owner}'s dashboard` : "The dashboard";
+    const parts = [...b.cards, ...b.pieces.map(p => (p === "add_row" ? "its Add a row button" : "its filters"))];
+    lines.push(b.withheld
+      ? `A dashboard${b.owner ? ` of ${b.owner}'s` : ""} not shared with you: ${b.count ? cardsWord(b.count) : "what it reads from this one"} will say the sheet was removed.`
+      : `${whose} ${b.title}: ${named(parts)} will say the sheet was removed.`);
+  }
+  const yours = d.cards.filter(c => c.yours).map(c => c.title);
+  if (yours.length) lines.push(`On no dashboard yet, your ${yours.length === 1 ? "card" : "cards"} ${named(yours)}: will say the sheet was removed.`);
+  const others = d.cards.length - yours.length;
+  if (others) lines.push(`${cardsWord(others)} of other people's, on no dashboard: will say the sheet was removed.`);
+  return lines;
+}
+
+/** Where a sheet's rows can be had again once it is gone, and that its edits cannot: only a file uploaded to the Workspace
+ *  outlives the sheet. A file brought straight to the sheet is kept with it, and goes with it. */
+export function whatStays(s: Pick<SheetSummary, "source">, uploads: Pick<UploadedFile, "schema" | "file">[]): string {
+  const { kind, file, upload } = s.source;
+  if (kind === "rows") return "Its rows were kept from a query. Running the query again can make a new sheet, though not with those edits.";
+  if (kind !== "file") return "It was made blank here, so nothing else holds its rows.";
+  if (upload?.file && uploads.some(u => u.file === upload.file && u.schema === upload.schema)) {
+    return `The uploaded file ${upload.file} stays and can make a new sheet, though not with those edits.`;
+  }
+  return `The copy of ${file} kept with it goes too. Bringing the file again can make a new sheet, though not with those edits.`;
 }
 
 /** Who made a change, for a person: "you" when it was the reader, else the name after `user:`. */

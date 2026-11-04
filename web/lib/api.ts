@@ -2701,6 +2701,8 @@ export interface CardRunResult {
   row_count: number;
   caveats: string[];
   error: string | null;
+  /** `sheet_removed`: `error` is a sentence saying who removed the sheet this card read, and a tile draws it. */
+  error_kind?: string | null;
   /** The figure of THIS run — the range's when the run was cut to one, the standing one
    *  otherwise; null when the result is a table. `refresh` always carries the card's standing
    *  value, so a card drawn for a range reads this and not that (Arc CT-4). Optional because a

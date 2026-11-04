@@ -11,11 +11,31 @@ would be handed to the next request whatever its organisation.
 A sheet shared with chosen people (SH-8) is read here only by them: a statement reading one not shared with the person
 it runs for is refused, saying so and who to ask, before the engine runs it; and the schema a model is handed carries no
 sample values of such a sheet, for anyone (``sharing.py``). No profile or ontology is built over it at all
-(`build_intelligence`).
+(`build_intelligence`). A statement reading a removed sheet's table is told who removed it and when (``dependents.py``).
 """
 from __future__ import annotations
 
+import re
+
 from aughor.db.connection import DuckDBConnection, QueryResult
+
+
+def _says_each_renamed_sheet(schema: str) -> str:
+    """A renamed sheet's table keeps the name it was made with, so its TABLE line says what the sheet is called now, inline
+    as any table's description is (`db.annotations`): a model asked for the sheet by that name has to find it."""
+    from aughor.sheets import model
+    renamed = {s.table.lower(): s.name for s in model.list_sheets() if not model.named_for(s)}
+    if not renamed:
+        return schema
+    out = []
+    for line in schema.splitlines(keepends=True):
+        found = re.match(r"^TABLE:\s+([\w.]+)", line)
+        name = renamed.get(found.group(1).split(".")[-1].lower()) if found else None
+        if name:
+            body = line.rstrip("\n")
+            line = f'{body}  ⬝ the sheet "{name}"{line[len(body):]}'
+        out.append(line)
+    return "".join(out)
 
 
 class SheetsConnection(DuckDBConnection):
@@ -41,11 +61,18 @@ class SheetsConnection(DuckDBConnection):
         refused = refusal_for_statement(sql)
         if refused:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=refused)
-        return super()._run(hypothesis_id, sql, max_rows, params)
+        result = super()._run(hypothesis_id, sql, max_rows, params)
+        if result.error:
+            # a table that is not there because its sheet was removed: said, never the engine's "did you mean"
+            from aughor.sheets.dependents import REMOVED, removed_words
+            said = removed_words(result.error)
+            if said:
+                result.error, result.error_kind = said, REMOVED
+        return result
 
     def get_schema(self) -> str:
         from aughor.sheets.sharing import without_samples
-        return without_samples(super().get_schema())
+        return _says_each_renamed_sheet(without_samples(super().get_schema()))
 
     def build_intelligence(self) -> str:
         """The fast schema, and nothing heavier. A sheet is live and each person's to read or not: value profiles and an
