@@ -137,19 +137,95 @@ describe("BriefingEdition", () => {
     expect(rows[1].getAttribute("data-faded")).toBe("true");                  // YOOX
   });
 
-  it("writes a drill under the block it came from, and puts a decision away on Not now", async () => {
-    api.readBriefingEdition.mockResolvedValue(WRITTEN);
-    api.drillBriefingEdition.mockResolvedValue({ at: 2, block: { id: "drill_x", type: "compare", source: "drill_src", kicker: "Drill",
+  const DRILL_COLUMNS = ["segment", "this_range", "usual", "change", "change_pct", "rows", "too_few"];
+  const BY_PLATFORM = { block: { id: "drill_platform", type: "compare", source: "drill_platform_src", kicker: "Drill",
       title: "Sales by platform, within is top True, against usual", by_code: true },
-      source: S({ id: "drill_src", label: "Sales by platform", kind: "drill", columns: ["segment", "this_range", "usual", "change", "change_pct", "rows", "too_few"],
-                  rows: [["Mytheresa", 38840, 29849, 8991, 0.3, 24, true]], facts: { check: "sales", by: "platform", within: { is_top: true } } }) });
+    source: S({ id: "drill_platform_src", label: "Sales by platform", kind: "drill", columns: DRILL_COLUMNS,
+                rows: [["Mytheresa", 38840, 29849, 8991, 0.3, 24, true]], facts: { check: "sales", by: "platform", within: { is_top: true } } }) };
+  const BY_CHANNEL = { block: { id: "drill_channel", type: "compare", source: "drill_channel_src", kicker: "Drill",
+      title: "Sales by channel, within is top True and platform Mytheresa, against usual", by_code: true },
+    source: S({ id: "drill_channel_src", label: "Sales by channel", kind: "drill", columns: DRILL_COLUMNS,
+                rows: [["web", 20000, 18000, 2000, 0.11, 12, true]], facts: { check: "sales", by: "channel", within: { is_top: true, platform: "Mytheresa" } } }) };
+  const THREE_COLUMNS = { ...WRITTEN, drill_columns: { sales: ["platform", "is_top", "channel"] } };
+  const card = () => screen.getAllByTestId("edition-block")[1];
+
+  it("draws a drill in the card it came from, and adds no card", async () => {
+    api.readBriefingEdition.mockResolvedValue(WRITTEN);
+    api.drillBriefingEdition.mockResolvedValue(BY_PLATFORM);
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByTestId("edition-lead");
+    const cards = screen.getAllByTestId("edition-block").length;
+    expect(card().textContent).toContain("Where the week's sales came from");
+    fireEvent.click(screen.getByRole("button", { name: /By platform, within Yes/ }));
+    await within(card()).findByText("Sales by platform, within is top True, against usual");
+    expect(screen.getAllByTestId("edition-block").length).toBe(cards);
+    expect(card().getAttribute("data-type")).toBe("compare");
+    expect(card().textContent).not.toContain("Where the week's sales came from");
+    expect(api.drillBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership",
+      { source_id: "by_top", column: "platform", segment: true }, "luxexperience", undefined, undefined);
+  });
+
+  it("goes back through each version to the one the model wrote, asking the server nothing", async () => {
+    api.readBriefingEdition.mockResolvedValue(THREE_COLUMNS);
+    api.drillBriefingEdition.mockResolvedValueOnce(BY_PLATFORM).mockResolvedValueOnce(BY_CHANNEL);
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByTestId("edition-lead");
+    expect(screen.queryByTestId("edition-drill-trail")).toBeNull();           // nothing to go back to yet
+
+    fireEvent.click(within(card()).getByRole("button", { name: "By platform, within Yes" }));
+    await within(card()).findByText("Sales by platform, within is top True, against usual");
+    fireEvent.click(within(card()).getByRole("button", { name: "By channel, within Mytheresa" }));
+    await within(card()).findByText(/Sales by channel, within is top True/);
+    expect(api.drillBriefingEdition).toHaveBeenLastCalledWith("dcc63d83", { preset: "last_week" }, "leadership",
+      { source_id: "drill_platform_src", column: "channel", segment: "Mytheresa" }, "luxexperience", undefined, undefined);
+
+    const trail = within(card()).getByTestId("edition-drill-trail");
+    expect(within(trail).getAllByRole("button").map(b => b.textContent)).toEqual(["Original", "By platform, within Yes"]);
+    expect(trail.querySelector("[aria-current]")?.textContent).toBe("By channel, within Mytheresa");
+
+    fireEvent.click(within(trail).getByRole("button", { name: "By platform, within Yes" }));
+    expect(within(card()).getByText("Sales by platform, within is top True, against usual")).toBeTruthy();
+    fireEvent.click(within(within(card()).getByTestId("edition-drill-trail")).getByRole("button", { name: "Original" }));
+    expect(card().textContent).toContain("Where the week's sales came from");
+    expect(card().getAttribute("data-type")).toBe("bridge");
+    expect(screen.queryByTestId("edition-drill-trail")).toBeNull();
+    expect(api.drillBriefingEdition).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens a drill's own source, and lists only what the cards draw now", async () => {
+    api.readBriefingEdition.mockResolvedValue(WRITTEN);
+    api.drillBriefingEdition.mockResolvedValue(BY_PLATFORM);
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     await screen.findByTestId("edition-lead");
     fireEvent.click(screen.getByRole("button", { name: /By platform, within Yes/ }));
-    await waitFor(() => expect(screen.getAllByTestId("edition-block")[2].getAttribute("data-type")).toBe("compare"));
-    expect(api.drillBriefingEdition).toHaveBeenCalledWith("dcc63d83", { preset: "last_week" }, "leadership",
-      { source_id: "by_top", column: "platform", segment: true, after: "where" }, "luxexperience", undefined, undefined);
-    expect(screen.getByRole("button", { name: "Deep analysis" })).toBeTruthy();
+    await within(card()).findByText("Sales by platform, within is top True, against usual");
+    fireEvent.click(within(card()).getByText("source"));
+    expect(within(await screen.findByTestId("edition-evidence")).getByText("Sales by platform")).toBeTruthy();
+  });
+
+  it("starts every card clean when the edition is written again, even for a drill still on its way", async () => {
+    api.readBriefingEdition.mockResolvedValue(WRITTEN);
+    api.writeBriefingEdition.mockResolvedValue({ ...WRITTEN, generated_at: "2026-10-30T09:00:00Z" });
+    let land: (v: typeof BY_PLATFORM) => void = () => {};
+    api.drillBriefingEdition.mockReturnValueOnce(new Promise(r => { land = r; })).mockResolvedValueOnce(BY_PLATFORM);
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByTestId("edition-lead");
+    fireEvent.click(screen.getByRole("button", { name: /By platform, within Yes/ }));   // asked of the old writing
+    fireEvent.click(screen.getByRole("button", { name: "Write it again" }));
+    await waitFor(() => expect(api.writeBriefingEdition).toHaveBeenCalled());
+    await screen.findByText(/30 Oct|Oct 30/);
+    land(BY_PLATFORM);
+    await waitFor(() => expect((screen.getByRole("button", { name: /By platform, within Yes/ }) as HTMLButtonElement).disabled).toBe(false));
+    expect(card().textContent).toContain("Where the week's sales came from");           // never drawn on the new writing
+    fireEvent.click(screen.getByRole("button", { name: /By platform, within Yes/ }));
+    await within(card()).findByText("Sales by platform, within is top True, against usual");
+    expect(within(card()).getByTestId("edition-drill-trail")).toBeTruthy();
+  });
+
+  it("puts a decision away on Not now", async () => {
+    api.readBriefingEdition.mockResolvedValue(WRITTEN);
+    render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
+    await screen.findByRole("button", { name: "Deep analysis" });
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByText(/Look into app conversion/)).toBeNull();
   });

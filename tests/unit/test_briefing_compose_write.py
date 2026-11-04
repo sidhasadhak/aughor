@@ -169,18 +169,34 @@ def _composed(setup, monkeypatch):
                      run_query=_top_orders)
 
 
-def test_a_drill_goes_one_level_deeper_within_the_segment_and_is_written_under_its_block(setup, monkeypatch):
+def test_a_drill_goes_one_level_deeper_within_the_segment_and_leaves_the_edition_as_written(setup, monkeypatch):
     from aughor.knowledge.briefing import peek_entry
 
-    _composed(setup, monkeypatch)
+    written = [b["id"] for b in _composed(setup, monkeypatch)["blocks"]]
     out = W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="sales_by_is_top", segment=True,
-                  column="platform", after="where", runner=setup["runner"])
+                  column="platform", runner=setup["runner"])
     assert [r[0] for r in out["source"]["rows"]] == ["A"]          # within the top clients: only storefront A
     assert out["source"]["facts"]["within"] == {"is_top": True} and out["source"]["kind"] == "drill"
     assert out["block"]["type"] == "compare" and out["block"]["by_code"] is True
     kept = peek_entry(f"compose_c1#{_week().key}@_organisation")
-    assert [b["id"] for b in kept["blocks"]][:3] == ["lead_1", "where", out["block"]["id"]]   # under its block
-    assert out["source"]["id"] in kept["sources"]
+    assert [b["id"] for b in kept["blocks"]] == written            # one reader's drill changes no other reader's page
+    assert out["source"]["id"] in kept["sources"]                  # the next level down starts from it
+
+
+def test_a_drill_kept_as_a_block_before_they_stopped_is_not_read(setup, monkeypatch):
+    from aughor.knowledge import brief_context as BC
+
+    entry = _composed(setup, monkeypatch)
+    written = [b["id"] for b in entry["blocks"]]
+    old = {"id": "drill_x", "type": "compare", "source": "sales_by_is_top", "kicker": "Drill", "by_code": True,
+           "title": "Sales by platform, within is top True, against usual"}
+    entry = {**entry, "blocks": [*entry["blocks"], old]}
+    assert [b["id"] for b in W.as_it_stands(entry)["blocks"]] == written
+    assert "Sales by platform, within" not in str(W.sheet_lines(entry))
+    assert "Sales by platform, within" not in BC.build_brief_block(entry)
+    assert len(entry["blocks"]) == len(written) + 1                # a read keeps nothing
+    floor = {"id": "floor_x", "type": "figure", "source": "sales", "by_code": True, "kicker": "Also"}
+    assert floor in W.as_it_stands({**entry, "blocks": [floor]})["blocks"]    # code's other blocks stay
 
 
 def test_a_check_drills_by_any_column_and_a_written_query_cannot_be_drilled(setup, monkeypatch):

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * A row opened as a record (mockup screen 10), and the sheet's history.
+ * A row opened as a record (mockup screen 10).
  *
  * The record is titled by the row's key and reads as one page: every field with where its value came from — the file's
  * row, who set it, the expression it is computed from, the sheet it is read from, how many rows a total adds up — the
@@ -18,9 +18,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { formatCount, formatTimestamp } from "@/lib/format";
-import {
-  comment, readChanges, readRecord, showValue, who, type ChangeRow, type Sheet, type SheetRecord,
-} from "@/lib/sheets";
+import { comment, readRecord, showValue, who, type Sheet, type SheetRecord } from "@/lib/sheets";
 
 export const PANEL_WIDTH = 420;
 
@@ -49,8 +47,10 @@ function short(title: string): string {
   return title.length > 18 ? `${title.slice(0, 16)}…` : title;
 }
 
-export function SheetRecordPanel({ sheet, row, editable, onClose, onOpenSheet }: {
+export function SheetRecordPanel({ sheet, row, editable, onClose, onOpenSheet, onHistory }: {
   sheet: Sheet; row: number; editable: boolean; onClose: () => void; onOpenSheet: (id: string) => void;
+  /** Open this row's story in the sheet's history, where a change to it can be put back. */
+  onHistory?: () => void;
 }) {
   const [rec, setRec] = useState<SheetRecord | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -145,7 +145,14 @@ export function SheetRecordPanel({ sheet, row, editable, onClose, onOpenSheet }:
               ))}
             </section>
             <section ref={el => { sections.current.history = el; }} aria-label="History">
-              <Label>History</Label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Label>History</Label>
+                {onHistory && rec.history.length > 0 && (
+                  <Button variant="ghost" size="xs" style={{ marginLeft: "auto" }} onClick={onHistory}>
+                    {editable ? "See or put back a change" : "See every change"}
+                  </Button>
+                )}
+              </div>
               <div className="aug-fs-sm" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <span style={MUTED}>{rec.came_from.replace(/^imported/, "Imported")}{rec.history.length ? "" : " · not changed since."}</span>
                 {rec.history.map(h => (
@@ -214,46 +221,5 @@ function LinkedCard({ row, columns, kinds, values }: {
         ))}
       </div>
     </div>
-  );
-}
-
-/** Every change to the sheet, newest first: what it was, who made it, what made it — and undo for the latest. */
-export function SheetHistory({ sheet, tick, onClose, onUndo }: {
-  sheet: Sheet; tick: number; onClose: () => void; onUndo: () => void;
-}) {
-  const [rows, setRows] = useState<{ changes: ChangeRow[]; can_undo: string } | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
-  const read = useCallback(() => {
-    readChanges(sheet.id).then(r => { setRows(r); setFailed(null); })
-      .catch(e => setFailed(e instanceof Error ? e.message : String(e)));
-  }, [sheet.id]);
-  useEffect(() => { read(); }, [read, tick]);
-  return (
-    <aside aria-label={`History of ${sheet.name}`} style={PANEL}>
-      <PanelHead title="History" chip={rows ? `${formatCount(rows.changes.length)} changes` : undefined} onClose={onClose} />
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 14px" }}>
-        {failed ? <ReadFailed what="the history" error={failed} onRetry={read} /> : !rows ? <Loading what="the history" /> : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {rows.can_undo && (
-              <Button variant="outline" size="xs" onClick={onUndo} style={{ alignSelf: "flex-start", marginBottom: 8 }}>
-                Undo your last: {rows.can_undo.slice(0, 50)}
-              </Button>
-            )}
-            {rows.changes.map(c => (
-              <div key={c.id} className="aug-fs-sm" style={{ padding: "6px 0", borderBottom: "1px solid var(--b0)" }}>
-                <div>{c.what}</div>
-                <div className="aug-fs-xs" style={MUTED}>
-                  {who(c.by)} · {formatTimestamp(c.at, "short")}
-                  {c.origin.startsWith("proposal:") && " · proposed by the assistant, applied by them"}
-                  {c.origin.startsWith("undo:") && " · an undo"}
-                  {c.origin.startsWith("redo:") && " · a redo"}
-                  {c.origin === "merge" && " · a newer file"}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </aside>
   );
 }

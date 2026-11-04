@@ -864,7 +864,8 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     never a warehouse. Next: the arc written down and the Spreadsheets page mocked on real data, before any build.
     *Closed 2026-10-27: Teable recorded as dropped (ROADMAP §4.12); the spreadsheet work continues as item 66.*
 
-66. [~] **Arc SH — Sheets: tables people make, edit and chat with** (the user, 2026-10-27, after Teable was dropped:
+66. [~] *(2026-11-04: History now lists every cell and row a change touched, from what to what; Put back returns one cell, one
+    row or a whole change and touches nothing else.)* **Arc SH — Sheets: tables people make, edit and chat with** (the user, 2026-10-27, after Teable was dropped:
     *"within our platform users should be able to work with spreadsheets the way screenshots suggest.. Is it really so
     hard to incorporate it in our platform?"*, then *"write the spreadsheet arc (steps, sizes, the calls) and mock up the
     Spreadsheets page on real data before anything is built"*) — **drafted, not adopted, nothing built**:
@@ -996,6 +997,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     - [x] BC-3 investigate and compose: the tool loop under the Briefer's budget; the floor; kept per reader
       (`compose/write.py`); Arc BG's writer retired, its gates kept
     - [x] BC-4 drill (compiled, only the columns the edition offers) and a question that reads the edition on screen
+      *(2026-11-04: a drill redraws its card with a trail back to the original, instead of adding a card)*
     - [x] BC-5 the page: blocks, the Sources/Guide panel, controls, the choropleth (`web/components/brief/blocks/`)
     - [x] BC-6 a sent edition judged against every source re-run at departure
     - [~] BC-7 live on LuxExperience (2026-10-29, `~/dev/aughor` detached on the branch): the user published the guide

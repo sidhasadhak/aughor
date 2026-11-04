@@ -501,10 +501,12 @@ def sheet_values(sheet_id: str, org_id: str = "") -> list[OverlayEdit]:
             c.close()
 
 
-def sheet_versions(sheet_id: str, rows: Iterable[int], org_id: str = "") -> dict[tuple[int, str], int]:
+def sheet_versions(sheet_id: str, rows: Iterable[int], org_id: str = "", *, with_rows: bool = False
+                   ) -> dict[tuple[int, str], int]:
     """The version each cell of these rows stands at — the one a change to it must name. A cell whose edit was
     withdrawn (an undo put the source's value back) holds no current edit but keeps its version, so a change made to it
-    at version 0 would be refused as stale; this is where a page reads the version it must send."""
+    at version 0 would be refused as stale; this is where a page reads the version it must send. ``with_rows`` adds each
+    row's own version, under the column ``""``."""
     wanted = sorted({int(r) for r in rows})
     if not wanted:
         return {}
@@ -514,8 +516,9 @@ def sheet_versions(sheet_id: str, rows: Iterable[int], org_id: str = "") -> dict
     with _LOCK:
         c = _conn()
         try:
+            cells = "" if with_rows else "AND column != '' "
             got = c.execute('SELECT row_key, column, MAX(version) AS v FROM overlay_edit_history WHERE connection_id = ? '
-                            'AND "table" = ? AND org_id = ? AND column != \'\' AND row_key IN '
+                            f'AND "table" = ? AND org_id = ? {cells}AND row_key IN '
                             f'({", ".join("?" for _ in wanted)}) GROUP BY row_key, column',
                             (SHEETS_CONNECTION, sheet_id, org_id, *[str(r) for r in wanted])).fetchall()
             return {(int(r["row_key"]), str(r["column"])): int(r["v"] or 0) for r in got}
@@ -563,6 +566,53 @@ def sheet_history(sheet_id: str, *, org_id: str = "", row: Optional[int] = None,
         c = _conn()
         try:
             return [{k: v for k, v in dict(r).items() if k not in RUN_COLUMNS} for r in c.execute(sql, args).fetchall()]
+        finally:
+            c.close()
+
+
+def sheet_change_edits(sheet_id: str, change_ids: Iterable[str], *, per_change: int = 200, org_id: str = ""
+                       ) -> dict[str, list[dict]]:
+    """What these changes wrote, each change's rows newest first with its row edits leading, at most ``per_change`` of
+    each: a paste of thousands of cells costs the history no more than a change of a few."""
+    ids = list(change_ids)
+    if not ids:
+        return {}
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            rows = c.execute(
+                'SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY change_id '
+                "ORDER BY column = '' DESC, at DESC, version DESC) AS _n FROM overlay_edit_history "
+                'WHERE connection_id = ? AND "table" = ? AND org_id = ? '
+                f'AND change_id IN ({", ".join("?" for _ in ids)})) WHERE _n <= ? ORDER BY _n',
+                (SHEETS_CONNECTION, sheet_id, org_id, *ids, int(per_change))).fetchall()
+        finally:
+            c.close()
+    out: dict[str, list[dict]] = {i: [] for i in ids}
+    for r in rows:
+        out[r["change_id"]].append({k: v for k, v in dict(r).items() if k not in RUN_COLUMNS and k != "_n"})
+    return out
+
+
+def sheet_change_lines(sheet_id: str, change_id: str, org_id: str = "") -> int:
+    """How many cells and rows a change touched, a cell of a row it added counting as part of that row."""
+    if not org_id:
+        from aughor.org.context import current_org_id
+        org_id = current_org_id()
+    with _LOCK:
+        c = _conn()
+        try:
+            got = c.execute(
+                "WITH added AS (SELECT DISTINCT row_key FROM overlay_edit_history WHERE change_id = ? AND column = '' "
+                "AND body = 'added' AND previous = '') "
+                "SELECT COUNT(DISTINCT h.edit_id) AS n FROM overlay_edit_history h LEFT JOIN added a ON a.row_key = h.row_key "
+                'WHERE h.connection_id = ? AND h."table" = ? AND h.org_id = ? AND h.change_id = ? '
+                "AND (h.column = '' OR a.row_key IS NULL)",
+                (change_id, SHEETS_CONNECTION, sheet_id, org_id, change_id)).fetchone()
+            return int(got["n"] or 0)
         finally:
             c.close()
 

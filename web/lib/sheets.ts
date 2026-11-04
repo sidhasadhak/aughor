@@ -255,6 +255,52 @@ export interface SheetRecord {
 
 export interface ChangeRow extends SheetChange { values: number; definition: number }
 
+/** One cell or row a change touched, as the history reads it. */
+export interface HistoryLine {
+  kind: "cell" | "row";
+  row: number;
+  column: string;
+  /** The column's name; "" for a row. */
+  name: string;
+  /** What the row is called: its key's value, or its first text column's. */
+  title: string;
+  /** A row: "added" or "removed". */
+  what: string;
+  from?: unknown;
+  to?: unknown;
+  /** Whether it still holds what this change left. */
+  stands: boolean;
+  now?: unknown;
+  /** The version it stands at, which a put back names. */
+  current: number;
+  /** Why it cannot be put back, in words; "" when it can. */
+  blocked: string;
+  /** It already holds what it would be put back to. */
+  same: boolean;
+  /** A row added: the values it came with. */
+  values?: Record<string, unknown>;
+}
+
+export interface HistoryChange extends ChangeRow { lines: HistoryLine[]; lines_total: number }
+
+export interface HistoryScope { row: number; column?: string }
+
+export interface HistoryRead {
+  changes: HistoryChange[];
+  /** Older changes exist beyond these. */
+  more: boolean;
+  scope: { row: number; column: string; name: string; title: string; removed: boolean; now: unknown; came_from: string } | null;
+}
+
+export interface PutBackRequest { change: string; row?: number; column?: string; current?: number }
+
+export interface PutBackResult {
+  change_id: string;
+  put_back: number;
+  left: { row: number; column: string; name: string; by: string; at: string }[];
+  said: string;
+}
+
 export interface ProposedChange {
   type: "view" | "computed_column" | "column" | "link" | "total" | "rule";
   name?: string;
@@ -497,6 +543,23 @@ export const removeView = (id: string, viewId: string) =>
 export const readChanges = (id: string) =>
   call<{ changes: ChangeRow[]; can_undo: string; can_redo: string }>(`/${id}/changes`, undefined,
     "Reading the history");
+
+/** What changed, value by value — the whole sheet's, or one row's or one cell's story. */
+export const readHistory = (id: string, scope?: HistoryScope) => {
+  const q = new URLSearchParams();
+  if (scope) q.set("row", String(scope.row));
+  if (scope?.column) q.set("column", scope.column);
+  const query = q.toString();
+  return call<HistoryRead>(`/${id}/history${query ? `?${query}` : ""}`, undefined, "Reading the history");
+};
+
+/** Every line of one change. */
+export const readChangeLines = (id: string, change: string) =>
+  call<{ lines: HistoryLine[]; total: number }>(`/${id}/history/${encodeURIComponent(change)}`, undefined, "Reading the change");
+
+/** Return one cell, one row or a whole change to what it replaced, touching nothing else. */
+export const putBack = (id: string, request: PutBackRequest) =>
+  call<PutBackResult>(`/${id}/put-back`, json("POST", request), "Putting it back");
 
 /** Undo the person's latest change. `removing` only for the change that made the sheet — undoing it removes the sheet. */
 export const undo = (id: string, removing = false) => call<{ change_id: string; removed: boolean }>(
@@ -771,6 +834,17 @@ export function lastChangeWords(change: SheetChange, me = "", now?: Date): strin
   const by = who(change.by, me);
   if (/^made\b/.test(change.what)) return `made by ${by}${when ? ` · ${when}` : ""}`;
   return [change.what, by, when].filter(Boolean).join(" · ");
+}
+
+/** What made a change, said after who made it and when; "" for a change a person made by hand. */
+export function changeOriginWords(origin: string): string {
+  if (origin.startsWith("proposal:")) return " · proposed by the assistant, applied by them";
+  if (origin.startsWith("model:")) return " · written by a model";
+  if (origin.startsWith("put_back:")) return " · a put back";
+  if (origin.startsWith("undo:")) return " · an undo";
+  if (origin.startsWith("redo:")) return " · a redo";
+  if (origin === "merge") return " · a newer file";
+  return "";
 }
 
 /** A value a board's lane or a group's head holds, in words: "Yes", "No", "empty", or the value as its column shows it. */

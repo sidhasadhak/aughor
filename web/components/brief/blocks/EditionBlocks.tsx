@@ -5,10 +5,10 @@
  *
  * The model chose each block's type and words; this file draws them, and only from the sources the server ran:
  * a sentence's cited numbers open their source, a chart reads its source's rows, a control fades the rows of every
- * other value in the blocks that listen to it, a drill asks the server for one level deeper. A block of a type this
- * page does not know is said, never silently skipped.
+ * other value in the blocks that listen to it, a drill redraws its card one level deeper with the way back to what the
+ * model wrote. A block of a type this page does not know is said, never silently skipped.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Bridge, LineMark, Multiples, PairRows, ProgressBars, RangeBars } from "@/components/brief/EditionFigure";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
@@ -16,7 +16,7 @@ import { TableActions, rawCells } from "@/components/TableActions";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import type { EditionBlock, EditionFigure, EditionGiven, EditionSource } from "@/lib/api";
-import { bridgeSteps, drillOptions, fmtChange, fmtValue, parseCited } from "@/lib/briefingEdition";
+import { bridgeSteps, drillLabel, drillOptions, fmtChange, fmtValue, parseCited, word, type DrillStep } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
 import { getObjectCatalog } from "@/lib/objects";
@@ -41,9 +41,13 @@ interface Ctx {
   schema?: string;
   keyTypes: Map<string, string>;
   onCite: (sourceId: string) => void;
-  onDrill: (block: EditionBlock, column: string, segment?: unknown) => void;
+  /** ``card`` is the written block's id; ``block`` is what the card draws now, the next drill's starting point. */
+  onDrill: (card: string, block: EditionBlock, column: string, segment?: unknown) => void;
+  onDrillBack: (card: string, keep: number) => void;
   onDecide: (action: string, block: EditionBlock) => void;
   drilling: string;
+  /** The drills a reader has taken, per card. */
+  trails: Record<string, DrillStep[]>;
   /** The function groups a decision can be given to. */
   teams: { id: string; name: string }[];
   given: EditionGiven[];
@@ -69,7 +73,6 @@ export function CitedText({ text, onCite }: { text?: string; onCite: (s: string)
 
 const col = (src: EditionSource, name?: string) => (name ? src.columns.indexOf(name) : -1);
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-const word = (v: unknown) => (v === true ? "Yes" : v === false ? "No" : v === null || v === undefined ? "—" : String(v));
 
 const SHARE_COL = /(rate|share|ratio|pct|percent)/i;
 
@@ -340,7 +343,36 @@ const BODY: Record<BlockType, (p: BodyProps) => React.ReactNode> = {
   quiet: ({ block, ctx }) => <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}><CitedText text={block.text} onCite={ctx.onCite} /></p>,
 };
 
-function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
+/** The way back on a card a reader has drilled: each earlier version a button, back to the one the model wrote. */
+function DrillTrail({ card, trail, ctx }: { card: string; trail: DrillStep[]; ctx: Ctx }) {
+  return (
+    <nav aria-label="Versions of this card" data-testid="edition-drill-trail" className="aug-fs-xs"
+      style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+      <Button size="xs" variant="ghost" disabled={!!ctx.drilling} title="This card as the model wrote it, for this period and reader"
+        onClick={() => ctx.onDrillBack(card, 0)}>Original</Button>
+      {trail.map((step, i) => (
+        <Fragment key={step.block.id}>
+          <span aria-hidden style={{ color: "var(--t3)" }}>›</span>
+          {i < trail.length - 1
+            ? <Button size="xs" variant="ghost" disabled={!!ctx.drilling} onClick={() => ctx.onDrillBack(card, i + 1)}>{step.label}</Button>
+            : <span aria-current="step" style={{ color: "var(--t1)" }}>{step.label}</span>}
+        </Fragment>
+      ))}
+    </nav>
+  );
+}
+
+const NO_STEPS: DrillStep[] = [];
+
+function BlockCard({ block: written, ctx }: { block: EditionBlock; ctx: Ctx }) {
+  const trail = ctx.trails[written.id] ?? NO_STEPS;
+  const block = trail.at(-1)?.block ?? written;
+  // A version can be far shorter than the one it replaced: the reader who clicked stays on this card.
+  const card = useRef<HTMLElement>(null);
+  const version = block.id;
+  useEffect(() => {
+    if (version !== written.id) card.current?.scrollIntoView?.({ block: "nearest" });
+  }, [version, written.id]);
   const src = block.source ? ctx.sources[block.source] : undefined;
   const known = (BLOCK_TYPES as readonly string[]).includes(block.type);
   const bare = block.type === "lead" || block.type === "quiet";
@@ -349,14 +381,15 @@ function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
   // A block the model left untitled still says what it shows: its source's own label.
   const title = block.title || (src && !bare && !decision && block.type !== "control" && block.type !== "context" ? src.label : "");
   return (
-    <section data-testid="edition-block" data-type={block.type}
+    <section ref={card} data-testid="edition-block" data-type={block.type}
       style={{ margin: "16px 0", padding: bare ? "4px 0" : "16px 18px", borderRadius: "var(--r3)",
                background: bare ? "transparent" : decision ? "var(--amb1)" : "var(--bg-1)",
                border: bare ? "none" : `1px solid ${block.kicker === "Drill" ? "var(--blue4)" : "var(--b1)"}` }}>
       {(block.kicker || title) && block.type !== "control" && (
         <>
-          {block.kicker && <div className="aug-fs-xs" style={{ letterSpacing: "0.08em", textTransform: "uppercase",
-                                                               color: decision ? "var(--amb4)" : "var(--t3)", marginBottom: 6 }}>{block.kicker}</div>}
+          {trail.length > 0 ? <DrillTrail card={written.id} trail={trail} ctx={ctx} />
+            : block.kicker && <div className="aug-fs-xs" style={{ letterSpacing: "0.08em", textTransform: "uppercase",
+                                                                  color: decision ? "var(--amb4)" : "var(--t3)", marginBottom: 6 }}>{block.kicker}</div>}
           {title && <h3 className="aug-fs-h1" style={{ color: "var(--t1)", fontWeight: 600, margin: "0 0 8px", lineHeight: 1.3 }}>{title}</h3>}
         </>
       )}
@@ -366,8 +399,8 @@ function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
           {drills.map(d => (
             <Button key={d.column} size="xs" variant="secondary" disabled={!!ctx.drilling}
-              onClick={() => ctx.onDrill(block, d.column, d.segment)}>
-              {ctx.drilling === `${block.id}:${d.column}` ? "Drilling…" : `By ${d.column.replace(/_/g, " ")}${d.segment !== undefined ? `, within ${word(d.segment)}` : ""}`}
+              onClick={() => ctx.onDrill(written.id, block, d.column, d.segment)}>
+              {ctx.drilling === `${block.id}:${d.column}` ? "Drilling…" : drillLabel(d.column, d.segment)}
             </Button>
           ))}
           {src && <span role="button" tabIndex={0} className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)", cursor: "pointer", borderBottom: "1px dotted var(--t3)" }}
@@ -379,8 +412,8 @@ function BlockCard({ block, ctx }: { block: EditionBlock; ctx: Ctx }) {
   );
 }
 
-export function EditionBlocks({ blocks, sources, figures, drillColumns, currency, connectionId, schema, onCite, onDrill,
-                                onDecide, drilling, teams = NO_TEAMS, given = NONE_GIVEN, onGive, giving = "" }: {
+export function EditionBlocks({ blocks, sources, figures, drillColumns, currency, connectionId, schema, onCite, onDrill, onDrillBack,
+                                onDecide, drilling, trails, teams = NO_TEAMS, given = NONE_GIVEN, onGive, giving = "" }: {
   blocks: EditionBlock[];
   sources: Record<string, EditionSource>;
   figures: EditionFigure[];
@@ -389,9 +422,11 @@ export function EditionBlocks({ blocks, sources, figures, drillColumns, currency
   connectionId: string;
   schema?: string;
   onCite: (sourceId: string) => void;
-  onDrill: (block: EditionBlock, column: string, segment?: unknown) => void;
+  onDrill: (card: string, block: EditionBlock, column: string, segment?: unknown) => void;
+  onDrillBack: (card: string, keep: number) => void;
   onDecide: (action: string, block: EditionBlock) => void;
   drilling: string;
+  trails: Record<string, DrillStep[]>;
   teams?: { id: string; name: string }[];
   given?: EditionGiven[];
   onGive?: (block: EditionBlock, groupId: string) => void;
@@ -411,8 +446,8 @@ export function EditionBlocks({ blocks, sources, figures, drillColumns, currency
     sources, figures: Object.fromEntries(figures.map(f => [f.id, f])), drillColumns, controls,
     controlBlocks: Object.fromEntries(blocks.filter(b => b.type === "control").map(b => [b.id, b])),
     setControl: (id, v) => setControls(c => ({ ...c, [id]: v })), currency, connectionId, schema, keyTypes,
-    onCite, onDrill, onDecide, drilling, teams, given, onGive, giving,
-  }), [sources, figures, drillColumns, controls, blocks, currency, connectionId, schema, keyTypes, onCite, onDrill, onDecide,
-       drilling, teams, given, onGive, giving]);
+    onCite, onDrill, onDrillBack, onDecide, drilling, trails, teams, given, onGive, giving,
+  }), [sources, figures, drillColumns, controls, blocks, currency, connectionId, schema, keyTypes, onCite, onDrill, onDrillBack, onDecide,
+       drilling, trails, teams, given, onGive, giving]);
   return <>{withUniqueKeys(blocks, b => b.id).map(([key, b]) => <BlockCard key={key} block={b} ctx={ctx} />)}</>;
 }

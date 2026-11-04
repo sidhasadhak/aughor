@@ -7,7 +7,8 @@
  * citations and drill down possibilities … it should make sense right away to any user!" So the page holds no
  * sections of its own: after the range and the reader, it draws the blocks the model composed — the answer in a
  * sentence first — each from the sources the server ran. Every cited number opens its source beside the page; a
- * drill writes one level deeper under its block; a question is answered under the page.
+ * drill redraws its card one level deeper, with the way back to what the model wrote; a question is answered under
+ * the page.
  *
  * Opening never spends (§6 item 58): the page READS the edition last written for the range and the reader, and
  * writes one only when a person presses the button.
@@ -29,10 +30,11 @@ import {
   type AccessGroup, type BriefingEdition as Edition, type BriefingGuideResponse, type BriefingRange, type EditionBlock,
 } from "@/lib/api";
 import { countNoun, formatTimestamp } from "@/lib/format";
-import { ORGANISATION, fromServerReader, readerOptions, toServerReader, writeLabel } from "@/lib/briefingEdition";
+import { ORGANISATION, drillLabel, fromServerReader, readerOptions, toServerReader, writeLabel, type DrillStep } from "@/lib/briefingEdition";
 
 const PRESETS = ["last_week", "last_month", "last_year"] as const;
 const RULE = "1px solid var(--b1)";
+const NO_TRAILS: Record<string, DrillStep[]> = {};
 
 const when = (iso?: string): string => (iso ? formatTimestamp(iso, "short") : "");
 
@@ -59,6 +61,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const [side, setSide] = useState<"sources" | "guide" | "">("sources");
   const [picked, setPicked] = useState<string>("");
   const [drilling, setDrilling] = useState("");
+  /** The drills taken, per writing of an edition and per card, oldest first. They are this reader's view: the edition
+   *  stays as the model wrote it, and writing it again starts every card clean. */
+  const [trails, setTrails] = useState<Record<string, Record<string, DrillStep[]>>>({});
   const [giving, setGiving] = useState("");
   const [askSeed, setAskSeed] = useState<{ q: string; n: number } | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -132,22 +137,24 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
 
   const onCite = useCallback((id: string) => { setPicked(id); setSide("sources"); }, []);
 
-  const onDrill = useCallback(async (block: EditionBlock, column: string, segment?: unknown) => {
+  // A drill that lands after the range or the reader moved on files under the writing it was asked of, never this one.
+  const writing = edition?.generated_at ?? "";
+  const onDrill = useCallback(async (card: string, block: EditionBlock, column: string, segment?: unknown) => {
     if (!block.source) return;
     setDrilling(`${block.id}:${column}`);
     try {
       const out = await drillBriefingEdition(connectionId, range, toServerReader(reader ?? ORGANISATION),
-        { source_id: block.source, column, segment: segment as string | number | boolean | null | undefined, after: block.id },
+        { source_id: block.source, column, segment: segment as string | number | boolean | null | undefined },
         schema, workspaceId, canvasId);
-      setEdition(e => {
-        if (!e?.blocks) return e;
-        const blocks = [...e.blocks];
-        blocks.splice(out.at, 0, out.block);
-        return { ...e, blocks, sources: { ...(e.sources ?? {}), [out.source.id]: out.source } };
-      });
+      setTrails(t => ({ ...t, [writing]: { ...t[writing], [card]: [...(t[writing]?.[card] ?? []),
+        { block: out.block, source: out.source, label: drillLabel(column, segment) }] } }));
     } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
     finally { setDrilling(""); }
-  }, [connectionId, range, reader, schema, workspaceId, canvasId]);
+  }, [connectionId, range, reader, schema, workspaceId, canvasId, writing]);
+
+  const onDrillBack = useCallback((card: string, keep: number) => {
+    setTrails(t => ({ ...t, [writing]: { ...t[writing], [card]: (t[writing]?.[card] ?? []).slice(0, keep) } }));
+  }, [writing]);
 
   const onGive = useCallback(async (block: EditionBlock, groupId: string) => {
     setGiving(`${block.id}:${groupId}`);
@@ -175,16 +182,18 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const hasGuide = !!guide?.available;
   const ownCanvas = edition?.canvas?.own ? edition.canvas : null;
   const blocks = useMemo(() => (edition?.blocks ?? []).filter(b => !hidden.has(b.id)), [edition, hidden]);
-  const sources = edition?.sources ?? {};
+  const drilled = trails[writing] ?? NO_TRAILS;
+  const sources = useMemo(() => ({ ...(edition?.sources ?? {}),
+    ...Object.fromEntries(Object.values(drilled).flat().map(s => [s.source.id, s.source])) }), [edition, drilled]);
   const used = useMemo(() => {
     const ids = new Set<string>();
-    blocks.forEach(b => {
+    blocks.map(b => drilled[b.id]?.at(-1)?.block ?? b).forEach(b => {
       if (b.source) ids.add(b.source);
       (b.chain ?? []).forEach(c => ids.add(c));
       [b.text, b.sub, b.title].forEach(t => (t ?? "").replace(/\{[^{}|]+\|([A-Za-z0-9_-]+)\}/g, (_m, id: string) => { ids.add(id); return ""; }));
     });
     return [...ids].map(id => sources[id]).filter(Boolean);
-  }, [blocks, sources]);
+  }, [blocks, drilled, sources]);
 
   return (
     // The layer around the Briefing does not scroll (it is overflow: hidden): the edition and the side panel each
@@ -282,7 +291,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
               )}
               <EditionBlocks blocks={blocks} sources={sources} figures={period?.measured ?? []} drillColumns={edition.drill_columns}
                 currency={edition.currency_code ?? ""} connectionId={connectionId} schema={schema}
-                onCite={onCite} onDrill={(b, c, s) => void onDrill(b, c, s)} onDecide={onDecide} drilling={drilling}
+                onCite={onCite} onDrill={(card, b, c, s) => void onDrill(card, b, c, s)} onDrillBack={onDrillBack}
+                onDecide={onDecide} drilling={drilling} trails={drilled}
                 teams={teams} given={edition.given} onGive={(b, g) => void onGive(b, g)} giving={giving} />
               {(!!edition.withheld?.length || !!edition.left_out?.length) && (
                 <section data-testid="edition-withheld" className="aug-fs-xs" style={{ color: "var(--t3)", borderTop: RULE, paddingTop: 10, marginTop: 18 }}>

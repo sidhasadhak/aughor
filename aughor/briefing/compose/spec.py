@@ -108,6 +108,12 @@ def plain(text: str) -> str:
     return _CITE_RE.sub(lambda m: m.group(1), text or "")
 
 
+def written_blocks(entry: dict) -> list[dict]:
+    """An edition's blocks as the model wrote them. A drill is one reader's view of a card and is not kept as a block
+    (the user, 2026-11-04); an edition kept before then holds its drills among the rest, and they are not read."""
+    return [b for b in entry.get("blocks") or [] if not (b.get("by_code") and b.get("kicker") == "Drill")]
+
+
 def sources_of(b: Block) -> list[str]:
     ids = ([b.source] if b.source else []) + list(b.chain)
     for field in (b.text, b.sub, b.title, b.kicker):

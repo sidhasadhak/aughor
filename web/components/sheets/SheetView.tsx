@@ -19,7 +19,8 @@ import { SheetCombine } from "@/components/sheets/SheetCombine";
 import { SheetDashboard } from "@/components/sheets/SheetDashboard";
 import { MAX_WIDTH, MIN_WIDTH, RULE_COLOR, SheetGrid, type ColumnAction, type EditResult } from "@/components/sheets/SheetGrid";
 import { SheetGroups } from "@/components/sheets/SheetGroups";
-import { SheetHistory, SheetRecordPanel } from "@/components/sheets/SheetRecord";
+import { SheetHistory } from "@/components/sheets/SheetHistory";
+import { SheetRecordPanel } from "@/components/sheets/SheetRecord";
 import { SharePop } from "@/components/sheets/SheetSharing";
 import { useCloseOutside } from "@/components/sheets/useCloseOutside";
 import { useRowBlocks } from "@/components/sheets/useRowBlocks";
@@ -34,12 +35,12 @@ import type { SheetRowsRef } from "@/lib/chatTurn";
 import { formatCount } from "@/lib/format";
 import {
   KIND_LABEL, NEW_COLUMN_KINDS, RULE_TONES, addColumn, addRow, csvUrl, fillColumn, fillPreview, filterWords, isStale,
-  opWords, opsFor, readChanges,
+  opWords, opsFor, putBack, readChanges,
   readRows, readSheet, redo, removeColumn, removeRule, removeView, renameSheet, saveRule, saveView, setCells, sharedWords,
   showValue, undo, who,
   updateColumn, type Condition, type FillPlan, type FillResult, type Kind, type RowsQuery, type RuleTone, type Sheet,
   type SheetColumn, type SheetView as View,
-  type ViewKind,
+  type ViewKind, type HistoryScope, type PutBackRequest,
 } from "@/lib/sheets";
 
 /** The most rows Copy takes; the CSV holds every row. */
@@ -150,6 +151,8 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
   // what was just done, and the one step back (or forward, after an undo) offered beside it
   const [said, setSaid] = useState<{ text: string; tone: "ok" | "bad"; offer?: "undo" | "redo" } | null>(null);
   const [history, setHistory] = useState<{ can_undo: string; can_redo: string } | null>(null);
+  /** The row or cell the history panel is narrowed to; null, every change. */
+  const [historyScope, setHistoryScope] = useState<HistoryScope | null>(null);
   const [tick, setTick] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState(false);
@@ -196,6 +199,19 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
       return false;
     }
   }, [changed]);
+
+  /** One cell, one row or a whole change back to what it replaced, nothing else touched; said here, with Undo beside it. */
+  const onPutBack = useCallback(async (request: PutBackRequest) => {
+    if (!sheet) return;
+    try {
+      const out = await putBack(sheet.id, request);
+      await changed(out.said);
+    } catch (e) {
+      // changed by someone after this panel read it: read it again, so the line shows what they set
+      if (isStale(e)) setTick(t => t + 1);
+      setSaid({ text: e instanceof Error ? e.message : String(e), tone: "bad" });
+    }
+  }, [sheet, changed]);
 
   /** Many cells as one change — a paste, a range cleared: one entry in the history, undone whole. */
   const onEditMany = useCallback(async (cells: { row: number; column: string; value: unknown; version: number }[],
@@ -284,6 +300,7 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
   const counted = `${flat && rows.total !== null && rows.total !== all ? `${formatCount(rows.total)} of ` : ""}${formatCount(all)} rows · `
     + `${sheet.columns.length} columns`;
   const openRow = (row: number) => { setRecordRow(row); setPanel("record"); };
+  const openHistory = (row: number, column?: string) => { setHistoryScope({ row, column }); setPanel("history"); };
   const colName = (id: string) => sheet.columns.find(c => c.id === id)?.name ?? "";
   const viewQuery: RowsQuery = { filter: query.filter, sort: query.sort, search: query.search };
 
@@ -576,10 +593,10 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
                   disabled={!history?.can_redo} onClick={() => void run(() => redo(sheet.id), "Redone")}>
                   <Icon name="next" />
                 </Button>
-                <ToolButton narrow={narrow} on={panel === "history"} icon="history" label="History"
-                  onClick={() => setPanel(panel === "history" ? "" : "history")} />
               </>
             )}
+            <ToolButton narrow={narrow} on={panel === "history"} icon="history" label="History"
+              onClick={() => { setHistoryScope(null); setPanel(panel === "history" ? "" : "history"); }} />
             {query.kind === "grid" && (
               <>
                 <ToolButton narrow={narrow} icon="copy" label="Copy" onClick={copyRows} />
@@ -656,13 +673,13 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
           <SheetCalendar sheet={sheet} query={viewQuery} column={query.date} card={query.card} tick={tick} onOpenRow={openRow} />
         ) : query.group ? (
           <SheetGroups sheet={sheet} query={viewQuery} group={query.group} hidden={hidden} editable={editable} tick={tick}
-            onEdit={onEdit} onOpenRow={openRow} onSort={sortBy} widths={widths} onWidth={onWidth} frozen={frozen}
+            onEdit={onEdit} onOpenRow={openRow} onCellHistory={openHistory} onSort={sortBy} widths={widths} onWidth={onWidth} frozen={frozen}
             onColumnAction={onColumnAction} onMoveColumn={editable ? moveColumn : undefined} />
         ) : rows.failed ? <ReadFailed what="the rows" error={rows.failed} onRetry={rows.retry} />
           : rows.total === null ? <Loading what="the rows" /> : (
             <SheetGrid reading={JSON.stringify(rowsQuery)} sheet={sheet} rows={rows} hidden={hidden} editable={editable}
               canFill={editable}
-              onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} sort={query.sort} onSort={sortBy}
+              onEdit={onEdit} onEditMany={onEditMany} onOpenRow={openRow} onCellHistory={openHistory} sort={query.sort} onSort={sortBy}
               widths={widths} onWidth={onWidth} frozen={frozen} onColumnAction={onColumnAction}
               onMoveColumn={editable ? moveColumn : undefined}
               onUndo={editable ? () => history?.can_undo ? void run(() => undo(sheet.id), "Undone", "redo")
@@ -689,10 +706,11 @@ export function SheetView({ sheetId, onBack, onOpen, onAsk }: {
       )}
       {panel === "record" && recordRow !== null && (
         <SheetRecordPanel sheet={sheet} row={recordRow} editable={editable} onClose={() => setPanel("")}
-          onOpenSheet={onOpen} />
+          onOpenSheet={onOpen} onHistory={() => openHistory(recordRow)} />
       )}
-      {panel === "history" && editable && (
-        <SheetHistory sheet={sheet} tick={tick} onClose={() => setPanel("")}
+      {panel === "history" && (
+        <SheetHistory sheet={sheet} tick={tick} editable={editable} scope={historyScope} canUndo={history?.can_undo ?? ""}
+          onScope={setHistoryScope} onClose={() => setPanel("")} onPutBack={onPutBack}
           onUndo={() => void run(() => undo(sheet.id), "Undone", "redo")} />
       )}
     </div>

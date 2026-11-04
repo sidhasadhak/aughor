@@ -31,7 +31,7 @@ const OPEN_FIRST = 3;
 
 const keyOf = (v: unknown) => JSON.stringify(v ?? null);
 
-export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdit, onOpenRow, onSort, widths, onWidth,
+export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdit, onOpenRow, onCellHistory, onSort, widths, onWidth,
   frozen = 0, onColumnAction, onMoveColumn }: {
   /** How many of the columns shown stay at the left; a column's menu; a header dragged to a new place. */
   frozen?: number;
@@ -45,6 +45,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   onSort?: (column: string, add?: boolean) => void;
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
+  onCellHistory?: (row: number, column: string) => void;
 }) {
   const [page, setPage] = useState<GroupsPage | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -88,7 +89,7 @@ export function SheetGroups({ sheet, query, group, hidden, editable, tick, onEdi
   };
 
   const work = useCellWork({
-    sheet, editable, onEdit, onOpenRow, columns: shown.map(c => c.id),
+    sheet, editable, onEdit, onOpenRow, onCellHistory, columns: shown.map(c => c.id),
     valueOf: (row, column) => rowByNumber(row)?.[index[column]],
     changedOf,
     versionOf,

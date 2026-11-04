@@ -147,14 +147,16 @@ def reconcile(org: str = "") -> list[str]:
     rebuilt: list[Sheet] = []
     for s in sheets:
         if s.table not in present or marks.get(s.id) != _stamp(s, org):
-            _build(con, s, org)
+            _build(con, s, org, derive=False)
             rebuilt.append(s)
     owned = {s.table for s in sheets}
     for t in present - owned:
         con.execute(f"DROP TABLE IF EXISTS {ident(t)}")
     ids = {s.id for s in rebuilt}
+    # every table is there before any is derived: a derived column reads another sheet's stored columns, and that sheet may
+    # be rebuilt after this one (a lost projection, which is every restore from a backup: it is never backed up)
     for s in sheets:
-        if s.id not in ids and _reads(s) & ids:
+        if s.id in ids or _reads(s) & ids:
             _derive(con, s, org)
     if rebuilt or set(marks) - {s.id for s in sheets}:
         _write_marks(org, {s.id: _stamp(s, org) for s in sheets})
@@ -241,13 +243,15 @@ def _cell_text(body: str) -> Optional[str]:
     return str(value)
 
 
-def _build(con, sheet: Sheet, org: str, *, target: str = "") -> None:
-    """Build a sheet's whole table — into ``target`` (a check's scratch table) or its own."""
+def _build(con, sheet: Sheet, org: str, *, target: str = "", derive: bool = True) -> None:
+    """Build a sheet's whole table — into ``target`` (a check's scratch table) or its own. ``derive`` off leaves its derived
+    columns empty, for a caller building several sheets that read each other."""
     name = target or ident(sheet.table)
     select, params = _row_select(con, sheet, org)
     con.execute(f"CREATE OR REPLACE {'TEMP ' if target else ''}TABLE {name} AS {select}", params)
     _apply_cells(con, sheet, org, name)
-    _derive(con, sheet, org, target=name)
+    if derive:
+        _derive(con, sheet, org, target=name)
 
 
 def _derive(con, sheet: Sheet, org: str, *, target: str = "") -> None:
@@ -608,6 +612,41 @@ def read_row(sheet: Sheet, row: int, org: str = "") -> Optional[dict]:
         if got is None:
             return None
         return {c.id: jsonable(v) for c, v in zip(sheet.columns, got)}
+    finally:
+        cur.close()
+
+
+def rows_by_number(sheet: Sheet, rows: Iterable[int], org: str = "") -> dict[int, dict]:
+    """These rows as they stand: row number → column id → value. A row the sheet no longer holds is not in it."""
+    wanted = sorted({int(r) for r in rows})
+    if not wanted:
+        return {}
+    cur = cursor(org)
+    try:
+        names = "".join(f", {ident(c.name)}" for c in sheet.columns)
+        got = cur.execute(f"SELECT _row{names} FROM {ident(sheet.table)} WHERE _row IN "
+                          f"({', '.join(str(r) for r in wanted)})").fetchall()
+        return {int(r[0]): {c.id: jsonable(v) for c, v in zip(sheet.columns, r[1:])} for r in got}
+    finally:
+        cur.close()
+
+
+def source_rows(sheet: Sheet, rows: Iterable[int], org: str = "") -> dict[int, dict]:
+    """These rows as their source holds them, whatever has been done to them since: row number → column id → value. A
+    row added in the sheet has no source and is not in it."""
+    org = org or _org()
+    wanted = sorted({int(r) for r in rows})
+    src = files.source_parquet(sheet.id, org)
+    if not wanted or not src.exists():
+        return {}
+    cur = cursor(org)
+    try:
+        have = _source_columns(src, cur)
+        stored = [c for c in sheet.columns if c.role == "stored" and c.id in have]
+        cols = "".join(f", CAST({ident(c.id)} AS {_type(c)})" for c in stored)
+        got = cur.execute(f"SELECT _row{cols} FROM read_parquet('{src.as_posix()}') WHERE _row IN "
+                          f"({', '.join(str(r) for r in wanted)})").fetchall()
+        return {int(r[0]): {c.id: jsonable(v) for c, v in zip(stored, r[1:])} for r in got}
     finally:
         cur.close()
 

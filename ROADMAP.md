@@ -12405,6 +12405,14 @@ nothing is written.
   where the typed rows are written, so no import loses a value to its kind. One sheet per Excel tab, named. A query's
   rows kept frozen, run once more through the connection's doors, the statement saved beside them. The Spreadsheets home
   lists the sheets and the Workspace's uploaded files, each one click from a sheet. A glossary row for *Sheet*.
+- **The history, value by value, and putting one back (the user, 2026-11-04).** The History panel said "3 values changed"
+  and undo reached only a person's latest change, whole. Now each change lists which cells and rows it touched, what each
+  held before and after and what it holds now, for whoever can read the sheet; the cell bar opens one cell's whole story.
+  **Put back** returns one cell, one row or a whole change to what it replaced and touches nothing else, whoever made
+  the change and however old it is: a new change with `origin` `put_back:<id>`, under the person who did it, undone like
+  any other, every value it replaced kept. One value goes back whatever happened since, refused only if someone changed it
+  after the person read it; a whole change skips what was changed since and names it. Columns and views stay with undo.
+  No new store: `overlay_edit_history` already held every value (`sheets/service.py::history`, `put_back`).
 - **SH-2.** A typed cell edited in place, refused in a sentence when it does not read as its kind; rows added (a number
   never reused) and removed (superseded, never deleted); columns added, described, renamed, retyped only to a kind every
   value fits, taken off (undo brings them back); hide, sort, filter, group, search; totals at the foot over the rows the
@@ -12870,7 +12878,10 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
 - **Code decides what is shown:** every block names its sources; code runs them, validates the spec, and holds any
   word stating a number no source holds or claiming a cause. A floor figure the page left out is added by code.
 - **Answerable in place:** every number opens its source (query, rows, receipts, status); a drill (compiled, no model)
-  or a question (the quick answer, in the reader's own request) writes its answer into the page.
+  redraws its card, with a trail back to the card the model wrote, and a question (the quick answer, in the reader's
+  own request) writes its answer into the page. *The user, 2026-11-04: each drill used to add a card to the kept
+  edition, for every reader, with no way to close it; now the edition stays as the model wrote it and keeps only the
+  drill's source, and a drill kept as a block before then is not read.*
 - **Replaces** Arc BG's edition page; the guide, the measurement, readers and the gates stay.
 - **Built 2026-10-29** on `claude/briefing-guide` (BC-1…BC-6) and **proven live on LuxExperience** the same day
   (PENDING item 69): the Leadership and Finance editions each investigated the week's record net revenue and profit per

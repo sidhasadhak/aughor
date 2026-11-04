@@ -625,7 +625,7 @@ export function planClear(over: Range, view: {
  * clipboard's cells from the active cell (`planPaste`) and Delete empties the cell or the range (`planClear`) — each as
  * one change, undone whole. Enter or Tab keeps an edit and moves down or across, as a spreadsheet's do.
  */
-export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUndo, onRedo, onOpenRow, valueOf, changedOf,
+export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUndo, onRedo, onOpenRow, onCellHistory, valueOf, changedOf,
   versionOf, rowAt, rowCount, nav, focus }: {
   sheet: Sheet; editable: boolean;
   /** The columns shown, in order — what a range spans. */
@@ -641,6 +641,8 @@ export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUn
   /** The flat grid's moves; the grouped grid has none. */
   nav?: MutableRefObject<GridNav | null>;
   onOpenRow: (row: number) => void;
+  /** Read a cell's whole story, every value it has held. */
+  onCellHistory?: (row: number, column: string) => void;
   valueOf: (row: number, column: string) => unknown;
   changedOf: (row: number, column: string) => { by: string; at: string; version: number } | undefined;
   /** The version a change must name: set, or put back by an undo — never only the cells holding an edit. */
@@ -866,7 +868,8 @@ export function useCellWork({ sheet, editable, columns, onEdit, onEditMany, onUn
       value={selected ? valueOf(selected.row, selected.column) : undefined}
       set={selected ? changedOf(selected.row, selected.column) : undefined}
       onChange={() => { if (selected && column) startEdit(selected.row, column); }}
-      onOpenRow={() => { if (selected) onOpenRow(selected.row); }} />
+      onOpenRow={() => { if (selected) onOpenRow(selected.row); }}
+      onHistory={onCellHistory ? () => { if (selected) onCellHistory(selected.row, selected.column); } : undefined} />
   );
   /** A new reading of the view (a sort, a filter): what was selected or being changed named rows of the last order. */
   const reset = () => {
@@ -911,7 +914,7 @@ export function rangeWords(r: Range, got: { cols: SheetColumn[]; rows: unknown[]
 }
 
 /** The flat grid: every row of the view in one scroll, read a block at a time as it comes into sight. */
-export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, onUndo, onRedo, onOpenRow, footer, sort,
+export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, onUndo, onRedo, onOpenRow, onCellHistory, footer, sort,
   onSort, reading = "", widths, onWidth, frozen = 0, onColumnAction, onMoveColumn, canFill }: {
   /** SH-5: a column a model writes offers Fill in its menu. */
   canFill?: boolean;
@@ -943,6 +946,7 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, o
   /** Set a cell; the version is the one read (0 for a cell never set). */
   onEdit: (row: number, column: SheetColumn, value: unknown, version: number) => Promise<EditResult>;
   onOpenRow: (row: number) => void;
+  onCellHistory?: (row: number, column: string) => void;
   /** Said after the rows in sight: the view, its order. */
   footer?: string;
 }) {
@@ -953,7 +957,7 @@ export function SheetGrid({ sheet, rows, hidden, editable, onEdit, onEditMany, o
   const nav = useRef<GridNav | null>(null);
 
   const work = useCellWork({
-    sheet, editable, onEdit, onEditMany, onUndo, onRedo, onOpenRow, columns: shown.map(c => c.id), rowAt: rows.rowAt,
+    sheet, editable, onEdit, onEditMany, onUndo, onRedo, onOpenRow, onCellHistory, columns: shown.map(c => c.id), rowAt: rows.rowAt,
     rowCount: total, nav,
     valueOf: (row, column) => rows.rowByNumber(row)?.[index[column]],
     changedOf: (row, column) => rows.changedOf(row, column),
@@ -1175,10 +1179,10 @@ function CellEditor({ column, text, original, saving, typed, onChange, onSave, o
 
 /**
  * The cell bar, above the grid where a spreadsheet keeps its formula bar: the selected cell's column and row, its value,
- * and where it came from — a file's row, who set it and when, what it is computed from — with Change and Open row. One
+ * and where it came from — a file's row, who set it and when, what it is computed from — with Change, History and Open row. One
  * line that is always there, so selecting a cell never moves the grid and nothing opens over the rows.
  */
-function CellBar({ sheet, selected, column, value, set, editable, error, said, range, onChange, onOpenRow }: {
+function CellBar({ sheet, selected, column, value, set, editable, error, said, range, onChange, onOpenRow, onHistory }: {
   sheet: Sheet; selected: Selected | null; column?: SheetColumn; value: unknown;
   set?: { by: string; at: string; version: number; origin?: string }; editable: boolean; error: string | null;
   /** What was just done here — a copy. */
@@ -1186,6 +1190,8 @@ function CellBar({ sheet, selected, column, value, set, editable, error, said, r
   /** A range selected, in words — its size, and its sum where it holds numbers. */
   range: string | null;
   onChange: () => void; onOpenRow: () => void;
+  /** Open this cell's story; none for a cell nobody can have set. */
+  onHistory?: () => void;
 }) {
   const empty = value === null || value === undefined || value === "";
   return (
@@ -1221,6 +1227,9 @@ function CellBar({ sheet, selected, column, value, set, editable, error, said, r
           <span style={{ marginLeft: "auto", display: "flex", gap: 2, flex: "0 0 auto" }}>
             {editable && column.role === "stored" && (
               <Button variant="ghost" size="xs" onClick={onChange}>{column.kind === "yesno" ? "Switch" : "Change"}</Button>
+            )}
+            {onHistory && column.role === "stored" && (
+              <Button variant="ghost" size="xs" title="Every value this cell has held" onClick={onHistory}>History</Button>
             )}
             <Button variant="ghost" size="xs" onClick={onOpenRow}>Open row</Button>
           </span>

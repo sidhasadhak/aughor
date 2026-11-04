@@ -175,3 +175,21 @@ def test_a_records_total_says_how_many_rows_it_adds_up(env):
     assert fields["Paid"]["source"] == "sum of payment_value over 2 rows of payments"
     fields = {f["name"]: f for f in record.record(model.get(orders.id), 3)["fields"]}
     assert fields["Paid"]["source"] == "no row of payments has this row's key, so it is empty"
+
+
+def test_sheets_that_read_each_other_are_rebuilt_when_the_projection_is_lost(env):
+    """A backup leaves the projection out because it can be rebuilt, so this is what a restore does first. Each sheet here
+    reads the other, so whichever is listed first reads a table that is not there yet unless every table is built before
+    any is derived. It once answered every sheet's read with a 500."""
+    from aughor.sheets import combine, files, model, projection
+    orders, customers = _make(env, "Orders", ORDERS), _make(env, "Customers", CUSTOMERS)
+    combine.link_keep(orders, "customer_id", customers.id, "customer_id", bring=[customers.column("customer_city").id],
+                      by="user:ana")
+    combine.total_keep(model.get(customers.id), "customer_id", orders.id, "customer_id", "count", name="Orders", by="user:ana")
+    assert (_col(orders, 1, "customer_city"), _col(customers, 1, "Orders")) == ("sao paulo", 1)
+    projection.reset()
+    for path in files.projection_path().parent.glob("projection*"):
+        path.unlink()
+    assert _col(orders, 1, "customer_city") == "sao paulo"
+    assert _col(customers, 1, "Orders") == 1
+    assert projection.check(model.get(orders.id))["same"] and projection.check(model.get(customers.id))["same"]
