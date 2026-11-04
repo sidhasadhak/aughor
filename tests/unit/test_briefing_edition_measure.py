@@ -141,7 +141,8 @@ def test_a_flow_still_settling_is_shown_but_not_read_against_its_usual_range(con
     assert aov["status"] == "provisional"
     assert aov["equal_age"]["equal"] is False and aov["equal_age"]["why"].startswith("Average order reads a table")
     assert not aov["outside"] and not aov["floor"] and out["floor"] == []
-    assert aov["z"] is None and aov["extreme"] is None and E.score(aov, watched=False) == 0.0
+    assert aov["z"] is None and aov["extreme"] is None and aov["streak"] is None and E.score(aov, watched=False) == 0.0
+    assert settled["streak"] >= 1                                                          # these rows do have a run
     assert aov["current"] == settled["current"] and aov["usual"] == settled["usual"]       # the number and band stay
     assert [n["reason"] for n in out["not_read"] if n["label"] == "Average order against its usual range"] \
         == [aov["equal_age"]["why"].replace("Average order reads", "it reads")]
@@ -228,6 +229,16 @@ def test_a_figure_not_read_against_usual_is_given_the_true_reason(con, week, set
     assert "has settled" not in rewriting
 
 
+def test_the_reason_names_a_figure_by_the_name_the_page_gives_it(con, settling_week, return_rate):
+    """A guide's check has its own label. Named by the metric's, the row read "itReturn rate reads a table…"."""
+    guide = G.BriefingGuide(checks=[G.Check(id="returns", label="Returned items", metric="return_rate")])
+    out = E.measure_edition("c1", replace(settling_week, still_moving=("items",)), guide, published=False, run_sql=_run(con),
+                            dialect="duckdb")
+    assert out["figures"][0]["equal_age"]["why"].startswith("Returned items reads a table")
+    (row,) = [n for n in out["not_read"] if "usual range" in n["label"]]
+    assert row["label"] == "Returned items against its usual range" and row["reason"].startswith("it reads a table")
+
+
 def test_one_row_says_each_reason_not_one_row_per_figure():
     fig = lambda label, why: {"label": label, "equal_age": {"equal": False, "why": f"{label} {why}"}}
     rows = E._not_at_equal_age([fig("Sales", "reads a table."), fig("Units", "reads a table."), fig("Visits", "rewrites."),
@@ -240,6 +251,8 @@ def test_one_row_says_each_reason_not_one_row_per_figure():
 @pytest.mark.parametrize("m,expected", [
     ({"tables": ["bigquery-public-data.thelook_ecommerce.orders"], "sql": "SUM(x)"}, "provisional"),
     ({"tables": [], "sql": "SELECT SUM(x) FROM orders"}, "provisional"),      # a statement names its own tables
+    ({"tables": [], "sql": "SUM(x)", "time_column": "orders.created_at"}, "provisional"),      # no table, but dated by one
+    ({"tables": ["returns"], "sql": "SUM(x)", "outcome_column": "orders.returned_at"}, "provisional"),
     ({"tables": ["returns"], "sql": "SUM(x)"}, "final")])
 def test_a_figure_is_unsettled_by_the_tables_it_reads_however_they_are_spelled(settling_week, m, expected):
     assert ranges.range_status({**m, "time_kind": "flow"}, settling_week) == expected

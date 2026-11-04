@@ -112,8 +112,14 @@ def render_period_markdown(block: dict, sections: list, cut: int) -> str:
              (f"*Not compared: {withheld}. All dates UTC.*" if withheld
               else f"*Compared with {block.get('compared_with', '')}. All dates UTC.*")]
     lag = int(block.get("lag_days") or 1)
-    if block.get("data_ended"):
+    if block.get("data_ended") and block.get("still_moving"):
+        lines.append(f"*No data has arrived since {block.get('data_through')}, and its tables had not settled when it "
+                     "stopped: figures read from them may still move.*")
+    elif block.get("data_ended"):
         lines.append(f"*The data ended on {block.get('data_through')}: every figure here is final.*")
+    elif lag > 1 and block.get("lag_source") == "beyond_horizon":
+        lines.append(f"*This {period} ends {lag} days before today: its tables were still changing {lag - 1} days after a "
+                     "day ended, and the platform has not seen them stop, so its figures may still move.*")
     elif lag > 1:
         lines.append(f"*This {period} ends {lag} days before today: newer days are still "
                      "settling as late rows arrive"

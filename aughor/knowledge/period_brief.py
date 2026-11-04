@@ -105,7 +105,13 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
         "place there, and do not compare it with any period other than the one named.",
     ]
     lag = int(block.get("lag_days") or 1)
-    if block.get("data_ended"):
+    if block.get("data_ended") and block.get("still_moving"):
+        lines.append(
+            f"No data has arrived since {block.get('data_through')}, more than a month before today "
+            f"({today.isoformat()}), and {', '.join(block['still_moving'])} had not settled when it stopped: this "
+            f"{block['period']} is read as if today were the day after it, and its figures may still move. Say so in one "
+            "plain sentence, and do not call any of those figures final.")
+    elif block.get("data_ended"):
         # Gap 38 (the Olist run): an unconditional settling sentence was written about a range eight
         # years settled. Data that ENDED has no lag; its figures are final, and that is what is said.
         lines.append(

@@ -32,6 +32,13 @@ describe("the paper on data that ended (design-mockups/briefing-data-ended.html)
     expect(screen.queryByText(/settles/)).toBeNull();
   });
 
+  it("calls nothing final when its tables had not settled when the data stopped: that is a pause", () => {
+    render(<PaperDateline today="Monday 30 November 2026" covers="covering 19 October" lagDays={0} records={0}
+      endedOn="2026-10-29" stillMoving={["orders"]} />);
+    expect(screen.queryByTestId("paper-final")).toBeNull();
+    expect(screen.getByTestId("paper-ended")).toBeInTheDocument();
+  });
+
   it("keeps the settling chip on live data", () => {
     render(<PaperDateline today="Friday 23 October 2026" covers="covering 20 October" lagDays={29} records={0} />);
     expect(screen.getByText("data settles 29 days late")).toBeInTheDocument();

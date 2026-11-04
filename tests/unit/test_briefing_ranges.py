@@ -648,6 +648,21 @@ def test_a_cohorts_earlier_ranges_are_read_at_one_age_unless_its_table_is_still_
     assert read(moving)["same_age"] is False
 
 
+def test_a_cohorts_band_says_same_age_only_on_a_table_that_settles(con, approved):
+    from aughor.briefing import expected
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(name="reached", connection="c1", label="Reached", tables=["orders"], status="approved",
+                                 sql="AVG(CASE WHEN created_at IS NOT NULL THEN 1.0 ELSE 0.0 END)", approved_by="test",
+                                 time_column="orders.created_at", time_kind="cohort", outcome_column="orders.created_at",
+                                 time_confirmed_by="user:test"))
+    said = lambda spec: next(i for i in expected.expected_next("c1", spec, profile=_profile(), runner=_runner(con), today=SEP26)["items"]
+                             if i["metric"] == "reached")["expected"]["must_say"][0]
+    settled, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    moving, _ = ranges.resolve_range(start=date(2026, 8, 7), end=date(2026, 8, 16), today=SEP26, lag_days=13, still_moving=("orders",))
+    assert "each read at the same age" in said(settled)
+    assert "each read as its rows stand today" in said(moving)
+
+
 def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved):
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
     seen = ranges.metric_trend("c1", spec, "revenue", profile=_profile(), runner=_runner(con))

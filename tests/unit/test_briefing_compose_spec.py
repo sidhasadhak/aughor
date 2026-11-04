@@ -219,6 +219,15 @@ def _checks() -> dict:
     "Sales were unusually strong.",
     "At {100|sales}, this is the highest in nine weeks.",
     "Sales hit a record high of {100|sales}.",
+    "Sales rose to {100|sales}.",                                              # against the range before, it may be the slide
+    "Sales fell to {100|sales}.",
+    "Sales hit a seven-month low of {100|sales}.",
+    "Sales ran at {100|sales}, above normal.",
+    "Sales ran well over their usual at {100|sales}.",
+    "At {100|sales}, this is the peak.",
+    "Sales, not units, sit above their usual range.",                          # a denial of something else
+    "Sales are final at {100|sales}.",
+    "This is a fair comparison for {100|sales}.",
     "Sales were {100|sales} and Average order {50|aov}, but Sales ran above usual.",
 ])
 def test_a_sentence_may_not_read_such_a_figure_against_usual(text):
@@ -229,8 +238,8 @@ def test_a_sentence_may_not_read_such_a_figure_against_usual(text):
 
 @pytest.mark.parametrize("text", [
     "Sales were {100|sales}.",                                                 # the figure itself is shown
-    "Sales rose to {100|sales}.",                                              # against the range before, its caveat beside it
     "Sales were {100|sales}; they are not read against their usual range.",    # what its caveat asks it to say
+    "Neither Sales nor what it is compared with has settled.",
     "Sales are not called outside their usual range.",
     "Average order was above its usual, at {50|aov}.",                         # a figure that IS read
     "Sales were {100|sales}, while Average order ran above its usual.",        # the claim is the other figure's
@@ -247,5 +256,26 @@ def test_a_figure_blocks_own_words_count_and_one_kept_before_the_flag_is_read_as
     assert withheld and "not at equal age" in withheld[0]["why"]
     old = checks["sales"].model_copy(update={"facts": {"current": 100.0, "usual_mean": 80.0}})      # no flag: before this rule
     _k, withheld, _r = P.gate([P.Block(id="f", type="figure", source="sales", kicker="Above its usual range")], {"sales": old})
+    assert withheld == []
+
+
+def test_a_sentence_naming_nothing_is_about_what_its_block_reads():
+    checks = _checks()
+    _k, withheld, _r = P.gate([P.Block(id="l", type="lead", text="Sales were {100|sales}. That is above its usual range.")], checks)
+    assert [w["sentence"] for w in withheld] == ["That is above its usual range."]
+    # a block reading a figure that IS read as well: whose claim it is cannot be told, and it is not guessed at
+    both = "Sales were {100|sales} and Average order {50|aov}. That is above its usual range."
+    _k, withheld, _r = P.gate([P.Block(id="l", type="lead", text=both)], checks)
+    assert withheld == []
+
+
+def test_a_cut_of_such_a_figure_is_gated_as_it_is():
+    row = ["Jeans", 9000, 8000, 1000, 0.125, 50, False]
+    cut = lambda facts: Source(id="b1", label="Sales by category", kind="breakdown", columns=BREAKDOWN_COLUMNS, rows=[row],
+                               facts=facts, unit="", better="up")
+    line = P.Block(id="l", type="lead", text="Jeans {9,000|b1} ran above its usual.")
+    _k, withheld, _r = P.gate([line], {"b1": cut({"check": "sales", "by": "category", "at_equal_age": False})})
+    assert withheld and "not at equal age" in withheld[0]["why"]
+    _k, withheld, _r = P.gate([line], {"b1": cut({"check": "sales", "by": "category"})})
     assert withheld == []
 

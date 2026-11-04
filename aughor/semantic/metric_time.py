@@ -784,8 +784,12 @@ def tables_read(m: Any) -> list[str]:
 
 
 def reads_any(m: Any, tables: Any) -> bool:
-    """Whether a definition reads one of ``tables``, however either side spells the names."""
-    return bool({bare_name(t) for t in tables_read(m)} & {bare_name(t) for t in tables})
+    """Whether a definition reads one of ``tables``, however either side spells the names. The tables its dates sit on
+    count: a definition can name no table at all and still be dated by one."""
+    from aughor.semantic.metric_statement import split_grain
+
+    dated = [split_grain(_get(m, k))[0] for k in ("time_column", "outcome_column")]
+    return bool({bare_name(t) for t in [*tables_read(m), *dated] if t} & {bare_name(t) for t in tables})
 
 
 def with_dates(connection_id: str, metric: Any):

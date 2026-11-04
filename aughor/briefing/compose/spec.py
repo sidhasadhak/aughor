@@ -384,40 +384,48 @@ def _clause(sentence: str, at: int, end: int) -> str:
     return plain(sentence[(before[-1] if before else 0):(after.start() if after else len(sentence))])
 
 
-#: What only a figure read against its usual range may claim. With a direction word, "usual" counts too.
-_CLAIMS_USUAL = re.compile(r"(?i)\bunusual(?:ly)?\b|\boutside\b.*\busual\b|\b(?:highest|lowest)\b|\brecord\s+(?:high|low)\b")
-#: Saying a figure is NOT read that way is what its caveat asks for.
-_DENIES_USUAL = re.compile(r"(?i)\bnot\b[^.;]*\b(?:usual|outside)\b")
+#: What only a figure read against what it is compared with may claim, however it is worded. Any direction counts too
+#: (`_UP`, `_DOWN`): "rose" of a figure not at equal age may be its age, and on a table redrawn at each refresh the slide.
+_CLAIMS_MOVE = re.compile(r"(?i)\bunusual(?:ly)?\b|\boutside\b.*\b(?:usual|normal|typical)\b|\b(?:highest|lowest|peak)\b"
+                          r"|\brecord\s+(?:high|low)\b|\b\w+-(?:day|week|month|year)\s+(?:high|low)\b"
+                          r"|\b(?:over|under)\s+(?:\w+\s+){0,2}(?:usual|normal|typical)\b|\b(?:final|fair|settled)\b")
+#: Saying a figure is NOT read that way is what its caveat asks for. "Sales, not units, sit above…" is no denial.
+_DENIES_MOVE = re.compile(r"(?i)\bnot\s+(?:\w+\s+){0,3}(?:read|called|held|outside|against|above|below|usual|final|fair|settled)\b"
+                          r"|\bneither\b.*\bsettled\b")
+#: The sources an edition measures: what a figure, and a cut of it, may be not at equal age.
+_MEASURED = ("check", "breakdown", "drill")
 
 
-def _claims_usual(words: str) -> bool:
-    if _DENIES_USUAL.search(words):
+def _claims_move(words: str) -> bool:
+    if _DENIES_MOVE.search(words):
         return False
-    return bool(_CLAIMS_USUAL.search(words)) or bool(re.search(r"(?i)\busual\b", words) and (_UP.search(words) or _DOWN.search(words)))
+    return bool(_CLAIMS_MOVE.search(words) or _UP.search(words) or _DOWN.search(words))
 
 
 def _not_read_against_usual(src: Source) -> bool:
-    return src.kind == "check" and (src.facts or {}).get("at_equal_age") is False
+    return src.kind in _MEASURED and (src.facts or {}).get("at_equal_age") is False
 
 
 def _against_usual(sentence: str, b: Block, sources: dict[str, Source]) -> str:
-    """Why a sentence reads a figure against a usual range it is not read against (`edition.measure_check`), or "". A
-    sentence about only such figures is read whole ("Sales reached €42k, above its usual range"); one that also names a
-    figure that IS read, clause by clause, since the claim may be that figure's."""
+    """Why a sentence reads a figure as a move or against a usual range it is not read against (`edition.measure_check`),
+    or "". A sentence about only such figures is read whole ("Sales reached €42k, above its usual range"), and one naming
+    nothing is about what its block reads ("That is above its usual range"); one that also names a figure that IS read,
+    clause by clause, since the claim may be that figure's."""
     def about(words: str) -> list[Source]:
         said = plain(words)
         ids = [sid for _w, sid in cites(words)] + [sid for sid, s in sources.items() if s.kind == "check" and
                                                    re.search(rf"(?i)(?<!\w){re.escape(s.label)}(?!\w)", said)]
-        return [sources[i] for i in dict.fromkeys(ids) if i in sources and sources[i].kind == "check"]
+        return [sources[i] for i in dict.fromkeys(ids) if i in sources and sources[i].kind in _MEASURED]
 
-    whole = about(sentence) or [s for s in [sources.get(b.source)] if s is not None and s.kind == "check"]
+    whole = about(sentence) or [sources[i] for i in sources_of(b) if i in sources and sources[i].kind in _MEASURED]
     if not any(_not_read_against_usual(s) for s in whole):
         return ""
     alone = all(_not_read_against_usual(s) for s in whole)
     for part, subjects in ([(sentence, whole)] if alone else [(p, about(p)) for p in _CLAUSE_RE.split(sentence)]):
         src = next((s for s in subjects if _not_read_against_usual(s)), None)
-        if src is not None and _claims_usual(plain(part)):
-            return f"it reads {src.label} against its usual range, and {src.label} is not at equal age with those ranges"
+        if src is not None and _claims_move(plain(part)):
+            return (f"it reads {src.label} as a move or against its usual range, and {src.label} is not at equal age with "
+                    "what it is compared with")
     return ""
 
 

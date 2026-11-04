@@ -85,10 +85,11 @@ How to compose:
   — and say it as the analysis's finding. Otherwise describe where the move sits and what it sits beside. Never
   predict.
 - Every figure marked floor must appear in a block (a figure block reading it is enough).
-- A check marked at_equal_age false is not read against its usual range, and its caveat says why: part of any
-  difference from older ranges may not be a move. It has no z and is never in floor. Draw it if it matters and say what
-  its caveat says; never call it above, below or outside its usual range, unusual, or the highest or lowest of anything,
-  and never lead with it. Code holds a sentence that does.
+- Anything marked at_equal_age false (a check, or a breakdown of one) is not read against its usual range, and its
+  caveat says why: part of any difference from older ranges may not be a move. It has no z and no streak and is never in
+  floor. Draw it if it matters and say what its caveat says; never say it rose or fell, never call it above, below or
+  outside its usual range, unusual, or the highest or lowest of anything, never lead with it, and never start a deep
+  analysis on it. Code holds a sentence that does.
 
 Block types (fields per type):
 {types}"""
@@ -326,7 +327,8 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                 sid = f"{check.id}_by_{column}".lower()
                 src = S.breakdown(sid, f"{check.label} by {column.replace('_', ' ')}", m, column, spec,
                                   usual_n=usual_n, run_sql=run_sql, dialect=dialect, unit=check.unit,
-                                  better=check.better, check_id=check.id)
+                                  better=check.better, check_id=check.id,
+                                  not_read=S.age_caveat(sources[check.id]) if check.id in sources else "")
                 sources[sid] = src
                 return S.for_model(src)
 
@@ -528,11 +530,12 @@ def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
     usual_n = guide.news.usual_for(spec.period if spec.period in ("day", "week", "month", "year") else "custom")
     with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
         new = S.breakdown(sid, label, m, column, spec, usual_n=usual_n, run_sql=run_sql, dialect=dialect,
-                          unit=check.unit, better=check.better, kind="drill", check_id=check.id, within=within)
+                          unit=check.unit, better=check.better, kind="drill", check_id=check.id, within=within,
+                          not_read=S.age_caveat(src))
     if new.error:
         raise ValueError(new.error)
-    block = P.Block(id=f"drill_{sid}", type="compare", source=sid, kicker="Drill", title=label + ", against usual",
-                    by_code=True)
+    block = P.Block(id=f"drill_{sid}", type="compare", source=sid, kicker="Drill", by_code=True,
+                    title=label if S.age_caveat(new) else label + ", against usual")
     keep_entry(key, {**entry, "sources": {**(entry.get("sources") or {}), sid: new.model_dump(mode="json")}})
     return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json")}
 

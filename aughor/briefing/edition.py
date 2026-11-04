@@ -217,6 +217,7 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
     unit = _unit(check.unit or str(_get(m, "unit") or ""),
                  [value, previous, last_year] + usual_vals)
     status = ranges.range_status(m, spec)
+    age = ranges.equal_age(m, status, spec, label=name)
     fig: dict = {
         "id": check.id, "label": check.label, "metric": check.metric or None, "unit": unit,
         "better": check.better, "why": check.why, "time_kind": _get(m, "time_kind"),
@@ -224,9 +225,10 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
         "rel": _rel(value, previous), "rel_last_year": _rel(value, last_year),
         "n": cur.get("n", 0), "series": series, "sql": sql,
         "like_for_like": lfl[2] if lfl else "",
-        "status": status, "equal_age": ranges.equal_age(m, status, spec),
+        "status": status, "equal_age": age,
         "usual": None, "z": None, "outside": False, "floor": False,
-        "streak": _streak([p["value"] for p in series]), "extreme": None,
+        # a run of rises is the same claim as a distance from usual, and on a table that slides it rises by construction
+        "streak": _streak([p["value"] for p in series]) if age["equal"] else None, "extreme": None,
     }
     if len(usual_vals) >= MIN_USUAL:
         mean = statistics.fmean(usual_vals)
@@ -239,7 +241,7 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
         # sits from usual is not read: no z to lead on or quote, no rank from it, no place on every reader's page. Its
         # number and band stay, and `not_read` and its source say why. `outside` alone would change nothing: the model
         # reads the z, the extreme and the floor list, never `outside`.
-        if fig["equal_age"]["equal"]:
+        if age["equal"]:
             if sd > 0:
                 z = (value - mean) / sd
                 fig["z"] = z

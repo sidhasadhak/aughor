@@ -105,6 +105,11 @@ def from_check(fig: dict, *, period_word: str = "range") -> Source:
                   note=note.strip("; "), unit=fig.get("unit") or "", better=fig.get("better") or "none")
 
 
+def age_caveat(src: Source) -> str:
+    """Why ``src`` is not at equal age, or "": what a breakdown or a drill read from it inherits."""
+    return (src.caveats[0] if src.caveats else "") if (src.facts or {}).get("at_equal_age") is False else ""
+
+
 # ── breakdown ────────────────────────────────────────────────────────────────────────────────
 
 def segment_rows(m: Any, column: str, windows: list, run_sql, dialect: str) -> tuple[list[list[Any]], str, str]:
@@ -149,9 +154,10 @@ BREAKDOWN_COLUMNS = ["segment", "this_range", "usual", "change", "change_pct", "
 
 def breakdown(source_id: str, label: str, m: Any, column: str, spec, *, usual_n: int, run_sql, dialect: str,
               unit: str = "", better: str = "none", kind: str = "breakdown", check_id: str = "",
-              within: Optional[dict] = None) -> Source:
+              within: Optional[dict] = None, not_read: str = "") -> Source:
     """A check broken down by ``column``, each segment against its own usual range. ``check_id`` and ``within``
-    (the segment a drill narrowed to) are kept in its facts, so a drill can go one level deeper from it."""
+    (the segment a drill narrowed to) are kept in its facts, so a drill can go one level deeper from it. ``not_read``
+    is why the check is not at equal age: a segment of it is not either, so it is said, gated, and given no colour."""
     from aughor.briefing.edition import usual_windows
 
     windows = [spec.windows()[0]] + usual_windows(spec, usual_n)
@@ -159,11 +165,11 @@ def breakdown(source_id: str, label: str, m: Any, column: str, spec, *, usual_n:
     if why:
         return Source(id=source_id, label=label, kind=kind, status="refused", error=why, unit=unit, better=better)
     word = spec.period if spec.period in ("day", "week", "month", "year") else "range"
-    facts = {"check": check_id, "by": column, "within": dict(within or {})}
+    facts = {"check": check_id, "by": column, "within": dict(within or {}), **({"at_equal_age": False} if not_read else {})}
     return Source(id=source_id, label=label, kind=kind, columns=BREAKDOWN_COLUMNS, rows=rows, sql=sql, facts=facts,
                   note=f"each {column.replace('_', ' ')} against its own usual: the mean of the {usual_n} {word}s "
                        f"before; under {MIN_CELL_ROWS} rows is too few to call",
-                  unit=unit, better=better)
+                  unit=unit, better="none" if not_read else better, caveats=[not_read] if not_read else [])
 
 
 def rerun(src: Source, run_sql) -> Optional[Source]:

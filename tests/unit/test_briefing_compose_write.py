@@ -182,6 +182,34 @@ def test_a_sentence_reading_such_a_figure_against_usual_goes_back_then_is_left_o
     assert entry["blocks"][0]["text"] == "A week to read with care."
 
 
+def test_a_breakdown_and_a_drill_of_such_a_figure_carry_it(setup, monkeypatch):
+    blocks = [{"type": "lead", "text": "A week to read with care."}, {"type": "figure", "source": "sales"},
+              {"type": "compare", "source": "sales_by_platform", "title": "Sales by platform"}]
+    loop, seen = _loop([("breakdown", {"check_id": "sales", "column": "platform"}), ("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"], run_query=_top_orders)
+    given = seen[1]["breakdown"]
+    assert given["facts"]["at_equal_age"] is False and "Sales reads a table" in " ".join(given["caveats"])
+    kept = entry["sources"]["sales_by_platform"]
+    assert kept["better"] == "none" and kept["caveats"]                       # no good or bad colour on the page
+    out = W.drill("compose_c1", _settling_week(), scope_key="compose_c1", source_id="sales", column="is_top", runner=setup["runner"])
+    assert out["source"]["facts"]["at_equal_age"] is False and out["source"]["better"] == "none" and out["source"]["caveats"]
+    assert "against usual" not in out["block"]["title"]
+    deeper = W.drill("compose_c1", _settling_week(), scope_key="compose_c1", source_id=out["source"]["id"], column="platform",
+                     segment=True, runner=setup["runner"])
+    assert deeper["source"]["facts"]["at_equal_age"] is False and "against usual" not in deeper["block"]["title"]
+
+
+def test_a_breakdown_and_a_drill_on_settled_tables_say_nothing_of_it(setup, monkeypatch):
+    blocks = [{"type": "lead", "text": "A week."}, {"type": "figure", "source": "sales"}]
+    loop, seen = _loop([("breakdown", {"check_id": "sales", "column": "platform"}), ("compose", {"blocks": blocks})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    W.compose("compose_c1", _week(), scope_key="compose_c1", llm=object(), runner=setup["runner"], run_query=_top_orders)
+    assert "at_equal_age" not in seen[1]["breakdown"]["facts"] and "caveats" not in seen[1]["breakdown"]
+    out = W.drill("compose_c1", _week(), scope_key="compose_c1", source_id="sales", column="is_top", runner=setup["runner"])
+    assert out["block"]["title"].endswith(", against usual") and out["source"]["better"] == "up"
+
+
 def test_an_edition_drawn_by_code_says_a_figure_is_still_settling_too(setup, monkeypatch):
     loop, _ = _loop([])
     monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)

@@ -8082,7 +8082,8 @@ export interface EditionFigure {
   z: number | null;
   outside: boolean;
   floor: boolean;
-  streak: number;
+  /** Null when the figure is not at equal age: a run of rises would be the same claim as a distance from usual. */
+  streak: number | null;
   extreme: { which: "highest" | "lowest"; of: number } | null;
   series: { label: string; start: string; value: number | null }[];
   cells: Record<string, { cells: EditionCell[]; why: string }>;

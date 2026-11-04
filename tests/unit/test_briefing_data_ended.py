@@ -261,3 +261,26 @@ def test_a_source_still_moving_when_it_stopped_has_paused_and_is_not_final():
     ended, _ = ranges.resolve_range("last_week", today=today, lag_days=29, edge=edge)
     assert ranges.range_status(flow, ended) == "final"
 
+
+def test_a_pause_is_not_sent_or_narrated_as_final():
+    from aughor.briefing.delivery import render_period_markdown
+    from aughor.knowledge.period_brief import period_note
+    edge = {"through": date(2026, 10, 29), "from": date(2019, 1, 1), "held_by": ["orders"], "tables": {"orders": date(2026, 10, 29)}}
+    today = date(2026, 11, 30)
+    spec, _ = ranges.resolve_range("last_week", today=today, lag_days=29, lag_source="beyond_horizon", still_moving=("orders",), edge=edge)
+    block = ranges.range_block(spec)
+    md = render_period_markdown(block, [], 0)
+    assert "every figure here is final" not in md and "No data has arrived since 2026-10-29" in md and "may still move" in md
+    note = period_note(block, today)
+    assert "every figure in it is final" not in note and "do not call any of those figures final" in note
+
+
+def test_a_live_source_still_moving_is_not_sent_as_settling_as_late_rows_arrive():
+    from aughor.briefing.delivery import render_period_markdown
+    today = date(2026, 11, 4)
+    moving, _ = ranges.resolve_range("last_week", today=today, lag_days=29, lag_source="beyond_horizon", still_moving=("orders",))
+    md = render_period_markdown(ranges.range_block(moving), [], 0)
+    assert "settling as late rows arrive" not in md and "has not seen them stop" in md and "may still move" in md
+    learned, _ = ranges.resolve_range("last_week", today=today, lag_days=8, lag_source="learned")
+    assert "settling as late rows arrive, a lag the platform measured" in render_period_markdown(ranges.range_block(learned), [], 0)
+

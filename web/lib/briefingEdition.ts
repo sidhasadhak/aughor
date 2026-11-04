@@ -41,8 +41,9 @@ export function rangeWord(period: string, n = 1): string {
 /** Good, bad or neither: a figure's distance from its usual range, read in the direction the guide
  *  calls good. A figure whose good direction is not declared is neither — colour would be a judgement
  *  the data does not carry. */
-export function toneOf(fig: Pick<EditionFigure, "better" | "current" | "usual">): "good" | "bad" | "neutral" {
-  if (fig.better === "none" || fig.current === null || !fig.usual) return "neutral";
+export function toneOf(fig: Pick<EditionFigure, "better" | "current" | "usual" | "equal_age">): "good" | "bad" | "neutral" {
+  // a figure not read against its usual range is not good or bad against it either
+  if (fig.better === "none" || fig.current === null || !fig.usual || fig.equal_age?.equal === false) return "neutral";
   const up = fig.current > fig.usual.mean;
   return (up === (fig.better === "up")) ? "good" : "bad";
 }

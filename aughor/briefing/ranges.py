@@ -520,7 +520,7 @@ def _rel(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
     return (cur - prev) / abs(prev)
 
 
-def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None) -> dict:
+def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None, *, label: str = "") -> dict:
     """Is this figure's comparison read at the same age as the figure itself? (BR-6)
 
     `RangeSpec.windows` gives every comparison its OWN as-of — August read on 15 September is
@@ -551,7 +551,7 @@ def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None) -> dic
     if status == "final":
         return {"equal": True, "why": ""}
     # A guide's check that writes its own aggregate is a dict (`guide.measurable`), an approved metric an object.
-    label = mt._get(metric, "label") or mt._get(metric, "name") or "this figure"
+    label = label or mt._get(metric, "label") or mt._get(metric, "name") or "this figure"
     if spec is not None and mt.reads_any(metric, spec.rewrites):
         return {"equal": False, "why": (
             f"{label} reads a source that rewrites its whole history at each refresh, so nothing in it settles and an "
