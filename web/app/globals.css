@@ -977,11 +977,3 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-range { appearance: none; -webkit-appearance: none; height: 6px; border-radius: 3px; cursor: pointer; outline-offset: 4px; }
 .aug-range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-2); }
 .aug-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-2); }
-
-/* The Metrics ledger's table. Its figures cannot wrap, so in a narrow window it scrolls sideways rather than drawing its
-   columns over each other; on a wider one it stays clipped, which is what lets its head stick to the page. */
-.aug-ledger-frame { overflow: clip; }
-@media (max-width: 1240px) {
-  .aug-ledger-frame { overflow-x: auto; }
-  .aug-ledger-frame table { min-width: 900px; }
-}

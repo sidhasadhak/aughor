@@ -258,6 +258,30 @@ describe("a row", () => {
   });
 });
 
+describe("the table's width", () => {
+  const atWidth = (px: number) => vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(px);
+
+  it("scrolls sideways when too narrow for its figures, which cannot wrap", async () => {
+    const width = atWidth(500);
+    show();
+    await settled();
+    const frame = screen.getByTestId("ledger-frame");
+    expect(frame.style.overflowX).toBe("auto");
+    expect(within(frame).getByRole("table").style.minWidth).toBe("900px");
+    width.mockRestore();
+  });
+
+  it("stays clipped when it fits, which is what lets its head stick to the page", async () => {
+    const width = atWidth(1200);
+    show();
+    await settled();
+    const frame = screen.getByTestId("ledger-frame");
+    expect(frame.style.overflow).toBe("clip");
+    expect(within(frame).getByRole("table").style.minWidth).toBe("");
+    width.mockRestore();
+  });
+});
+
 describe("reading the page", () => {
   it("books the period's expected bands, reads the Briefing already written, and writes nothing", async () => {
     show();

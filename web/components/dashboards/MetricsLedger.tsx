@@ -14,6 +14,7 @@ import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "reac
 import { rangeOf, useAskWhy, useOpenMetric, whyQuestion } from "@/components/brief/MetricDetail";
 import { Chip, Dot, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, ROW } from "@/components/clarity/kit";
 import { useLoad } from "@/components/record/kit";
+import { useMeasured } from "@/components/dashboards/cellBox";
 import { TableActions, rawCells } from "@/components/TableActions";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -35,6 +36,9 @@ import { requestTab } from "@/lib/navigate";
 const trendCount = (period: string) => (period === "year" ? 5 : 13);
 /** Trends read at once: each is one warehouse statement, and a dashboard holds many metrics. */
 const TRENDS_AT_ONCE = 4;
+/** The width under which the table's figures, which cannot wrap, would draw over each other: below it the table scrolls
+ *  sideways. Above it the frame stays clipped, which is what lets the head stick to the page. */
+const TABLE_MIN = 900;
 
 const HEAD: CSSProperties = { position: "sticky", top: 0, zIndex: 2, background: "var(--bg-1)", textAlign: "left", fontWeight: 500,
   color: "var(--t3)", padding: "7px 12px", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" };
@@ -215,6 +219,8 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
   const edition = editionFor(read.data, block);
   const coverage = useLoad(() => getMetricCoverage(connectionId, schema), [connectionId, schema]);
 
+  const [frame, { width: frameWidth }] = useMeasured<HTMLDivElement>();
+  const narrow = frameWidth > 0 && frameWidth < TABLE_MIN;
   const [filter, setFilter] = useState<Filter>("all");
   const [term, setTerm] = useState("");
   const [open, setOpen] = useState("");
@@ -390,8 +396,9 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
         <span style={{ marginLeft: "auto" }}><TableActions name={`Metrics ${current}`} read={flat} /></span>
       </div>
 
-      <div className="aug-ledger-frame" style={{ border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
-        <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
+      <div ref={frame} data-testid="ledger-frame" style={{ border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", background: "var(--bg-2)",
+        ...(narrow ? { overflowX: "auto" } : { overflow: "clip" }) }}>
+        <table className="aug-fs-sm" style={{ width: "100%", minWidth: narrow ? TABLE_MIN : undefined, borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "25%" }} /><col style={{ width: "9%" }} /><col style={{ width: 96 }} /><col style={{ width: "8%" }} />
             {hasYear && <col style={{ width: "8%" }} />}{target && <col style={{ width: "13%" }} />}<col />
