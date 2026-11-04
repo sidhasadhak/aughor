@@ -137,13 +137,17 @@ beforeEach(() => {
   api.listGovernedTags.mockReset().mockResolvedValue([]);
   api.rebuildContextGraph.mockReset().mockResolvedValue({ rebuilt: true, indexed: 9 });
   window.history.replaceState(null, "", "/");
+  handoff.nodes = [];                         // what the last test's canvas was handed is not what this one's was
+  handoff.edges = [];
 });
 
 describe("the Graph tab", () => {
   it("hands the renderer square links — step edges, coloured through tokens — never curves", async () => {
     render(<ConnectionGraphPanel connectionId="c1" />);
     await screen.findByTestId("rf");
+    // The handoff is rewritten on each render, and the canvas's first passes hold no nodes yet: wait for what it settles on.
     await waitFor(() => expect(handoff.edges.length).toBe(3));
+    await waitFor(() => expect(handoff.nodes.map(n => (n.data as { label: string }).label)).toContain("Average order value"));
     for (const e of handoff.edges) {
       expect(e.type).toBe("step");
       expect(String((e.style as { stroke: string }).stroke)).toMatch(/^var\(--/);
@@ -152,8 +156,6 @@ describe("the Graph tab", () => {
     const label = (id: string) => handoff.edges.find(e => e.id === id)?.label;
     expect(label("table:Order--joins_on-->table:User")).toBe("100%");
     expect(label("table:Item--joins_on-->table:Order")).toBe("declared");
-    // The metric's key reaches the map as words.
-    expect(handoff.nodes.map(n => (n.data as { label: string }).label)).toContain("Average order value");
   });
 
   it("opens on the picture with one line of what the graph holds above it — no figure cards", async () => {
@@ -162,9 +164,10 @@ describe("the Graph tab", () => {
     expect(holds).toHaveTextContent("3 tables");
     expect(holds).toHaveTextContent("2 joins");
     expect(holds).toHaveTextContent("1 metric");
-    expect(screen.getByText("1 of 2 measured")).toBeInTheDocument();
+    // Both read the audit, a fetch of its own that may land after the graph.
+    expect(await screen.findByText("1 of 2 measured")).toBeInTheDocument();
     // The content axis wins over a schema-only "Fresh".
-    expect(screen.getByTestId("graph-freshness")).toHaveTextContent("Rebuild owed");
+    await waitFor(() => expect(screen.getByTestId("graph-freshness")).toHaveTextContent("Rebuild owed"));
     expect(document.querySelector("[data-slot=figure-value]")).toBeNull();
   });
 
@@ -180,7 +183,7 @@ describe("the Graph tab", () => {
     // A single item keeps its check on its row.
     fireEvent.click(within(needs).getByRole("button", { name: "Ask about it" }));
     expect(ask).toHaveBeenCalledWith("Check table:User?");
-    expect(screen.getByTestId("warrant-mix")).toBeInTheDocument();
+    expect(await screen.findByTestId("warrant-mix")).toBeInTheDocument();     // the audit again
   });
 
   it("a failed review read is said, never shown as nothing to check", async () => {
@@ -206,7 +209,7 @@ describe("the Graph tab", () => {
     // Open goes to the table's page.
     fireEvent.click(within(chosen).getByRole("button", { name: "Open" }));
     expect(await screen.findByTestId("graph-table-page")).toBeInTheDocument();
-    expect(window.location.search).toContain("table=table%3AOrder");
+    await waitFor(() => expect(window.location.search).toContain("table=table%3AOrder"));     // an effect stamps it after the page draws
   });
 
   it("the ?table= deep link opens straight onto that table's page, a column beside its definition", async () => {
@@ -217,7 +220,7 @@ describe("the Graph tab", () => {
     expect(within(page).getByText("Current status of the order")).toBeInTheDocument();
     // Nothing rests on it: said once, not as an empty section.
     expect(within(page).getByText("No findings.")).toBeInTheDocument();
-    expect(window.location.search).toContain("table=table%3AOrder");
+    await waitFor(() => expect(window.location.search).toContain("table=table%3AOrder"));
     // Back to the map drops the param.
     await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "Map" })); });
     expect(window.location.search).not.toContain("table=");
@@ -235,7 +238,9 @@ describe("the Graph tab", () => {
     await waitFor(() => expect(api.rebuildContextGraph).toHaveBeenCalledWith("c1", "s"));
     await waitFor(() => expect(api.getConnectionGraph).toHaveBeenCalledTimes(2));
     api.rebuildContextGraph.mockRejectedValueOnce(new Error("this connection has no built ontology to project it from"));
-    fireEvent.click(await screen.findByTestId("graph-rebuild"));
+    const again = await screen.findByTestId("graph-rebuild");
+    await waitFor(() => expect(again).toBeEnabled());                         // a click on a button still rebuilding does nothing
+    fireEvent.click(again);
     expect(await screen.findByRole("alert")).toHaveTextContent("Not rebuilt — this connection has no built ontology");
   });
 });
