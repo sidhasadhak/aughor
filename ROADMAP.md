@@ -12257,6 +12257,17 @@ counting (`DEFINITION_CHANGES`; a date edit on an approved metric now goes on th
 told too; and code says it on the page and on the ledger's row whatever the model wrote, on a kept edition as well. It tells; it cannot rewrite what
 was kept, and a sentence that cites nothing has no note to carry.
 
+**One answer to what can be said of a source's days (the user, 2026-11-04: "fix these at platform level so that any future connection will not have these
+problems").** A source's lag was read everywhere as "it settles after N days". Measured every row across one refresh: theLook is redrawn whole, so no age
+settles, and it was being told to readers, the model and other agents as settling after 29 days. `settling/answer.py` gives one of four answers (unknown,
+settles, moving, rewrites), from a source's own readings, and is the one place that words them; no connection is named. Dashboard tiles, sends and narration
+with no guide, prompts, scheduled runs, re-checks, watches, Key movements, decisions, inquiries, predictions and Home read it, narrowed to the tables a figure
+reads (`about`). A difference on a table never seen to settle is not read as a move. Watches keep firing, measured first (about 1% at 3 sigma, as on a source
+that settles), and carry a caveat. A re-check on a source that rewrites restates the Record but tells nobody and reopens nothing. Old days are read from a
+table's first day until they have held for a month, and two moves of them in the last month beat a settled verdict from recent days, which reads settled
+between one redraw and the next. Cost, chosen: a two-day backfill on a healthy source reads as rewriting for up to 30 days. It takes two refreshes to
+recognise a source, so theLook reads `moving` until two are read, and a new source can read `settles` between its first and second.
+
 ### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted — **SV-3 BUILT 2026-10-28** at the user's *"proceed with the rest"* · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
 **The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
