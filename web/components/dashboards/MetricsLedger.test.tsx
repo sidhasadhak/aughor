@@ -249,6 +249,28 @@ describe("a row", () => {
     expect(open.queryByText(/Unarrived returns/)).toBeNull();
   });
 
+  it("says it is still reading, never that there is nothing, while its reads are out", async () => {
+    api.readMetricTrend.mockReturnValue(new Promise(() => undefined));
+    api.readBriefingEdition.mockReturnValue(new Promise(() => undefined));
+    show();
+    fireEvent.click(within(screen.getByTestId("ledger-row-net")).getByRole("button", { name: "Net Revenue (EUR, after refunds)" }));
+    const open = within(await screen.findByTestId("ledger-reasons"));
+    expect(open.getByText("Reading its earlier ranges…")).toBeInTheDocument();
+    expect(open.getByText("Reading what the Briefing wrote…")).toBeInTheDocument();
+    expect(open.queryByText(/Too few earlier readings/)).toBeNull();
+    expect(open.queryByText(/No Briefing has been written/)).toBeNull();
+  });
+
+  it("says the Briefing could not be read, never that none was written", async () => {
+    api.readBriefingEdition.mockRejectedValue(new Error("the API did not answer"));
+    show();
+    await settled();
+    fireEvent.click(within(screen.getByTestId("ledger-row-net")).getByRole("button", { name: "Net Revenue (EUR, after refunds)" }));
+    const open = within(await screen.findByTestId("ledger-reasons"));
+    expect(await open.findByText("The Briefing for this range could not be read: the API did not answer.")).toBeInTheDocument();
+    expect(open.queryByText(/No Briefing has been written/)).toBeNull();
+  });
+
   it("says when no Briefing was written for the range", async () => {
     api.readBriefingEdition.mockResolvedValue({ built: false, period: EDITION.period });
     show();

@@ -139,9 +139,9 @@ function openWork(w: Work) {
 }
 
 /** What a metric opens to, in its own row: how it reads, what the platform knows of it, and how it is measured. */
-function Reasons({ m, trend, work, meaning, expected, block, briefed }: {
+function Reasons({ m, trend, work, meaning, expected, block, briefing }: {
   m: BriefingRangeMeasure; trend: MetricTrend | undefined; work: Work[]; meaning: string;
-  expected: ExpectedNext | null; block: BriefingRangeBlock; briefed: boolean;
+  expected: ExpectedNext | null; block: BriefingRangeBlock; briefing: { loading: boolean; error: string; built: boolean };
 }) {
   const openDetail = useOpenMetric();
   const askWhy = useAskWhy();
@@ -155,7 +155,8 @@ function Reasons({ m, trend, work, meaning, expected, block, briefed }: {
         <div className="aug-fs-xs" style={label}>How it is reading</div>
         {trend && !trend.why && <Trend m={m} trend={trend} period={block.period} />}
         <p className="aug-fs-sm" style={para}>
-          {trend?.why ? `Its earlier ranges could not be read: ${trend.why}.`
+          {!trend ? "Reading its earlier ranges…"
+            : trend.why ? `Its earlier ranges could not be read: ${trend.why}.`
             : u && m.equal_age && !m.equal_age.equal ? <>Its usual range is <b style={{ color: "var(--t1)", fontWeight: 500 }}>{bandWords(u.low, u.high, m.unit)}</b>, from the {u.n} ranges before. This figure is not held against it.</>
             : u ? <>{u.outside === "above" ? "Above" : u.outside === "below" ? "Below" : "Inside"} its usual range of{" "}
                 <b style={{ color: "var(--t1)", fontWeight: 500 }}>{bandWords(u.low, u.high, m.unit)}</b>, from the {u.n} ranges before.</>
@@ -168,7 +169,10 @@ function Reasons({ m, trend, work, meaning, expected, block, briefed }: {
         <div className="aug-fs-xs" style={label}>What the platform knows</div>
         {work.length === 0 ? (
           <p className="aug-fs-sm" style={para}>
-            {briefed ? "The Briefing for this range says nothing of this metric." : "No Briefing has been written for this range, and it is where the platform's work on a metric is gathered."}
+            {briefing.loading ? "Reading what the Briefing wrote…"
+              : briefing.error ? `The Briefing for this range could not be read: ${briefing.error}.`
+                : briefing.built ? "The Briefing for this range says nothing of this metric."
+                  : "No Briefing has been written for this range, and it is where the platform's work on a metric is gathered."}
           </p>
         ) : work.map(w => (
           <div key={`${w.kind}:${w.text.slice(0, 40)}`} data-testid="ledger-work" style={{ marginBottom: 10 }}>
@@ -301,7 +305,8 @@ export function MetricsLedger({ connectionId, schema, block: measuredBlock }: {
         {isOpen && (
           <tr data-testid="ledger-open" style={{ background: "var(--bg-3)" }}>
             <td colSpan={columns} style={{ ...CELL, padding: "4px 12px 14px 27px", borderBottom: "1px solid var(--b1)" }}>
-              <Reasons m={m} trend={trend} work={work} meaning={meaningOf(m, edition)} expected={expected.data} block={block} briefed={!!edition?.built} />
+              <Reasons m={m} trend={trend} work={work} meaning={meaningOf(m, edition)} expected={expected.data} block={block}
+                briefing={{ loading: read.loading, error: read.error, built: !!edition?.built }} />
             </td>
           </tr>
         )}
