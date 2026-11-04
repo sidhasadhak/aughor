@@ -1807,7 +1807,10 @@ class PostgresConnection(DatabaseConnection):
         if r.error:
             return {"error": r.error}
         state["available"] = bool(r.rows and str(r.rows[0][0]) not in ("0", "NULL"))
-        r = self.execute_bounded("__prerequisite__", "SHOW shared_preload_libraries", 1, sql_dialect=None, internal=True)
+        # `SHOW` is a command the read door refuses ("Only SELECT is allowed") — found live on LuxExperience, where the
+        # unit test's fake door had let it through; the setting is read as a SELECT.
+        r = self.execute_bounded("__prerequisite__", "SELECT current_setting('shared_preload_libraries')", 1,
+                                 sql_dialect=None, internal=True)
         if r.error:
             return {"error": r.error}
         state["preloaded"] = bool(r.rows and "pg_stat_statements" in str(r.rows[0][0]).lower())

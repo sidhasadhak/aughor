@@ -112,6 +112,8 @@ def test_the_probe_reads_three_facts_through_the_door(monkeypatch):
                                  "pg_extension": [["0"]]})
     assert pg.query_history_prerequisite() == {"available": True, "preloaded": True, "created": False}
     assert [s[0] for s in seen] == ["__prerequisite__"] * 3 and all(s[2] is None and s[3] for s in seen)
+    # the read door admits SELECT alone: `SHOW shared_preload_libraries` was refused live (LuxExperience, 2026-11-04)
+    assert all(s[1].lstrip().upper().startswith("SELECT") for s in seen)
 
 
 def test_enable_refuses_in_words_when_the_server_setting_is_missing(monkeypatch):
