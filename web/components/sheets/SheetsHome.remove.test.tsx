@@ -100,14 +100,14 @@ describe("the confirmation", () => {
   it("names what reads it, and what happens to each", async () => {
     readDependents.mockImplementation(async () => ({
       sheets: [{ id: "s5", name: "Orders", maker: "ana", empties: ["customer_city", "paid"], links: ["customer_id"], withheld: false }],
-      dashboards: [{ title: "Sales board", yours: true, owner: "", cards: ["The customers"], count: 1, withheld: false }],
+      dashboards: [{ title: "Sales board", yours: true, owner: "", cards: ["The customers"], count: 1, pieces: ["filters", "add_row"], withheld: false }],
       cards: [],
     }));
     await home();
     const asked = await open();
     expect(await within(asked).findByText("What reads it")).toBeInTheDocument();
     expect(asked).toHaveTextContent("The sheet Orders: customer_city, paid go empty; customer_id keeps its values and links to nothing.");
-    expect(asked).toHaveTextContent("Your dashboard Sales board: The customers will say the sheet was removed.");
+    expect(asked).toHaveTextContent("Your dashboard Sales board: The customers, its filters, its Add a row button will say the sheet was removed.");
     expect(asked).not.toHaveTextContent("No other sheet");
   });
 

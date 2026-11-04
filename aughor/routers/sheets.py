@@ -221,7 +221,7 @@ def read(sheet_id: str, request: Request) -> dict:
 @router.get("/{sheet_id}/dependents")
 def dependents(sheet_id: str, request: Request) -> dict:
     """What reads a sheet, for its maker to read before removing it: other sheets' links and totals, and the dashboards
-    holding a card over its table. Only its maker asks: no one else may remove it."""
+    holding a card over its table, its filters or its Add a row. Only its maker asks: no one else may remove it."""
     from aughor.dashboards.home import person_of
     from aughor.sheets.dependents import dependents_of
     return dependents_of(_sheet(sheet_id, request, OWN), _who(request), person_of(request))

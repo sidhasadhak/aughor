@@ -7,6 +7,8 @@ Read from what already names a sheet — nothing new is stored:
 * **a dashboard's card** names its table in its query, on the Sheets connection (SH-6). Removed, the statement has
   nothing to read; the connection's door answers with `removed_words` instead of the engine's "Table with name … does
   not exist! Did you mean "sqlite_master"?". A new sheet that makes that table again is what the card reads.
+* **a dashboard made from a file** names it twice more: its filters by the table, its Add a row by the sheet's id. Each
+  reads through those same two doors, the filters' statement and the sheet's own route, and says the same.
 
 What the asker is told follows the sharing's rule, that a thing not shared with someone is listed and said, never read: a
 sheet not shared with them by its name and maker, a dashboard not reaching them by its owner and how many cards.
@@ -22,7 +24,9 @@ from aughor.sheets.model import Sheet
 #: A statement that reads a sheet someone removed: its error is `removed_words`' sentence, a person's to read.
 REMOVED = "sheet_removed"
 
-_MISSING_TABLE = re.compile(r"Table with name \"?(\w+)\"? does not exist", re.IGNORECASE)
+#: The engine's two ways of saying a table is not there. The second is a card narrowed by a reader's filter: `queries.narrowed`
+#: answers the table with a CTE of the same name, which with no table left reads itself.
+_MISSING_TABLE = re.compile(r"Table with name \"?(\w+)\"? does not exist|Circular reference to CTE \"?(\w+)\"?", re.IGNORECASE)
 
 
 def _reads_table(sql: str, table: str) -> bool:
@@ -55,8 +59,17 @@ def _sheets_reading(sheet: Sheet, reader: str) -> list[dict]:
     return out
 
 
+def _pieces_reading(spec: object, sheet: Sheet) -> list[str]:
+    """What a dashboard made from a file holds besides its cards that reads the sheet: its filters, which name its table, and
+    its Add a row, which names the sheet."""
+    elements = spec.get("elements") if isinstance(spec, dict) else None
+    props = [(e.get("type"), e.get("props") or {}) for e in (elements or {}).values() if isinstance(e, dict)]
+    return [*(["filters"] if any(t == "QueryFilters" and str(p.get("table") or "").lower() == sheet.table.lower() for t, p in props) else []),
+            *(["add_row"] if any(t == "AddRow" and p.get("sheet") == sheet.id for t, p in props) else [])]
+
+
 def _cards_and_dashboards(sheet: Sheet, person: str) -> tuple[list[dict], list[dict]]:
-    """The dashboards holding a card that reads the sheet's table, and the cards no dashboard holds."""
+    """The dashboards holding a card over the sheet's table, or a piece that reads the sheet, and the cards no dashboard holds."""
     from aughor.cards.store import list_cards
     from aughor.dashboards import sharing as dashboard_sharing
     from aughor.dashboards import versions
@@ -64,24 +77,22 @@ def _cards_and_dashboards(sheet: Sheet, person: str) -> tuple[list[dict], list[d
     from aughor.kernel.ledger import Ledger
     reading = {c.id: c for c in list_cards(connection_id=model.SHEETS_CONNECTION)
                if not c.provenance.superseded_by and _reads_table(c.sql, sheet.table)}
-    if not reading:
-        return [], []
-    audience = dashboard_sharing.audience_of(person)
     dashboards, placed = [], set()
     for row in Ledger.default().artifacts_of_kind(versions.KIND, conn_id=model.SHEETS_CONNECTION, limit=1000):
         payload = row.get("payload") if versions.is_mine(row) else None
         if not payload or payload.get("retired"):
             continue
         held = [reading[i] for i in payload.get("cards") or [] if i in reading]
-        if not held:
+        pieces = _pieces_reading(payload.get("spec"), sheet)
+        if not held and not pieces:
             continue
         placed |= {c.id for c in held}
         owner = owner_of(str(row.get("natural_key") or ""), model.SHEETS_CONNECTION)
         yours = owner == person
-        shown = yours or dashboard_sharing.reaches(payload.get("published_to"), audience)
+        shown = yours or dashboard_sharing.reaches(payload.get("published_to"), dashboard_sharing.audience_of(person))
         dashboards.append({"title": versions.title_of(payload.get("spec")) if shown else "", "yours": yours,
-                           "owner": "" if owner == NOBODY_IN_PARTICULAR else owner,
-                           "cards": [c.title for c in held] if shown else [], "count": len(held), "withheld": not shown})
+                           "owner": "" if owner == NOBODY_IN_PARTICULAR else owner, "cards": [c.title for c in held] if shown else [],
+                           "count": len(held), "pieces": pieces if shown else [], "withheld": not shown})
     loose = [{"title": c.title if c.scope_ref == person else "", "yours": c.scope_ref == person}
              for c in reading.values() if c.id not in placed]
     return dashboards, loose
@@ -111,7 +122,7 @@ def removed_words(error: str) -> str:
     """What to say instead of an engine's error that names the table of a removed sheet, or ``""`` for any other error:
     that sheet's name, who removed it and when, and the one thing that brings the statement back."""
     found = _MISSING_TABLE.search(error or "")
-    gone: Optional[Sheet] = model.removed_with_table(found.group(1)) if found else None
+    gone: Optional[Sheet] = model.removed_with_table(found.group(1) or found.group(2)) if found else None
     if gone is None:
         return ""
     # a table keeps the name its sheet was made with: the name said is one that makes this table again

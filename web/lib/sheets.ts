@@ -354,7 +354,7 @@ export const removeSheet = (id: string) =>
  *  never read (`withheld`). */
 export interface SheetDependents {
   sheets: { id: string; name: string; maker: string; empties: string[]; links: string[]; withheld: boolean }[];
-  dashboards: { title: string; yours: boolean; owner: string; cards: string[]; count: number; withheld: boolean }[];
+  dashboards: { title: string; yours: boolean; owner: string; cards: string[]; count: number; pieces: string[]; withheld: boolean }[];
   cards: { title: string; yours: boolean }[];
 }
 
@@ -708,9 +708,10 @@ export function dependentWords(d: SheetDependents): string[] {
   }
   for (const b of d.dashboards) {
     const whose = b.yours ? "Your dashboard" : b.owner ? `${b.owner}'s dashboard` : "The dashboard";
+    const parts = [...b.cards, ...b.pieces.map(p => (p === "add_row" ? "its Add a row button" : "its filters"))];
     lines.push(b.withheld
-      ? `A dashboard${b.owner ? ` of ${b.owner}'s` : ""} not shared with you: ${cardsWord(b.count)} will say the sheet was removed.`
-      : `${whose} ${b.title}: ${named(b.cards)} will say the sheet was removed.`);
+      ? `A dashboard${b.owner ? ` of ${b.owner}'s` : ""} not shared with you: ${b.count ? cardsWord(b.count) : "what it reads from this one"} will say the sheet was removed.`
+      : `${whose} ${b.title}: ${named(parts)} will say the sheet was removed.`);
   }
   const yours = d.cards.filter(c => c.yours).map(c => c.title);
   if (yours.length) lines.push(`On no dashboard yet, your ${yours.length === 1 ? "card" : "cards"} ${named(yours)}: will say the sheet was removed.`);

@@ -116,7 +116,7 @@ def test_the_dashboards_holding_a_card_over_its_table_are_named(env, client):
     assert len(read["dashboards"]) == 1
     board = read["dashboards"][0]
     assert sorted(board.pop("cards")) == ["How many", "The customers"]      # not The orders, which reads another table
-    assert board == {"title": "Sales board", "yours": True, "owner": "", "count": 2, "withheld": False}
+    assert board == {"title": "Sales board", "yours": True, "owner": "", "count": 2, "pieces": [], "withheld": False}
     assert read["cards"] == []
 
 
@@ -142,8 +142,103 @@ def test_a_dashboard_of_someone_elses_is_counted_and_its_title_withheld(env, cli
                                     title="Bo's private card", sql="SELECT * FROM customers", render={"shown": {"as": "table"}}))
     _dashboard("bo", "Bo's private board", [theirs.id])
     read = client.get(f"/sheets/{customers.id}/dependents").json()
-    assert read["dashboards"] == [{"title": "", "yours": False, "owner": "bo", "cards": [], "count": 1, "withheld": True}]
+    assert read["dashboards"] == [{"title": "", "yours": False, "owner": "bo", "cards": [], "count": 1, "pieces": [], "withheld": True}]
     assert "private" not in str(read)
+
+
+# ── a dashboard made from a file (From a file): its cards, its filters and its Add a row name the sheet ─────────────────
+
+def _from_a_file(client, sheet, *, cards=None, filters=({"column": "customer_city"},), scenario=None, add_row=True, ticked=True):
+    """A dashboard kept through the From a file door, with what a draft would have read. No model is asked."""
+    from aughor.dashboards.home import Home
+    from aughor.sheets import dashboard_draft
+    cards = [{"key": "how-many", "title": "How many", "as": "figure", "series": [{"column": "n"}],
+              "sql": f"SELECT COUNT(*) AS n FROM {sheet.table}"},
+             {"key": "rows", "title": "The rows", "as": "table", "sql": f"SELECT * FROM {sheet.table}"}] if cards is None else cards
+    got, problems = dashboard_draft._read_proposal(sheet, {"title": "From the file", "cards": cards, "filters": list(filters),
+                                                           **({"scenario": scenario} if scenario else {})})
+    assert problems == []
+    kept = client.post(f"/sheets/{sheet.id}/dashboard/keep", json={
+        "title": got["title"], "cards": got["cards"] if ticked else [], "filters": got["filters"], "scenario": got["scenario"], "add_row": add_row})
+    assert kept.status_code == 201, kept.text
+    return Home("sheets", "default", kept.json()["dashboard_id"])
+
+
+def test_a_dashboard_from_a_file_is_named_with_its_cards_its_filters_and_its_add_a_row(env, client):
+    sheet = _make(env, "Customers", CUSTOMERS)
+    _from_a_file(client, sheet)
+    read = client.get(f"/sheets/{sheet.id}/dependents").json()
+    assert len(read["dashboards"]) == 1 and read["cards"] == []
+    board = read["dashboards"][0]
+    assert sorted(board.pop("cards")) == ["How many", "The rows"]
+    assert board == {"title": "From the file", "yours": True, "owner": "", "count": 2, "pieces": ["filters", "add_row"], "withheld": False}
+
+
+def test_a_dashboard_holding_no_card_is_named_by_its_filters_and_its_add_a_row(env, client):
+    """A person may untick every card: what is left still reads the sheet."""
+    sheet = _make(env, "Customers", CUSTOMERS)
+    _from_a_file(client, sheet, ticked=False)
+    assert client.get(f"/sheets/{sheet.id}/dependents").json()["dashboards"] == [
+        {"title": "From the file", "yours": True, "owner": "", "cards": [], "count": 0, "pieces": ["filters", "add_row"], "withheld": False}]
+
+
+def test_a_dashboard_made_from_another_sheet_is_not_named(env, client):
+    customers, orders = _make(env, "Customers", CUSTOMERS), _make(env, "Orders", ORDERS)
+    _from_a_file(client, orders, filters=({"column": "customer_id"},))
+    assert client.get(f"/sheets/{customers.id}/dependents").json()["dashboards"] == []
+    assert client.get(f"/sheets/{orders.id}/dependents").json()["dashboards"][0]["pieces"] == ["filters", "add_row"]
+
+
+def test_a_card_a_scenario_shows_twice_is_named_once(env, client):
+    from aughor.cards.store import get_card
+    from aughor.dashboards import versions
+    sheet = _make(env, "Orders", ORDERS)
+    table = sheet.table
+    home = _from_a_file(client, sheet, filters=(), add_row=False, cards=[
+        {"key": "paid", "title": "Paid", "as": "figure", "series": [{"column": "paid"}], "sql": f"SELECT SUM(CAST(price AS DOUBLE)) AS paid FROM {table}"},
+        {"key": "if-paid", "title": "If it were more", "as": "figure", "series": [{"column": "paid"}],
+         "sql": f"SELECT SUM(CAST(price AS DOUBLE)) * (1 + {{{{uplift}}}} / 100.0) AS paid FROM {table}"},
+    ], scenario={"inputs": [{"name": "uplift", "label": "Uplift", "unit": "percent", "start": 0, "min": 0, "max": 50, "step": 5}],
+                 "file_card": "paid", "scenario_card": "if-paid"})
+    made = sorted(get_card(c).title for c in versions.latest(home)["cards"])     # the rows are always offered
+    assert made == ["If it were more", "Paid", "The rows"]
+    board = client.get(f"/sheets/{sheet.id}/dependents").json()["dashboards"][0]
+    assert sorted(board["cards"]) == made and board["count"] == 3                # a {{value}} is read as a statement
+
+
+def test_someone_elses_dashboard_from_a_file_tells_no_title_and_no_piece(env, client):
+    from aughor.dashboards import versions
+    from aughor.dashboards.home import FIRST, Home
+    from aughor.sheets import dashboard_draft
+    sheet = _make(env, "Customers", CUSTOMERS)
+    spec = dashboard_draft.spec_for("Bo's private board", [], sheet=sheet, filters=[{"column": "customer_city", "label": "City"}],
+                                    scenario=None, add_row=True)
+    kept = versions.keep(Home("sheets", "bo", FIRST), spec, approved_by="user:bo", source="a person's own hand", written_by_model=False)
+    assert kept.kept, kept.sentences
+    assert client.get(f"/sheets/{sheet.id}/dependents").json()["dashboards"] == [
+        {"title": "", "yours": False, "owner": "bo", "cards": [], "count": 0, "pieces": [], "withheld": True}]
+
+
+def test_a_dashboard_from_a_file_says_why_at_every_card_and_filter_once_its_sheet_is_gone(env, client):
+    from aughor.cards.store import get_card
+    from aughor.dashboards import versions
+    sheet = _make(env, "Customers", CUSTOMERS)
+    ids = versions.latest(_from_a_file(client, sheet))["cards"]
+    assert all(get_card(c).render.get("standing") is True for c in ids)            # the cards this route keeps
+    assert client.delete(f"/sheets/{sheet.id}").status_code == 200
+    said = 'The sheet "Customers" was removed by you on '
+    for card in ids:
+        for ask in ({}, {"params": {"start": "2026-01-01", "end": "2026-02-01"}}):
+            ran = client.post(f"/cards/{card}/run", **ask).json()
+            assert ran["error"].startswith(said) and "Catalog Error" not in ran["error"]
+        narrowed = client.post(f"/cards/{card}/run", json={"filters": [{"table": sheet.table, "column": "customer_city", "values": ["recife"]}]}).json()
+        assert narrowed["error"].startswith(said)
+    facet = client.post("/dashboards/queries/preview?connection_id=sheets", json={
+        "sql": f'SELECT "customer_city" AS value, COUNT(*) AS n FROM "{sheet.table}" GROUP BY 1', "shown": {"as": "table"}}).json()
+    assert facet["refused"][0].startswith(said)
+    # its Add a row reads the sheet through its own door, and is told the same
+    assert client.get(f"/sheets/{sheet.id}").json()["detail"].startswith(said)
+    assert client.post(f"/sheets/{sheet.id}/rows", json={"values": {"customer_id": "c9"}}).json()["detail"].startswith(said)
 
 
 def test_only_a_sheets_maker_asks_what_reads_it(env, client):

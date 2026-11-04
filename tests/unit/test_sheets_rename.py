@@ -174,3 +174,37 @@ def test_the_name_on_a_table_line_is_never_taken_for_a_table_or_a_column(env, cl
     assert f'the sheet "{name}"' in read()
     assert parse_schema_tables(read()) == tables
     assert build_rich_schema(read()) == rich
+
+
+def test_a_dashboard_from_a_file_reads_on_through_a_rename(env, client):
+    """Its filters name the table, its Add a row the sheet, and a card the table: all three go on working."""
+    from aughor.cards.store import get_card
+    from aughor.dashboards import versions
+    from aughor.dashboards.home import Home
+    from aughor.sheets import dashboard_draft
+    sheet = _make(env, "Customers", CUSTOMERS)
+    got, problems = dashboard_draft._read_proposal(sheet, {"title": "From the file", "filters": [{"column": "customer_city"}], "cards": [
+        {"key": "rows", "title": "The rows", "as": "table", "sql": f"SELECT * FROM {sheet.table}"}]})
+    assert problems == []
+    kept = client.post(f"/sheets/{sheet.id}/dashboard/keep", json={"title": got["title"], "cards": got["cards"], "filters": got["filters"], "add_row": True})
+    assert kept.status_code == 201, kept.text
+    home = Home("sheets", "default", kept.json()["dashboard_id"])
+    latest = versions.latest(home)
+    card = latest["cards"][0]
+    assert get_card(card).render.get("standing") is True
+    table = next(e for e in latest["spec"]["elements"].values() if e["type"] == "QueryFilters")["props"]["table"]
+
+    _rename(client, sheet, "Clients in Brazil")
+
+    assert client.post(f"/cards/{card}/run").json()["error"] is None
+    narrowed = client.post(f"/cards/{card}/run", json={"filters": [{"table": table, "column": "customer_city", "values": ["recife"]}]}).json()
+    assert narrowed["error"] is None and narrowed["rows"] == []
+    facet = client.post("/dashboards/queries/preview?connection_id=sheets", json={
+        "sql": f'SELECT "customer_city" AS value, COUNT(*) AS n FROM "{table}" GROUP BY 1', "shown": {"as": "table"}}).json()
+    assert not facet.get("refused") and len(facet["rows"]) == 2
+    assert client.post(f"/sheets/{sheet.id}/rows", json={"values": {"customer_id": "c7", "customer_city": "curitiba"}}).status_code == 200
+    assert len(client.post(f"/cards/{card}/run").json()["rows"]) == 3
+    # and the draft door still takes this sheet's table as its own
+    again, wrong = dashboard_draft._read_proposal(sheet, {"title": "Again", "cards": [
+        {"key": "rows", "title": "The rows", "as": "table", "sql": f"SELECT * FROM {table}"}]})
+    assert wrong == [] and again["cards"]

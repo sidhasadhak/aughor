@@ -153,7 +153,7 @@ describe("who a sheet is shared with (SH-8)", () => {
 describe("what is said before a sheet is removed", () => {
   const nothing = { sheets: [], dashboards: [], cards: [] };
   const sheetBy = (over: object) => ({ id: "s", name: "Orders", maker: "ana", empties: [], links: [], withheld: false, ...over });
-  const boardBy = (over: object) => ({ title: "Sales", yours: true, owner: "", cards: ["A"], count: 1, withheld: false, ...over });
+  const boardBy = (over: object) => ({ title: "Sales", yours: true, owner: "", cards: ["A"], count: 1, pieces: [] as string[], withheld: false, ...over });
 
   it("says nothing when nothing reads it", () => {
     expect(dependentWords(nothing)).toEqual([]);
@@ -180,6 +180,15 @@ describe("what is said before a sheet is removed", () => {
       ["A dashboard of bo's not shared with you: 2 cards will say the sheet was removed."]);
     expect(dependentWords({ ...nothing, dashboards: [boardBy({ yours: false, title: "", cards: [], withheld: true })] })).toEqual(
       ["A dashboard not shared with you: 1 card will say the sheet was removed."]);
+  });
+
+  it("says a dashboard made from a file by its cards, its filters and its Add a row, and only so much of one not theirs", () => {
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({ pieces: ["filters", "add_row"] })] })).toEqual(
+      ["Your dashboard Sales: A, its filters, its Add a row button will say the sheet was removed."]);
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({ cards: [], count: 0, pieces: ["filters"] })] })).toEqual(
+      ["Your dashboard Sales: its filters will say the sheet was removed."]);
+    expect(dependentWords({ ...nothing, dashboards: [boardBy({ yours: false, owner: "bo", title: "", cards: [], count: 0, withheld: true })] })).toEqual(
+      ["A dashboard of bo's not shared with you: what it reads from this one will say the sheet was removed."]);
   });
 
   it("says the cards on no dashboard, a long list cut with how many more", () => {

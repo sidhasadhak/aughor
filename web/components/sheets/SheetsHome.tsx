@@ -123,7 +123,7 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
             </div>
           </section>
 
-          <section>
+          <section style={{ containerType: "inline-size" }}>
             <Label right={find ? `${formatCount(shown.length)} of ${formatCount(data.sheets.length)}` : undefined}>
               Sheets in this workspace
             </Label>
@@ -187,8 +187,11 @@ export function SheetsHome({ onOpen }: { onOpen: (id: string) => void }) {
                     {removing === s.id && (
                       <tr>
                         <td colSpan={7} style={{ padding: "4px 8px 10px" }}>
-                          <RemoveSheetConfirm sheet={s} uploads={data.uploads} onKeep={() => setRemoving("")}
-                            onRemoved={() => { setRemoving(""); setRemoved(s.name); read(); }} />
+                          {/* the table can be wider than the page: what is asked stays in view, every word of it */}
+                          <div style={{ position: "sticky", left: 8, width: "min(100%, calc(100cqw - 16px))" }}>
+                            <RemoveSheetConfirm sheet={s} uploads={data.uploads} onKeep={() => setRemoving("")}
+                              onRemoved={() => { setRemoving(""); setRemoved(s.name); read(); }} />
+                          </div>
                         </td>
                       </tr>
                     )}

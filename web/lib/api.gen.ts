@@ -17103,7 +17103,7 @@ export interface paths {
         /**
          * Dependents
          * @description What reads a sheet, for its maker to read before removing it: other sheets' links and totals, and the dashboards
-         *     holding a card over its table. Only its maker asks: no one else may remove it.
+         *     holding a card over its table, its filters or its Add a row. Only its maker asks: no one else may remove it.
          */
         get: operations["dependents_sheets__sheet_id__dependents_get"];
         put?: never;
