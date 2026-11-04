@@ -111,20 +111,28 @@ def test_postgres_without_the_extension_says_what_installs_one(monkeypatch):
     seen = []
     def fake_bounded(label, sql, limit, *, sql_dialect=None, internal=False):
         seen.append((label, sql_dialect, internal))
-        return _Result(error='relation "pg_stat_statements" does not exist')
+        return _Result(rows=[])                       # pg_extension holds no such row
     monkeypatch.setattr(pg, "execute_bounded", fake_bounded)
     h = pg.query_history(hours=24, limit=50)
     assert not h.supported and "CREATE EXTENSION pg_stat_statements" in h.note and "pg_stat_activity is the moment" in h.note
-    assert seen == [("__query_history__", None, True)]
+    assert seen == [("__query_history__", None, True)]       # the schema lookup alone; no read of a view that is not there
 
 
 def test_postgres_with_the_extension_reads_the_aggregate_and_names_its_reset(monkeypatch):
     from aughor.db import connection as C
     pg = C.PostgresConnection.__new__(C.PostgresConnection)
-    monkeypatch.setattr(pg, "execute_bounded", lambda *a, **k: _Result(rows=[
-        ["2026-11-04 08:02:20+01", "SELECT o.id FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.status = $1", "lux", "40"]]))
+    sqls = []
+    def fake_bounded(label, sql, limit, *, sql_dialect=None, internal=False):
+        sqls.append(sql)
+        if "pg_extension" in sql:
+            return _Result(rows=[["public"]])         # the extension lives in public; the connection's path does not
+        return _Result(rows=[["2026-11-04 08:02:20+01",
+                              "SELECT o.id FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.status = $1",
+                              "lux", "40"]])
+    monkeypatch.setattr(pg, "execute_bounded", fake_bounded)
     h = pg.query_history()
-    assert h.supported and h.source == "pg_stat_statements" and h.rows[0].calls == 40 and h.rows[0].user == "lux"
+    assert "FROM public.pg_stat_statements s" in sqls[1] and "public.pg_stat_statements_info" in sqls[1]
+    assert h.supported and h.source == "public.pg_stat_statements" and h.rows[0].calls == 40 and h.rows[0].user == "lux"
     assert "last reset (2026-11-04 08:02:20+01)" in h.note and "does not apply" in h.note
     # the normalised literal is a parameter, not a value: the miner keeps the join and drops the filter
     out = mine_from_query_log("c1", h.weighted_statements(), dialect="postgres")

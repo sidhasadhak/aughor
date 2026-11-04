@@ -1757,10 +1757,27 @@ class PostgresConnection(DatabaseConnection):
         says what installs one. `pg_stat_activity` — the moment, not a log — is never read."""
         from aughor.db.query_history import rows_from_result, unsupported
         limit = max(1, min(int(limit), 10000))
-        source = "pg_stat_statements"
+        absent = ("this database has no pg_stat_statements — the extension (shared_preload_libraries plus CREATE "
+                  "EXTENSION pg_stat_statements) is the history the platform reads on this engine; pg_stat_activity "
+                  "is the moment, never read")
+        # The extension's own schema first: this connection pins its search path to its schema, and the extension
+        # usually lives in `public` — on LuxExperience the unqualified read said "does not exist" of a view that was
+        # there (2026-11-04).
+        where = self.execute_bounded(
+            "__query_history__",
+            "SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
+            "WHERE e.extname = 'pg_stat_statements'", 1, sql_dialect=None, internal=True)
+        if getattr(where, "error", None):
+            return rows_from_result(where, self.dialect, source="pg_extension", hours=hours, limit=limit)
+        if not where.rows or not where.rows[0] or not where.rows[0][0] or where.rows[0][0] == "NULL":
+            return unsupported(self.dialect, absent)
+        schema = str(where.rows[0][0])
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", schema):
+            schema = '"' + schema.replace('"', '""') + '"'
+        source = f"{schema}.pg_stat_statements"
         sql = (
-            "SELECT (SELECT stats_reset::text FROM pg_stat_statements_info) AS since, s.query, r.rolname, s.calls "
-            "FROM pg_stat_statements s LEFT JOIN pg_roles r ON r.oid = s.userid "
+            f"SELECT (SELECT stats_reset::text FROM {schema}.pg_stat_statements_info) AS since, s.query, r.rolname, "
+            f"s.calls FROM {schema}.pg_stat_statements s LEFT JOIN pg_roles r ON r.oid = s.userid "
             "WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) "
             "AND s.toplevel AND s.query ILIKE 'select%' AND s.query NOT ILIKE '<insufficient privilege>%' "
             f"ORDER BY s.calls DESC LIMIT {limit}"
@@ -1768,9 +1785,7 @@ class PostgresConnection(DatabaseConnection):
         result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
         err = str(getattr(result, "error", "") or "")
         if "pg_stat_statements" in err and "does not exist" in err:
-            return unsupported(self.dialect, "this database has no pg_stat_statements — the extension "
-                               "(shared_preload_libraries plus CREATE EXTENSION pg_stat_statements) is the history "
-                               "the platform reads on this engine; pg_stat_activity is the moment, never read")
+            return unsupported(self.dialect, absent)
         history = rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit,
                                    aggregate_note="an aggregate since the extension's last reset: each statement "
                                                   "once with its call count, literals normalised to $n — the window "
