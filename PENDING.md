@@ -1119,10 +1119,10 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
 
 74. [~] **The Metrics dashboard as a ledger** (the user, 2026-11-04, with another data expert's prototype: *"Lets move our Metrics
     Dashboards in this manner"*, then *"I like it"* with All split by area and a Key movements tab) — BUILT on
-    `claude/metric-domains-from-exploration`, proven on a copy of the state, ROADMAP §3.62.
-    Still open: LuxExperience's Net revenue and Gross profit per order subtract returns by order month while marked final, so the newest
-    month reads high (October's Net revenue +22% is −2.1% at the same age; Gross profit per order's +42% is +15%). The two same-age definitions are written and proven on the
-    copy, and wait on the user's approval, since approving a live metric is theirs.
+    `claude/metric-domains-from-exploration`, proven on a copy of the state and then live, not yet in a PR, ROADMAP §3.62.
+    LIVE 2026-11-04, with LuxExperience's Net revenue and Gross profit per order moved to the same age on the user's word: October's Net revenue
+    read +22% and is −2.1%; Gross profit per order read +42% and is +15%. Their Expected Nov bands stay on the old basis until the next period is booked.
+    Still open: approving those two dropped Lux's kept Briefings by design, so rows show no platform work until an edition is written again.
     Still open: the Briefing's own `outside` calls a figure not at equal age news (`briefing/edition.py`), as the ledger did until it stopped.
     Still open: no way to move a metric between areas by hand. On theLook, Daily Active Users reads under Clienteling & events because of the
     table `events`, and Units Sold under Inventory & merchandising.
