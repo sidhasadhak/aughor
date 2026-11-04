@@ -457,14 +457,14 @@ def sheet_lines(entry: dict) -> list[tuple[str, list[str]]]:
     """An edition as the lines a send departs with — every block's words, each judged at the departure gate
     against the sources re-run at the send."""
     prose: list[str] = []
-    for b in entry.get("blocks") or []:
+    for b in P.written_blocks(entry):
         words = " ".join(P.plain(x) for x in (b.get("title"), b.get("text"), b.get("sub")) if x)
         if words.strip():
             prose.append(words.strip())
     return [("narrative", prose)] if prose else []
 
 
-# ── BC-4 · a drill, written into the page ────────────────────────────────────────────────────
+# ── BC-4 · a drill, drawn in its card ────────────────────────────────────────────────────────
 
 def _literal(v: Any) -> str:
     if isinstance(v, bool):
@@ -475,10 +475,11 @@ def _literal(v: Any) -> str:
 
 
 def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, reader_id: str = "",
-          source_id: str, column: str, segment: Any = None, after: str = "", runner=None) -> dict:
+          source_id: str, column: str, segment: Any = None, runner=None) -> dict:
     """One level deeper on a block's source: the same check broken down by ``column`` — within ``segment`` of the
-    source's own breakdown when one is named — compiled, no model. Written into the kept edition under the block
-    ``after`` (or at the end), so everyone reading the edition sees it. Raises LookupError / ValueError with why."""
+    source's own breakdown when one is named — compiled, no model. The block goes back to the page, which draws it in
+    the card it came from for the reader who asked; the edition stays as the model wrote it and keeps only the source,
+    for the next level down and for a question. Raises LookupError / ValueError with why."""
     from aughor.briefing import edition as E
     from aughor.briefing import guide as G
     from aughor.briefing import ranges
@@ -528,12 +529,8 @@ def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
         raise ValueError(new.error)
     block = P.Block(id=f"drill_{sid}", type="compare", source=sid, kicker="Drill", title=label + ", against usual",
                     by_code=True)
-    blocks = list(entry.get("blocks") or [])
-    at = next((i + 1 for i, b in enumerate(blocks) if b.get("id") == after), len(blocks))
-    blocks.insert(at, block.model_dump(mode="json"))
-    entry = {**entry, "blocks": blocks, "sources": {**(entry.get("sources") or {}), sid: new.model_dump(mode="json")}}
-    keep_entry(key, entry)
-    return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json"), "at": at}
+    keep_entry(key, {**entry, "sources": {**(entry.get("sources") or {}), sid: new.model_dump(mode="json")}})
+    return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json")}
 
 
 # ── a decision, given to a team ──────────────────────────────────────────────────────────────
@@ -622,7 +619,9 @@ def refreshed(src: S.Source) -> S.Source:
 
 
 def as_it_stands(entry: dict) -> dict:
-    """An edition with every deep analysis it started read as it stands now — for a read, which keeps nothing."""
+    """An edition as a reader is shown it, for a read, which keeps nothing: the blocks the model wrote, and every deep
+    analysis it started read as it stands now."""
+    entry = {**entry, "blocks": P.written_blocks(entry)}
     srcs = entry.get("sources") or {}
     if not any((raw or {}).get("kind") == "analysis" and (raw or {}).get("status") == "running" for raw in srcs.values()):
         return entry

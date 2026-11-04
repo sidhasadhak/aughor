@@ -179,6 +179,8 @@ def _edition_block(edition: dict[str, Any]) -> str:
     reader sees them, and what each source it cites is — never its rows: numbers come from the query the answer
     runs."""
     import re as _re
+
+    from aughor.briefing.compose.spec import written_blocks
     plain = lambda t: _re.sub(r"\{([^{}|]+)\|[A-Za-z0-9_\-]+\}", r"\1", t or "")   # noqa: E731
     period = edition.get("period") if isinstance(edition.get("period"), dict) else {}
     reader = edition.get("reader") or {}
@@ -190,7 +192,7 @@ def _edition_block(edition: dict[str, Any]) -> str:
     if reader.get("name"):
         lines.append(f"WRITTEN FOR: {reader['name']}")
     lines.append("ON SCREEN, IN ORDER:")
-    for b in (edition.get("blocks") or [])[:MAX_CITATIONS * 2]:
+    for b in written_blocks(edition)[:MAX_CITATIONS * 2]:
         words = " ".join(plain(b.get(k)) for k in ("title", "text", "sub") if b.get(k)).strip()
         if words:
             lines.append(f"  - [{b.get('type')}] {words[:MAX_FINDING_CHARS]}")

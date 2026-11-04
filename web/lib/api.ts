@@ -8207,12 +8207,12 @@ export async function giveBriefingDecision(
   return res.json();
 }
 
-/** One level deeper on a block's source — compiled, no model — written into the edition under `after`. */
+/** One level deeper on a block's source — compiled, no model. The page draws it in the card it came from. */
 export async function drillBriefingEdition(
   connectionId: string, range: BriefingRange, reader: string | undefined,
-  body: { source_id: string; column: string; segment?: string | number | boolean | null; after?: string },
+  body: { source_id: string; column: string; segment?: string | number | boolean | null },
   schema?: string, workspaceId?: string, canvasId?: string,
-): Promise<{ block: EditionBlock; source: EditionSource; at: number }> {
+): Promise<{ block: EditionBlock; source: EditionSource }> {
   const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/drill?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw await refused(res, "Drilling into this block");

@@ -7,6 +7,16 @@
 import type { AccessGroup, EditionBlock, EditionFigure, EditionSource } from "@/lib/api";
 import { compactNumber, formatCount, pct } from "@/lib/format";
 
+/** A cell's value in words. */
+export const word = (v: unknown) => (v === true ? "Yes" : v === false ? "No" : v === null || v === undefined ? "—" : String(v));
+
+/** A drill in the reader's words: on its button, and on the way back once it is taken. */
+export const drillLabel = (column: string, segment?: unknown): string =>
+  `By ${column.replace(/_/g, " ")}${segment !== undefined ? `, within ${word(segment)}` : ""}`;
+
+/** One drill a reader has taken on a card: what the card draws, and what the way back calls it. */
+export interface DrillStep { block: EditionBlock; source: EditionSource; label: string }
+
 /** The Segmented control needs a non-empty value; the organisation is "" to the server. */
 export const ORGANISATION = "_organisation";
 
