@@ -26,6 +26,8 @@ MIN_AGES = 3
 #: Below this magnitude a relative tolerance is meaningless (a day with 3 rows moving to 4
 #: is not "33% restated"); the absolute floor takes over.
 MAGNITUDE_FLOOR = 50.0
+#: Readings that must rewrite old days before a source is said to rewrite its history: one is a backfill.
+MIN_REWRITES = 2
 
 
 @dataclass(frozen=True)
@@ -134,3 +136,25 @@ def settle_lag(observations: Iterable[Observation], *, tolerance: float = DEFAUL
         f"learned from {len(qualifying)} days read at up to {horizon} ages: a day stops "
         f"moving {lag} day{'s' if lag != 1 else ''} after it ends",
         evidence_days=len(qualifying), horizon_days=horizon, tolerance=tolerance)
+
+
+def rewrites_history(observations: Iterable[Observation], *, tolerance: float = DEFAULT_TOLERANCE,
+                     min_rewrites: int = MIN_REWRITES) -> bool:
+    """Whether a source keeps rewriting days far older than anything that could still be arriving, given readings of
+    such days (`sampler.OLD_DAYS`). Then no age settles, and no horizon will ever name a lag.
+
+    Measured on theLook 2026-11-04, every row across one refresh by BigQuery time travel: a fixed-size table redrawn
+    whole, about 99.9% of rows on a different day afterwards, four-year-old days moving as much as last month's. A
+    reading rewrites when at least half the days it read again moved past the tolerance; one such reading is a backfill,
+    a second means the source does this."""
+    by_reading: dict[date, dict[date, float]] = {}
+    for o in observations:
+        by_reading.setdefault(o.measured_on, {})[o.day] = float(o.value)
+    readings = sorted(by_reading)
+    rewrites = 0
+    for earlier, later in zip(readings, readings[1:]):
+        a, b = by_reading[earlier], by_reading[later]
+        days = [d for d in a.keys() & b.keys() if a[d] or b[d]]
+        if len(days) >= MIN_DAYS and 2 * sum(not _stable(a[d], b[d], tolerance) for d in days) >= len(days):
+            rewrites += 1
+    return rewrites >= min_rewrites

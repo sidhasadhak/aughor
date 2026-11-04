@@ -242,3 +242,22 @@ def test_now_names_what_the_kept_edition_covers_and_where_the_data_ended(monkeyp
             "covers": "September 2018", "data_ended": True, "data_through": "2018-10-17"}}}})
     [row] = organisation.organisation_briefing()["briefings"]
     assert (row["covers"], row["data_ended"], row["data_through"]) == ("September 2018", True, "2018-10-17")
+
+
+def test_a_source_still_moving_when_it_stopped_has_paused_and_is_not_final():
+    """theLook, unrefreshed since 2026-10-29: read as ended from 11-30, it would have gone final with its newest days
+    still inflated, and every figure the guard holds back would have come back as news. A dataset that really ended has
+    nothing moving, and stays final (above)."""
+    edge = {"through": date(2026, 10, 29), "from": date(2019, 1, 1), "held_by": ["orders"], "tables": {"orders": date(2026, 10, 29)}}
+    today = date(2026, 11, 30)
+    flow = {"tables": ["orders"], "sql": "COUNT(*)", "time_kind": "flow", "label": "Orders"}
+    for preset, kw in (("last_week", {}), ("custom", {"start": date(2026, 10, 1), "end": date(2026, 10, 7)})):
+        spec, why = ranges.resolve_range(preset, today=today, lag_days=29, lag_source="beyond_horizon",
+                                         still_moving=("orders",), rewrites=("orders",), edge=edge, **kw)
+        assert spec is not None and spec.data_ended, why
+        assert spec.still_moving == ("orders",) and spec.rewrites == ("orders",)
+        status = ranges.range_status(flow, spec)
+        assert status == "provisional" and ranges.equal_age(flow, status, spec)["equal"] is False
+    ended, _ = ranges.resolve_range("last_week", today=today, lag_days=29, edge=edge)
+    assert ranges.range_status(flow, ended) == "final"
+

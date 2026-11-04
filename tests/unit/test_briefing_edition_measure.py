@@ -139,12 +139,12 @@ def test_a_flow_still_settling_is_shown_but_not_read_against_its_usual_range(con
     out = E.measure_edition("c1", settling_week, guide, published=False, run_sql=_run(con), dialect="duckdb")
     (aov,) = out["figures"]
     assert aov["status"] == "provisional"
-    assert aov["equal_age"]["equal"] is False and aov["equal_age"]["why"].startswith("Average order is still provisional")
+    assert aov["equal_age"]["equal"] is False and aov["equal_age"]["why"].startswith("Average order reads a table")
     assert not aov["outside"] and not aov["floor"] and out["floor"] == []
     assert aov["z"] is None and aov["extreme"] is None and E.score(aov, watched=False) == 0.0
     assert aov["current"] == settled["current"] and aov["usual"] == settled["usual"]       # the number and band stay
     assert [n["reason"] for n in out["not_read"] if n["label"] == "Average order against its usual range"] \
-        == [aov["equal_age"]["why"].replace("Average order is", "it is")]
+        == [aov["equal_age"]["why"].replace("Average order reads", "it reads")]
 
 
 RETURNS = G.BriefingGuide(checks=[G.Check(id="returns", label="Return rate", metric="return_rate")])
@@ -197,12 +197,49 @@ def test_the_dashboard_and_the_edition_give_a_figure_one_status(con, settling_we
     assert dashboard["equal_age"] == figure["equal_age"] and figure["equal_age"]["equal"] is False
 
 
+def test_a_figure_not_read_against_usual_is_given_the_true_reason(con, week, settling_week):
+    """"What it is compared with has settled" is true of a day that is merely young. On a table still moving nothing has
+    settled, and on theLook no age does (measured 2026-11-04)."""
+    def why(spec):
+        (fig,) = E.measure_edition("c1", spec, G.BriefingGuide(checks=[AOV]), published=False, run_sql=_run(con),
+                                   dialect="duckdb")["figures"]
+        assert fig["equal_age"]["equal"] is False and not fig["floor"]
+        return fig["equal_age"]["why"]
+
+    young = why(replace(week, lag_days=9))                                 # settled tables, a range inside their lag
+    moving = why(settling_week)
+    rewriting = why(replace(settling_week, rewrites=("orders",)))
+    assert "what it is compared with has settled" in young and "the difference in age" in young
+    assert "neither it nor what it is compared with has settled" in moving and "not seen stop changing" in moving
+    assert "rewrites its whole history" in rewriting and "nothing in it settles" in rewriting
+    assert "has settled" not in rewriting
+
+
+def test_one_row_says_each_reason_not_one_row_per_figure():
+    fig = lambda label, why: {"label": label, "equal_age": {"equal": False, "why": f"{label} {why}"}}
+    rows = E._not_at_equal_age([fig("Sales", "reads a table."), fig("Units", "reads a table."), fig("Visits", "rewrites."),
+                                {"label": "Margin", "equal_age": {"equal": True, "why": ""}}])
+    assert rows == [{"label": "Sales and Units against their usual range", "reason": "each reads a table.", "tables": []},
+                    {"label": "Visits against its usual range", "reason": "it rewrites.", "tables": []}]
+    assert E._not_at_equal_age([fig("A", "x."), fig("B", "x."), fig("C", "x.")])[0]["label"] == "A, B and C against their usual range"
+
+
 @pytest.mark.parametrize("m,expected", [
     ({"tables": ["bigquery-public-data.thelook_ecommerce.orders"], "sql": "SUM(x)"}, "provisional"),
     ({"tables": [], "sql": "SELECT SUM(x) FROM orders"}, "provisional"),      # a statement names its own tables
     ({"tables": ["returns"], "sql": "SUM(x)"}, "final")])
 def test_a_figure_is_unsettled_by_the_tables_it_reads_however_they_are_spelled(settling_week, m, expected):
     assert ranges.range_status({**m, "time_kind": "flow"}, settling_week) == expected
+    assert ranges.range_status({**m, "time_kind": "flow"}, replace(settling_week, still_moving=("thelook.ORDERS",))) == expected
+
+
+def test_a_range_is_told_which_tables_rewrite_their_history(monkeypatch):
+    import aughor.settling.store as settling
+    monkeypatch.setattr(settling, "connection_lag", lambda c: {"days": 29, "source": "beyond_horizon", "horizon": 28,
+                                                              "still_moving": ["orders", "users"], "rewrites": ["orders"]})
+    monkeypatch.setattr(ranges, "data_edge", lambda *a, **k: {"through": None, "from": None, "held_by": [], "tables": {}, "why": ""})
+    spec, why = ranges.resolve_for("c1", "last_week", today=OCT29)
+    assert spec is not None and spec.rewrites == ("orders",) and spec.still_moving == ("orders", "users"), why
 
 
 @pytest.mark.parametrize("series,expected", [

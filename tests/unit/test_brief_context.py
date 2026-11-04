@@ -245,3 +245,13 @@ def test_a_standing_brief_renders_exactly_as_before():
         "  - [Marketing] Paid search closes 3,704 direct-first orders.\n"
         "  - [Finance] Womenswear is the largest cost driver at 24,508,769.\n"
     )
+
+
+def test_a_pause_is_not_told_as_an_ending_with_every_figure_final():
+    from aughor.knowledge.brief_context import _period_lines
+
+    period = {"covers": "October 2026", "lag_days": 0, "data_ended": True, "data_through": "2026-10-29"}
+    assert "so every figure is final" in _period_lines(period)[0]
+    paused = _period_lines({**period, "still_moving": ["orders"]})
+    assert "so every figure is final" not in paused[0] and "no data has arrived since 2026-10-29" in paused[0]
+    assert paused[1].startswith("STILL MOVING") and "orders" in paused[1]

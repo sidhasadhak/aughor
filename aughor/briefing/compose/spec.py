@@ -384,6 +384,43 @@ def _clause(sentence: str, at: int, end: int) -> str:
     return plain(sentence[(before[-1] if before else 0):(after.start() if after else len(sentence))])
 
 
+#: What only a figure read against its usual range may claim. With a direction word, "usual" counts too.
+_CLAIMS_USUAL = re.compile(r"(?i)\bunusual(?:ly)?\b|\boutside\b.*\busual\b|\b(?:highest|lowest)\b|\brecord\s+(?:high|low)\b")
+#: Saying a figure is NOT read that way is what its caveat asks for.
+_DENIES_USUAL = re.compile(r"(?i)\bnot\b[^.;]*\b(?:usual|outside)\b")
+
+
+def _claims_usual(words: str) -> bool:
+    if _DENIES_USUAL.search(words):
+        return False
+    return bool(_CLAIMS_USUAL.search(words)) or bool(re.search(r"(?i)\busual\b", words) and (_UP.search(words) or _DOWN.search(words)))
+
+
+def _not_read_against_usual(src: Source) -> bool:
+    return src.kind == "check" and (src.facts or {}).get("at_equal_age") is False
+
+
+def _against_usual(sentence: str, b: Block, sources: dict[str, Source]) -> str:
+    """Why a sentence reads a figure against a usual range it is not read against (`edition.measure_check`), or "". A
+    sentence about only such figures is read whole ("Sales reached €42k, above its usual range"); one that also names a
+    figure that IS read, clause by clause, since the claim may be that figure's."""
+    def about(words: str) -> list[Source]:
+        said = plain(words)
+        ids = [sid for _w, sid in cites(words)] + [sid for sid, s in sources.items() if s.kind == "check" and
+                                                   re.search(rf"(?i)(?<!\w){re.escape(s.label)}(?!\w)", said)]
+        return [sources[i] for i in dict.fromkeys(ids) if i in sources and sources[i].kind == "check"]
+
+    whole = about(sentence) or [s for s in [sources.get(b.source)] if s is not None and s.kind == "check"]
+    if not any(_not_read_against_usual(s) for s in whole):
+        return ""
+    alone = all(_not_read_against_usual(s) for s in whole)
+    for part, subjects in ([(sentence, whole)] if alone else [(p, about(p)) for p in _CLAUSE_RE.split(sentence)]):
+        src = next((s for s in subjects if _not_read_against_usual(s)), None)
+        if src is not None and _claims_usual(plain(part)):
+            return f"it reads {src.label} against its usual range, and {src.label} is not at equal age with those ranges"
+    return ""
+
+
 def licensed(sentence: str, sources: dict[str, Source]) -> bool:
     """Whether a sentence that claims a cause cites a finished deep analysis whose claims were licensed causal — the
     one ground a cause stands on here (`agent/claim_type`: the analysis earned it, the edition only repeats it)."""
@@ -398,6 +435,9 @@ def misused(sentence: str, b: Block, sources: dict[str, Source], pool: list[floa
     a number outside a citation must come from a source the block reads."""
     from aughor.briefing.edition import unmeasured_numbers
 
+    why = _against_usual(sentence, b, sources)
+    if why:
+        return why
     for m in _CITE_RE.finditer(sentence):
         words, sid = m.group(1), m.group(2)
         if sid in sources:

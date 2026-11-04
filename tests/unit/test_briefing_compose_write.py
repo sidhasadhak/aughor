@@ -159,14 +159,27 @@ def test_a_figure_still_settling_is_not_put_on_the_page_by_code_and_the_model_is
     assert given["floor"] == [] and {c["id"] for c in given["checks"]} == {"sales", "aov"}
     for c in given["checks"]:
         assert c["status"] == "provisional" and "z" not in c["facts"] and "extreme" not in c["facts"]
+        assert c["facts"]["at_equal_age"] is False
         said = " ".join(c.get("caveats") or [])
-        assert "the difference in age, not a move" in said and said.endswith("So it is not called outside its usual range.")
-    assert "still settling" in seen[0]["system"] and "never lead with it" in seen[0]["system"]
+        assert "Part of any difference may be that, not a move" in said and said.endswith("So it is not called outside its usual range.")
+    assert "at_equal_age false" in seen[0]["system"] and "never lead with it" in seen[0]["system"]
     kept = entry["sources"]["sales"]                         # what the page's evidence panel draws, in amber
-    assert kept["status"] == "provisional" and "Sales is still provisional" in " ".join(kept["caveats"])
+    assert kept["status"] == "provisional" and "Sales reads a table" in " ".join(kept["caveats"])
     (said,) = [n for n in entry["not_read"] if "usual range" in n["label"]]        # one row, not one sentence twice
     assert said["label"] == "Sales and Average order against their usual range"
-    assert said["reason"].startswith("each is still provisional, and what it is compared with has settled")
+    assert said["reason"].startswith("each reads a table this platform has not seen stop changing")
+
+
+def test_a_sentence_reading_such_a_figure_against_usual_goes_back_then_is_left_out(setup, monkeypatch):
+    claim = {"type": "lead", "text": "Sales reached {€42.1k|sales}, above its usual range. A week to read with care."}
+    loop, seen = _loop([("compose", {"blocks": [claim]}), ("compose", {"blocks": [claim]})])
+    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", loop)
+    entry = W.compose("compose_c1", _settling_week(), scope_key="compose_c1", llm=object(), runner=setup["runner"],
+                      run_query=_top_orders)
+    assert "not at equal age" in " ".join(seen[1]["compose"]["refused"])        # back to the model first, with why
+    assert [w["sentence"] for w in entry["withheld"]] == ["Sales reached €42.1k, above its usual range."]
+    assert "not at equal age" in entry["withheld"][0]["why"]
+    assert entry["blocks"][0]["text"] == "A week to read with care."
 
 
 def test_an_edition_drawn_by_code_says_a_figure_is_still_settling_too(setup, monkeypatch):

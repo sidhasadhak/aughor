@@ -90,13 +90,16 @@ class RangeSpec:
     fiscal_start_month: int = 1
     #: The data ENDED: its newest day is more than ``STOPPED_DAYS`` before today, so the range was read
     #: as if today were the day after it (the Olist run, 2026-10-22: a 2016–2018 dataset read every
-    #: edition off today and could only ever be empty). Its figures are final; it has no settling lag.
+    #: edition off today and could only ever be empty). It has no settling lag, and its figures are final
+    #: unless a table was still moving when it stopped.
     data_ended: bool = False
     #: The first day the data holds, when it was read with the edge.
     data_from: Optional[date] = None
     #: Why the range is not compared with the one before, in words ("" when it is): the earlier
     #: range starts before the data does, so it holds only part of its days.
     compare_withheld: str = ""
+    #: The tables of ``still_moving`` whose source keeps rewriting their old days (`settling.learn.rewrites_history`).
+    rewrites: tuple = field(default_factory=tuple)
 
     @property
     def last_day(self) -> date:
@@ -340,7 +343,7 @@ def compared_word(spec: RangeSpec) -> str:
 
 def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
                   end: Optional[date] = None, today: date, lag_days: int = 1,
-                  lag_source: str = "default", still_moving: tuple = (),
+                  lag_source: str = "default", still_moving: tuple = (), rewrites: tuple = (),
                   fiscal_start_month: int = 1, edge: Optional[dict] = None) -> tuple[Optional[RangeSpec], str]:
     """The range a Briefing reads, or ``(None, why)``. ``end`` is the LAST day, inclusive, as a
     calendar picks it; the spec's ``end`` is exclusive. Pure: no clock, no store.
@@ -355,10 +358,11 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
     ended = _ended(edge, today)
     if ended is not None and preset != "custom":
         return _ended_range(preset, today=today, through=ended, edge=edge or {},
-                            fiscal_start_month=fiscal_start_month)
+                            fiscal_start_month=fiscal_start_month, still_moving=still_moving, rewrites=rewrites)
     lag = clamp_lag(lag_days)
     anchor = today - timedelta(days=lag)          # the newest settled day
-    common = dict(as_of=today, lag_days=lag, lag_source=lag_source, still_moving=tuple(still_moving))
+    common = dict(as_of=today, lag_days=lag, lag_source=lag_source, still_moving=tuple(still_moving),
+                  rewrites=tuple(rewrites))
     fiscal = fiscal_start_month if 1 <= int(fiscal_start_month or 1) <= 12 else 1
     edge = edge or {}
     through = edge.get("through")
@@ -408,7 +412,7 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
         year = timedelta(days=364)
         return RangeSpec("custom", start, e, start - shift, e - shift, start - year, e - year, as_of=today,
                          lag_days=0, lag_source="data_ended", data_through=ended, data_ended=True,
-                         data_from=edge.get("from"),
+                         data_from=edge.get("from"), still_moving=tuple(still_moving), rewrites=tuple(rewrites),
                          edge_note=_ended_note(ended, edge, asked_to=end if e <= end else None)), ""
     if through is not None:
         # Days whose data has not arrived are not read: a range asked to today against a whole
@@ -451,10 +455,12 @@ def _ended_note(through: date, edge: dict, *, asked_to: Optional[date] = None, c
     return said
 
 
-def _ended_range(preset: str, *, today: date, through: date, edge: dict,
-                 fiscal_start_month: int) -> tuple[Optional[RangeSpec], str]:
+def _ended_range(preset: str, *, today: date, through: date, edge: dict, fiscal_start_month: int,
+                 still_moving: tuple = (), rewrites: tuple = ()) -> tuple[Optional[RangeSpec], str]:
     """A preset over data that has ENDED: resolved as if read the day after its last day, with a
-    one-day floor (the newest settled day IS the last day), then dated today and made final.
+    one-day floor (the newest settled day IS the last day), then dated today and made final — unless a
+    table was still moving when it stopped: a pause is not an ending, and theLook, unrefreshed since
+    2026-10-29, would otherwise go final on 11-30 with its newest days still inflated.
 
     The decision (the user, 2026-10-23, on the Olist mockup): anchor to the data's LAST ROW, not to
     the last day that looks whole by volume. A comparison whose earlier range starts before the data
@@ -474,7 +480,8 @@ def _ended_range(preset: str, *, today: date, through: date, edge: dict,
                     "part of its days")
     if data_from is not None and ly_s is not None and ly_s < data_from:
         ly_s, ly_e = None, None
-    spec = replace(spec, as_of=today, lag_days=0, lag_source="data_ended", still_moving=(),
+    spec = replace(spec, as_of=today, lag_days=0, lag_source="data_ended", still_moving=tuple(still_moving),
+                   rewrites=tuple(rewrites),
                    data_through=through, data_ended=True, data_from=data_from,
                    compare_withheld=withheld, last_year_start=ly_s, last_year_end=ly_e)
     return replace(spec, edge_note=_ended_note(through, edge, covers=phrases(spec)["covers"])), ""
@@ -513,7 +520,7 @@ def _rel(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
     return (cur - prev) / abs(prev)
 
 
-def equal_age(metric: Any, status: str) -> dict:
+def equal_age(metric: Any, status: str, spec: Optional[RangeSpec] = None) -> dict:
     """Is this figure's comparison read at the same age as the figure itself? (BR-6)
 
     `RangeSpec.windows` gives every comparison its OWN as-of — August read on 15 September is
@@ -523,12 +530,15 @@ def equal_age(metric: Any, status: str) -> dict:
     both periods have stopped moving.
 
     What is left is the case §3.48 names and nothing said out loud. A **flow** figure that is
-    still provisional — theLook restates its recent days for eight — is compared with a period
-    that has finished restating. Its rows arrive late with no outcome date, so there is nothing
-    to bound; the honest reading needs BR-8's daily readings, which do not exist yet. Until
-    then the comparison SAYS it is not at equal age rather than letting a reader take a
-    difference of maturity for a move. The number is still shown: a stated caveat beside a
-    figure is worth more than a blank.
+    still provisional is compared with a period that has finished restating. Its rows arrive
+    late with no outcome date, so there is nothing to bound; the honest reading needs BR-8's
+    daily readings, which do not exist yet. Until then the comparison SAYS it is not at equal
+    age rather than letting a reader take a difference of maturity for a move. The number is
+    still shown: a stated caveat beside a figure is worth more than a blank.
+
+    With ``spec``, the reason is the true one for a table still moving. "What it is compared
+    with has settled" is false there: on theLook no age settles, and the slide of a table redrawn
+    at each refresh reads as growth (measured 2026-11-04).
     """
     from aughor.semantic import metric_time as mt
 
@@ -538,6 +548,14 @@ def equal_age(metric: Any, status: str) -> dict:
     if mt._get(metric, "time_kind") == "cohort":
         return {"equal": True, "why": ""}
     label = mt._get(metric, "label") or mt._get(metric, "name") or "this figure"
+    if spec is not None and mt.reads_any(metric, spec.rewrites):
+        return {"equal": False, "why": (
+            f"{label} reads a source that rewrites its whole history at each refresh, so nothing in it settles and an "
+            "older range can read lower just for being older. Part of any difference is that, not a move.")}
+    if spec is not None and mt.reads_any(metric, spec.still_moving):
+        return {"equal": False, "why": (
+            f"{label} reads a table this platform has not seen stop changing at any age it has read, so neither it nor "
+            "what it is compared with has settled. Part of any difference may be that, not a move.")}
     return {"equal": False, "why": (
         f"{label} is still {'to date' if status == 'to_date' else 'provisional'}, and what it is "
         "compared with has settled — part of any difference is the difference in age, not a move. "
@@ -728,7 +746,7 @@ def _unsettled(m: Any, spec: RangeSpec) -> bool:
     """Whether a figure reads a table the platform has not yet seen stop changing — by the tables its
     statement reads, which a statement's empty `tables` field never named."""
     from aughor.semantic import metric_time as mt
-    return bool({mt.bare_name(t) for t in mt.tables_read(m)} & set(spec.still_moving))
+    return mt.reads_any(m, spec.still_moving)
 
 
 def range_status(m: Any, spec: RangeSpec) -> str:
@@ -768,7 +786,7 @@ def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
         "current_partial": cur_partial, "previous_partial": prev_partial,
         # BR-6 — said, never implied: a provisional flow figure against a settled comparison
         # is not a fair move, and the reader is told so beside the number.
-        "equal_age": equal_age(m, status),
+        "equal_age": equal_age(m, status, read),
         "sql": mt.measure_sql(m, at, dialect=dialect)[0] or "",
         "compare_withheld": read.compare_withheld,
         "line": line_of(m),
@@ -1242,8 +1260,16 @@ def resolve_for(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
     # its last day. Until 2026-10-23 only the Dashboard's periods and a recent custom range read it, and
     # Olist's six editions anchored to 2026 over data that stops in 2018.
     edge = data_edge(conn_id, schema, today=today)
+    rewrites: list = []
+    try:
+        from aughor.settling.store import connection_lag
+        rewrites = list(connection_lag(conn_id).get("rewrites") or [])
+    except Exception as exc:  # noqa: BLE001 — unread, a figure gives the plainer reason; its guard reads still_moving
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "whether this source rewrites its history is unread", counter="briefing.range.rewrites")
     return resolve_range(preset, start=start, end=end, today=today, lag_days=lag,
-                         lag_source=lag_source, still_moving=tuple(moving), fiscal_start_month=fiscal,
+                         lag_source=lag_source, still_moving=tuple(moving), rewrites=tuple(rewrites),
+                         fiscal_start_month=fiscal,
                          edge=edge)
 
 

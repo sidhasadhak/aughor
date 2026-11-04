@@ -526,13 +526,15 @@ def reading_claim(connection_id: str, metric: str, start: str, end: str, *, runn
     receipt = (written or {}).get("receipt_id")
     if not receipt:
         return None, f"{label} read {value:,.6g} for {span}, but its receipt could not be written, so it was not booked"
-    lag = 0
+    lag, moving = 0, []
     try:
-        from aughor.settling.store import learned_lag_days
-        lag = int(learned_lag_days(connection_id) or 0)
+        from aughor.settling.store import connection_lag
+        settling = connection_lag(connection_id)
+        lag, moving = int(settling["days"] or 0), list(settling["still_moving"])
     except Exception:  # noqa: BLE001 — an unknown lag reads as provisional below, never as final
-        lag = 0
-    status = mt.figure_status(m, window, as_of=today or _dt.datetime.now(_dt.timezone.utc).date(), lag_days=lag)
+        lag, moving = 0, []
+    status = mt.figure_status(m, window, as_of=today or _dt.datetime.now(_dt.timezone.utc).date(), lag_days=lag,
+                              unsettled=mt.reads_any(m, moving))
     unit = getattr(m, "unit", None) or ""
     claim = _claims.Claim(
         kind="reading", tier="measured", about=_claims.About(kind="connection", key=connection_id),

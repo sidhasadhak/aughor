@@ -224,7 +224,7 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
         "rel": _rel(value, previous), "rel_last_year": _rel(value, last_year),
         "n": cur.get("n", 0), "series": series, "sql": sql,
         "like_for_like": lfl[2] if lfl else "",
-        "status": status, "equal_age": ranges.equal_age(m, status),
+        "status": status, "equal_age": ranges.equal_age(m, status, spec),
         "usual": None, "z": None, "outside": False, "floor": False,
         "streak": _streak([p["value"] for p in series]), "extreme": None,
     }
@@ -265,17 +265,19 @@ def score(fig: dict, *, watched: bool) -> float:
 
 
 def _not_at_equal_age(figures: list[dict]) -> list[dict]:
-    """The figures whose distance from usual was not read, as one row: on theLook eight figures gave one sentence eight
-    times. One range's figures still settling all share a status, so one sentence holds for each."""
-    young = [f for f in figures if not f["equal_age"]["equal"]]
-    if not young:
-        return []
-    names = [f["label"] for f in young]
-    label = " and ".join(filter(None, [", ".join(names[:-1]), names[-1]]))
-    said = young[0]["equal_age"]["why"].removeprefix(names[0])
-    one = len(young) == 1
-    return [{"label": f"{label} against {'its' if one else 'their'} usual range",
-             "reason": f"{'it' if one else 'each'}{said}", "tables": []}]
+    """The figures whose distance from usual was not read, one row per reason: on theLook eight figures gave one
+    sentence eight times."""
+    by_reason: dict[str, list[str]] = {}
+    for f in figures:
+        if not f["equal_age"]["equal"]:
+            by_reason.setdefault(f["equal_age"]["why"].removeprefix(f["label"]), []).append(f["label"])
+    rows = []
+    for said, names in by_reason.items():
+        label = " and ".join(filter(None, [", ".join(names[:-1]), names[-1]]))
+        one = len(names) == 1
+        rows.append({"label": f"{label} against {'its' if one else 'their'} usual range",
+                     "reason": f"{'it' if one else 'each'}{said}", "tables": []})
+    return rows
 
 
 def measure_edition(conn_id: str, spec, guide: BriefingGuide, *, published: bool, run_sql: RunSql,

@@ -85,9 +85,10 @@ How to compose:
   — and say it as the analysis's finding. Otherwise describe where the move sits and what it sits beside. Never
   predict.
 - Every figure marked floor must appear in a block (a figure block reading it is enough).
-- A check whose caveat says part of its difference is its age is still settling: it has no z and is never in floor.
-  Draw it if it matters and say it is still settling; never call it outside its usual range, unusual, or the highest
-  or lowest of anything, and never lead with it.
+- A check marked at_equal_age false is not read against its usual range, and its caveat says why: part of any
+  difference from older ranges may not be a move. It has no z and is never in floor. Draw it if it matters and say what
+  its caveat says; never call it above, below or outside its usual range, unusual, or the highest or lowest of anything,
+  and never lead with it. Code holds a sentence that does.
 
 Block types (fields per type):
 {types}"""

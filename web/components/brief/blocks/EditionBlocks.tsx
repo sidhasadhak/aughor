@@ -206,6 +206,11 @@ const BODY: Record<BlockType, (p: BodyProps) => React.ReactNode> = {
         <div>
           <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 600 }}>{fig.current_text}</div>
           {u && <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>usual {u.low_text}–{u.high_text}</div>}
+          {fig.equal_age?.equal === false && (
+            <div className="aug-fs-sm" data-testid="edition-figure-not-read" title={fig.equal_age.why} style={{ color: "var(--amb4)" }}>
+              not read against usual
+            </div>
+          )}
           {fig.previous_text && <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>the range before {fig.previous_text}</div>}
           {block.text && <p className="aug-fs-sm" style={{ margin: "8px 0 0" }}><CitedText text={block.text} onCite={ctx.onCite} /></p>}
         </div>

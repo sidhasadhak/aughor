@@ -96,7 +96,10 @@ def from_check(fig: dict, *, period_word: str = "range") -> Source:
     note = (f"the {u.get('n')} {period_word}s before as the usual range" if u else "") + \
            (f"; a year earlier read {fig['like_for_like']}" if fig.get("like_for_like") else "")
     age = fig.get("equal_age") or {}
-    caveats = [f"{age.get('why')} So it is not called outside its usual range."] if age.get("equal") is False else []
+    caveats = []
+    if age.get("equal") is False:
+        caveats = [f"{age.get('why')} So it is not called outside its usual range."]
+        facts["at_equal_age"] = False                       # the gate reads this: `spec.misused`
     return Source(id=fig["id"], label=fig["label"], kind="check", columns=["start", "value", "this_range"], rows=rows,
                   sql=fig.get("sql") or "", status=fig.get("status") or "final", facts=facts, caveats=caveats,
                   note=note.strip("; "), unit=fig.get("unit") or "", better=fig.get("better") or "none")

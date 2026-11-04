@@ -534,6 +534,27 @@ def test_a_decision_on_a_briefing_figure_books_the_reading_it_relied_on(metric, 
     assert "not a metric on this connection" in D.get_decision(did).extra["relied_on_note"]
 
 
+def test_a_reading_of_a_table_still_moving_is_not_booked_final(metric, monkeypatch):
+    """Measured on theLook 2026-11-04: no age of its tables settles, yet a figure a decision relied on was booked Final."""
+    conn = _conn()
+    metric["revenue"] = _revenue(conn)
+    import aughor.knowledge.period_brief as PB
+    import aughor.routers.investigations as INV
+    import aughor.settling.store as settling
+    monkeypatch.setattr(PB, "connection_runner", _shop())
+    monkeypatch.setattr(INV, "write_answer_receipt", lambda **kw: {"receipt_id": "rcpt-fig"})
+
+    def booked(moving, start, end):
+        monkeypatch.setattr(settling, "connection_lag", lambda c: {"days": 1, "source": "beyond_horizon", "horizon": 14,
+                                                                  "still_moving": moving, "rewrites": []})
+        claim, why = B.reading_claim(conn, "revenue", start, end)
+        assert claim, why
+        return S._claims.get(claim).status
+
+    assert booked(["orders"], "2026-08-03", "2026-08-10") == "Final"
+    assert booked(["sales"], "2026-08-10", "2026-08-17") == "Provisional"
+
+
 def test_a_decision_said_in_slack_cites_the_threads_answer_and_its_card_books_approvals():
     from fastapi import HTTPException
 

@@ -173,7 +173,7 @@ def test_a_table_still_moving_at_the_horizon_raises_the_lag_it_is_not_left_out(h
     assert store.verdicts("c1")["order_items"].still_moving
     lag = store.connection_lag("c1")
     assert lag == {"days": 13, "source": "beyond_horizon", "still_moving": ["order_items"],
-                   "horizon": 12}
+                   "horizon": 12, "rewrites": []}
     assert store.learned_lag_days("c1") == 13
     assert store.summary("c1")["lag_source"] == "beyond_horizon"
 
@@ -240,18 +240,109 @@ def test_a_table_still_moving_is_read_twice_as_far_back(home, monkeypatch):
             store.record_observations("c1", "orders", "created_at", day + timedelta(days=age),
                                       {day.isoformat(): 100.0 * age})
     today = date(2026, 9, 23)
-    asked: dict[str, str] = {}
+    asked: dict[str, list[str]] = {"orders": [], "users": []}
 
     def run_sql(sql):
-        asked["orders" if '"orders"' in sql else "users"] = sql
+        asked["orders" if '"orders"' in sql else "users"].append(sql)
         return ["day", "n"], [], None
 
     sampler.sample_connection("c1", run_sql, today=today)
     wide = (today - timedelta(days=2 * sampler.HORIZON_DAYS)).isoformat()
     short = (today - timedelta(days=sampler.HORIZON_DAYS)).isoformat()
-    assert f"DATE '{wide}'" in asked["orders"] and f"DATE '{short}'" in asked["users"]
+    assert f"DATE '{wide}'" in asked["orders"][0] and f"DATE '{short}'" in asked["users"][0]
     read_today = [o for o in store.observations("c1", "orders") if o.measured_on == today]
     assert len(read_today) == 2 * sampler.HORIZON_DAYS
+    # and only the table still moving reads the days six months back, filed apart from the horizon's
+    old = (today - timedelta(days=sampler.OLD_DAYS[1])).isoformat()
+    assert len(asked["orders"]) == 2 and f"DATE '{old}'" in asked["orders"][1] and len(asked["users"]) == 1
+    assert {o.day.isoformat() for o in store.old_readings("c1", "orders")} >= {old}
+    assert store.old_readings("c1", "users") == []
+    assert store.verdicts("c1")["orders"].horizon_days < sampler.OLD_DAYS[0]
+
+
+def test_a_failed_read_of_the_old_days_is_reported_and_the_days_reading_stands(home, monkeypatch):
+    _fake_profiles(monkeypatch, {"orders": {"primary_timestamp": "created_at", "row_count": 100}})
+    for i in range(4):
+        day = D0 + timedelta(days=i)
+        for age in range(1, 13):
+            store.record_observations("c1", "orders", "created_at", day + timedelta(days=age),
+                                      {day.isoformat(): 100.0 * age})
+    today = date(2026, 9, 23)
+    old = (today - timedelta(days=sampler.OLD_DAYS[1])).isoformat()
+
+    def run_sql(sql):
+        if f"DATE '{old}'" in sql:
+            return [], [], "the warehouse said no"
+        return ["day", "n"], [], None
+
+    out = sampler.sample_connection("c1", run_sql, today=today)
+    assert out["sampled"] == ["orders"] and out["errors"] == {"orders, its old days": "the warehouse said no"}
+    assert [o for o in store.observations("c1", "orders") if o.measured_on == today]
+    assert store.old_readings("c1", "orders") == []
+
+
+# ── a source that rewrites its history ───────────────────────────
+
+OLD_DAY = date(2026, 3, 1)
+
+
+def _old_readings(*readings: list[float]) -> list[Observation]:
+    """Each argument is one reading, a day apart, of the same days six months old."""
+    return [Observation(day=OLD_DAY + timedelta(days=n), measured_on=date(2026, 9, 1) + timedelta(days=i), value=v)
+            for i, values in enumerate(readings) for n, v in enumerate(values)]
+
+
+def test_old_days_moving_at_two_readings_is_a_source_that_rewrites_its_history():
+    """theLook's shape, measured 2026-11-04: a typical six-month-old day moved 8% in one refresh, up as often as down."""
+    a, b, c = [200.0] * 7, [216.0, 184.0] * 3 + [216.0], [190.0, 210.0] * 3 + [190.0]
+    assert learn.rewrites_history(_old_readings(a, b, c)) is True
+    assert learn.rewrites_history(_old_readings(a, b)) is False           # one is a backfill
+    assert learn.rewrites_history(_old_readings(a, b, b, b)) is False     # and it then stayed put
+    assert learn.rewrites_history(_old_readings(a, a, a, a)) is False
+
+
+def test_it_takes_half_the_old_days_moving_past_the_tolerance():
+    flat, half, less = [200.0] * 8, [216.0] * 4 + [200.0] * 4, [216.0] * 3 + [200.0] * 5
+    assert learn.rewrites_history(_old_readings(flat, half, flat)) is True
+    assert learn.rewrites_history(_old_readings(flat, less, flat)) is False
+    within = [201.0] * 8                                                  # within 1%: a deleted row or two
+    assert learn.rewrites_history(_old_readings(flat, within, flat)) is False
+
+
+def test_days_with_no_rows_and_too_few_days_say_nothing():
+    assert learn.rewrites_history(_old_readings([0.0] * 7, [0.0] * 7, [0.0] * 7)) is False
+    assert learn.rewrites_history(_old_readings([200.0] * 2, [216.0] * 2, [200.0] * 2)) is False
+    # empty days are not days that held still: three days with rows, all moving, and five with none
+    a, b = [200.0] * 3 + [0.0] * 5, [216.0] * 3 + [0.0] * 5
+    assert learn.rewrites_history(_old_readings(a, b, a)) is True
+
+
+def test_the_two_kinds_of_reading_are_kept_apart_and_neither_drops_the_other(home):
+    store.record_observations("c1", "orders", "created_at", date(2026, 9, 2), {"2026-09-01": 100.0})
+    store.record_old_readings("c1", "orders", date(2026, 9, 2), {"2026-03-01": 200.0})
+    store.record_observations("c1", "orders", "created_at", date(2026, 9, 3), {"2026-09-01": 90.0})
+    store.record_old_readings("c1", "orders", date(2026, 9, 3), {"2026-03-01": 210.0})
+    assert [o.value for o in store.observations("c1", "orders")] == [100.0, 90.0]
+    assert [o.value for o in store.old_readings("c1", "orders")] == [200.0, 210.0]
+    assert store.verdicts("c1")["orders"].horizon_days == 2
+
+
+def test_only_a_table_still_moving_is_said_to_rewrite_its_history(home):
+    for i in range(4):
+        day = D0 + timedelta(days=i)
+        for age in range(1, 13):
+            store.record_observations("c1", "orders", "created_at", day + timedelta(days=age),
+                                      {day.isoformat(): RAMP[age]})
+            store.record_observations("c1", "order_items", "created_at", day + timedelta(days=age),
+                                      {day.isoformat(): 100.0 * age})
+    old_days = [(OLD_DAY + timedelta(days=n)).isoformat() for n in range(7)]
+    for t in ("orders", "order_items"):
+        for i, v in enumerate((200.0, 216.0, 190.0)):
+            store.record_old_readings("c1", t, date(2026, 9, 20 + i), dict.fromkeys(old_days, v))
+    assert store.connection_lag("c1")["rewrites"] == ["order_items"]
+    said = {r["table"]: r["verdict"]["reason"] for r in store.summary("c1")["tables"]}
+    assert said["order_items"].startswith("its old days keep being rewritten") and store.summary("c1")["rewrites"] == ["order_items"]
+    assert "rewritten" not in said["orders"]
 
 
 def test_the_daily_reading_runs_once_per_utc_day(monkeypatch):
@@ -370,7 +461,7 @@ def test_the_settling_door_serves_the_store_and_takes_a_reading(home, monkeypatc
     empty = client.get("/settling/c1")
     assert empty.status_code == 200
     assert empty.json() == {"connection_id": "c1", "tables": [], "learned_lag_days": None,
-                            "lag_source": None, "still_moving": []}
+                            "lag_source": None, "still_moving": [], "rewrites": []}
 
     _fake_profiles(monkeypatch, {"orders": {"primary_timestamp": "created_at", "row_count": 100}})
     monkeypatch.setattr("aughor.db.measure.run_sql_for",

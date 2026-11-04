@@ -8075,6 +8075,8 @@ export interface EditionFigure {
   rel_last_year: number | null;
   n: number;
   status: string;
+  /** False when the figure is not read against its usual range, with why; absent on an edition kept before that rule. */
+  equal_age?: { equal: boolean; why: string };
   usual: { mean: number; low: number; high: number; n: number; mean_text: string | null;
            low_text: string | null; high_text: string | null } | null;
   z: number | null;

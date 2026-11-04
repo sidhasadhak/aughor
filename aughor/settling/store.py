@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
-from aughor.settling.learn import Observation, SettlingVerdict, settle_lag
+from aughor.settling.learn import Observation, SettlingVerdict, rewrites_history, settle_lag
 
 #: Readings older than this are dropped on write; a lag is a property of the recent past.
 KEEP_DAYS = 90
@@ -42,25 +42,47 @@ def record_observations(connection_id: str, table: str, date_column: str,
     store = _store()
     key = _key(connection_id, table)
     entry = store.get(key) or {}
-    floor = (measured_on - timedelta(days=KEEP_DAYS)).isoformat()
-    stamp = measured_on.isoformat()
-    # A re-reading replaces exactly the (day, measured_on) pairs it re-reads — never every
-    # reading taken that day, or an incremental writer would erase its own earlier work.
-    kept = [o for o in (entry.get("observations") or [])
-            if str(o.get("measured_on", "")) >= floor
-            and not (str(o.get("measured_on")) == stamp and str(o.get("day"))[:10] in day_values)]
-    for day, value in sorted(day_values.items()):
-        kept.append({"day": str(day)[:10], "measured_on": measured_on.isoformat(),
-                     "value": float(value)})
-    store.put(key, {"date_column": date_column, "observations": kept,
+    kept = _merged(entry.get("observations") or [], measured_on, day_values)
+    store.put(key, {**entry, "date_column": date_column, "observations": kept,
                     "last_measured_on": measured_on.isoformat()})
     return len(kept)
 
 
+def record_old_readings(connection_id: str, table: str, measured_on: date, day_values: dict[str, float]) -> int:
+    """File one reading of days far older than the horizon (`sampler.OLD_DAYS`). Kept apart from ``observations``: the
+    verdict's horizon is the oldest age read, and a reading at age 180 would make theLook's lag floor 181."""
+    store = _store()
+    key = _key(connection_id, table)
+    entry = store.get(key) or {}
+    kept = _merged(entry.get("old_readings") or [], measured_on, day_values)
+    store.put(key, {**entry, "old_readings": kept})
+    return len(kept)
+
+
+def _merged(readings: list, measured_on: date, day_values: dict[str, float]) -> list:
+    floor = (measured_on - timedelta(days=KEEP_DAYS)).isoformat()
+    stamp = measured_on.isoformat()
+    # A re-reading replaces exactly the (day, measured_on) pairs it re-reads — never every
+    # reading taken that day, or an incremental writer would erase its own earlier work.
+    kept = [o for o in readings
+            if str(o.get("measured_on", "")) >= floor
+            and not (str(o.get("measured_on")) == stamp and str(o.get("day"))[:10] in day_values)]
+    for day, value in sorted(day_values.items()):
+        kept.append({"day": str(day)[:10], "measured_on": stamp, "value": float(value)})
+    return kept
+
+
 def observations(connection_id: str, table: str) -> list[Observation]:
-    entry = _store().get(_key(connection_id, table)) or {}
+    return _parsed((_store().get(_key(connection_id, table)) or {}).get("observations"))
+
+
+def old_readings(connection_id: str, table: str) -> list[Observation]:
+    return _parsed((_store().get(_key(connection_id, table)) or {}).get("old_readings"))
+
+
+def _parsed(readings: Optional[list]) -> list[Observation]:
     out: list[Observation] = []
-    for o in entry.get("observations") or []:
+    for o in readings or []:
         try:
             out.append(Observation(day=date.fromisoformat(str(o["day"])[:10]),
                                    measured_on=date.fromisoformat(str(o["measured_on"])[:10]),
@@ -85,15 +107,16 @@ def verdicts(connection_id: str) -> dict[str, SettlingVerdict]:
 
 def connection_lag(connection_id: str) -> dict:
     """The connection's lag and where it came from: ``{"days", "source", "still_moving",
-    "horizon"}``. ``source`` is ``"learned"`` (every sampled table with enough evidence has
-    settled), ``"beyond_horizon"`` (a table was still moving at the oldest age read, so
+    "horizon", "rewrites"}``. ``source`` is ``"learned"`` (every sampled table with enough evidence
+    has settled), ``"beyond_horizon"`` (a table was still moving at the oldest age read, so
     ``days`` is a FLOOR — its horizon plus one — and the table is named), or ``None`` (no
-    table has earned a verdict yet, ``days`` is None).
+    table has earned a verdict yet, ``days`` is None). ``rewrites`` names the tables still moving
+    because the source keeps rewriting their old days (`learn.rewrites_history`).
 
     Before 2026-09-25 a table still moving at the horizon was simply left out of the max:
     theLook read "13 days, learned" while ``order_items`` — the table the headline amounts
     and returns come from — had not settled at 14 (Arc BR's survey, ROADMAP §3.48)."""
-    out: dict = {"days": None, "source": None, "still_moving": [], "horizon": 0}
+    out: dict = {"days": None, "source": None, "still_moving": [], "horizon": 0, "rewrites": []}
     if not connection_id:
         return out
     try:
@@ -109,6 +132,7 @@ def connection_lag(connection_id: str) -> dict:
     out["source"] = "beyond_horizon" if floors else "learned"
     out["still_moving"] = moving
     out["horizon"] = max((v.horizon_days for v in vs.values()), default=0)
+    out["rewrites"] = [t for t in moving if rewrites_history(old_readings(connection_id, t))]
     return out
 
 
@@ -123,10 +147,13 @@ def learned_lag_days(connection_id: str) -> Optional[int]:
 def summary(connection_id: str) -> dict:
     """The door's read: every sampled table, its evidence and its verdict."""
     rows = []
+    lag = connection_lag(connection_id)
     for t in tables(connection_id):
         entry = _store().get(_key(connection_id, t)) or {}
         obs = observations(connection_id, t)
         v = settle_lag(obs)
+        reason = ("its old days keep being rewritten, so no age settles and no horizon will name a lag"
+                  if t in lag["rewrites"] else v.reason)
         last = str(entry.get("last_measured_on", ""))
         rows.append({
             "table": t,
@@ -140,11 +167,10 @@ def summary(connection_id: str) -> dict:
             "latest": [{"day": o.day.isoformat(), "age": o.age, "value": o.value}
                        for o in sorted(obs, key=lambda o: o.day)
                        if o.measured_on.isoformat() == last],
-            "verdict": {"lag_days": v.lag_days, "reason": v.reason,
+            "verdict": {"lag_days": v.lag_days, "reason": reason,
                         "evidence_days": v.evidence_days, "horizon_days": v.horizon_days,
                         "still_moving": v.still_moving},
         })
-    lag = connection_lag(connection_id)
     return {"connection_id": connection_id, "tables": rows,
             "learned_lag_days": lag["days"], "lag_source": lag["source"],
-            "still_moving": lag["still_moving"]}
+            "still_moving": lag["still_moving"], "rewrites": lag["rewrites"]}

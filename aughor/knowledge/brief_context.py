@@ -60,7 +60,9 @@ def _period_lines(period: dict[str, Any]) -> list[str]:
     lag = period.get("lag_days")
     if as_of:
         line += f"; read as of {as_of}"
-    if period.get("data_ended"):
+    if period.get("data_ended") and period.get("still_moving"):
+        line += f"; no data has arrived since {period.get('data_through')}, and its tables had not settled when it stopped"
+    elif period.get("data_ended"):
         line += f"; the data ended on {period.get('data_through')}, so every figure is final"
     elif isinstance(lag, int) and lag > 0:
         line += f", and the newest {lag} days of data are not settled yet"

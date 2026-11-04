@@ -7,6 +7,8 @@ against claiming a cause; what fails is withheld and listed, never silently drop
 """
 from __future__ import annotations
 
+import pytest
+
 from aughor.briefing.compose import spec as P
 from aughor.briefing.compose.sources import BREAKDOWN_COLUMNS, Source
 
@@ -198,3 +200,52 @@ def test_a_context_block_draws_only_the_platforms_own_work_and_its_work_only_in_
     said = " | ".join(refusals)
     assert "(context) reads a deep analysis, a finding, a decision or a discussion; 'sales' is a check" in said
     assert "(table) cannot draw 'analysis_a1', the platform's own work — use a context block" in said
+
+
+# ── a figure not read against its usual range ─────────────────────────────────────────────
+
+def _checks() -> dict:
+    young = Source(id="sales", label="Sales", kind="check", columns=["start", "value", "this_range"],
+                     facts={"current": 100.0, "usual_mean": 80.0, "at_equal_age": False}, status="provisional")
+    read = Source(id="aov", label="Average order", kind="check", columns=["start", "value", "this_range"],
+                    facts={"current": 50.0, "usual_mean": 40.0})
+    return {"sales": young, "aov": read}
+
+
+@pytest.mark.parametrize("text", [
+    "Sales reached {100|sales}, above its usual range.",                       # the claim in its own clause
+    "{100|sales} is above its usual range.",
+    "Sales sit outside their usual range.",                                    # named and not cited
+    "Sales were unusually strong.",
+    "At {100|sales}, this is the highest in nine weeks.",
+    "Sales hit a record high of {100|sales}.",
+    "Sales were {100|sales} and Average order {50|aov}, but Sales ran above usual.",
+])
+def test_a_sentence_may_not_read_such_a_figure_against_usual(text):
+    kept, withheld, refused = P.gate([P.Block(id="l", type="lead", text=f"{text} The week was read.")], _checks())
+    assert [w["sentence"] for w in withheld] == [P.plain(text)] and "not at equal age" in withheld[0]["why"]
+    assert refused and kept[0].text == "The week was read."
+
+
+@pytest.mark.parametrize("text", [
+    "Sales were {100|sales}.",                                                 # the figure itself is shown
+    "Sales rose to {100|sales}.",                                              # against the range before, its caveat beside it
+    "Sales were {100|sales}; they are not read against their usual range.",    # what its caveat asks it to say
+    "Sales are not called outside their usual range.",
+    "Average order was above its usual, at {50|aov}.",                         # a figure that IS read
+    "Sales were {100|sales}, while Average order ran above its usual.",        # the claim is the other figure's
+    "A decision in the record sits beside {100|sales}.",
+])
+def test_a_sentence_that_does_not_read_it_that_way_stands(text):
+    _kept, withheld, refused = P.gate([P.Block(id="l", type="lead", text=text)], _checks())
+    assert withheld == [] and refused == []
+
+
+def test_a_figure_blocks_own_words_count_and_one_kept_before_the_flag_is_read_as_it_was():
+    checks = _checks()
+    _k, withheld, _r = P.gate([P.Block(id="f", type="figure", source="sales", kicker="Above its usual range")], checks)
+    assert withheld and "not at equal age" in withheld[0]["why"]
+    old = checks["sales"].model_copy(update={"facts": {"current": 100.0, "usual_mean": 80.0}})      # no flag: before this rule
+    _k, withheld, _r = P.gate([P.Block(id="f", type="figure", source="sales", kicker="Above its usual range")], {"sales": old})
+    assert withheld == []
+

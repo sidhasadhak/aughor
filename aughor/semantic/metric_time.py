@@ -783,6 +783,11 @@ def tables_read(m: Any) -> list[str]:
     return read or [str(t) for t in (_get(m, "tables") or []) if str(t).strip()]
 
 
+def reads_any(m: Any, tables: Any) -> bool:
+    """Whether a definition reads one of ``tables``, however either side spells the names."""
+    return bool({bare_name(t) for t in tables_read(m)} & {bare_name(t) for t in tables})
+
+
 def with_dates(connection_id: str, metric: Any):
     """``metric`` with its dates set by rule when nobody has set them — applied where a definition
     comes into being (written in the editor, made from a proposal, imported), so a new metric is
