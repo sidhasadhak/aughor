@@ -138,7 +138,9 @@ def test_enable_creates_the_extension_once_preloaded_and_is_idempotent(monkeypat
         def execute(self, sql): executed.append(sql)
     pg._conn = type("Conn", (), {"cursor": lambda self: Cur()})()
     ok, msg = pg.enable_query_history()
-    assert ok and executed == ["CREATE EXTENSION IF NOT EXISTS pg_stat_statements"] and "created" in msg
+    # one explicit READ WRITE transaction around the DDL: the session's read-only default (WP-1d) is never changed
+    assert ok and executed == ["BEGIN", "SET TRANSACTION READ WRITE", "CREATE EXTENSION IF NOT EXISTS pg_stat_statements",
+                               "COMMIT"] and "created" in msg
     pg2, _ = _pg(monkeypatch, {"pg_available_extensions": [["1"]], "shared_preload_libraries": [["pg_stat_statements"]],
                                "pg_extension": [["1"]]})
     ok2, msg2 = pg2.enable_query_history()

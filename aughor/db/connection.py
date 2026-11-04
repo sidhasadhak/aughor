@@ -1837,9 +1837,20 @@ class PostgresConnection(DatabaseConnection):
                            "the server and restart it; the platform creates the extension after that")
         if state.get("created"):
             return True, "pg_stat_statements is already created on this database"
+        # The session is read-only by default (`default_transaction_read_only=on`, WP-1d), so this one DDL runs in an
+        # explicit READ WRITE transaction of its own — the override lasts exactly these four statements, the session's
+        # default is untouched, and every other statement on this connection stays read-only. Found live on
+        # LuxExperience: "cannot execute CREATE EXTENSION in a read-only transaction".
         try:
             with self._conn.cursor() as cur:
-                cur.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+                cur.execute("BEGIN")
+                try:
+                    cur.execute("SET TRANSACTION READ WRITE")
+                    cur.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+                    cur.execute("COMMIT")
+                except Exception:
+                    cur.execute("ROLLBACK")
+                    raise
             return True, "pg_stat_statements created; statements are kept from now on"
         except Exception as e:
             return False, f"CREATE EXTENSION pg_stat_statements was refused: {e}"
