@@ -98,6 +98,8 @@ def resolve_principal(request: Request) -> Optional[Principal]:
     1. A JWT-shaped OIDC bearer, when an issuer is configured — VERIFIED identity.
        An invalid one resolves to nothing rather than falling through: a caller
        who presented a bad token must not be quietly downgraded to the header seam.
+       Or the session cookie that token was exchanged for (``security/sessions.py``,
+       Track A9) — the same verification, deferred; the same fail-closed answer.
     2. While OIDC is configured AND identity is required, the header seam is DEAD —
        otherwise `X-Aughor-User: mallory` would still work beside real tokens,
        which is the exact hole VA-10 exists to close.
@@ -124,6 +126,13 @@ def resolve_principal(request: Request) -> Optional[Principal]:
             return None
         if verified is not None:
             return verified
+        # 1b. A browser session (Track A9): the cookie `POST /auth/session` minted from a verified
+        #     token. Resolved only while an issuer is configured — it is that verification, deferred.
+        #     An unknown, expired or revoked cookie resolves NOTHING: no fall-through to the headers.
+        from aughor.security import sessions
+        cookie = request.cookies.get(sessions.COOKIE)
+        if cookie:
+            return sessions.resolve(cookie)
         if require_identity_enabled():
             return None
     elif require_identity_enabled() and not identity_from_proxy():

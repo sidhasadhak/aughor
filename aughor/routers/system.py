@@ -64,6 +64,32 @@ def _secrets_readable() -> dict:
                        if n else "every stored secret read so far decrypts")}
 
 
+#: The tolerated-failure counters that mean a JSON-facade store did not reach the ledger (`util/json_store`):
+#: a read served the stale one-time import, a write went to a file nothing reconciles, or a file write failed.
+_FALLBACK_COUNTER_PREFIXES = ("tolerated.json_store.ledger_fallback.", "tolerated.json_store.write")
+
+
+def _store_fallbacks() -> dict:
+    """Track A8 — how many times, since this process started, a store fell back to its legacy file.
+    Read from the in-process stats the swallow itself bumps, so the door and the counter cannot disagree."""
+    from aughor.stats import stats
+    counters = stats.snapshot().get("counters", {})
+    hits = {k.removeprefix("tolerated.json_store."): v for k, v in counters.items()
+            if v and k.startswith(_FALLBACK_COUNTER_PREFIXES)}
+    total = sum(hits.values())
+    return {
+        "ok": total == 0,
+        "since_boot": total,
+        "by_operation": dict(sorted(hits.items())),
+        "detail": (
+            f"{total} store operation(s) since boot fell back to a legacy FILE because the ledger was unreachable, "
+            "or failed to write it — a read there is stale and a write is orphaned (nothing reconciles it back). "
+            "Check the ledger (`ledger.ok` above), then restart; the counters reset with the process"
+            if total else "every store operation since boot reached the ledger"
+        ),
+    }
+
+
 @router.get("/health")
 def health():
     from aughor.control_plane.object_store import TOKEN_ENV, available
@@ -109,6 +135,10 @@ def health():
     from aughor.security import oidc
     from aughor.security.authz import identity_from_proxy, identity_unverifiable, require_identity_enabled
     identity_refusal = identity_unverifiable()
+    # Track A8 — a store that served or wrote its legacy FILE because the ledger was unreachable, or whose file
+    # write failed, said so only in a log line and a counter (`util/json_store._fell_back`). A write there is
+    # orphaned: the import marker is set, nothing reconciles the file back. This is where the operator sees it.
+    fallbacks = _store_fallbacks()
     identity = {
         "required": require_identity_enabled(),
         "verified_by": ("off" if not require_identity_enabled() else "oidc" if oidc.configured()
@@ -118,7 +148,8 @@ def health():
     }
     return {
         "status": "degraded" if (ledger_error or wal_drifted or not migrations["ok"]
-                                 or backups["ok"] is False or identity_refusal) else "ok",
+                                 or backups["ok"] is False or identity_refusal
+                                 or not fallbacks["ok"]) else "ok",
         "ledger": {"ok": not ledger_error, "error": ledger_error},
         "migrations": {
             **migrations,
@@ -131,6 +162,7 @@ def health():
         "backups": backups,
         # After the four blocks test_backups pins the order of; the key, not its place, is what readers use.
         "identity": identity,
+        "store_fallbacks": fallbacks,
         "stores": {
             "ok": not wal_drifted,
             "wal_drifted": wal_drifted,

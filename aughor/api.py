@@ -504,13 +504,31 @@ _cors_raw = os.environ.get(
     "AUGHOR_CORS_ORIGINS",
     "http://localhost:3000,http://localhost:3001,http://localhost:3210",
 )
-_cors_origins: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+
+
+def cors_policy(raw: str) -> tuple[list[str], bool]:
+    """The origins served, and whether they may send credentials (Track A9: the session cookie).
+
+    Credentials ride only when every origin is named. With ``*`` Starlette would ECHO any requesting
+    origin beside ``Access-Control-Allow-Credentials: true`` — the one combination the CORS spec
+    forbids a browser to honour, and the one that would let any site use a signed-in person's cookie.
+    So a wildcard keeps today's cookie-less behaviour, and the browser's sign-in (which needs the
+    cookie) requires the operator to name the origins they serve."""
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    return origins, "*" not in origins
+
+
+_cors_origins, _cors_credentials = cors_policy(_cors_raw)
+if not _cors_credentials:
+    logger.warning("AUGHOR_CORS_ORIGINS is a wildcard: the browser's session cookie will not be accepted — "
+                   "name the origins you serve to sign in from a browser")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=_cors_credentials,
 )
 
 

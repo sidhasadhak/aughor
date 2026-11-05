@@ -399,6 +399,18 @@ os.environ["AUGHOR_PACKS_DIR"] = _packs_dst
 
 
 @pytest.fixture(autouse=True)
+def _fresh_stats():
+    """The in-process counters (`aughor.stats`) are since-BOOT diagnostics, and `/health` reads them as
+    `store_fallbacks` (Track A8): a test that provokes a store fallback — or any tolerated failure — left
+    the count raised for every later test in the process, and a health read then said `degraded` for
+    something another file did. Measured on the full suite, 2026-11-06: three health tests red by order
+    alone. So every test starts from zero; a test that asserts on a counter still sees its own bumps."""
+    from aughor.stats import stats
+    stats.reset()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _live_env_for_marked_tests(request):
     """Give `.env` back to the tests that explicitly opted OUT of hermeticity.
 

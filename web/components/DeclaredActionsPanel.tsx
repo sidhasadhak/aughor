@@ -33,7 +33,7 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { getProposals, type StagedProposal } from "@/lib/api";
-import { claimsOf, getIdToken } from "@/lib/auth";
+import { signedInEmail } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
@@ -142,7 +142,7 @@ function useRead<T>(connectionId: string, read: (c: string) => Promise<T>): Read
 }
 
 /** Who is acting — the signed-in email, else the word the approvals use. Provenance, not auth. */
-const actorName = () => claimsOf(getIdToken())?.email || "human";
+const actorName = () => signedInEmail() || "human";
 
 // ── Words ────────────────────────────────────────────────────────────────────────
 

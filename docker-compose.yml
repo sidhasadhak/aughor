@@ -1,9 +1,16 @@
+# Development Compose — the services a laptop runs beside the API. Not a deployment
+# manifest: every port binds to loopback (nothing here is reachable from the network),
+# and every image is pinned to a digest, so `docker compose pull` cannot move a
+# version under you (Track A6, docs/TENX_PROGRAM_2026-11-05.md; `latest` is nowhere).
+# A production manifest is Track E's, written when there is a second host to run it on.
 services:
+  # Only needed when AUGHOR_QDRANT_URL points here — the default install runs Qdrant
+  # EMBEDDED at AUGHOR_QDRANT_PATH and never opens a port.
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.15.4@sha256:6ac4807063bbecddca0250bfbcff52acf18c22263b904d12919349e6d0a408f1
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -15,14 +22,14 @@ services:
   # the on switch; there is no feature flag. Default `docker compose up` is
   # unchanged — the profile keeps this service off.
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.14.0
+    image: ghcr.io/mlflow/mlflow:v3.14.0@sha256:967de3ca34b6a5751718e380a0a383eb0ce1a6f5b484f363bd0da7559117a5f8
     profiles: ["obs"]
     command: >
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
       --artifacts-destination /mlflow/artifacts
     ports:
-      - "5001:5000"
+      - "127.0.0.1:5001:5000"
     volumes:
       - mlflow_data:/mlflow
 
@@ -41,12 +48,12 @@ services:
   # runs perfectly and is unreachable from the host, so the endpoint points at a
   # closed port and the exporter drops every batch with nothing on screen to say so.
   jaeger:
-    image: jaegertracing/jaeger:2.20.0
+    image: jaegertracing/jaeger:2.20.0@sha256:46a886260e04002d8f45e213fc39063fa11a50446048fdaa64786fc0840cb9f8
     profiles: ["obs"]
     ports:
-      - "16686:16686"   # UI
-      - "4318:4318"     # OTLP/HTTP — the default AUGHOR_OTLP_PROTOCOL
-      - "4317:4317"     # OTLP/gRPC — AUGHOR_OTLP_PROTOCOL=grpc
+      - "127.0.0.1:16686:16686"   # UI
+      - "127.0.0.1:4318:4318"     # OTLP/HTTP — the default AUGHOR_OTLP_PROTOCOL
+      - "127.0.0.1:4317:4317"     # OTLP/gRPC — AUGHOR_OTLP_PROTOCOL=grpc
 
 volumes:
   qdrant_data:

@@ -12930,7 +12930,15 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   `domain:` carrier, a document the resolver marks `""`. The property test drives every kind the agent registered
   through a resolver that raises. A5: only a named person bootstraps as an organisation's first owner — `anonymous`
   (an org header with no user) and a service principal never do, and a refused bootstrap leaves the organisation
-  claimable. Receipt printed from the app the same day. Next: A6–A9, then Track D.
+  claimable. Receipt printed from the app the same day.
+- **Track A6–A9 BUILT 2026-11-05** (the user: *"Build A6–A9"*). A6: every Compose image pinned to a digest, every port
+  on loopback, the file labelled dev-only. A7: Dependabot was already there (the assessment missed it); CodeQL and a
+  weekly `pip-audit` + `npm audit` in `.github/workflows/security.yml`, off the PR path; all twelve action uses pinned
+  to commits. A8: `/health` says `store_fallbacks` — how many store operations since boot served or wrote a legacy
+  file because the ledger was unreachable — and is degraded while it is above zero; the best-effort contract stays.
+  A9: the browser's credential is an HttpOnly session cookie (`POST`/`DELETE /auth/session`, `security/sessions.py`,
+  the ledger keeps the hash), the page keeps only the email, and CORS sends credentials only to named origins. Track A
+  is complete. Next: Track D (data stays home), then B1–B2.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

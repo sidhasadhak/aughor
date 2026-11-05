@@ -29,7 +29,7 @@ import {
   type IntakePlan, type IntakeStageResult, type IntakeVerdict,
 } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
-import { claimsOf, getIdToken } from "@/lib/auth";
+import { signedInEmail } from "@/lib/auth";
 import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -41,7 +41,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 /** Who is acting: the signed-in email when there is one, else the same word the
  *  actions inbox uses. Display + provenance material — the server owns identity. */
 function actorName(): string {
-  return claimsOf(getIdToken())?.email || "human";
+  return signedInEmail() || "human";
 }
 
 // ── Human labels for typed payloads (PX-1: no machine text as a title) ────────

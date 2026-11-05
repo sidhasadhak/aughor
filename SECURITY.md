@@ -76,7 +76,8 @@ exposing it to a network:
   `AUGHOR_RUNTIME_KEY`. An org-wide `AUGHOR_API_KEY` satisfies it too. Nothing else is
   affected: automations posting to Slack read the bot from the store server-side and
   never touch that route.
-- Set `AUGHOR_CORS_ORIGINS` to the exact origins you serve.
+- Set `AUGHOR_CORS_ORIGINS` to the exact origins you serve. A browser sign-in needs this: the session
+  cookie rides only to named origins, and a wildcard keeps the API cookie-less (it says so at boot).
 - Terminate TLS in front of the app; Aughor speaks plain HTTP.
 - **Requiring identity needs something that can verify it.** With `AUGHOR_REQUIRE_IDENTITY=1`
   and no `AUGHOR_OIDC_ISSUER`, the API refuses every request but `/health` and `/auth/config`

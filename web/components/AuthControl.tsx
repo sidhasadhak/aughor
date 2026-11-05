@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiBase } from "@/lib/config";
 import {
-  AUTH_EXPIRED_EVENT, claimsOf, clearIdToken, getIdToken, setIdToken,
+  AUTH_EXPIRED_EVENT, signIn, signOut, signedInEmail,
 } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 
@@ -50,32 +50,32 @@ function StaticAvatar() {
 
 export function AuthControl() {
   const [config, setConfig] = useState<AuthConfig | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [who, setWho] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const buttonHost = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setToken(getIdToken());
+    setWho(signedInEmail());
     fetch(`${getApiBase()}/auth/config`)
       .then(r => (r.ok ? r.json() : null))
       .then(setConfig)
       .catch(() => setConfig(null));
-    const expired = () => setToken(null);
+    const expired = () => setWho(null);
     window.addEventListener(AUTH_EXPIRED_EVENT, expired);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
   }, []);
 
   const onCredential = useCallback((resp: { credential?: string }) => {
     if (!resp?.credential) return;
-    setIdToken(resp.credential);
-    // Everything already on screen was fetched without the identity —
+    // The credential is handed to the API once, for an HttpOnly cookie (Track A9); the page
+    // keeps only the email. Everything already on screen was fetched without the identity —
     // reload so every panel re-reads as the signed-in principal.
-    window.location.reload();
+    signIn(getApiBase(), resp.credential).then(ok => { if (ok) window.location.reload(); });
   }, []);
 
   // Load GIS and render its button only in the signed-out, Google-configured state.
   useEffect(() => {
-    if (!config?.oidc_configured || config.provider !== "google" || token) return;
+    if (!config?.oidc_configured || config.provider !== "google" || who) return;
     let cancelled = false;
     const render = () => {
       if (cancelled || !window.google || !buttonHost.current || !config.client_id) return;
@@ -99,11 +99,11 @@ export function AuthControl() {
       return () => { cancelled = true; script?.removeEventListener("load", render); };
     }
     return () => { cancelled = true; };
-  }, [config, token, onCredential]);
+  }, [config, who, onCredential]);
 
   if (!config?.oidc_configured) return <StaticAvatar />;
 
-  if (!token) {
+  if (!who) {
     return (
       <div style={{ display: "flex", alignItems: "center" }}>
         <div ref={buttonHost} data-testid="gsi-button-host" />
@@ -116,7 +116,7 @@ export function AuthControl() {
     );
   }
 
-  const email = claimsOf(token)?.email ?? "signed in";
+  const email = who;
   const initials = email.slice(0, 2).toUpperCase();
   return (
     <div style={{ position: "relative" }}>
@@ -140,7 +140,7 @@ export function AuthControl() {
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>verified by the server on every call</span>
           <Button variant="plain" size="xs" className="h-auto px-2 py-1 aug-fs-xs font-normal"
             style={{ border: "1px solid var(--b1)", alignSelf: "flex-start" }}
-            onClick={() => { clearIdToken(); setToken(null); setMenuOpen(false); window.location.reload(); }}>
+            onClick={() => { setMenuOpen(false); signOut(getApiBase()).then(() => { setWho(null); window.location.reload(); }); }}>
             Sign out
           </Button>
         </div>
