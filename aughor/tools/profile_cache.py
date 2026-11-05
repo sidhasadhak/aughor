@@ -366,6 +366,17 @@ def load_column_facts(connection_id: str) -> dict[tuple[str, str], dict]:
     return out
 
 
+# Arc NV-6 — this module is the source the SQL trust checks read a column's profiled facts from. The checks live on
+# the platform side and may not import this agent-side module (`test_platform_agent_boundary`), so the source registers
+# itself here, at import: the agent imports the platform, never the reverse.
+try:
+    from aughor.sql.trust_checks import register_column_facts_source as _register_column_facts_source
+    _register_column_facts_source(load_column_facts)
+except Exception as _exc:  # noqa: BLE001 — without the registration the checks say nothing of notation, range or division
+    import logging as _logging
+    _logging.getLogger(__name__).debug("column-facts source not registered: %s", _exc)
+
+
 def save_profiles(
     connection_id: str,
     fingerprint: str,

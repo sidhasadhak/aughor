@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import sqlglot
 from sqlglot import exp
@@ -416,18 +416,34 @@ def _coltype_cache_key(conn_id: str, db) -> str:
 
 _COLFACTS_CACHE: dict[str, dict] = {}
 
+#: Arc NV-6 — who answers "what did the profiler record about this connection's columns": a callable
+#: `(connection_id) -> {(table, column): facts}` the PROFILER's side registers when it loads
+#: (`aughor.tools.profile_cache`). The platform never imports the agent (`test_platform_agent_boundary`): the
+#: profile cache is agent-side, so the dependency is inverted here — the source registers itself, and until one has,
+#: the three checks that read facts say nothing.
+_COLUMN_FACTS_SOURCE: Optional[Callable[[str], dict]] = None
+
+
+def register_column_facts_source(source: Callable[[str], dict]) -> None:
+    """The profiler's side names where the checks read their facts from. Registering again replaces, and drops what
+    was cached from the previous source."""
+    global _COLUMN_FACTS_SOURCE
+    _COLUMN_FACTS_SOURCE = source
+    _COLFACTS_CACHE.clear()
+
 
 def connection_column_facts(conn_id: str) -> dict:
-    """Arc NV-6 — the profiled facts the checks read (`profile_cache.load_column_facts`) as the `col_facts` map: keys
+    """Arc NV-6 — the profiled facts the checks read, from the registered source, as the `col_facts` map: keys
     lowercased "table.col" AND bare "col" → {format, format_note, value_range, value_interpretation, dtype}. Cached per
-    process and connection; an empty profile caches as empty too, since the cache is the source and a rebuild of it is
-    what changes the answer (the ontology rebuild clears this map). Never raises."""
+    process and connection; a saved profile drops the entry (`forget_column_facts`). With no source registered the map
+    is empty and the checks that read it say nothing. Never raises."""
     if conn_id in _COLFACTS_CACHE:
         return _COLFACTS_CACHE[conn_id]
+    if _COLUMN_FACTS_SOURCE is None:
+        return {}
     out: dict = {}
     try:
-        from aughor.tools.profile_cache import load_column_facts
-        for (tbl, col), facts in load_column_facts(conn_id).items():
+        for (tbl, col), facts in _COLUMN_FACTS_SOURCE(conn_id).items():
             if not (facts.get("format") or facts.get("format_note") or facts.get("value_range")):
                 continue
             out[f"{str(tbl).lower()}.{str(col).lower()}"] = facts
