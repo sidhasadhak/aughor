@@ -135,6 +135,42 @@ def test_history_proposals_skip_ours_known_and_platform_aliases_and_propose_the_
     assert p["label"] == "Merch value" and p["time_kind"] == "flow"
 
 
+def test_what_the_live_run_taught_is_refused_before_the_gates(monkeypatch):
+    """LuxExperience, 2026-11-05: 95 proposals, 92 failed the gates — projections that aggregate nothing, a program's
+    aliases as metric names, an alias no table resolves, formulas over CTEs, and holes where values had been."""
+    from aughor.semantic import coverage_proposals as CP
+    from aughor.semantic import metric_coverage as MC
+    monkeypatch.setattr(MC, "tables_of", lambda cid, s: [])
+    rows = [
+        HistoryRow("t", 'SELECT CAST("status" AS TEXT) AS v FROM "orders"', "a", calls=9),                        # no aggregate, machine alias
+        HistoryRow("t", "SELECT SUM(gmv_eur) AS s12 FROM orders", "a", calls=9),                                   # machine alias
+        HistoryRow("t", "WITH o AS (SELECT * FROM orders) SELECT AVG(s.ship_date - o.order_date) AS days_to_ship FROM shipments s JOIN o ON o.order_id = s.order_id", "a", calls=9),   # a CTE
+        HistoryRow("t", "SELECT SUM(CASE WHEN status <> $1 THEN gmv_eur END) AS gmv_ex_cancelled FROM orders", "a", calls=9),  # a hole
+        HistoryRow("t", "SELECT SUM(duty_eur) AS duty_total FROM orders", "a", calls=9),                           # proposable
+    ]
+    out = CP.history_proposals("c1", "main", _Map(), [], _Db(rows))
+    by = {p["name"]: p for p in out}
+    assert set(by) == {"gmv_ex_cancelled", "duty_total"}
+    assert by["duty_total"].get("state") is None
+    assert by["gmv_ex_cancelled"]["state"] == CP.STATE_NEEDS_FORMULA and "hole ($1)" in by["gmv_ex_cancelled"]["reason"]
+    assert CP.proposable_formula('CAST("status" AS TEXT)', ["orders"], "", "postgres").startswith("it aggregates nothing")
+    assert "no table resolves" in CP.proposable_formula("AVG(shipments.ship_date - o.order_date)", ["shipments"], "", "postgres")
+    assert CP.proposable_formula("SUM(gmv_eur)", ["orders"], "SELECT SUM(gmv_eur) AS g FROM orders", "postgres") == ""
+
+
+def test_a_formula_with_a_hole_is_listed_as_needs_formula_and_never_gated(monkeypatch):
+    from aughor.semantic import coverage_proposals as CP
+    from aughor.semantic import metric_catalogue as MCat
+    monkeypatch.setattr(CP, "stored", lambda cid, s=None: [{
+        "name": "gmv_ex_cancelled", "label": "Gmv ex cancelled", "source": CP.SOURCE_QUERY_HISTORY, "runs": 9,
+        "sql": "SELECT SUM(CASE WHEN status <> $1 THEN gmv_eur END) AS gmv_ex_cancelled FROM orders", "tables": ["orders"],
+        "state": CP.STATE_NEEDS_FORMULA, "reason": "its source statement had a value where the history keeps a hole ($1)"}])
+    [entry] = MCat._coverage_entries("c1", "main")
+    assert entry.state == MCat.STATE_NEEDS_FORMULA and "hole" in entry.reason
+    src = pathlib.Path(CP.__file__).read_text()
+    assert 'if p.get("state") == STATE_NEEDS_FORMULA:\n                continue' in src
+
+
 def test_history_proposals_say_nothing_when_the_engine_keeps_none_or_everything_was_ours(monkeypatch):
     from aughor.semantic import coverage_proposals as CP
     from aughor.semantic import metric_coverage as MC

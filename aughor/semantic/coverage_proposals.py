@@ -45,6 +45,11 @@ SOURCE_BLIND_SPOT = "blind_spot"
 SOURCE_QUERY_HISTORY = "query_history"
 #: how many runs by someone other than the platform a formula needs before it is proposed
 HISTORY_MIN_RUNS = 2
+#: Arc NV-7 — a formula whose source statement had a value where the history keeps a hole ($1): proposed, not gated,
+#: in this state, with the hole said; a person completes it in the Semantic Layer.
+STATE_NEEDS_FORMULA = "needs_formula"
+#: An alias a program made, not a person: one or two letters, or a letter and digits (`v`, `s12`, `rm`, `o26`).
+_MACHINE_ALIAS = re.compile(r"^(?:[a-z]{1,2}\d*|[a-z]\d+)$", re.IGNORECASE)
 
 #: Findings that must aggregate one measure, with no metric reading it, before it is proposed (MC-6's N).
 BLIND_SPOT_FINDINGS = 3
@@ -509,11 +514,51 @@ def from_clause_of(statement: str, dialect: str) -> tuple[str, list[str]]:
     return " ".join([frm.sql(dialect=dialect)] + [j.sql(dialect=dialect) for j in joins]), read
 
 
+def proposable_formula(expr_sql: str, tables: list[str], example: str, dialect: str) -> str:
+    """Why a recurring formula is NOT proposable as a metric, or "" when it is. Found live on LuxExperience: 95 proposals,
+    92 refused by the gates for reasons a proposer should have read first — a projection that aggregates nothing
+    (`CAST(status AS TEXT)`), a formula over a CTE or derived table whose alias no table resolves, a formula whose
+    columns the carried FROM cannot supply."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(expr_sql, read=dialect)
+    except Exception:  # noqa: BLE001
+        return "its expression does not parse"
+    if tree.find(exp.AggFunc) is None:
+        return "it aggregates nothing — a projection or a dimension, not a measure"
+    known_tables = {t.split(".")[-1].lower() for t in tables}
+    for col in tree.find_all(exp.Column):
+        if col.table and col.table.lower() not in known_tables:
+            return f"it reads `{col.table}.{col.name}` through an alias no table resolves (a CTE or a derived table)"
+    if example:
+        try:
+            ex = sqlglot.parse_one(example, read=dialect)
+            if ex.find(exp.CTE) is not None or any(isinstance(n, exp.Subquery) for n in ex.find_all(exp.Subquery)):
+                return "its source statement computes it over a CTE or a derived table, not over the tables as they are"
+        except Exception:  # noqa: BLE001
+            return "its source statement does not parse"
+    return ""
+
+
+def has_holes(expr_sql: str, dialect: str) -> bool:
+    """Whether the history kept a normalised parameter ($1) where the statement had a value."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(expr_sql, read=dialect)
+    except Exception:  # noqa: BLE001
+        return False
+    return tree.find(exp.Parameter, exp.Placeholder) is not None
+
+
 def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metrics: list, db) -> list[dict]:
     """Each formula that other people compute in the warehouse's own query history (`HISTORY_MIN_RUNS` runs or more),
     that no defined metric computes — proposed as the metric it would be, with the FROM of the statement it was seen
     in, through the same gates as every other proposal. The platform's own statements are signed and left out, so what
-    arrives here is how the business queries its warehouse, not how Aughor does (Arc NV-7)."""
+    arrives here is how the business queries its warehouse, not how Aughor does (Arc NV-7). A formula that aggregates
+    nothing, reads through an alias no table resolves, or was computed over a CTE is not proposed; one whose statement
+    had a value where the history keeps a hole is proposed as `needs_formula`, the hole said, not gated."""
     from aughor.db.query_history import not_platform_statement, read_query_history
     from aughor.semantic.metric_coverage import place_table, tables_of
     from aughor.semantic.metric_map import OTHER
@@ -531,18 +576,22 @@ def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metr
     areas = [a for a in mmap.readable]
     out: list[dict] = []
     for (alias, expr), runs in facts.named_formulas.most_common():
-        if runs < HISTORY_MIN_RUNS or str(alias).startswith("_"):
-            continue
+        if runs < HISTORY_MIN_RUNS or str(alias).startswith("_") or _MACHINE_ALIAS.match(str(alias)):
+            continue                                   # the platform's own, or a program's, alias — not a metric's name
         if formula_key(expr, dialect) in known:
             continue                                   # an approved or defined metric computes this already
         tables = sorted(facts.formula_tables.get((alias, expr), set()))
         if not tables:
             continue
-        from_clause, read = from_clause_of(facts.formula_examples.get((alias, expr), ""), dialect)
+        example = facts.formula_examples.get((alias, expr), "")
+        from_clause, read = from_clause_of(example, dialect)
         if read:
             tables = read                          # the statement's own FROM and JOINs, which the proposal carries
         else:
             from_clause = f"FROM {tables[0]}"
+        if proposable_formula(expr, tables, example, dialect):
+            continue
+        holes = has_holes(expr, dialect)
         name = metric_name(alias)
         lead = tables[0].split(".")[-1]
         table_facts = by_table.get(lead)
@@ -554,7 +603,10 @@ def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metr
                            f"than Aughor; no defined metric computes it — its source statement's filters are not carried"),
             "sql": f"SELECT {expr} AS {name} {from_clause}", "tables": tables,
             "time_column": f"{lead}.{table_facts.date_column}" if table_facts and table_facts.date_column else "",
-            "time_kind": "flow", "runs": runs, "made_at": now()})
+            "time_kind": "flow", "runs": runs, "made_at": now(),
+            **({"state": STATE_NEEDS_FORMULA,
+                "reason": "its source statement had a value where the history keeps a hole ($1); complete the formula "
+                          "before it can be measured"} if holes else {})})
     return out
 
 
@@ -617,6 +669,8 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
         from aughor.semantic.metric_coverage import dataset_entry
         columns = (dataset_entry(connection_id, schema_name) or {}).get("columns") or {}
         for p in kept:
+            if p.get("state") == STATE_NEEDS_FORMULA:
+                continue                               # Arc NV-7: a formula with a hole is said, not measured
             try:
                 gate(p, connection_id=connection_id, schema_name=schema_name, run_sql=run_sql, dialect=dialect,
                      approved=approved, band=p.get("sane_range"), band_label=f"the {p.get('label')} recipe",
