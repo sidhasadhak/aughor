@@ -207,7 +207,7 @@ QUERY_LOG_MIN_SUPPORT = 2
 
 def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str = "duckdb",
                         known_joins: Iterable[str] = (), min_support: int = QUERY_LOG_MIN_SUPPORT,
-                        max_per_kind: int = 25) -> list[Candidate]:
+                        max_per_kind: int = 25, weights: Optional[list[int]] = None) -> list[Candidate]:
     """The warehouse's own query history → join, filter and measure candidates (Arc NV-3).
 
     Deterministic: `aughor.sql.query_log_miner` parses every statement with sqlglot and counts what recurs. A join
@@ -216,10 +216,11 @@ def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str
     how often it was seen, so the reviewer judges a frequency, not a claim. Nothing here binds: `mine` does.
     """
     from aughor.sql.query_log_miner import mine_query_log
-    sqls = [s for s in sqls if s and str(s).strip()]
-    if not sqls:
+    rows = [(s, (weights[i] if weights is not None and i < len(weights) else 1))
+            for i, s in enumerate(sqls) if s and str(s).strip()]
+    if not rows:
         return []
-    facts = mine_query_log(list(sqls), dialect=dialect)
+    facts = mine_query_log([s for s, _ in rows], dialect=dialect, weights=[w for _, w in rows])
     known = {_edge_key(e) for e in known_joins}
     out: list[Candidate] = []
     joins = [(e, n) for e, n in facts.join_edges.most_common() if n >= min_support and _edge_key(e) not in known]
@@ -256,7 +257,8 @@ def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str
 
 def mine(connection_id: str, *, trusted_queries: Iterable[dict] = (),
          verdicts: Iterable[dict] = (), query_log: Iterable[str] = (), dialect: str = "duckdb",
-         known_joins: Iterable[str] = (), binder: Optional[Binder] = None) -> MiningReport:
+         known_joins: Iterable[str] = (), binder: Optional[Binder] = None,
+         query_log_weights: Optional[list[int]] = None) -> MiningReport:
     """Mine every source, bind everything, and report what was refused.
 
     With no binder nothing is offerable — `bound` stays ``None``. That is the correct
@@ -265,7 +267,8 @@ def mine(connection_id: str, *, trusted_queries: Iterable[dict] = (),
     """
     found = (list(mine_from_trusted_queries(connection_id, trusted_queries))
              + list(mine_from_verdicts(connection_id, verdicts))
-             + list(mine_from_query_log(connection_id, query_log, dialect=dialect, known_joins=known_joins)))
+             + list(mine_from_query_log(connection_id, query_log, dialect=dialect, known_joins=known_joins,
+                                        weights=query_log_weights)))
     for c in found:
         c.validate()
     if binder is not None:

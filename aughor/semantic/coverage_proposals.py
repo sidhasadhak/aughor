@@ -567,10 +567,11 @@ def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metr
     history = read_query_history(db)
     if not history.supported or history.error:
         return []
-    statements = [s for s in history.weighted_statements() if not_platform_statement(s)]
-    if not statements:
+    sqls, weights = history.statements_and_weights()
+    pairs = [(s, w) for s, w in zip(sqls, weights) if not_platform_statement(s)]
+    if not pairs:
         return []
-    facts = mine_query_log(statements, dialect=dialect)
+    facts = mine_query_log([s for s, _ in pairs], dialect=dialect, weights=[w for _, w in pairs])
     known = known_formula_keys(metrics, dialect)
     by_table = {t.name: t for t in tables_of(connection_id, schema_name)}
     areas = [a for a in mmap.readable]

@@ -70,6 +70,22 @@ def test_the_history_reader_leaves_signed_statements_out_and_counts_them():
     assert not not_platform_statement(f"{SIGNATURE} SELECT 1") and not_platform_statement("SELECT 1 FROM orders")
 
 
+def test_a_history_row_is_parsed_once_and_counted_by_its_weight():
+    """Live: 1,403 aggregated rows repeated up to a hundred times each put 140,000 statements through the parser and
+    the door did not come back in two minutes. A weight is one parse."""
+    from aughor.sql.query_log_miner import mine_query_log
+    h = QueryHistory(engine="postgres", supported=True, source="s", rows=[
+        HistoryRow("t", "SELECT SUM(gmv_eur) AS gmv FROM orders", "a", calls=300),
+        HistoryRow("t", "SELECT SUM(gmv_eur) AS gmv FROM orders WHERE status = $1", "a", calls=7),
+        HistoryRow("t", f"{SIGNATURE} SELECT 1", "lux", calls=900)])
+    sqls, weights = h.statements_and_weights()
+    assert len(sqls) == 2 and weights == [100, 7]                 # capped, ours left out
+    facts = mine_query_log(sqls, dialect="postgres", weights=weights)
+    assert facts.n_queries == 107 and facts.n_parsed == 107
+    assert facts.named_formulas[("gmv", "SUM(gmv_eur)")] == 107
+    assert facts.filter_values == {} or all(k == "orders.status" for k in facts.filter_values)   # $1 is a hole, not a value
+
+
 # ── the coverage run proposes what other people compute, once ────────────────────────────
 
 class _Metric:

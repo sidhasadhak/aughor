@@ -79,11 +79,19 @@ class QueryHistory:
 
     def weighted_statements(self, cap: int = CALLS_CAP) -> list[str]:
         """Each statement once per run it stands for (at most ``cap``), so the miner's frequencies read as calls:
-        a log row counts once, an aggregate's row its call count. The platform's own statements are left out."""
+        a log row counts once, an aggregate's row its call count. The platform's own statements are left out.
+        Prefer :meth:`statements_and_weights`: one parse per statement, the weight carried."""
         out: list[str] = []
         for r in self._theirs():
             out.extend([r.sql] * max(1, min(int(r.calls or 1), cap)))
         return out
+
+    def statements_and_weights(self, cap: int = CALLS_CAP) -> tuple[list[str], list[int]]:
+        """The statements that are not the platform's own, each once, with the runs it stands for (at most ``cap``) —
+        what `mine_query_log(sqls, weights=…)` takes. Found live: repeating a row per call put 140,000 statements through
+        the parser; a weight is one parse."""
+        rows = self._theirs()
+        return [r.sql for r in rows], [max(1, min(int(r.calls or 1), cap)) for r in rows]
 
     def to_dict(self) -> dict:
         return {"engine": self.engine, "supported": self.supported, "count": len(self.rows), "calls": self.calls,

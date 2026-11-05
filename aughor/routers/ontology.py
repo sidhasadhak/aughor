@@ -4543,7 +4543,10 @@ def mine_ontology_candidates(
             out.update({"summary": readiness.sentence(), "readiness": readiness.as_dict(),
                         "offered": [], "refused": [], "mined": 0})
             return out
-        statements = [sql for sql in history.weighted_statements() if not_platform_statement(sql)]
+        sqls, weights = history.statements_and_weights()
+        pairs = [(s, w) for s, w in zip(sqls, weights) if not_platform_statement(s)]
+        statements = [s for s, _ in pairs]
+        statement_weights = [w for _, w in pairs]
         known = {f"{r.from_table}.{r.from_col} = {r.to_table}.{r.to_col}" for r in graph.relationships.values()}
         tables = {t for e in graph.entities.values() for t in e.source_tables}
 
@@ -4585,13 +4588,13 @@ def mine_ontology_candidates(
             return db.dry_run(sql)
 
         report = mine(connection_id, query_log=statements, dialect=getattr(db, "dialect", "duckdb"),
-                      known_joins=known, binder=_binder)
+                      known_joins=known, binder=_binder, query_log_weights=statement_weights)
         out.update(report.to_dict())
         if body.stage:
             out["staged"] = stage_candidates(report.offered, graph, connection_id, graph.schema_name or effective)
         out["mined"] = len(report.candidates)
-        out["statements"] = len({s for s in statements})
-        out["calls"] = len(statements)
+        out["statements"] = len(statements)
+        out["calls"] = sum(statement_weights)
         try:
             from aughor.kernel.ledger import Ledger
             Ledger.default().emit("ontology.candidates.mined",
