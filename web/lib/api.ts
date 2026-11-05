@@ -208,10 +208,13 @@ export interface OrgSettings {
   outside_row_model?: boolean | null;
   reason_to_read_runs?: boolean | null;
   scheduled_model_work?: boolean | null;
+  /** Arc NV-3 (ROADMAP §3.68) — read each warehouse's own query history for candidates; born a setting. */
+  read_query_history?: boolean | null;
 }
 
-/** The four choices an organisation makes about what Aughor may do (ROADMAP §3.65). */
-export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work";
+/** The choices an organisation makes about what Aughor may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
+export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work"
+  | "read_query_history";
 
 /** Each choice's answer, and whether an admin set it — one never set answers from the server's environment. */
 export type OrgAllows = Record<OrgAllowSetting, { allowed: boolean; set: boolean }>;
@@ -7218,7 +7221,8 @@ export interface StagedProposal {
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
       | "agent_bundle" | "automation_state" | "agent_grant"
       | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
-      | "agent_limit" | "cockpit_draft" | "cockpit_publish";
+      | "agent_limit" | "cockpit_draft" | "cockpit_publish"
+    | "ontology_candidate";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;

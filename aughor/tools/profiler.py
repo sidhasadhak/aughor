@@ -233,6 +233,17 @@ _BOOL_TYPES = re.compile(r"\b(BOOLEAN|BOOL|BIT)\b", re.IGNORECASE)
 _TEXT_TYPES = re.compile(r"\b(VARCHAR|TEXT|STRING|CHAR|BPCHAR)\b", re.IGNORECASE)
 
 
+def is_text_type(dtype: str) -> bool:
+    """Public: is this a text type (VARCHAR, TEXT, STRING, CHAR)? The one spelling of the question, so a module that
+    needs it (`tools.date_format`) reads the interface and not the pattern."""
+    return bool(_TEXT_TYPES.search(dtype or ""))
+
+
+def is_date_named(name: str) -> bool:
+    """Public: does this column's name say date or time (`order_date`, `created_at`, `shipped`)?"""
+    return bool(_TIMESTAMP_PATTERN.search((name or "").lower()))
+
+
 def _select_timestamp_cols(columns: list[tuple[str, str]]) -> list[str]:
     """Columns usable as a table's primary timestamp, best first.
 
@@ -280,6 +291,11 @@ class ColumnProfile:
         "concept",              # "geo.latitude", "flag.binary", "" when unresolved
         "concept_confidence",   # 0.0–1.0; < CONFIDENT means HINT, act on nothing
         "concept_evidence",     # the sentences a human reads to check the machine
+        # Arc NV-1 — a TEXT column's date notation ("YYYYMMDD", "DD/MM/YYYY"), inferred from every
+        # distinct value by `aughor.tools.date_format`; "" when the column is not a text date, or when
+        # the notation is ambiguous — then `date_format_note` says so, and the property carries it.
+        "date_format",
+        "date_format_note",
     )
 
     def __init__(
@@ -305,6 +321,8 @@ class ColumnProfile:
         concept: str = "",
         concept_confidence: float = 0.0,
         concept_evidence: Optional[list[str]] = None,
+        date_format: str = "",
+        date_format_note: str = "",
     ):
         self.table = table
         self.column = column
@@ -327,6 +345,8 @@ class ColumnProfile:
         self.concept = concept or ""
         self.concept_confidence = float(concept_confidence or 0.0)
         self.concept_evidence = list(concept_evidence or [])
+        self.date_format = date_format or ""
+        self.date_format_note = date_format_note or ""
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in self.__slots__}
@@ -347,6 +367,9 @@ class ColumnProfile:
         obj.concept = obj.concept or ""
         obj.concept_confidence = float(obj.concept_confidence or 0.0)
         obj.concept_evidence = list(obj.concept_evidence or [])
+        # A cache written before NV-1 has no date-format keys: an old cache means "no notation".
+        obj.date_format = obj.date_format or ""
+        obj.date_format_note = obj.date_format_note or ""
         return obj
 
 
@@ -733,6 +756,7 @@ _SAMPLE_PCT            = 5          # % to sample for top-values on large tables
 # NAME with 30 < distinct ≤ cap, so binding can happen offline. Columns above the
 # cap (customer names, SKUs, free text) stay live-probe — the sample stays bounded.
 _VALUE_SAMPLE_MAX_DISTINCT = 2000   # only persist a column's values when it has this many or fewer
+_DATE_FORMAT_MAX_COLS      = 6      # Arc NV-1: text columns probed for a date notation, per table
 _VALUE_SAMPLE_MAX_COLS     = 8      # cap entity-dim columns sampled per table (the warmed offline set;
 #                                    resolve now live-sweeps every column before abstaining, so this
 #                                    only bounds how many bind OFFLINE without a live probe)
@@ -1609,6 +1633,46 @@ def build_column_profiles(
             if vals:
                 value_sample_map[col] = vals
 
+    # ── Arc NV-1 · the notation a TEXT column writes its dates in ─────────────
+    # A VARCHAR holding '20260131' or '31/01/2026' is compared as text unless somebody says how it is written.
+    # Bounded: at most _DATE_FORMAT_MAX_COLS columns per table, each read as DISTINCT … LIMIT 201, and only a
+    # column whose name says date or time, or whose sampled values all look like dates. The verdict is the
+    # whole column's (every distinct value must parse) or it is withheld and SAID — `aughor.tools.date_format`.
+    date_format_map: dict[str, tuple[str, str]] = {}
+    try:
+        from aughor.tools.date_format import MAX_DISTINCT, infer_date_format, looks_like_date_column
+        date_cols = [
+            col for col, dtype in columns
+            if not _KEY_PATTERN.search(col.lower())
+            and looks_like_date_column(col, dtype, top_values_map.get(col) or value_sample_map.get(col) or ())
+        ][:_DATE_FORMAT_MAX_COLS]
+        for col in date_cols:
+            qc = _q(col)
+            r = conn.execute_bounded(
+                "__profiler__",
+                f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {values_from} "
+                f"WHERE {qc} IS NOT NULL LIMIT {MAX_DISTINCT + 1}",
+                MAX_DISTINCT + 1,
+                sql_dialect="duckdb",
+             internal=True)
+            if r.error or not r.rows:
+                continue
+            verdict = infer_date_format(row[0] for row in r.rows)
+            if verdict is not None and verdict.found:
+                note = verdict.note
+                # The read was cut at the cap: say so, against the catalog's own (approximate) distinct count. A
+                # read that ended before the cap saw every distinct value, whatever the catalog estimated — on
+                # Superstore the catalog said 1,622 where the column holds 1,237, and the first note read "1,237 of
+                # 1,622 read" of a complete read (2026-11-04).
+                if verdict.n_values >= MAX_DISTINCT:
+                    total = raw_stats.get(col, {}).get("distinct", 0) or 0
+                    about = f" of about {total:,} in the column" if total > verdict.n_values else ""
+                    note += f" ({verdict.n_values:,} distinct values read{about})"
+                date_format_map[col] = (verdict.notation, note)
+    except Exception as exc:                      # noqa: BLE001 — profiling is best-effort
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "text date-format inference is best-effort", counter="profiler.date_format")
+
     # ── AT-4 · what each column IS, from witnesses in ≥2 layers ───────────────
     # Best-effort in every direction: a failed sample, an unavailable query log or a
     # missing config each cost this table its concepts and nothing else. A profile
@@ -1694,6 +1758,8 @@ def build_column_profiles(
             p25=dist.get("p25"),
             p50=dist.get("p50"),
             p75=dist.get("p75"),
+            date_format=date_format_map.get(col, ("", ""))[0],
+            date_format_note=date_format_map.get(col, ("", ""))[1],
         ))
 
     return profiles
@@ -2046,6 +2112,12 @@ def render_profile_annotations(
             if cp.value_range and cp.value_interpretation:
                 lo, hi = cp.value_range
                 parts.append(f"| range {lo:.2g}–{hi:.2g}")
+
+            # Arc NV-1: a text column's date notation, or the ambiguity that withheld one — said, never implied.
+            if getattr(cp, "date_format", ""):
+                parts.append(f"| text dates written {cp.date_format} — cast before comparing")
+            elif getattr(cp, "date_format_note", ""):
+                parts.append(f"| text dates: {cp.date_format_note}")
 
             # Distribution shape (the "shape of the numbers") for measures — so the
             # agent can reason about typical-vs-extreme, outliers, and skew.

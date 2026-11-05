@@ -148,6 +148,12 @@ FLAG_ENV = {
     # "ontology.builder_doors" (AUGHOR_ONTOLOGY_BUILDER_DOORS) — Arc OC-8, the contract and doors for outside programs —
     # was made unconditional 2026-10-28: part of the platform (ROADMAP §3.65); its off path is deleted. An operator's
     # env var is ignored.
+    # AUGHOR_QUERY_LOG_MINING — never registered here, never an organisation setting: a raw `os.environ` read in
+    # `tools/schema.py` that gated a LEARNED FROM QUERY HISTORY prompt block, and so survived the 2026-10-28
+    # retirement by being invisible to it (found by the NVIDIA Auto-Ontology study, ROADMAP §3.68). DELETED
+    # 2026-11-04: the block was unmeasured prose-shaped context of the kind R4 and the DATA PROFILE block's
+    # falsifier retired; the facts it rendered reach a prompt only as candidates a person confirmed and that bound
+    # (`aughor.ontology.candidates`, Arc NV-3). An operator's env var is ignored.
     # The last ten switches — each checked on live data first, its defects fixed (09aae58f) — were made unconditional
     # 2026-10-28; after them FLAG_ENV holds no feature flag (the user, 2026-10-28: "no feature flags at all"):
     # "ontology.security" (AUGHOR_ONTOLOGY_SECURITY) — Arc OC-7, a row policy's objects and a sensitive property masked

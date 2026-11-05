@@ -115,7 +115,9 @@ def test_junk_is_refused_at_construction(kw, match):
 
 def test_the_vocabularies_are_typed_and_closed():
     assert "join" in CANDIDATE_KINDS and "synonym" in CANDIDATE_KINDS
-    assert "verdict" in ORIGINS and "dbt" in ORIGINS
+    assert "verdict" in ORIGINS and "query_log" in ORIGINS
+    # Arc NV-3: every origin named has a miner; `saved_sql` and `dbt` were names nothing ever wrote.
+    assert "dbt" not in ORIGINS and "saved_sql" not in ORIGINS
 
 
 def test_inbox_items_are_returned_not_written():

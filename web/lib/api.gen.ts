@@ -11953,6 +11953,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/candidates/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mine Ontology Candidates
+         * @description Arc NV-3 (ROADMAP §3.68) — read the warehouse's OWN query history and mine it into typed candidates: join edges
+         *     the join map lacks, recurring filter values, recurring named formulas (`aughor.ontology.candidates`). Each is
+         *     EXPLAIN-bound on this connection before it is offered; the report states what was refused. Nothing is written:
+         *     a candidate is a proposal for a person, and reaches no prompt until declared through the ontology's own doors.
+         *
+         *     Said, never implied: refused with 409 while the organisation has not allowed the read (and where to allow it);
+         *     `supported=false` with the engine's own note when it keeps no history the platform reads; the engine's error
+         *     when the read failed. No model call.
+         */
+        post: operations["mine_ontology_candidates_ontology_candidates_mine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/census": {
         parameters: {
             query?: never;
@@ -21879,6 +21906,11 @@ export interface components {
              */
             priorities?: components["schemas"]["Priority"][];
             /**
+             * Read Query History
+             * @description Read each warehouse's own query history — the SQL people ran there — and mine it for joins, filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt until a person confirms it and it binds. Off by default.
+             */
+            read_query_history?: boolean | null;
+            /**
              * Reason To Read Runs
              * @description Ask for a reason, recorded with who read it, before anyone reads a run's details or exports the ledger. Off by default.
              */
@@ -24882,6 +24914,23 @@ export interface components {
             grain?: string | null;
             /** Unit */
             unit?: string | null;
+        };
+        /**
+         * _MineCandidatesRequest
+         * @description Arc NV-3 — what the candidate door reads. Only the warehouse's own history for now; trusted queries and
+         *     verdicts keep their own miners and arrive here when their doors are wired.
+         */
+        _MineCandidatesRequest: {
+            /**
+             * Hours
+             * @default 336
+             */
+            hours: number;
+            /**
+             * Limit
+             * @default 2000
+             */
+            limit: number;
         };
         /** _OpenCaptureRequest */
         _OpenCaptureRequest: {
@@ -45903,6 +45952,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mine_ontology_candidates_ontology_candidates_mine_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["_MineCandidatesRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
