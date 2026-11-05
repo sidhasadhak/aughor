@@ -12935,7 +12935,7 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   claims) is read by the Briefing and put in every question's context with the platform's earlier work; an exploration
   run now asks up to 300 questions of a dataset across its domains (it asked 15).
 
-### 3.68 · Arc NV — what NVIDIA's Auto-Ontology teaches: three facts measured on the data, and a door for the warehouse's own history (STUDIED 2026-11-04 as `docs/NVIDIA_AUTO_ONTOLOGY_STUDY_2026-11-04.md` at the user's *"Dont we do something similar or better? Lets compare first at the finest details"* · ✅ ADOPTED the same day — §6 item 60, the user: *"make sure we have everything well structured and start building based on the study"* · **NV-0 to NV-3 BUILT 2026-11-04** on `claude/nvidia-auto-ontology-study`, not merged; receipts in PENDING item 74)
+### 3.68 · Arc NV — what NVIDIA's Auto-Ontology teaches: three facts measured on the data, and a door for the warehouse's own history (STUDIED 2026-11-04 as `docs/NVIDIA_AUTO_ONTOLOGY_STUDY_2026-11-04.md` at the user's *"Dont we do something similar or better? Lets compare first at the finest details"* · ✅ ADOPTED the same day — §6 item 60, the user: *"make sure we have everything well structured and start building based on the study"* · **NV-0 to NV-3 BUILT 2026-11-04** on `claude/nvidia-auto-ontology-study`, not merged; receipts in PENDING item 76)
 
 The study's one-page answer (its §0): for what Auto-Ontology does, this platform does the same thing measured rather
 than proposed, and then a second storey it has no word for — and NVIDIA is ahead in three small, specific places. Those
@@ -13003,7 +13003,7 @@ three are this arc, in the study's own order of value over cost, each through th
   business's own formulas, `gmv_eur`, `aov_eur`, `contribution_margin_eur`, `gross_margin_pct`, the return rate — 6
   refused with the engine's words; **0 join candidates, every join in the history already in the graph**, on a
   history that is so far Aughor's own SQL. The falsifier waits for the ETL's nightly statements and for theLook's
-  binding (PENDING item 74). Three live runs found what no fixture had: the unqualified read of a view in `public`,
+  binding (PENDING item 76). Three live runs found what no fixture had: the unqualified read of a view in `public`,
   formulas kept without their tables, the Briefing's own `_n`/`_first` offered back, one formula six times over as
   `$2 … $57`.
 - **NV-5 · a feature's prerequisite on the engine, said and provisioned** (the user, the same day, after
@@ -13026,7 +13026,7 @@ three are this arc, in the study's own order of value over cost, each through th
   body (measured and bound before it is written, origin human, the mining as provenance), the computed-property and
   segment overrides (bound before they earn `verified`), into the draft as the accepting person's declaration; a
   door's refusal is the outcome, verbatim; a rejection is kept and never re-staged. **Receipt, live on Lux:** 19
-  bound, 16 staged, 3 said unstageable (formulas over several tables); the accept is the user's click (PENDING item 74).
+  bound, 16 staged, 3 said unstageable (formulas over several tables); the accept is the user's click (PENDING item 76).
 - **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
   falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
   study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
