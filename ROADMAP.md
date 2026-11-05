@@ -13002,8 +13002,10 @@ three are this arc, in the study's own order of value over cost, each through th
   over it the same hour): 165 statements and 546 calls read, 25 candidates mined, **19 bound and offerable** — the
   business's own formulas, `gmv_eur`, `aov_eur`, `contribution_margin_eur`, `gross_margin_pct`, the return rate — 6
   refused with the engine's words; **0 join candidates, every join in the history already in the graph**, on a
-  history that is so far Aughor's own SQL. The falsifier waits for the ETL's nightly statements and for theLook's
-  binding (PENDING item 76). Three live runs found what no fixture had: the unqualified read of a view in `public`,
+  history that is so far Aughor's own SQL. **The next morning, the ETL's statements in (1,247 statements, 28,286
+  calls): 0 join candidates again — every one of the 22 joins the history uses is in the graph. On the one connection
+  with a readable history the falsifier holds; the reader stays a connector method and the door proposes measures.**
+  theLook's binding is still the second connection the clause asks for (PENDING item 76). Three live runs found what no fixture had: the unqualified read of a view in `public`,
   formulas kept without their tables, the Briefing's own `_n`/`_first` offered back, one formula six times over as
   `$2 … $57`.
 - **NV-5 · a feature's prerequisite on the engine, said and provisioned** (the user, the same day, after
