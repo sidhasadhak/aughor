@@ -22,6 +22,7 @@ import sqlglot
 from urllib.parse import urlsplit
 
 from aughor.db.dialects import known_dialect, sql_for_engine
+from aughor.db.signing import sign
 from aughor.db.doors import add as _add_doors, door_dialect, door_schema, passed as _passed, statement_is_internal, through_door
 from aughor.db.errors import ConnectionUnreachable, classify_error, is_unreachable
 from aughor.db.single_flight import single_flight_build
@@ -1779,7 +1780,10 @@ class PostgresConnection(DatabaseConnection):
             f"SELECT (SELECT stats_reset::text FROM {schema}.pg_stat_statements_info) AS since, s.query, r.rolname, "
             f"s.calls FROM {schema}.pg_stat_statements s LEFT JOIN pg_roles r ON r.oid = s.userid "
             "WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) "
-            "AND s.toplevel AND s.query ILIKE 'select%' AND s.query NOT ILIKE '<insufficient privilege>%' "
+            # a statement the platform signed opens with its comment, not with SELECT: read it too, so the reader can
+            # count what was ours and leave it out (Arc NV-7) rather than the engine hiding it
+            "AND s.toplevel AND (s.query ILIKE 'select%' OR s.query LIKE '/* aughor */%') "
+            "AND s.query NOT ILIKE '<insufficient privilege>%' "
             f"ORDER BY s.calls DESC LIMIT {limit}"
         )
         result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
@@ -1938,9 +1942,9 @@ class PostgresConnection(DatabaseConnection):
                     # breaks validation and the dialect rewrite.
                     from aughor.sql.params import expand_list_params, render_for_engine
                     exec_sql, bind_params = expand_list_params(sql, params)
-                    cur.execute(render_for_engine(exec_sql, "pyformat"), bind_params)
+                    cur.execute(sign(render_for_engine(exec_sql, "pyformat")), bind_params)
                 else:
-                    cur.execute(sql)
+                    cur.execute(sign(sql))
                 rows = cur.fetchmany(max_rows)
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)

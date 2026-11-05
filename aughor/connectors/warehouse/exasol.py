@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import sign
 from aughor.db.doors import through_door
 from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
@@ -98,7 +99,7 @@ class ExasolConnection(Connector):
 
         _t0 = time.monotonic()
         try:
-            stmt = self._conn.execute(sql)
+            stmt = self._conn.execute(sign(sql))
             meta = stmt.columns()
             columns = list(meta.keys())
             # one row past the cap: a read the cap cut counts more rows than it keeps

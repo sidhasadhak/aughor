@@ -1204,6 +1204,31 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       and 0 joins, as the history still holds only Aughor's own SQL. **⚑ Owed, the user's click:** accept one (the
       `gmv_eur` property on Order, proposal `f95aa24a`) — the builder's accept was refused by the session's classifier
       as a change to the user's ontology, which it is.
+    - [~] NV-7 one door per kind (§6 item 61, the user 2026-11-05: *"Yes, adopt it"*): `db/signing.py` signs every
+      statement at the driver call (Postgres, the DB-API family, Snowflake, BigQuery, Trino, MySQL, Exasol; a result's
+      statement stays as written); the history reader leaves signed statements out and counts them (`ours`); the coverage
+      run gains `history_proposals` — recurring formulas by someone other than Aughor, known ones skipped through
+      `formula_key` (literals and parameters as holes, both sides through the miner), platform aliases skipped, the rest
+      proposed with the source statement's FROM and JOINs de-aliased, through the gates, adopted in the Semantic Layer
+      once; the catalogue says "the warehouse's own query history — N runs"; Attention stages no formula and says where
+      one goes. *Live on Lux, 2026-11-05 10:35 UTC:* the engine kept `/* aughor */` on the first signed statement; the
+      reader counted ours; the fifteen stale cards rejected with the reason, the user's accepted `gmv_eur` found in the
+      draft (`ontology_overrides_draft/dcc63d83/…/computed_property/Order__gmv_eur.yaml`) awaiting publish — the second
+      door this closes. *Two coverage runs on the unreset history (10:39 and 10:56 UTC):* the first put 95 history
+      formulas through the gates and 92 failed — projections that aggregate nothing, a program's aliases as names, an
+      alias no table resolves, formulas over CTEs, and `$1` holes that cannot run; each is now refused before the gates
+      or, for a hole, proposed as `needs_formula` with the hole said. The second run: 24 history formulas — 3 proposed
+      (`m_dutyeur`, `m_refundeur`, `eur`), 7 `needs_formula`, 14 failing honest gates (no date on `financial_summary`,
+      a MIN that returns no figure); every one of the 24 is still Aughor's own pre-signing SQL, which is why the number
+      is not yet the receipt. *The receipt, 2026-11-05 11:46–11:50 UTC:* the user reset the statistics
+      (`luxexperience.pg_stat_statements_reset()` — the function lives in the extension's schema; the classifier refused
+      the call from the builder as irreversible, twice) and the coverage run read a clean history: **0 formulas proposed
+      from it**; afterwards the history held 105 statements and 222 calls, 101 of them the platform's own, signed and left
+      out. With nobody but the platform querying LuxExperience, the Semantic Layer receives nothing from the platform's
+      own work — which is the whole point; the ETL's statements arrive with its 02:47 load. Also found on the way: the
+      unweighted miner repeated each history row once per call (up to 100×) and pinned the API at 99.9% CPU for 35
+      minutes — a row is now parsed once and counted by its weight, the door answering in 10 s. Branch
+      `claude/arc-nv-7-one-door`, PR #645.
     - [x] NV-6 the trust checks read the profiler's facts (the user, 2026-11-05: "Lets go with pending items"): a text
       date compared, bounded or sorted as text says the notation so the fix is a cast with it, or says AMBIGUOUS when the
       profiler withheld one (`E1-text-date-compare`); two whole numbers divided where the engine truncates

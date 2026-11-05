@@ -78,6 +78,9 @@ class QueryLogFacts:
     #: Arc NV-3 — (name, expr_sql) -> the tables the formula reads, aliases resolved, so a candidate can be bound
     #: outside the statement it came from (`SELECT <expr> FROM <tables>`). Empty when nothing named a table.
     formula_tables: dict = field(default_factory=dict)
+    #: Arc NV-7 — (name, expr_sql) -> the first statement it was seen in, so a metric proposed from it can carry that
+    #: statement's own FROM and JOINs rather than a cross join of the tables it names.
+    formula_examples: dict = field(default_factory=dict)
     column_usage: Counter = field(default_factory=Counter)      # "t.col" -> count
     #: AT-8 — ("t.col", role) -> count, role ∈ ROLES. What analysts DO with a column,
     #: which accretes from real history without anyone configuring anything.
@@ -117,11 +120,19 @@ class QueryLogFacts:
         return "\n".join(lines)
 
 
-def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
+def mine_query_log(sqls: list[str], dialect: str = "duckdb", weights: Optional[list[int]] = None) -> QueryLogFacts:
     """Parse each SQL string and accumulate deterministic facts. Never raises; unparseable queries
-    are skipped (counted only in ``n_queries``)."""
-    facts = QueryLogFacts(n_queries=len(sqls))
-    for sql in sqls:
+    are skipped (counted only in ``n_queries``).
+
+    ``weights`` (Arc NV-7) — how many runs each statement stands for, from a history that keeps an aggregate (one row
+    with a call count) rather than a log: every fact the statement yields is counted that many times, and
+    ``n_queries`` / ``n_parsed`` count runs. Live on LuxExperience, 1,403 aggregated rows repeated up to a hundred
+    times each put 140,000 statements through the parser and the door did not come back in two minutes; a weight is
+    one parse."""
+    ws = [max(1, int(w or 1)) for w in weights] if weights is not None else [1] * len(sqls)
+    assert len(ws) == len(sqls), "one weight per statement"
+    facts = QueryLogFacts(n_queries=sum(ws))
+    for sql, w in zip(sqls, ws):
         if not sql or not sql.strip():
             continue
         tree = None
@@ -134,7 +145,7 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                 tree = None
         if tree is None:
             continue
-        facts.n_parsed += 1
+        facts.n_parsed += w
 
         a2t = _alias_to_table(tree)
         # A CTE's name is not a table of the warehouse: a formula read from one is read from the tables behind it.
@@ -157,21 +168,21 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
             if isinstance(left, exp.Column) and isinstance(right, exp.Column):
                 ql, qr = _qual(left), _qual(right)
                 if ql and qr and ql.split(".")[0].lower() != qr.split(".")[0].lower():
-                    facts.join_edges[" = ".join(sorted([ql, qr]))] += 1
-                    facts.column_roles[(ql, ROLE_JOIN)] += 1
-                    facts.column_roles[(qr, ROLE_JOIN)] += 1
+                    facts.join_edges[" = ".join(sorted([ql, qr]))] += w
+                    facts.column_roles[(ql, ROLE_JOIN)] += w
+                    facts.column_roles[(qr, ROLE_JOIN)] += w
             else:                                      # column = literal filter
                 col = left if isinstance(left, exp.Column) else (right if isinstance(right, exp.Column) else None)
                 lit = _literal(left) or _literal(right)
                 if col is not None and lit is not None:
                     qc = _qual(col)
                     if qc:
-                        facts.filter_values.setdefault(qc, Counter())[str(lit)] += 1
+                        facts.filter_values.setdefault(qc, Counter())[str(lit)] += w
                         # `WHERE flag = 1` is how a flag is used. A measure is filtered by
                         # range, an id by a specific value; only an indicator is compared
                         # to 0 or 1 for equality.
                         if str(lit).strip() in ("0", "1", "true", "false", "True", "False"):
-                            facts.column_roles[(qc, ROLE_FILTER_BINARY)] += 1
+                            facts.column_roles[(qc, ROLE_FILTER_BINARY)] += w
 
         # AT-8 — how the column is USED. `GROUP BY x` says x is a dimension; `SUM(x)` says x
         # is additive; the two are almost never the same column, and neither fact is in the
@@ -181,14 +192,14 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                 if isinstance(e, exp.Column):
                     qc = _qual(e)
                     if qc:
-                        facts.column_roles[(qc, ROLE_GROUP_BY)] += 1
+                        facts.column_roles[(qc, ROLE_GROUP_BY)] += w
         for agg, role in ((exp.Sum, ROLE_SUM), (exp.Avg, ROLE_AVG)):
             for node in tree.find_all(agg):
                 inner = node.this
                 if isinstance(inner, exp.Column):
                     qc = _qual(inner)
                     if qc:
-                        facts.column_roles[(qc, role)] += 1
+                        facts.column_roles[(qc, role)] += w
 
         for inn in tree.find_all(exp.In):
             if isinstance(inn.this, exp.Column):
@@ -197,7 +208,7 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                     for e in inn.expressions:
                         lit = _literal(e)
                         if lit is not None:
-                            facts.filter_values.setdefault(qc, Counter())[str(lit)] += 1
+                            facts.filter_values.setdefault(qc, Counter())[str(lit)] += w
 
         # A formula counts ONCE per statement (a CTE's SELECT and the outer SELECT repeating it are one habit, not
         # two), with its column aliases resolved to the tables they stand for, so the text is the same whatever the
@@ -230,13 +241,14 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                     if key in seen_formulas:
                         continue
                     seen_formulas.add(key)
-                    facts.named_formulas[key] += 1
+                    facts.named_formulas[key] += w
                     facts.formula_tables.setdefault(key, set()).update(tables)
+                    facts.formula_examples.setdefault(key, sql)
 
         for c in tree.find_all(exp.Column):
             qc = _qual(c)
             if qc:
-                facts.column_usage[qc] += 1
+                facts.column_usage[qc] += w
 
     return facts
 

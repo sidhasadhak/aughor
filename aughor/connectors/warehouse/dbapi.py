@@ -11,6 +11,7 @@ import time
 import sqlglot
 
 from aughor.connectors.base import Connector, stage_type
+from aughor.db.signing import sign
 from aughor.control_plane.contracts.execution import QueryResult
 from aughor.db.doors import through_door
 from aughor.db.errors import classify_error
@@ -76,7 +77,7 @@ class DbApiWarehouse(Connector):
         try:
             self._before_statement()
             cur = self._conn.cursor()
-            cur.execute(sql)
+            cur.execute(sign(sql))
             description = list(cur.description or [])
             # one row past the cap: a read the cap cut counts more rows than it keeps
             rows_raw = cur.fetchmany(max_rows + 1) if description else []
@@ -100,7 +101,7 @@ class DbApiWarehouse(Connector):
         try:
             self._before_statement()
             cur = self._conn.cursor()
-            cur.execute(sql, params)
+            cur.execute(sign(sql), params)
             description = list(cur.description or [])
             rows = cur.fetchmany(self.max_rows + 1) if description else []
             return [d[0] for d in description], [list(row) for row in rows]
