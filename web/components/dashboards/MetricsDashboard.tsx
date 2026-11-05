@@ -4,14 +4,14 @@
  * The dashboard a person opens on (ROADMAP §6 item 43; asked 2026-10-05): the connection's approved
  * metrics, measured for a period — this range, its comparison, the change, a year earlier and
  * whether each figure has settled. It is the Briefing's own measured table, read without writing
- * a Briefing: no narrative, no model call. A metric's name opens it beside the page.
+ * a Briefing: no model call. A metric's name opens it in its own row (`MetricsLedger`).
  *
  * It belongs to the connection, not to the person, so it is not in "Your dashboards" and cannot be
  * arranged or retired. A person's own dashboards sit beside it, as before.
  */
 import type { RangeChoice } from "@/components/brief/BriefRange";
 import { Chip, MUTED } from "@/components/clarity/kit";
-import { MetricsFigures } from "@/components/dashboards/MetricsFigures";
+import { MetricsLedger } from "@/components/dashboards/MetricsLedger";
 import { PeriodPicker, choiceName } from "@/components/dashboards/PeriodPicker";
 import { Absent, Gate, useLoad } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
@@ -66,9 +66,9 @@ export function MetricsDashboard({ connectionId, schema, value, onChange }: {
               {`vs ${periodShort(block.previous_start, block.previous_end, block.period) || block.compared_with}`}
             </Chip>
             {block.lag_days > 1 && (
-              <Chip tone="amber" testId="metrics-lag" title={block.lag_source === "beyond_horizon"
+              <Chip tone="amber" testId="metrics-lag" title={block.settling?.kind === "rewrites" || block.settling?.kind === "moving" ? block.settling.says : block.lag_source === "beyond_horizon"
                 ? `${block.still_moving.join(", ") || "A table"} ${block.still_moving.length > 1 ? "were" : "was"} still changing ${block.lag_days - 1} days after a day ended, so recent figures may still move`
-                : "Newer days are still settling"}>
+                : "Newer days may still change"}>
                 {`data ${block.lag_days} days behind`}
               </Chip>
             )}
@@ -104,7 +104,7 @@ export function MetricsDashboard({ connectionId, schema, value, onChange }: {
                 <Button size="xs" variant="secondary" onClick={load.reload}>Try again</Button>
               </div>
             ) : (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
-              ? <MetricsFigures connectionId={connectionId} schema={schema} block={d.period} />
+              ? <MetricsLedger connectionId={connectionId} schema={schema} block={d.period} />
               : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
           </Gate>
         </div>

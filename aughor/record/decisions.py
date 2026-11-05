@@ -159,8 +159,11 @@ def propose_review_on(connection_id: str, decided_at: Optional[_dt.datetime] = N
                  counter="record.review_lag", conn_id=connection_id or None)
     days = int(default_days)
     if lag:
+        from aughor.settling.answer import settling_answer
         days += int(lag)
-        why = f"{default_days} days plus the connection's learned settling lag of {lag} days"
+        said = settling_answer(connection_id)
+        why = (f"{default_days} days plus {said.wait_words()}" if said.never_settled
+               else f"{default_days} days plus the connection's learned settling lag of {lag} day{'s' if int(lag) != 1 else ''}")
     else:
         why = f"{default_days} days; no learned settling lag for this connection"
     return (decided_at + _dt.timedelta(days=days)).date().isoformat(), why

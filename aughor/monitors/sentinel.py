@@ -243,9 +243,9 @@ def _reason(cand: Candidate, dist: Distribution, settle_days: int) -> str:
                  f"{'s' if dist.would_have_fired != 1 else ''}"
                  + (f" ({', '.join(dist.fired_days[:3])}{'…' if len(dist.fired_days) > 3 else ''})"
                     if dist.fired_days else ""))
-    settle = (f"; the youngest {settle_days} days are still settling on this source and are "
+    settle = (f"; the youngest {settle_days} days are too new to score on this source and are "
               f"not scored" if settle_days > 1 else "")
-    return (f"{cand.label}: over the last {dist.n} settled days ({dist.first_day} to "
+    return (f"{cand.label}: over the last {dist.n} days old enough to score ({dist.first_day} to "
             f"{dist.last_day}) it averaged {dist.mean:,.2f}{unit} with σ {dist.std:,.2f}; "
             f"a {dist.sigma}σ watch {fired} in that window{settle}. "
             f"Checked daily, SQL only — the deep analysis runs only when it fires.")[:400]
@@ -363,8 +363,8 @@ def propose_for_connection(connection_id: str, *, run_sql: Optional[RunSql] = No
             continue
         dist = learn_distribution(points, today=today, settle_days=settle_days)
         if dist is None:
-            skipped[cand.name] = (f"too few settled days ({len(points)} points; needs "
-                                  f"{MIN_POINTS} settled)")
+            skipped[cand.name] = (f"too few days old enough to score ({len(points)} points; needs "
+                                  f"{MIN_POINTS})")
             continue
         if dist.would_have_fired > MAX_FIRINGS:
             # Measured live on theLook, 2026-09-23: with no settling lag learned yet, the

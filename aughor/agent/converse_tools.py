@@ -950,21 +950,8 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
     # Idea 4 — what the platform has learned about this source's recent days. Stated as a
     # fact with its provenance, so the model reports a young day as provisional instead of
     # as a collapse; absent until a lag has actually been learned.
-    settling_note = ""
-    try:
-        from aughor.settling import learned_lag_days
-        _lag = learned_lag_days(connection_id)
-        if _lag:
-            settling_note = (
-                f"This source keeps restating its most recent days: a day's numbers go on "
-                f"changing for {_lag} day{'s' if _lag != 1 else ''} after it ends (learned from "
-                f"observation). Treat totals for the last {_lag} days as provisional and say so "
-                f"when you report them; prefer settled days for any comparison."
-            )
-    except Exception as settle_exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(settle_exc, "the settling note is additive; the conversation stands without it",
-                 counter="converse.settling_note")
+    from aughor.settling import settling_answer
+    settling_note = settling_answer(connection_id).for_agents()
     sql_note = _engine_and_clock(connection_id)
     check_note = ""
     from aughor.agent.question_shape import CHECK_RULE, question_shape

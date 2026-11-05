@@ -203,7 +203,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     </label>
   );
 
-  // ROADMAP §3.65 — the four choices an organisation makes about what Aughor may do; everything else is the platform's.
+  // ROADMAP §3.65 — the choices an organisation makes about what Aughor may do; everything else is the platform's.
   const ALLOWS: { k: OrgAllowSetting; label: string; hint: string }[] = [
     { k: "share_aggregates", label: "Share summary statistics with other installs",
       hint: "How often packs' claims held here. Names, ids and values never leave." },
@@ -213,6 +213,8 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       hint: "The reason is kept with who read it. Exporting the ledger asks too." },
     { k: "scheduled_model_work", label: "Let Aughor run model work on its own schedule",
       hint: "Nightly runs of each custom agent's checked questions, and re-tests after reviews, within the Spend budget." },
+    { k: "read_query_history", label: "Read each warehouse's own query history",
+      hint: "The SQL people ran there, mined for joins, filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt until a person confirms it." },
   ];
   const allowField = ({ k, label, hint }: { k: OrgAllowSetting; label: string; hint: string }) => {
     const chosen = s[k];

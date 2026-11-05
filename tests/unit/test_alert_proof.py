@@ -105,7 +105,7 @@ def test_still_settling_days_are_not_replayed(monkeypatch):
     bt = backtest_monitor(_monitor(), run_sql=lambda sql: (["day", "n"], rows, None), today=today)
     assert bt.ok and bt.settle_days == 8 and bt.count == 0
     assert bt.series_to == (today - timedelta(days=8)).isoformat()
-    assert bt.sentence.endswith("(the youngest 8 days are still settling and were not replayed).")
+    assert bt.sentence.endswith("(the youngest 8 days are too new to score and were not replayed).")
 
 
 def test_a_threshold_monitor_replays_its_line():

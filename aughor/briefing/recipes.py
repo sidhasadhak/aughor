@@ -44,8 +44,8 @@ SECTIONS = {
 
 GUIDANCE = {
     "day": ("This is the DAY briefing, written for acting today. Lead with any alert that fired since "
-            "yesterday; then the single biggest move in the newest settled day against the same weekday a "
-            "week earlier, with the segment that carried it; then what the days still settling suggest, "
+            "yesterday; then the single biggest move in the newest day old enough to read against the same weekday a "
+            "week earlier, with the segment that carried it; then what the newer days suggest, "
             "saying plainly that they are early. End with the one thing to do first."),
     "week": ("This is the WEEK briefing, written for steering. Lead with what moved against the week "
              "before and whether it is unusual against the weeks before that; name the segment each move "
@@ -278,7 +278,9 @@ def apply(conn_id: str, spec: Any, got: dict, *, run_sql: Callable[[str], tuple]
     out: dict = {"recipe": recipe, "sections": list(sections), "moves": [], "thin": [], "why": [],
                  "early": None, "candidates": {}}
     if "what_moved" in sections or "why" in sections:
-        moved = what_moved(metrics, spec, run_sql, dialect=dialect,
+        # a figure not at equal age has no move for a segment to explain
+        moved = what_moved([m for m in metrics if (measured[m.name].get("equal_age") or {}).get("equal") is not False],
+                           spec, run_sql, dialect=dialect,
                            profile_entry=merged_profile_entry(conn_id))
         for c in moved["moves"] + moved["thin"]:   # the page shows the text the narrator read
             c["current_text"] = _fmt(c["current"], c, currency)

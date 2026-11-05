@@ -15,6 +15,7 @@ function what(c: Recheck["changes"][number]): string {
 }
 
 function cause(r: Recheck): string {
+  if ((r.cause === "moving" || r.cause === "rewrites") && r.settling_says) return r.settling_says;
   if (r.cause === "late_rows")
     return `Late rows: this source settles after ${r.lag_days} days, and the day was still settling when this was answered.`;
   if (r.cause === "restated")

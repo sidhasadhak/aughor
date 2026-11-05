@@ -304,14 +304,19 @@ def _coverage_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
     for p in rows:
         if p.get("source") == CP.SOURCE_RECIPE:
             continue
-        came = (f"the knowledge base's {p.get('pattern_title') or p.get('pattern')}" if p.get("pattern")
-                else str(p.get("derived_from") or "") or ("a measure the explorer keeps computing"
-                                                         if p.get("source") == CP.SOURCE_BLIND_SPOT else
-                                                         "no pattern — written for an area the knowledge base lacks"))
+        if p.get("source") == CP.SOURCE_QUERY_HISTORY:
+            came = (f"the warehouse's own query history — computed in {p.get('runs')} runs by someone other than Aughor "
+                    "(Arc NV-7)")
+        else:
+            came = (f"the knowledge base's {p.get('pattern_title') or p.get('pattern')}" if p.get("pattern")
+                    else str(p.get("derived_from") or "") or ("a measure the explorer keeps computing"
+                                                             if p.get("source") == CP.SOURCE_BLIND_SPOT else
+                                                             "no pattern — written for an area the knowledge base lacks"))
+        state = (STATE_GATE_FAILED if p.get("state") == CP.STATE_GATE_FAILED
+                 else STATE_NEEDS_FORMULA if p.get("state") == CP.STATE_NEEDS_FORMULA else STATE_PROPOSED)
         out.append(CatalogueEntry(
             name=normalize_name(p.get("name") or ""), label=str(p.get("label") or p.get("name") or ""),
-            source=SOURCE_COVERAGE, state=(STATE_GATE_FAILED if p.get("state") == CP.STATE_GATE_FAILED
-                                           else STATE_PROPOSED),
+            source=SOURCE_COVERAGE, state=state,
             sql=str(p.get("sql") or ""), unit=str(p.get("unit") or ""), definition=str(p.get("definition") or ""),
             tables=list(p.get("tables") or []), reason=str(p.get("reason") or ""), why_it_matters=came,
             pack_id=str(p.get("pack_id") or ""), editable=False, schema=schema_name or "*",

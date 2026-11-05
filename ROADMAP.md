@@ -12234,6 +12234,40 @@ area thin on metrics (LuxExperience's Traffic & conversion: one metric, 22 patte
 
 ---
 
+**The Metrics dashboard as a ledger (the user, 2026-11-04, with another data expert's prototype: *"Lets move our Metrics
+Dashboards in this manner"*, then *"I like it"*).** One row per metric, each in its area in the order the industry reads
+them: the figure, a trend with its usual range behind it, the two comparisons, the expected-next band, and one line of what
+it means, written by rule from what was measured, so it cannot state what the figures do not. **Key movements** are the same
+rows outside their usual range, what is bad first. A metric opens in its own row: how it reads, what the platform's own work
+says of it (word for word from the Briefing written for that range), how it is measured. `MetricsLedger.tsx` replaces
+`MetricsFigures.tsx`; no model call, and reading it still books the expected-next bands. **Areas come from the knowledge base
+(*"We already have industry metrics.. let it be based on that"*):** a metric is placed by the pattern it cites, is or holds
+whole, before the area a proposal happened to be written in, so Gross Margin on Items reads with Gross Margin. The
+exploration only helps pick the industry. Mockup: `design-mockups/metric-ledger-lux.html`.
+**Found by building it:** a figure the server says is not at equal age was reading as "highest in 13 months", which on theLook
+made all 10 metrics key movements; those rows now say they are not read against their usual range, and 2 remain. The Briefing's own
+`outside` (`briefing/edition.py`) has the same gap, not changed here. A dashboard's "previous month" reads the Briefing kept under
+"last month", only when both name the same days. Applying a metric's definition drops the connection's kept Briefings by design
+(`routers/metrics.py`), so what the platform knows of a metric is gone from the row until one is written again.
+
+**Work done before a definition changed says so (the user, 2026-11-04, "Yes, fix it").** Lux's October edition told its reader to take a rise as
+partly an artefact, citing a deep analysis of the old +22% and +42%, after the same-age definitions had removed that rise. A deep analysis now carries
+`definitions_changed`: the metrics it names whose formula or dates changed after it finished, read from the governance trail, an approval alone not
+counting (`DEFINITION_CHANGES`; a date edit on an approved metric now goes on that trail). The model is told and given a rule; a question asked in chat is
+told too; and code says it on the page and on the ledger's row whatever the model wrote, on a kept edition as well. It tells; it cannot rewrite what
+was kept, and a sentence that cites nothing has no note to carry.
+
+**One answer to what can be said of a source's days (the user, 2026-11-04: "fix these at platform level so that any future connection will not have these
+problems").** A source's lag was read everywhere as "it settles after N days". Measured every row across one refresh: theLook is redrawn whole, so no age
+settles, and it was being told to readers, the model and other agents as settling after 29 days. `settling/answer.py` gives one of four answers (unknown,
+settles, moving, rewrites), from a source's own readings, and is the one place that words them; no connection is named. Dashboard tiles, sends and narration
+with no guide, prompts, scheduled runs, re-checks, watches, Key movements, decisions, inquiries, predictions and Home read it, narrowed to the tables a figure
+reads (`about`). A difference on a table never seen to settle is not read as a move. Watches keep firing, measured first (about 1% at 3 sigma, as on a source
+that settles), and carry a caveat. A re-check on a source that rewrites restates the Record but tells nobody and reopens nothing. Old days are read from a
+table's first day until they have held for a month, and two moves of them in the last month beat a settled verdict from recent days, which reads settled
+between one redraw and the next. Cost, chosen: a two-day backfill on a healthy source reads as rewriting for up to 30 days. It takes two refreshes to
+recognise a source, so theLook reads `moving` until two are read, and a new source can read `settles` between its first and second.
+
 ### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 as §3 of `docs/GRIST_STUDY_2026-10-26.md`, at the user's *"We have to get the most out of this"* on gristlabs/grist-core · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted — **SV-3 BUILT 2026-10-28** at the user's *"proceed with the rest"* · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
 **The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
@@ -12901,7 +12935,138 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   claims) is read by the Briefing and put in every question's context with the platform's earlier work; an exploration
   run now asks up to 300 questions of a dataset across its domains (it asked 15).
 
-### 3.68 · The 10× program — the enterprise foundation under the intelligence loop (DRAFTED 2026-11-05 as `docs/TENX_PROGRAM_2026-11-05.md`; not yet adopted)
+### 3.68 · Arc NV — what NVIDIA's Auto-Ontology teaches: three facts measured on the data, and a door for the warehouse's own history (STUDIED 2026-11-04 as `docs/NVIDIA_AUTO_ONTOLOGY_STUDY_2026-11-04.md` at the user's *"Dont we do something similar or better? Lets compare first at the finest details"* · ✅ ADOPTED the same day — §6 item 60, the user: *"make sure we have everything well structured and start building based on the study"* · **NV-0 to NV-3 BUILT 2026-11-04** on `claude/nvidia-auto-ontology-study`, not merged; receipts in PENDING item 76)
+
+The study's one-page answer (its §0): for what Auto-Ontology does, this platform does the same thing measured rather
+than proposed, and then a second storey it has no word for — and NVIDIA is ahead in three small, specific places. Those
+three are this arc, in the study's own order of value over cost, each through the measured tier, none needing a model.
+
+- **Measured first, four premises corrected.** (1) The study said the mined facts would reach a prompt "through the
+  candidate door that already EXPLAIN-binds": the door existed and **nothing called it** — `candidates.mine()` had no
+  caller anywhere, a complete and inert plane (§7's recurring failure). (2) `AUGHOR_QUERY_LOG_MINING` was a raw
+  `os.environ` read in `tools/schema.py` gating a prompt block: a feature flag the 2026-10-28 retirement never saw,
+  because it was registered nowhere. (3) `candidates.ORIGINS` named `saved_sql` and `dbt`, which nothing ever wrote.
+  (4) `EntityProperty` had no notation field and `junction` appeared only in a linker comment — both as the study
+  read. And one the study could not see: the profiler's own API log on Superstore held the trap NV-1 exists for —
+  `invalid date field format: "11/8/2016" … when casting from source column Order Date`.
+- **NV-0 · the two finds (§6 of the study).** The env switch is DELETED with a tombstone in `kernel/flags.py`: the
+  LEARNED FROM QUERY HISTORY block was prose-shaped "more context" of the kind R4 and the DATA PROFILE block's own
+  falsifier retired, never measured, and under §3.65 a prompt block is always on or it is gone; its facts now reach
+  a prompt only as candidates a person confirmed and that bound (NV-3). `saved_sql` and `dbt` are gone from
+  `ORIGINS`; every origin named has a miner. *Both are the builder's calls, open to the user (§6 item 60).*
+- **NV-1 · a text column's date notation as a property fact** (`aughor/tools/date_format.py`, the profiler,
+  `EntityProperty.format` / `format_note`). NVIDIA's method transfers whole: candidates in specificity order, a winner
+  must parse EVERY value read with the year in [1900, 2099], DD/MM against MM/DD refused by name. This repo's rule
+  adds the half NVIDIA leaves out — *withheld is said*: an ambiguous column carries the note naming both readings,
+  and the ENTITY MODEL block prints it ("text dates (cast before comparing): …"). The probe reads up to 2,000
+  distinct values per column, six columns per table, only text columns whose name or values look like dates; the
+  profile cache version moves (`v10-text-dates-2000`), so every connection re-profiles on its next build. Reach grew
+  and is recorded: `format`, `format_note` and now a property's `name` reach the ENTITY MODEL block. **Receipt, live
+  on Superstore (two model-enriched rebuilds, 1:41 and 1:55):** `Order Date` and `Ship Date` both `MM/DD/YYYY`, every
+  one of 1,237 and 1,334 distinct values parsing, on the profile, on the served property and in the rendered block.
+  The first rebuild wrote NOTHING: the 200-value cap had been read as eligibility, not as a read bound, and the
+  column holds 1,237 — the kind of defect only the live run finds. theLook and Olist hold no text date column.
+- **NV-2 · the junction mark as a measured fact** (`aughor/ontology/junction.py`, `Junction`,
+  `OntologyRelationship.via`). An entity minted from one table, carrying no measure, with exactly two value-verified
+  (≥ 0.15, `join_guard`'s floor) or engine-declared foreign keys to two different entities and nothing else but its
+  own key and timestamps, is marked after the cardinality pass, and ONE N:N link is declared between the far entities
+  THROUGH it, both hops in `join_sql`, both overlaps on record; the ENTITY MODEL block says "junction between X and
+  Y (…) — join through it; it carries no measure", the relationship block says "via". No model call. The object
+  compiler keeps refusing every N:N, this one by name. **Receipt, over HTTP on the three served graphs:** no table on
+  theLook (8 entities), Olist (9) or Superstore (1) qualifies — every bridge-shaped table carries a measure
+  (`order_items`, `inventory_items`, `order_payments`), exactly the study's check — so the **falsifier holds**: the
+  mark ships as a fact and the compiler change waits for a live table that qualifies.
+- **NV-3 · the warehouse's own query history, through the candidate door** (`aughor/db/query_history.py`,
+  `query_history()` on every connection, `candidates.mine_from_query_log`, `POST /ontology/candidates/mine`, the
+  organisation setting `read_query_history`). Snowflake's `INFORMATION_SCHEMA.QUERY_HISTORY`, ClickHouse's
+  `system.query_log`, BigQuery's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` (then the caller's own jobs when the project view
+  is refused), the lakehouse engine's `system.query.history` and — at the user's *"Yes, do it"* on LuxExperience,
+  2026-11-04 — Postgres's `pg_stat_statements` where the extension is installed (an aggregate: each normalised
+  statement once with its call count since the last reset, weighed by its calls up to 100, literals read as `$n`;
+  without the extension the answer says what installs one; `pg_stat_activity`, the moment, is never read) —
+  finished SELECTs, statement text and when, never rows, through each connection's own door as an internal read;
+  every other engine says it keeps none. The miner the
+  repo already had (`sql/query_log_miner.py`, sqlglot) turns them into typed candidates — join edges the graph lacks,
+  recurring filter values, recurring named formulas, each seen at least twice, each with its frequency as evidence —
+  and the door EXPLAIN-binds every one on the connection before offering it, counts what it refused, and writes
+  nothing. The read is a connection admin's choice, off by default, born a setting and never a flag (§3.65); while
+  off the door refuses with 409 and says where to turn it on. **Receipt, live on theLook:** the refusal while off
+  (`"Reading the warehouse's query history is off for this organisation. An admin turns it on under Settings ▸
+  Organization ▸ What Aughor may do …"`); then, the user having turned it on (*"Yes, turn it on"*), the read reached
+  BigQuery in 4 s and the engine refused — the service account lacks `bigquery.jobs.list` on the project, for the
+  project view and the caller's own alike — and the door handed back the engine's words as a value, nothing mined,
+  nothing written. The first live call had raised instead: the four readers declared the engine's dialect where the
+  door wants none (a statement written for the engine declares nothing); fixed and pinned. The user's grant did not
+  reach the connection's own service account (four runs, the same 403 through the plain query door). **Receipt, live on
+  LuxExperience** (the user: *"Yes, do it"* — `pg_stat_statements` enabled on its warehouse, a Postgres reader built
+  over it the same hour): 165 statements and 546 calls read, 25 candidates mined, **19 bound and offerable** — the
+  business's own formulas, `gmv_eur`, `aov_eur`, `contribution_margin_eur`, `gross_margin_pct`, the return rate — 6
+  refused with the engine's words; **0 join candidates, every join in the history already in the graph**, on a
+  history that is so far Aughor's own SQL. **The next morning, the ETL's statements in (1,247 statements, 28,286
+  calls): 0 join candidates again — every one of the 22 joins the history uses is in the graph. On the one connection
+  with a readable history the falsifier holds; the reader stays a connector method and the door proposes measures.**
+  theLook's binding is still the second connection the clause asks for (PENDING item 76). Three live runs found what no fixture had: the unqualified read of a view in `public`,
+  formulas kept without their tables, the Briefing's own `_n`/`_first` offered back, one formula six times over as
+  `$2 … $57`.
+- **NV-5 · a feature's prerequisite on the engine, said and provisioned** (the user, the same day, after
+  `pg_stat_statements` had to be switched on by hand for the Lux receipt: *"make sure that similar features … are
+  enabled by default in our platform"*). What each engine needs before its history can be read is declared in the
+  admin's words; a connection is probed once and answers ready, not readable yet (with the step, and whether the
+  platform can take it), or not applicable; Postgres says where `pg_stat_statements` stands and the platform creates
+  it once the library is preloaded — the one DDL it writes to a warehouse, in its own READ WRITE transaction under
+  the read-only session, gated by the organisation's setting and journaled as a governance change; the server setting
+  and its restart remain the admin's, said as such. The verdict is where a person looks: the Test button, the
+  declared-metadata read, the door's refusal, and a `prerequisites` step of the birth rite that provisions too.
+  **Receipt, live:** Lux ready, theLook refused with the grant in words, Superstore keeping none; the extension
+  dropped on Lux and re-created by the platform through its door — after two live defects the fakes had admitted
+  (`SHOW` refused by the read door; DDL refused in a read-only transaction).
+- **NV-4 · a bound candidate is a proposal in the ONE inbox; accept declares it** (the user: *"Keep building"*). The
+  mining door's `stage` puts every bound candidate into the resolve-once inbox, idempotent by the candidate's own
+  text, with what an accept would declare resolved against the served graph first — a join a link spec, a measure
+  over one entity a computed property, a filter a segment — and a candidate the graph cannot back left out, with why,
+  because Accept must mean something. Accepting declares through the doors that already exist: the link door's own
+  body (measured and bound before it is written, origin human, the mining as provenance), the computed-property and
+  segment overrides (bound before they earn `verified`), into the draft as the accepting person's declaration; a
+  door's refusal is the outcome, verbatim; a rejection is kept and never re-staged. **Receipt, live on Lux:** 19
+  bound, 16 staged, 3 said unstageable (formulas over several tables); the accept is the user's click (PENDING item 76).
+- **NV-6 · said at the comparison** (the user, 2026-11-05: *"Lets go with pending items"*). The trust checks that run
+  on every statement now read the profiler's facts: a text date compared, bounded or sorted as text is told its
+  notation so the fix is a cast with it, or told the notation is ambiguous when the profiler withheld one; two whole
+  numbers divided where the engine truncates are told so, with the decimal to put on one side; a literal a hundred
+  times a column's observed maximum, or a percent compared to a fraction of 1, is told it keeps no row, with the
+  fraction to use. Without the facts the checks say nothing. The frame tells a writer to follow a two-link path whole
+  and never shorten it to a join the graph does not hold — the study's §5.4 wording, placed where multi-hop paths
+  are actually rendered (the candidate drivers), not on the one-hop relationship lines. **Receipt, live through the
+  validate door:** Superstore's text date, a ratio of counts on Lux's Postgres, a percent against Lux's `fraud_score`
+  — each said; the same filter within range, silent.
+- **NV-7 · one door per kind** (§6 item 61, the user: *"Yes, adopt it"*). Measured first: on LuxExperience the
+  warehouse's history was almost entirely the platform's own statements, and NV-4 had proposed twelve approved metrics
+  back to the person in Attention — nothing on a statement said who sent it, and the miner asked no store what was
+  already known. Now the platform signs every statement it hands a driver (`db/signing.py`; the statement a result
+  carries stays as written), the history reader leaves signed statements out and counts them (`ours`), and a formula
+  other people compute is proposed where metrics are proposed: the coverage run's fourth proposer
+  (`coverage_proposals.history_proposals`, while the organisation allows the read) normalises each recurring formula
+  through the same miner as the defined metrics, skips the known by key and the platform's aliases, and proposes the
+  rest with the FROM of the statement it was seen in, through the same gates; the catalogue says where it came from;
+  adopting it in the Semantic Layer is the one approval. Attention takes no formula and says where one goes; the
+  sixteen cards were rejected with that reason, the one the user had accepted (`gmv_eur` on Order) waiting in the
+  draft as the second door this closes. **Receipt, live on Lux:** the engine kept the signature on the first statement
+  through the door; the reader read 842 statements and counted the platform's own; two coverage runs on the unreset
+  history took the proposer from 95 formulas (92 refused by the gates) to 24 (3 proposed, 7 `needs_formula`, 14 honest
+  gate failures), the first run's refusals read first now — every one of the 24 still the platform's own pre-signing
+  SQL. After the user's reset of the statistics, the coverage run read a clean history and proposed **nothing from it**:
+  105 statements since, 101 of them the platform's own, signed and left out — nobody but the platform queries
+  LuxExperience yet, and the Semantic Layer now receives nothing from the platform's own work. On the way the
+  unweighted miner was found pinning the API at full CPU for half an hour; a history row is parsed once and counted by
+  its weight (PENDING item 76).
+- **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
+  falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
+  study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
+  roots that name no table, the "VERIFIED OPTIONS … never shorten the path" wording on a multi-hop relationship line.
+- **Not taken, by the study's §5.5:** the per-table LLM term pass, the lenient LLM intent validator, a settings table
+  of feature flags, a hosted predictive service the rows are uploaded to.
+
+### 3.69 · The 10× program — the enterprise foundation under the intelligence loop (DRAFTED 2026-11-05 as `docs/TENX_PROGRAM_2026-11-05.md`; not yet adopted)
 
 An outside *Enterprise Architecture, Security and Engineering Assessment* (2026-11-04, written from public files, no
 clone) was checked finding by finding against `main` at `11aa35b0`; the user set four architecture decisions beside it;
@@ -15448,6 +15613,35 @@ the browser** · **measure the premise before building.**
     - **The canvas replaces Arc BG's edition page;** controls filter in the browser; the map is the choropleth.
     - **Words:** edition (an *open canvas* in prose only — *Canvas* is the Data Canvas) · block · source of a
       block · drill.
+
+60. ✅ **DECIDED 2026-11-04 — what NVIDIA's Auto-Ontology teaches, Arc NV** (§3.68). The user, on the study's branch:
+    *"make sure we have everything well structured and start building based on the study on Nvidia ontology"* — the
+    study's §5 order taken as the build order (the date notation, the junction mark, the query-history reader, each
+    through the measured tier, none with a model call), its §5.5 refusals kept. Two calls the builder made on the way,
+    each reversible and open to the user:
+    - **The LEARNED FROM QUERY HISTORY prompt block is deleted, not made always-on.** It was gated by a raw env var the
+      flag retirement never saw; made unconditional it would have been an unmeasured prompt change of the class R4 and
+      the DATA PROFILE falsifier retired. Its facts reach a prompt only as confirmed, bound candidates. *To reverse:*
+      restore the auto-collect in `tools/schema.py` behind a measured receipt.
+    - **`saved_sql` and `dbt` are gone from the candidate origins** — names nothing wrote for two years. *To reverse:*
+      add the name back with its miner.
+    - **The user turned on *Read each warehouse's own query history*** the same day (*"Yes, turn it on"*); the door ran
+      on theLook and BigQuery refused for a missing `bigquery.jobs.list`. **Owed to the user:** that grant on the
+      project, then one more run of the door for the study's receipt.
+
+61. ✅ **DECIDED 2026-11-05 — one door per kind** (§3.68, NV-7). Asked by the user after the first live mining put
+    sixteen formula candidates in Agent Ops ▸ Attention, twelve of them LuxExperience's own approved metrics: *"if I
+    approve in Agentic Ops → Attention, should I again approve in Semantic Layer? This is not ideal. One approval door
+    either upstream or downstream"*. Decided downstream, as recommended, the user: *"Yes, adopt it"*:
+    - **A formula is approved once, in the Semantic Layer**, whoever proposed it — the explorer, the coverage pass, the
+      warehouse's own history. Adopting it is the approval; the entity gets the formula by lifting, with no second door.
+      The computed-property door stays for entity-local values a person declares by hand; nothing routes to it.
+    - **Structure is published once, in the Ontology**: links, segments, junctions, bindings — the draft and its release.
+    - **Actions and sends are accepted once, in Attention** — what it was built for. It takes no formula.
+    - **The platform signs every statement it sends** (`/* aughor */`, at the driver call), so a warehouse's own history
+      can tell the platform's statements from everyone else's; the reader leaves them out and says how many.
+    - *Why not upstream:* the Briefing and the dashboards read approved metrics only, so an object-layer approval would
+      still need the metric's; and the metric is where the governance lives (owner, grain, additivity, figure gates, twins).
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import sqlglot
 from sqlglot import exp
@@ -37,9 +37,19 @@ _NUMERICISH = ("num", "amount", "amt", "count", "cnt", "score", "rate", "qty", "
                "value", "val", "rank", "year", "age", "level", "rating", "total", "balance")
 
 
+#: Arc NV-6 — dialects whose `/` on two integers truncates (7 / 2 = 3). DuckDB, BigQuery, Snowflake, MySQL, ClickHouse and
+#: Spark divide to a fraction; these do not, and a ratio written as `a / b` over counts or integer columns silently loses
+#: everything after the point.
+_TRUNCATING_DIVISION = frozenset({"postgres", "postgresql", "sqlite", "tsql", "mssql", "trino", "presto", "oracle"})
+_INT_TYPE = ("INT", "SERIAL", "SMALLINT", "BIGINT", "TINYINT")
+#: a literal this many times the column's observed maximum is a different scale, not a large value
+_SCALE_FACTOR = 100.0
+
+
 @dataclass
 class TrustIssue:
-    pattern: str        # "E1-date-boundary" | "E1-lexicographic-order" | "E1-text-numeric-compare"
+    pattern: str        # "E1-date-boundary" | "E1-lexicographic-order" | "E1-text-numeric-compare" | "E1-text-date-compare"
+                        # | "E1-integer-division" | "E1-scale-mismatch"
     subject: str        # the column / expression involved
     message: str
 
@@ -95,6 +105,52 @@ def _names_a_column(word: str, all_tables: set, col_types: Optional[dict]) -> bo
     return any(f"{t}.{w}".lower() in col_types for t in (all_tables or ()))
 
 
+def _facts_of(col: exp.Column, a2t: dict, single: Optional[str], col_facts: Optional[dict]) -> dict:
+    """The profiled facts for a column (`connection_column_facts`), resolved like `_coltype`: `table.col` first, the bare
+    name as a fallback. {} when nothing is known — every check reading it then says nothing."""
+    if not col_facts:
+        return {}
+    name = col.name.lower()
+    t = a2t.get(col.table.lower()) if col.table else single
+    if t and f"{t.lower()}.{name}" in col_facts:
+        return col_facts[f"{t.lower()}.{name}"]
+    if t and f"{t.lower().split('.')[-1]}.{name}" in col_facts:
+        return col_facts[f"{t.lower().split('.')[-1]}.{name}"]
+    return col_facts.get(name, {})
+
+
+def _is_integer(col: exp.Column, a2t: dict, single: Optional[str], col_types: Optional[dict]) -> bool:
+    t = _coltype(col, a2t, single, col_types)
+    return bool(t) and any(x in t.upper() for x in _INT_TYPE) and "POINT" not in t.upper()
+
+
+def _integer_valued(node: exp.Expression, a2t: dict, single: Optional[str], col_types: Optional[dict]) -> bool:
+    """An operand of a division that is a whole number: a COUNT, an integer-typed column, or an integer literal."""
+    if isinstance(node, exp.Paren):
+        return _integer_valued(node.this, a2t, single, col_types)
+    if isinstance(node, exp.Count):
+        return True
+    if isinstance(node, exp.Column):
+        return _is_integer(node, a2t, single, col_types)
+    if isinstance(node, exp.Literal) and not node.is_string:
+        return "." not in (node.name or "") and "e" not in (node.name or "").lower()
+    if isinstance(node, (exp.Sum, exp.Min, exp.Max)) and isinstance(node.this, exp.Column):
+        return _is_integer(node.this, a2t, single, col_types)
+    return False
+
+
+def _numeric_literal(node) -> Optional[float]:
+    if isinstance(node, exp.Literal) and not node.is_string:
+        try:
+            return float(node.name)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(node, exp.Neg):
+        inner = _numeric_literal(node.this)
+        return -inner if inner is not None else None
+    return None
+
+
 def _numericish_name(name: str) -> bool:
     n = name.lower()
     return any(tok in n for tok in _NUMERICISH)
@@ -109,9 +165,18 @@ def _date_only_literal(node) -> Optional[str]:
 def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                      dialect: str = "duckdb",
                      phase: str = "trust_check",
-                     connection_id: str = "") -> list[TrustIssue]:
+                     connection_id: str = "",
+                     col_facts: Optional[dict] = None) -> list[TrustIssue]:
     """Return E1 function-semantics caveats for `sql`. Pure AST; never raises. `col_types` keys are
     lowercased "table.col" and/or "col" → type string (optional).
+
+    Arc NV-6 — `col_facts` (same keys → the profiled facts of :func:`connection_column_facts`: a text column's date
+    notation, the measured value range, what the values mean) feeds three more checks: a text date compared or
+    sorted as text (`E1-text-date-compare`, the notation named so the fix is a cast with it), a division of two
+    whole numbers on an engine that truncates (`E1-integer-division`), and a literal a hundred times the column's
+    observed maximum, or a percent given for a fraction (`E1-scale-mismatch`). Given a `connection_id` and no
+    `col_facts`, the facts are read from the connection's profile cache, cached per process; with neither, those
+    three checks say nothing — they never guess.
 
     PENDING item 27 — given the `connection_id`, also a SUM of a reading at a moment the connection's ontology
     declares (a stock, a balance) that spans more than one of its moments (`semiadditive-sum`,
@@ -136,6 +201,8 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
         return []
     if tree is None:
         return []
+    if col_facts is None and connection_id:
+        col_facts = connection_column_facts(connection_id)
     a2t = _alias_to_table(tree)
     all_tables = {t.name for t in tree.find_all(exp.Table)}
     single = next(iter(all_tables)) if len(all_tables) == 1 else None
@@ -189,6 +256,87 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                           f"Text column '{col.name}' is compared to the numeric literal {lit.name}; "
                           f"this compares lexicographically / casts unexpectedly. "
                           f"CAST({col.name} AS <numeric>) for a numeric comparison.")
+    # Arc NV-6 · E1-text-date-compare: a TEXT column whose dates the profiler read a notation for (or found ambiguous) is
+    # compared to, bounded by, or sorted as text. '2/1/2017' < '11/8/2016' character by character; the fix is a cast
+    # WITH the notation, which is why the notation is said.
+    def _text_date(col) -> Optional[dict]:
+        if not isinstance(col, exp.Column):
+            return None
+        f = _facts_of(col, a2t, single, col_facts)
+        return f if (f.get("format") or f.get("format_note", "").startswith("ambiguous")) else None
+
+    def _say_text_date(col, f, how: str) -> None:
+        if f.get("format"):
+            _emit("E1-text-date-compare", col.name,
+                  f"'{col.name}' is a text column whose dates are written {f['format']}; {how} compares it character by "
+                  f"character ('2/1/2017' sorts before '11/8/2016'). Parse it with that notation first — on DuckDB "
+                  f"STRPTIME({col.sql()}, <{f['format']} as a format string>), on Postgres TO_DATE, on BigQuery PARSE_DATE — "
+                  f"and compare the result as a date.")
+        else:
+            _emit("E1-text-date-compare", col.name,
+                  f"'{col.name}' is a text column of dates whose notation is AMBIGUOUS (every day ≤ 12 reads as both DD/MM "
+                  f"and MM/DD); {how} compares it as text, and no cast can be trusted until a person declares the notation "
+                  f"on the property.")
+
+    _OP = {exp.GT: ">", exp.LT: "<", exp.GTE: ">=", exp.LTE: "<=", exp.EQ: "=", exp.NEQ: "<>"}
+    for cmp_cls in (exp.GT, exp.LT, exp.GTE, exp.LTE, exp.EQ, exp.NEQ):
+        for node in tree.find_all(cmp_cls):
+            for col, lit in ((node.left, node.right), (node.right, node.left)):
+                f = _text_date(col)
+                if f and isinstance(lit, exp.Literal) and lit.is_string:
+                    _say_text_date(col, f, f"`{_OP[cmp_cls]} '{lit.this}'`")
+    for b in tree.find_all(exp.Between):
+        f = _text_date(b.this)
+        if f:
+            _say_text_date(b.this, f, "BETWEEN")
+    for o in tree.find_all(exp.Ordered):
+        f = _text_date(o.this)
+        if f:
+            _say_text_date(o.this, f, "ORDER BY")
+    for agg in list(tree.find_all(exp.Min)) + list(tree.find_all(exp.Max)):
+        f = _text_date(agg.this)
+        if f:
+            _say_text_date(agg.this, f, "MIN/MAX")
+
+    # Arc NV-6 · E1-integer-division: `a / b` over two whole numbers on an engine whose `/` truncates. A ratio of
+    # counts — the commonest measure there is — comes back 0 or 1 and nobody is told.
+    # sqlglot already carries the engine's semantics on the node: `typed=True` is a `/` that keeps the operands' type
+    # (Postgres, SQLite, T-SQL, Trino), `safe=True` one that always divides to a fraction (DuckDB). The dialect list is
+    # the fallback for a parser that marks neither.
+    for div in tree.find_all(exp.Div):
+        if div.args.get("safe"):
+            continue
+        if div.args.get("typed") or str(dialect or "").lower() in _TRUNCATING_DIVISION:
+            if _integer_valued(div.left, a2t, single, col_types) and _integer_valued(div.right, a2t, single, col_types):
+                _emit("E1-integer-division", div.sql(),
+                      f"`{div.sql()}` divides two whole numbers, and on {dialect} that truncates (7 / 2 = 3): a ratio "
+                      f"of counts comes back 0 or 1. Make one side a decimal first — `{div.left.sql()} * 1.0 / "
+                      f"{div.right.sql()}` or a CAST to DOUBLE.")
+
+    # Arc NV-6 · E1-scale-mismatch: a literal a hundred times the column's observed maximum, or a percent compared to a
+    # fraction of 1. Both read a filter that keeps no row and say nothing.
+    for cmp_cls in (exp.GT, exp.LT, exp.GTE, exp.LTE, exp.EQ, exp.NEQ):
+        for node in tree.find_all(cmp_cls):
+            for col, lit in ((node.left, node.right), (node.right, node.left)):
+                if not isinstance(col, exp.Column):
+                    continue
+                value = _numeric_literal(lit)
+                f = _facts_of(col, a2t, single, col_facts)
+                rng = f.get("value_range") if f else None
+                if value is None or not rng:
+                    continue
+                lo, hi = rng
+                interp = str(f.get("value_interpretation") or "")
+                if interp.startswith("fraction") and hi <= 1.0 and 1.0 < abs(value) <= 100.0:
+                    _emit("E1-scale-mismatch", col.name,
+                          f"'{col.name}' is a fraction of 1 (observed {lo:g}–{hi:g}); the literal {value:g} reads like a "
+                          f"percent. Compare to {value / 100:g}, or multiply the column by 100 first.")
+                elif hi > 0 and abs(value) >= _SCALE_FACTOR * hi:
+                    _emit("E1-scale-mismatch", col.name,
+                          f"'{col.name}' was observed between {lo:g} and {hi:g}; the literal {value:g} is at least "
+                          f"{_SCALE_FACTOR:g}× its maximum — a different unit or scale, not a large value. The filter "
+                          f"keeps no row.")
+
     # E1-quoted-identifier: a STRING literal compared to a NUMERIC literal — `WHERE 'id' = 165428`.
     #
     # The sibling check above needs a Column on one side, so it is blind to the case where the
@@ -264,6 +412,58 @@ def _coltype_cache_key(conn_id: str, db) -> str:
     yet is the hot demo path) still caches instead of re-scanning every answer — while two
     different id-less connections still get distinct keys (no cross-connection leak)."""
     return str(conn_id or getattr(db, "_path", "") or getattr(db, "_dsn", "") or "")
+
+
+_COLFACTS_CACHE: dict[str, dict] = {}
+
+#: Arc NV-6 — who answers "what did the profiler record about this connection's columns": a callable
+#: `(connection_id) -> {(table, column): facts}` the PROFILER's side registers when it loads
+#: (`aughor.tools.profile_cache`). The platform never imports the agent (`test_platform_agent_boundary`): the
+#: profile cache is agent-side, so the dependency is inverted here — the source registers itself, and until one has,
+#: the three checks that read facts say nothing.
+_COLUMN_FACTS_SOURCE: Optional[Callable[[str], dict]] = None
+
+
+def register_column_facts_source(source: Callable[[str], dict]) -> None:
+    """The profiler's side names where the checks read their facts from. Registering again replaces, and drops what
+    was cached from the previous source."""
+    global _COLUMN_FACTS_SOURCE
+    _COLUMN_FACTS_SOURCE = source
+    _COLFACTS_CACHE.clear()
+
+
+def connection_column_facts(conn_id: str) -> dict:
+    """Arc NV-6 — the profiled facts the checks read, from the registered source, as the `col_facts` map: keys
+    lowercased "table.col" AND bare "col" → {format, format_note, value_range, value_interpretation, dtype}. Cached per
+    process and connection; a saved profile drops the entry (`forget_column_facts`). With no source registered the map
+    is empty and the checks that read it say nothing. Never raises."""
+    if conn_id in _COLFACTS_CACHE:
+        return _COLFACTS_CACHE[conn_id]
+    if _COLUMN_FACTS_SOURCE is None:
+        return {}
+    out: dict = {}
+    try:
+        for (tbl, col), facts in _COLUMN_FACTS_SOURCE(conn_id).items():
+            if not (facts.get("format") or facts.get("format_note") or facts.get("value_range")):
+                continue
+            out[f"{str(tbl).lower()}.{str(col).lower()}"] = facts
+            out[f"{str(tbl).lower().split('.')[-1]}.{str(col).lower()}"] = facts
+            out.setdefault(str(col).lower(), facts)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "E1 column-facts read is best-effort; the notation, range and division checks say nothing",
+                 counter="trust.e1_colfacts")
+        return {}
+    _COLFACTS_CACHE[conn_id] = out
+    return out
+
+
+def forget_column_facts(conn_id: str = "") -> None:
+    """Drop the cached facts for one connection, or all — a rebuilt profile must be read again."""
+    if conn_id:
+        _COLFACTS_CACHE.pop(conn_id, None)
+    else:
+        _COLFACTS_CACHE.clear()
 
 
 def connection_column_types(conn_id: str, db) -> dict:

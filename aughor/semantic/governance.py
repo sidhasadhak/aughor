@@ -22,6 +22,11 @@ TRANSITIONS: dict[str, tuple[tuple[str, ...], str]] = {
 }
 
 
+#: What on a definition's trail means its figure now reads differently: its formula edited, or the dates it is read by.
+#: An approval alone changes no figure, so it is not one.
+DEFINITION_CHANGES: tuple[str, ...] = ("edit_reproposed", "edit_dates_changed")
+
+
 def can_transition(status: str | None, action: str) -> bool:
     """Is `action` legal from `status`? (status None ⇒ 'draft')."""
     t = TRANSITIONS.get(action)

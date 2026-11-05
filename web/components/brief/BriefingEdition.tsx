@@ -180,6 +180,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const teams = useMemo(() => groups.filter(g => g.kind === "function").map(g => ({ id: g.id, name: g.name }))
     .sort((a, b) => a.name.localeCompare(b.name)), [groups]);
   const hasGuide = !!guide?.available;
+  // What the edition did not read, each with why. A row with no reason is one of the guide's own notes for reading the
+  // data (LuxExperience's ten, 2026-11-04: "Join on the full id"): the guide panel lists those, and a reader needs neither.
+  const notRead = (edition?.not_read ?? []).filter(n => n.reason);
   const ownCanvas = edition?.canvas?.own ? edition.canvas : null;
   const blocks = useMemo(() => (edition?.blocks ?? []).filter(b => !hidden.has(b.id)), [edition, hidden]);
   const drilled = trails[writing] ?? NO_TRAILS;
@@ -226,8 +229,8 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           )}
           {edition?.built && period && edition.lag_now !== undefined && edition.lag_now !== period.lag_days && (
             <p className="aug-fs-xs" data-testid="edition-lag-moved" style={{ color: "var(--amb4)", margin: "0 0 4px" }}>
-              Written when this data&apos;s rows arrived within {countNoun(period.lag_days, "day")}; they now arrive within{" "}
-              {countNoun(edition.lag_now, "day")}, so a figure marked provisional may have settled since. Write it again to read
+              Written when this data was read {countNoun(period.lag_days, "day")} behind; it is now read{" "}
+              {countNoun(edition.lag_now, "day")} behind, so a figure marked provisional may have changed since. Write it again to read
               them as they stand.
             </p>
           )}
@@ -294,12 +297,13 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                 onCite={onCite} onDrill={(card, b, c, s) => void onDrill(card, b, c, s)} onDrillBack={onDrillBack}
                 onDecide={onDecide} drilling={drilling} trails={drilled}
                 teams={teams} given={edition.given} onGive={(b, g) => void onGive(b, g)} giving={giving} />
-              {(!!edition.withheld?.length || !!edition.left_out?.length) && (
+              {(!!edition.withheld?.length || !!edition.left_out?.length || notRead.length > 0) && (
                 <section data-testid="edition-withheld" className="aug-fs-xs" style={{ color: "var(--t3)", borderTop: RULE, paddingTop: 10, marginTop: 18 }}>
                   {edition.withheld?.map((w, i) => (
                     <div key={`w-${i}`}>Held back{w.sentence ? `: “${w.sentence}”` : " a block"} — {w.why}</div>
                   ))}
                   {edition.left_out?.map((l, i) => <div key={`l-${i}`}>Left out: {l}</div>)}
+                  {notRead.map((n, i) => <div key={`n-${i}`}>Not read: {n.label} — {n.reason}</div>)}
                 </section>
               )}
               {period && (

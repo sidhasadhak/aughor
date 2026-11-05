@@ -1356,6 +1356,11 @@ def render_frame_block(frame: Frame) -> str:
     if hops:
         lines.append("- Candidate drivers, reachable from the start by measured to-one links: "
                      + "; ".join(f"{d.path}{' (named in the question)' if d.named else ''}" for d in hops))
+        # Arc NV-6 — a path of two or more links is followed whole: each hop is a join the data verified, and a
+        # "shortcut" straight to the far entity is a join the graph does not hold (the study's §5.4 wording).
+        if any(len(str(d.path).split(".")) >= 3 for d in hops):
+            lines.append("- Follow a path whole: every link in it was measured on the data. Never shorten a path to a "
+                         "direct join between its ends — the graph holds no such join.")
     for note in frame.notes:
         lines.append(f"- Note: {note}")
     return "\n".join(lines)

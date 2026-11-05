@@ -25,6 +25,7 @@ import sqlite3
 import pytest
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import SIGNATURE
 from aughor.db.connection import DatabaseConnection
 
 
@@ -166,7 +167,8 @@ def test_mysql_binds_pyformat_over_a_dict_cursor():
     conn = _bare(MySQLConnection, _conn=type("H", (), {"cursor": lambda _s: cur})())
     cols, rows = conn._bind_execute("SELECT * FROM t WHERE a = %(v)s", {"v": 7})
 
-    assert cur.seen == [("SELECT * FROM t WHERE a = %(v)s", {"v": 7})]
+    # Arc NV-7: the driver receives the statement signed as the platform's own; the binding is unchanged
+    assert cur.seen == [(f"{SIGNATURE} SELECT * FROM t WHERE a = %(v)s", {"v": 7})]
     assert cols == ["a"] and rows == [[1]]
 
 
@@ -177,7 +179,8 @@ def test_snowflake_binds_pyformat():
     conn = _bare(SnowflakeConnection, _conn=type("H", (), {"cursor": lambda _s: cur})())
     conn._bind_execute("SELECT * FROM t WHERE a = %(v)s", {"v": 7})
 
-    assert cur.seen == [("SELECT * FROM t WHERE a = %(v)s", {"v": 7})]
+    # Arc NV-7: the driver receives the statement signed as the platform's own; the binding is unchanged
+    assert cur.seen == [(f"{SIGNATURE} SELECT * FROM t WHERE a = %(v)s", {"v": 7})]
 
 
 def test_the_rest_mirrors_inherit_binding_from_one_place():

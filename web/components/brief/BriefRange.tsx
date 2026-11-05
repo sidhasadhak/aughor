@@ -28,12 +28,12 @@ export type RangeChoice = { preset: "standing" } | BriefingRange;
 
 const SEGMENTS: { value: "standing" | RangePreset; label: string; title: string }[] = [
   { value: "standing", label: "What we know", title: "Everything the platform has learned, not tied to dates" },
-  { value: "yesterday", label: "Day", title: "The newest day whose numbers have settled" },
-  { value: "last_week", label: "Week", title: "The last complete week whose numbers have settled" },
-  { value: "last_month", label: "Month", title: "The last complete month whose numbers have settled" },
+  { value: "yesterday", label: "Day", title: "The newest day old enough to read" },
+  { value: "last_week", label: "Week", title: "The last complete week old enough to read" },
+  { value: "last_month", label: "Month", title: "The last complete month old enough to read" },
   { value: "last_year", label: "Year", title: "The last complete (fiscal) year" },
-  { value: "month_to_date", label: "Month to date", title: "This month up to the newest settled day" },
-  { value: "year_to_date", label: "Year to date", title: "This year up to the newest settled day" },
+  { value: "month_to_date", label: "Month to date", title: "This month up to the newest day old enough to read" },
+  { value: "year_to_date", label: "Year to date", title: "This year up to the newest day old enough to read" },
 ];
 
 export function RangeControl({ value, onChange, disabled, standing, label = "Briefing range", presets }: {
@@ -211,11 +211,12 @@ export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; 
       )}
       {block.lag_days > 1 && (
         <div style={{ color: "var(--t3)", marginBottom: 6 }}>
-          {block.lag_source === "beyond_horizon"
+          {block.settling?.kind === "rewrites" || block.settling?.kind === "moving" ? <>Read {block.lag_days} days behind today. {block.settling.says}</>
+            : block.lag_source === "beyond_horizon"
             ? <>Read {block.lag_days} days behind today: {block.still_moving.join(", ") || "a table"}{" "}
                 {block.still_moving.length > 1 ? "were" : "was"} still changing {block.lag_days - 1} days
                 after a day ended, so recent figures may still move.</>
-            : <>Read {block.lag_days} days behind today: newer days are still settling.</>}
+            : <>Read {block.lag_days} days behind today: newer days may still change.</>}
         </div>
       )}
       {block.measured.length > 0 && (
@@ -265,7 +266,7 @@ export function RangeSections({ block }: { block: BriefingRangeBlock }) {
       )}
       {early && early.start && early.figures.length > 0 && (
         <div>
-          <div className="aug-label" style={{ marginBottom: 4 }}>Still settling — early read</div>
+          <div className="aug-label" style={{ marginBottom: 4 }}>Newer days — early read</div>
           <div style={{ color: "var(--t2)" }}>
             {early.start === early.end ? early.start : `${early.start} to ${early.end}`}:{" "}
             {early.figures.map(f => `${f.name} ${f.value_text ?? ""}`).join(" · ")}

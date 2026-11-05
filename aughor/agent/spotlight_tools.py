@@ -712,7 +712,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "Why nothing flagged a move someone found — 'why didn't anything alert on the "
                 "return-rate jump on 3 September?'. Scores the day against the metric's own "
                 "history, lists every watch on it and what its rule made of that value, a watch "
-                "the Watcher proposed that is still waiting, whether the day was still settling, "
+                "the Watcher proposed that is still waiting, whether the day was too new to score, "
                 "and any message the departure gate held. Changes nothing. Quote the summary "
                 "field verbatim — never re-derive its numbers."
             ),

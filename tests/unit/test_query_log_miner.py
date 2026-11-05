@@ -66,7 +66,7 @@ def test_render_includes_all_sections_and_query_count():
     assert "LEARNED FROM QUERY HISTORY (1 queries analyzed)" in block
     assert "customers.id = orders.customer_id" in block   # edge operands rendered sorted
     assert "orders.status IN ('paid')" in block
-    assert "revenue := SUM(o.amt)" in block
+    assert "revenue := SUM(orders.amt)" in block
 
 
 def test_min_support_filters_one_off_noise():

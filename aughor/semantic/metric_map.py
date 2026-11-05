@@ -211,6 +211,23 @@ def match_pattern(name: str, label: str, patterns: Iterable[Pattern]) -> Optiona
     return None
 
 
+def holding_pattern(name: str, label: str, patterns: Iterable[Pattern]) -> Optional[Pattern]:
+    """The pattern a metric's name or label holds whole, the longest title first: "Gross Margin on Items" holds Gross
+    Margin. Two words at least, because one word says too little: "Clienteling GMV per Interaction" is not the GMV
+    pattern, as `match_pattern` says of it."""
+    said = [f" {t} " for t in (_norm(label), _norm(name)) if t]
+    best: Optional[Pattern] = None
+    length = 0
+    for p in patterns:
+        if not p.proposable:
+            continue
+        for title in _title_names(p.title):
+            words = len(title.split())
+            if words >= 2 and words > length and any(f" {title} " in t for t in said):
+                best, length = p, words
+    return best
+
+
 # ── reading the packages ───────────────────────────────────────────────────────────────────────────────────────────
 
 def is_metric_pattern(entry: object) -> bool:

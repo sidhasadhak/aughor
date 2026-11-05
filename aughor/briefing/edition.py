@@ -10,7 +10,8 @@ the measurement every Briefing figure already uses). From the series the code re
 sits from usual (``z``), how many ranges in a row it has moved one way (``streak``), and whether it is
 the highest or lowest of the ranges read; a check's dimensions break it down, each segment against its
 own usual, a segment behind fewer than ``MIN_CELL_ROWS`` rows too few to call. A like-for-like rule
-from a PUBLISHED guide (a storefront sold in April) filters the windows before the day it left.
+from a PUBLISHED guide (a storefront sold in April) filters the windows before the day it left. A figure
+not at equal age with those ranges (`ranges.equal_age`) is shown and its distance from usual is not read.
 
 What could not be measured is said: a check that failed now, the guide's notes on what to read with
 care, the checks it kept out when it was drafted.
@@ -194,6 +195,8 @@ def _cells(m: Any, check: Check, windows: list, run_sql: RunSql, dialect: str, *
 def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published: bool, run_sql: RunSql,
                   dialect: str, currency: str) -> tuple[Optional[dict], str]:
     """One check as an edition figure, or ``(None, why)``."""
+    from aughor.briefing import ranges
+
     news = guide.news
     usual_w = usual_windows(spec, news.usual_for(_period(spec)))
     windows = spec.windows() + usual_w
@@ -213,6 +216,8 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
     name = check.label
     unit = _unit(check.unit or str(_get(m, "unit") or ""),
                  [value, previous, last_year] + usual_vals)
+    status = ranges.range_status(m, spec)
+    age = ranges.equal_age(m, status, spec, label=name)
     fig: dict = {
         "id": check.id, "label": check.label, "metric": check.metric or None, "unit": unit,
         "better": check.better, "why": check.why, "time_kind": _get(m, "time_kind"),
@@ -220,9 +225,10 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
         "rel": _rel(value, previous), "rel_last_year": _rel(value, last_year),
         "n": cur.get("n", 0), "series": series, "sql": sql,
         "like_for_like": lfl[2] if lfl else "",
-        "status": mt.figure_status(m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days),
+        "status": status, "equal_age": age,
         "usual": None, "z": None, "outside": False, "floor": False,
-        "streak": _streak([p["value"] for p in series]), "extreme": None,
+        # a run of rises is the same claim as a distance from usual, and on a table that slides it rises by construction
+        "streak": _streak([p["value"] for p in series]) if age["equal"] else None, "extreme": None,
     }
     if len(usual_vals) >= MIN_USUAL:
         mean = statistics.fmean(usual_vals)
@@ -231,16 +237,21 @@ def measure_check(check: Check, m: Any, spec, *, guide: BriefingGuide, published
                         "mean_text": _text(mean, name, unit, currency),
                         "low_text": _text(mean - sd, name, unit, currency),
                         "high_text": _text(mean + sd, name, unit, currency)}
-        if sd > 0:
-            z = (value - mean) / sd
-            fig["z"] = z
-            fig["outside"] = abs(z) >= news.outside_sd
-            fig["floor"] = abs(z) >= news.floor_sd and fig["status"] != "to_date"
-        everything = usual_vals + [value]
-        if value >= max(everything):
-            fig["extreme"] = {"which": "highest", "of": len(everything)}
-        elif value <= min(everything):
-            fig["extreme"] = {"which": "lowest", "of": len(everything)}
+        # Against ranges that have settled, a figure still settling reads its age as much as any move, so how far it
+        # sits from usual is not read: no z to lead on or quote, no rank from it, no place on every reader's page. Its
+        # number and band stay, and `not_read` and its source say why. `outside` alone would change nothing: the model
+        # reads the z, the extreme and the floor list, never `outside`.
+        if age["equal"]:
+            if sd > 0:
+                z = (value - mean) / sd
+                fig["z"] = z
+                fig["outside"] = abs(z) >= news.outside_sd
+                fig["floor"] = abs(z) >= news.floor_sd and status != "to_date"
+            everything = usual_vals + [value]
+            if value >= max(everything):
+                fig["extreme"] = {"which": "highest", "of": len(everything)}
+            elif value <= min(everything):
+                fig["extreme"] = {"which": "lowest", "of": len(everything)}
     for k in ("current", "previous", "last_year"):
         fig[f"{k}_text"] = _text(fig[k], name, unit, currency)
     fig["cells"] = _cells(m, check, [windows[0]] + usual_w, run_sql, dialect, name=name, unit=unit,
@@ -253,6 +264,11 @@ def score(fig: dict, *, watched: bool) -> float:
     it is; a figure the reader watches rises within its kind."""
     z = abs(fig.get("z") or 0.0)
     return z + (0.75 if watched else 0.0) + (0.25 * min(abs(fig.get("streak") or 0), 4) if z >= 1 else 0.0)
+
+
+def _not_at_equal_age(figures: list[dict]) -> list[dict]:
+    from aughor.briefing.ranges import not_read_rows
+    return not_read_rows(figures, "label")
 
 
 def measure_edition(conn_id: str, spec, guide: BriefingGuide, *, published: bool, run_sql: RunSql,
@@ -282,7 +298,8 @@ def measure_edition(conn_id: str, spec, guide: BriefingGuide, *, published: bool
             figures.append(fig)
     not_read = ([{"label": c.text, "reason": "", "tables": c.tables} for c in guide.care]
                 + [{"label": u["label"], "reason": u["reason"], "tables": []} for u in unmeasured]
-                + [{"label": d.label, "reason": d.reason, "tables": []} for d in guide.dropped])
+                + [{"label": d.label, "reason": d.reason, "tables": []} for d in guide.dropped]
+                + _not_at_equal_age(figures))
     return {"figures": figures, "unmeasured": unmeasured, "not_read": not_read,
             "floor": [f["id"] for f in figures if f["floor"]],
             "usual_n": guide.news.usual_for(_period(spec))}

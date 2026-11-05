@@ -32,10 +32,12 @@ def _key(conn_id: str, metric: str, last_day: str) -> str:
 
 def _said(claim: Any) -> dict:
     x = claim.extra or {}
+    bt = x.get("backtest") or {}
     return {"claim_id": claim.id, "low": x.get("low"), "mid": x.get("mid"), "high": x.get("high"),
             "text": str(x.get("band_text") or ""), "state": claim.state, "scored_against": x.get("scored_against"),
             "actual_text": str(x.get("actual_text") or ""), "must_say": list(x.get("must_say") or []),
-            "n": int((x.get("backtest") or {}).get("n") or 0)}
+            "n": int(bt.get("n") or 0), "held": int(bt.get("held") or 0), "cases": int(bt.get("cases") or 0),
+            "coverage": x.get("coverage")}
 
 
 def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
@@ -118,7 +120,8 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
                 if low != high else str(R._figure_text(mu, name, unit, currency)))
         bt = S.backtest(read, coverage=S.HISTORY_COVERAGE)
         # only a cohort's earlier ranges are read at one age; a flow's as their rows stand today
-        aged = "each read at the same age" if m.time_kind == "cohort" else "each read as its rows stand today"
+        aged = ("each read at the same age" if m.time_kind == "cohort" and not R._unsettled(m, spec)
+                else "each read as its rows stand today")
         must_say = [f"{len(read)} earlier ranges, {aged}: {band} at "
                     f"{int(S.HISTORY_COVERAGE * 100)}% stated coverage",
                     (f"on this metric the interval held {bt['held']} of {bt['cases']} times" if bt.get("cases")
@@ -132,7 +135,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
                                   value=round(mu, 6), unit="" if unit == "%" else unit,
                                   range_start=R._d(target.start), range_end=last_day),
             status="To date", as_of=today.isoformat(), author="system", author_kind="system", state="open",
-            falsifier="the metric measured for that range the Briefing's way, once it has settled: a figure "
+            falsifier=f"the metric measured for that range the Briefing's way on {settles_on}: a figure "
                       "outside the band scores this wrong",
             next_check=settles_on,
             extra={"method": "history", "low": round(low, 6), "mid": round(mu, 6), "high": round(high, 6),
@@ -153,7 +156,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
 
 
 def score_due(*, runner_for: Optional[Callable[[str], Any]] = None, now: Optional[_dt.datetime] = None) -> list[str]:
-    """Score every open Briefing prediction whose range has settled: the metric measured for the
+    """Score every open Briefing prediction whose range has reached its date: the metric measured for the
     predicted range the Briefing's way, at the age it was predicted for. A metric that can no longer
     be measured scores ``cannot_tell`` and says why. Returns the restated claim ids."""
     from aughor.knowledge import period_brief

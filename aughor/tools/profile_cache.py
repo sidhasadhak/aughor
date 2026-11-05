@@ -74,13 +74,19 @@ def cache_path():
 #     column the catalog under-counts past 2,000 held 500 where it should hold none, and a
 #     timestamp with more than 500 populated months took its `effective_date_range` from
 #     the first 500 of them.
+# v10: Arc NV-1 — a TEXT column gains `date_format` / `date_format_note`, the notation its dates are
+#     written in (or the ambiguity that withheld one), probed from up to 2,000 distinct values. Stored per
+#     column, so the same rule as v5 applies: without the bump every connection keeps serving profiles
+#     that silently lack the fact, and the wave would be built, cached out, and invisible. Spelled
+#     "-2000" because its first spelling went live for one rebuild with a 200-value cap that read as
+#     eligibility and wrote nothing for Superstore's 1,237 distinct order dates (2026-11-04).
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v9-sampled-bounded"
+PROFILE_LOGIC_VERSION = "v10-text-dates-2000"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
@@ -330,6 +336,47 @@ def load_semantic_types(connection_id: str) -> dict[tuple[str, str], str]:
     return out
 
 
+def load_column_facts(connection_id: str) -> dict[tuple[str, str], dict]:
+    """Arc NV-6 — the profiled facts a SQL check reads at the comparison, keyed (table, column): the column's type, a text
+    column's date notation (`date_format`) or the note that withheld one, the measured value range and what the values
+    mean (`value_interpretation`). Newest fingerprint wins, for the reason spelled out on :func:`load_concepts`. Read-only;
+    an unreadable cache is an empty dict, never a raise."""
+    out: dict[tuple[str, str], dict] = {}
+    try:
+        cache = _load()
+    except Exception:
+        return out
+    prefix = f"{connection_id}:"
+    for k, entry in cache.items():
+        if not k.startswith(prefix):
+            continue
+        for d in (entry.get("columns") or {}).values():
+            tbl, col = d.get("table"), d.get("column")
+            if not (tbl and col):
+                continue
+            vr = d.get("value_range")
+            out[(str(tbl), str(col))] = {
+                "dtype": str(d.get("dtype") or ""),
+                "format": str(d.get("date_format") or ""),
+                "format_note": str(d.get("date_format_note") or ""),
+                "value_range": (float(vr[0]), float(vr[1])) if isinstance(vr, (list, tuple)) and len(vr) == 2
+                               and vr[0] is not None and vr[1] is not None else None,
+                "value_interpretation": str(d.get("value_interpretation") or ""),
+            }
+    return out
+
+
+# Arc NV-6 — this module is the source the SQL trust checks read a column's profiled facts from. The checks live on
+# the platform side and may not import this agent-side module (`test_platform_agent_boundary`), so the source registers
+# itself here, at import: the agent imports the platform, never the reverse.
+try:
+    from aughor.sql.trust_checks import register_column_facts_source as _register_column_facts_source
+    _register_column_facts_source(load_column_facts)
+except Exception as _exc:  # noqa: BLE001 — without the registration the checks say nothing of notation, range or division
+    import logging as _logging
+    _logging.getLogger(__name__).debug("column-facts source not registered: %s", _exc)
+
+
 def save_profiles(
     connection_id: str,
     fingerprint: str,
@@ -342,6 +389,13 @@ def save_profiles(
         "columns": {k: cp.to_dict() for k, cp in column_profiles.items()},
     })
     _store.trim_prefix(f"{connection_id}:", _MAX_PER_CONNECTION)
+    # Arc NV-6 — the SQL checks read these profiles' facts through a per-process cache; a new profile is read again.
+    try:
+        from aughor.sql.trust_checks import forget_column_facts
+        forget_column_facts(connection_id)
+    except Exception as exc:  # noqa: BLE001 — a stale fact cache costs a check its notation until the next restart
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the column-facts cache could not be dropped after a profile save", counter="trust.e1_colfacts")
 
 
 def invalidate(connection_id: str) -> None:

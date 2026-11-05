@@ -67,7 +67,7 @@ def test_a_day_still_settling_is_not_scored_yet(world, monkeypatch):
     _state, run_sql = world
     monkeypatch.setattr("aughor.settling.learned_lag_days", lambda conn: 20)
     r = _review(run_sql, conn="conn-missed-3")
-    assert "still settling" in r.verdict and "2026-10-10" in r.verdict
+    assert "too new to score" in r.verdict and "2026-10-10" in r.verdict
 
 
 def test_a_watch_too_loose_to_count_it_is_named(world):

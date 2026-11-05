@@ -196,9 +196,11 @@ def gaps(inquiries: list[Any], metrics: list[Any], period: Optional[dict]) -> li
                     "source": _source("inquiry", q.id, f"Inquiry · {q.question} (waiting for {q.waiting_for or 'data'})")})
     lag = (period or {}).get("lag_days")
     if isinstance(lag, int) and lag >= LAG_SAID_DAYS:
-        moving = (period or {}).get("still_moving") or []
-        out.append({"kind": "lag", "title": f"The newest settled day is {lag} days old",
-                    "text": (f"The data settles {lag} days late" + (f"; {len(moving)} tables are still changing" if moving else "") + "."),
+        from aughor.settling.answer import answer_of_block
+        answer = answer_of_block(period)
+        out.append({"kind": "lag",
+                    "title": f"Figures are read {lag} days behind" if answer.never_settled else f"The newest settled day is {lag} days old",
+                    "text": answer.says() if answer.never_settled else f"The data settles {lag} days late.",
                     "source": _source("range", (period or {}).get("key", ""), "The range's own data horizon")})
     return out
 

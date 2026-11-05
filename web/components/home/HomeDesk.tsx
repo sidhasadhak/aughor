@@ -190,7 +190,7 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
   }, [runId]);
   // The metric the analysis reported, as the warehouse reads it now: one statement, no model call.
   const label = detail?.figure?.metric ?? "";
-  const [trend, setTrend] = useState<{ points: TrendPoint[]; why: string } | null>(null);
+  const [trend, setTrend] = useState<{ points: TrendPoint[]; why: string; neverSettled?: string } | null>(null);
   useEffect(() => {
     setTrend(null);
     if (!label || !connectionId) return;
@@ -206,6 +206,7 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
         setTrend(t ? {
           points: t.series.flatMap(p => (p.value == null ? [] : [{ day: p.start, value: p.value, text: `${symbol}${p.value_text ?? ""}`, settling: !!p.settling }])),
           why: t.why ?? "",
+          neverSettled: t.never_settled ?? "",
         } : { points: [], why: "" });
       })
       .catch(e => { if (alive) setTrend({ points: [], why: e instanceof Error ? e.message : String(e) }); });
@@ -233,8 +234,9 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
   const verdict = fig?.verdict ? fig.verdict.charAt(0).toUpperCase() + fig.verdict.slice(1) : "";
   return (
     <section aria-label="The one thing to know" data-testid="home-lead" style={{ ...card, flex: 1, display: "flex", flexDirection: "column" }}>
-      <Label right={behind > 0 || low ? (
+      <Label right={behind > 0 || low || trend?.neverSettled ? (
         <span style={row}>
+          {trend?.neverSettled && <Chip tone="amber" title={trend.neverSettled}>not read as a move</Chip>}
           {low && <Chip title={detail?.why || undefined}>{`${detail?.confidence.toLowerCase()} confidence`}</Chip>}
           {behind > 0 && <Chip>{behind === 1 ? "1 day behind today" : `${behind} days behind today`}</Chip>}
         </span>
@@ -277,7 +279,7 @@ function LeadCard({ lead, connectionId, onOpen, onDraft }: {
         <Button size="sm" variant="secondary" onClick={() => onOpen(lead.run.id, lead.run.kind)}>Read the analysis</Button>
         <Button size="sm" variant="ghost" onClick={() => onDraft(`Why did this happen? ${headline}`)}>Ask a follow-up</Button>
         <span className="aug-fs-xs" style={{ ...muted, flex: "1 1 240px", textAlign: "right" }}>
-          Looked into on {looked}{verdict ? ` · ${verdict}` : ""}
+          Looked into on {looked}{verdict && !trend?.neverSettled ? ` · ${verdict}` : ""}
         </span>
       </div>
     </section>

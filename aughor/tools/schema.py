@@ -1,7 +1,6 @@
 """Schema introspection — builds the context string fed to the LLM."""
 from __future__ import annotations
 
-import os
 import re
 from typing import TYPE_CHECKING
 
@@ -728,8 +727,13 @@ def apply_schema_enrichment(
     Extracted so the platform's ``get_schema`` can reproduce build_schema_context's
     output **byte-for-byte** via the schema-annotator registry, without the platform
     importing the agent. ``query_log_annotation`` (facts mined from real query history —
-    learned joins / value domains / formulas) is appended last; when empty it is
-    auto-collected iff AUGHOR_QUERY_LOG_MINING=1 (opt-in, best-effort)."""
+    learned joins / value domains / formulas) is appended last, and only when a caller
+    passes one pre-rendered: it is never auto-collected. Until 2026-11-04 a raw
+    ``AUGHOR_QUERY_LOG_MINING`` variable collected it here — a feature flag outside
+    `kernel/flags.py` that survived the 2026-10-28 retirement unseen (ROADMAP §3.68). The
+    block was a prose-shaped "more context" the platform's own ablations retired (R4, the
+    DATA PROFILE block's falsifier); mined facts now reach a prompt only as candidates a
+    person confirmed and that bound (`aughor.ontology.candidates`, Arc NV-3)."""
     from aughor.kernel.stage_timer import stage as _stage
     from aughor.semantic.metrics import build_metrics_block
     # R11 — prune per-column-config-hidden columns (and sample-disabled value
@@ -817,16 +821,8 @@ def apply_schema_enrichment(
     if profile_annotation:
         enriched += "\n\n" + profile_annotation
     # Query-log facts: learned join paths / value domains / formulas from real query history.
-    # Injected pre-rendered (decoupled, like profile_annotation); opt-in auto-collect when enabled
-    # so the schema hot-path never depends on the vector store unless explicitly turned on.
-    if not query_log_annotation and connection_id and os.environ.get("AUGHOR_QUERY_LOG_MINING") == "1":
-        try:
-            from aughor.sql.query_log_miner import build_query_log_annotation
-            query_log_annotation = build_query_log_annotation(connection_id)
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "query-log mining is best-effort schema enrichment",
-                     counter="query_log.annotate", conn_id=connection_id)
+    # Injected pre-rendered only (decoupled, like profile_annotation) — never auto-collected here; see the
+    # docstring. The schema hot-path therefore never depends on the vector store.
     if query_log_annotation:
         enriched += "\n\n" + query_log_annotation
     return enriched

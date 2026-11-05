@@ -138,6 +138,29 @@ def test_a_comparison_before_the_range_settles_says_it_is_not_at_equal_age(monke
     assert body["previous"]["value"] == 5 and body["previous"]["equal_age"] is False
 
 
+def test_a_comparison_on_a_table_never_seen_to_settle_is_not_at_equal_age_however_old_its_days(monkeypatch):
+    _stub(monkeypatch, {})
+    for moving, equal in ((("orders",), False), (("users",), True)):
+        spec = RangeSpec(**{**SPEC.__dict__, "still_moving": moving})
+        monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, spec=spec, **kw: (spec, ""))
+        _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
+        card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                         sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
+        body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
+        assert body["previous"]["value"] == 5 and body["previous"]["equal_age"] is equal
+
+
+def test_a_card_joining_a_table_never_seen_to_settle_is_held_back_by_it_though_another_dates_it(monkeypatch):
+    _stub(monkeypatch, {})
+    spec = RangeSpec(**{**SPEC.__dict__, "still_moving": ("items",)})
+    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (spec, ""))
+    _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+                                     sql="SELECT COUNT(*) AS n FROM orders JOIN items ON orders.id = items.order_id", title="orders"))
+    body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
+    assert body["previous"]["value"] == 5 and body["previous"]["equal_age"] is False
+
+
 def test_a_comparison_with_no_figure_says_so_and_is_never_zero(monkeypatch):
     _stub(monkeypatch, {})
     _answers(monkeypatch, [], {"2026-08-24": 7})

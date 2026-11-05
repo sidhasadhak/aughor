@@ -12,6 +12,7 @@ import time
 from urllib.parse import urlparse
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import sign
 from aughor.db.doors import through_door
 from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
@@ -83,7 +84,7 @@ class MySQLConnection(Connector):
 
     def _bind_execute(self, sql: str, params: dict):
         with self._conn.cursor() as cur:
-            cur.execute(sql, params)
+            cur.execute(sign(sql), params)
             rows_raw = cur.fetchmany(self.max_rows + 1)   # one past the cap, so a cut read shows
             # DictCursor: columns come from the first row, and from `description` when the
             # result is empty — the same two-source read `execute` already does.
@@ -125,7 +126,7 @@ class MySQLConnection(Connector):
         _t0 = time.monotonic()
         try:
             with self._conn.cursor() as cur:
-                cur.execute(sql)
+                cur.execute(sign(sql))
                 # one row past the cap: a read the cap cut counts more rows than it keeps
                 rows_raw = cur.fetchmany(max_rows + 1)
                 columns = list(rows_raw[0].keys()) if rows_raw else (

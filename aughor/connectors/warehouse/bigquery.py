@@ -17,6 +17,7 @@ import re
 from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import sign
 from aughor.db.doors import passed, through_door
 from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
@@ -137,6 +138,8 @@ class BigQueryConnection(Connector):
         # the connect form sends it as meta["project_id"] with an empty dsn
         self._project = dsn.removeprefix("bigquery://").strip("/") or meta.get("project_id", "") or dsn
         self._dataset = schema_name or meta.get("dataset") or ""
+        # Arc NV-3 — the region whose INFORMATION_SCHEMA holds this project's job history (`region-us` by default).
+        self._location = str(meta.get("location") or "us").strip().lower() or "us"
         # The profiler, explorer and column routes all resolve a connection's schema
         # through `_schema_name` (the convention Snowflake follows); without it they
         # fell back to 'public' and every INFORMATION_SCHEMA filter matched nothing.
@@ -230,7 +233,7 @@ class BigQueryConnection(Connector):
 
         from aughor.connectors.base import stage_type
         job_config = self._job_config(query_parameters=declared)
-        with self._running(self._client.query(sql, job_config=job_config)) as job:
+        with self._running(self._client.query(sign(sql), job_config=job_config)) as job:
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             schema = list(rows_it.schema)
             # each column's type, as the unbound read gives it: a bound read is typed too (Arc AP-8)
@@ -288,7 +291,7 @@ class BigQueryConnection(Connector):
             from aughor.connectors.base import stage_type
             from aughor.db.connection import offer_typed_rows
             job_config = self._job_config()
-            with self._running(self._client.query(sql, job_config=job_config)) as job:
+            with self._running(self._client.query(sign(sql), job_config=job_config)) as job:
                 # one row past the cap: a read the cap cut counts more rows than it keeps
                 rows_it = job.result(max_results=max_rows + 1)
                 schema = list(rows_it.schema)
@@ -328,6 +331,28 @@ class BigQueryConnection(Connector):
             default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None,
             **overrides,
         )
+
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — finished SELECT jobs from the project's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` (180 days kept),
+        newest first; when the project-wide view is refused (it needs the jobs-list-all grant) the caller's own jobs
+        from `JOBS_BY_USER`, and the result says which. The region is the connection's `location` (default `us`)."""
+        from aughor.db.query_history import rows_from_result
+        hours, limit = max(1, int(hours)), max(1, min(int(limit), 10000))
+        region = getattr(self, "_location", "us")
+        last = None
+        for view in ("JOBS_BY_PROJECT", "JOBS_BY_USER"):
+            source = f"`region-{region}`.INFORMATION_SCHEMA.{view}"
+            sql = (
+                f"SELECT end_time, query, user_email FROM {source} "
+                "WHERE job_type = 'QUERY' AND statement_type = 'SELECT' AND state = 'DONE' AND error_result IS NULL "
+                f"AND creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {hours} HOUR) "
+                f"ORDER BY end_time DESC LIMIT {limit}"
+            )
+            result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+            last = rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)
+            if not last.error or "permission" not in last.error.lower():
+                return last
+        return last
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Use BigQuery's native dry-run — validates SQL + estimates bytes, zero cost."""

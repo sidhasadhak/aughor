@@ -158,6 +158,19 @@ def test_a_changed_recheck_restates_the_observation_and_keeps_the_first_version(
     assert [v.statement.value for v in C.versions(new.key)] == [1902.0, None]
 
 
+@pytest.mark.parametrize("cause, follows", [("rewrites", False), ("moving", True), ("restated", True)])
+def test_a_source_redrawn_at_each_refresh_is_restated_and_reopens_nothing(monkeypatch, cause, follows):
+    conn = _conn()
+    W.book_answer_observation(kind="chat_answer", natural_key=f"chat:{conn}:r2", receipt_id="rcpt-first", connection_id=conn,
+                              question="orders a day?", headline="1,744 orders a day", sql="SELECT day, COUNT(*) FROM orders GROUP BY 1")
+    answer = {"id": "r2", "connection_id": conn, "report": {"sql": "SELECT day, COUNT(*) FROM orders GROUP BY 1", "headline": "1,744 orders a day"}}
+    seen = []
+    monkeypatch.setattr(C, "restated_consequences", lambda prior, new, how: seen.append(prior) or {})
+    noted = W.restate_answer_observation(answer, _entry(cause=cause), text="Restated: orders for 2026-09-20 is now 1,902")
+    assert noted["restated"] and bool(seen) is follows                # the record moves either way
+    assert ("nothing_followed" in noted) is (not follows)
+
+
 def test_an_answer_with_no_observation_restates_nothing_and_an_unchanged_one_is_left_alone():
     conn = _conn()
     assert W.restate_answer_observation({"id": "ghost", "connection_id": conn, "report": {}}, _entry()) is None

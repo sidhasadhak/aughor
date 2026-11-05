@@ -148,7 +148,7 @@ def test_a_period_with_no_rows_is_no_figure_and_says_it_read_none(warehouse, ask
 def test_a_period_that_cannot_be_read_is_a_failed_run_never_an_all_history_read(warehouse, asked, monkeypatch):
     monkeypatch.setattr(R, "resolve_for", lambda *a, **k: (None, "the connection could not be read"))
     run = runner.check_monitor(_floor(), warehouse, suppress=False)
-    assert run.failed and "no settled month of Gross Merchandise Value (item price)" in run.failed
+    assert run.failed and "no month of Gross Merchandise Value (item price) old enough to read" in run.failed
     assert run.reading is None and warehouse.ran == []        # nothing was read in its place
 
     asked.state["metric"] = _gmv(sql="SELECT 1 AS one")       # a statement the compiler cannot measure by its date

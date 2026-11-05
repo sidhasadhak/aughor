@@ -77,6 +77,15 @@ if (typeof Element !== "undefined") {
 }
 
 /**
+ * CodeMirror measures text through a `Range` on an animation frame, which may fire after its test has moved on, and jsdom's
+ * has no geometry: the frame threw, and vitest failed the whole run with every test passing. Nothing has a size to report.
+ */
+if (typeof Range !== "undefined") {
+  Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect ??= () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect;
+}
+
+/**
  * jsdom loads no stylesheet, so one thing Radix Themes hides with CSS alone is audible here
  * and not in a browser: a tab draws its label twice — once shown, once `visibility: hidden` to
  * hold the tab's width as its weight changes. This is that rule, so `getByRole("tab", { name })`

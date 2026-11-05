@@ -36,3 +36,16 @@ class ClickHouseConnection(DbApiWarehouse):
     def _columns_sql(self) -> str:
         return ("SELECT table, name, type FROM system.columns "
                 f"WHERE database = {literal(self._schema_name)} ORDER BY table, position")
+
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — finished SELECT statements on this database from `system.query_log`, newest first."""
+        from aughor.db.query_history import rows_from_result
+        hours, limit = max(1, int(hours)), max(1, min(int(limit), 10000))
+        source = "system.query_log"
+        sql = (
+            "SELECT event_time, query, user FROM system.query_log "
+            f"WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = {literal(self._schema_name)} "
+            f"AND event_time > now() - INTERVAL {hours} HOUR ORDER BY event_time DESC LIMIT {limit}"
+        )
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+        return rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)

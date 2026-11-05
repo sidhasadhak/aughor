@@ -8,6 +8,7 @@ only when a PERSON published that rule.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import duckdb
@@ -16,6 +17,7 @@ import pytest
 from aughor.briefing import edition as E
 from aughor.briefing import guide as G
 from aughor.briefing import ranges
+from aughor.semantic.metrics import MetricDefinition
 
 OCT29 = date(2026, 10, 29)
 
@@ -114,6 +116,156 @@ def test_what_could_not_be_measured_is_said(con, week):
     assert out["unmeasured"][0]["id"] == "broken" and "query failed" in out["unmeasured"][0]["reason"]
     labels = [n["label"] for n in out["not_read"]]
     assert labels == ["Prices end on 5 April 2024.", "Broken", "Ghost"]
+
+
+@pytest.fixture
+def settling_week():
+    """theLook's shape: its tables were still moving at the oldest age read, so its lag is a floor and its flows never
+    settle. The same dates and rows as ``week``, so the tables the platform has seen settle are all that differs."""
+    spec, why = ranges.resolve_range("last_week", today=OCT29, lag_days=1, lag_source="beyond_horizon",
+                                     still_moving=("orders",))
+    assert spec is not None and spec.start == date(2026, 10, 19), why
+    return spec
+
+
+def test_a_flow_still_settling_is_shown_but_not_read_against_its_usual_range(con, week, settling_week):
+    """Measured 2026-11-04: on theLook six of ten figures were floor, five of them flows the Dashboard marks as not at
+    equal age, and the edition called them final. ``status`` alone would never have fired the guard."""
+    guide = G.BriefingGuide(checks=[AOV])
+    settled = E.measure_edition("c1", week, guide, published=False, run_sql=_run(con), dialect="duckdb")["figures"][0]
+    assert settled["outside"] and settled["floor"] and settled["extreme"] and settled["z"] > 2     # these rows do fire
+    assert settled["status"] == "final" and settled["equal_age"] == {"equal": True, "why": ""}
+
+    out = E.measure_edition("c1", settling_week, guide, published=False, run_sql=_run(con), dialect="duckdb")
+    (aov,) = out["figures"]
+    assert aov["status"] == "provisional"
+    assert aov["equal_age"]["equal"] is False and aov["equal_age"]["why"].startswith("Average order reads a table")
+    assert not aov["outside"] and not aov["floor"] and out["floor"] == []
+    assert aov["z"] is None and aov["extreme"] is None and aov["streak"] is None and E.score(aov, watched=False) == 0.0
+    assert settled["streak"] >= 1                                                          # these rows do have a run
+    assert aov["current"] == settled["current"] and aov["usual"] == settled["usual"]       # the number and band stay
+    assert [n["reason"] for n in out["not_read"] if n["label"] == "Average order against its usual range"] \
+        == [aov["equal_age"]["why"].replace("Average order reads", "it reads")]
+
+
+RETURNS = G.BriefingGuide(checks=[G.Check(id="returns", label="Return rate", metric="return_rate")])
+
+
+@pytest.fixture
+def return_rate(con, monkeypatch):
+    """An approved cohort: nine of ten items sold in the week of 19–25 Oct came back, one to three of ten before it."""
+    con.execute("""CREATE TABLE items AS
+        WITH days AS (SELECT d::DATE AS d FROM range(DATE '2026-06-01', DATE '2026-10-29', INTERVAL 1 DAY) t(d))
+        SELECT d AS sold_on, CASE WHEN i < (CASE WHEN d BETWEEN DATE '2026-10-19' AND DATE '2026-10-25' THEN 9
+                                                 ELSE 1 + (EXTRACT(week FROM d) % 3) END)
+                                  THEN d + INTERVAL 1 DAY END AS returned_on
+        FROM days, range(10) k(i)""")
+    rate = MetricDefinition(name="return_rate", label="Return rate", connection="c1", status="approved",
+                            sql="AVG(CASE WHEN returned_on IS NOT NULL THEN 1.0 ELSE 0.0 END)", tables=["items"],
+                            time_column="items.sold_on", time_kind="cohort", outcome_column="returned_on")
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [rate])
+
+
+def test_a_cohort_on_settled_tables_is_at_equal_age_and_stays_news(con, week, return_rate):
+    """A cohort is read at each window's own age, so it IS at equal age, as Lux's return rate is: still provisional
+    until its outcomes arrive, and still news. A cohort only arrives as an approved metric; a check's own aggregate has
+    no outcome to read."""
+    out = E.measure_edition("c1", week, RETURNS, published=False, run_sql=_run(con), dialect="duckdb")
+    (fig,) = out["figures"]
+    assert fig["time_kind"] == "cohort" and fig["status"] == "provisional" and fig["equal_age"]["equal"] is True
+    assert fig["outside"] and fig["floor"] and out["floor"] == ["returns"] and fig["z"] > 2
+    assert not [n for n in out["not_read"] if "usual range" in n["label"]]
+
+
+@pytest.mark.parametrize("rewrites,words", [((), "not seen stop changing"), (("items",), "rewrites its whole history")])
+def test_a_cohort_on_a_table_still_moving_is_not_read_against_usual(con, settling_week, return_rate, rewrites, words):
+    """Its as-of bounds the outcomes, not the rows it divides them by. theLook, measured 2026-11-04: sell-through flat at
+    32-36% for ten weeks, then 66.4% in the very week the edition read, floor on every range."""
+    spec = replace(settling_week, still_moving=("items",), rewrites=rewrites)
+    out = E.measure_edition("c1", spec, RETURNS, published=False, run_sql=_run(con), dialect="duckdb")
+    (fig,) = out["figures"]
+    assert fig["time_kind"] == "cohort" and fig["equal_age"]["equal"] is False and words in fig["equal_age"]["why"]
+    assert fig["z"] is None and not fig["outside"] and not fig["floor"] and out["floor"] == []
+    assert fig["current"] > fig["usual"]["high"]                                # the rows did fire: shown, and not called news
+    assert [n["label"] for n in out["not_read"] if "usual range" in n["label"]] == ["Return rate against its usual range"]
+
+
+def test_a_cohort_still_under_way_is_outside_but_not_on_every_readers_page(con, settling_week, return_rate):
+    """At equal age, and part of a range: far enough to be news, not yet enough to put on everyone's page."""
+    spec = replace(settling_week, as_of=date(2026, 10, 24), still_moving=())
+    out = E.measure_edition("c1", spec, RETURNS, published=False, run_sql=_run(con), dialect="duckdb")
+    (fig,) = out["figures"]
+    assert fig["status"] == "to_date" and fig["equal_age"]["equal"] is True and abs(fig["z"]) >= 2
+    assert fig["outside"] and not fig["floor"] and out["floor"] == []
+
+
+def test_the_dashboard_and_the_edition_give_a_figure_one_status(con, settling_week, monkeypatch):
+    aov = MetricDefinition(name="aov", label="Average order", connection="c1", status="approved", sql="AVG(gmv)",
+                           tables=["orders"], time_column="orders.order_date", time_kind="flow")
+    monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [aov])
+    dashboard = ranges.measure_range("c1", settling_week, run_sql=_run(con), dialect="duckdb")["measured"][0]
+    guide = G.BriefingGuide(checks=[G.Check(id="aov", label="Average order", metric="aov")])
+    (figure,) = E.measure_edition("c1", settling_week, guide, published=False, run_sql=_run(con),
+                                  dialect="duckdb")["figures"]
+    assert dashboard["status"] == figure["status"] == "provisional"
+    assert dashboard["equal_age"] == figure["equal_age"] and figure["equal_age"]["equal"] is False
+
+
+def test_a_figure_not_read_against_usual_is_given_the_true_reason(con, week, settling_week):
+    """"What it is compared with has settled" is true of a day that is merely young. On a table still moving nothing has
+    settled, and on theLook no age does (measured 2026-11-04)."""
+    def why(spec):
+        (fig,) = E.measure_edition("c1", spec, G.BriefingGuide(checks=[AOV]), published=False, run_sql=_run(con),
+                                   dialect="duckdb")["figures"]
+        assert fig["equal_age"]["equal"] is False and not fig["floor"]
+        return fig["equal_age"]["why"]
+
+    young = why(replace(week, lag_days=9))                                 # settled tables, a range inside their lag
+    moving = why(settling_week)
+    rewriting = why(replace(settling_week, rewrites=("orders",)))
+    assert "what it is compared with has settled" in young and "the difference in age" in young
+    assert "neither it nor what it is compared with has settled" in moving and "not seen stop changing" in moving
+    assert "rewrites its whole history" in rewriting and "nothing in it settles" in rewriting
+    assert "has settled" not in rewriting
+
+
+def test_the_reason_names_a_figure_by_the_name_the_page_gives_it(con, settling_week, return_rate):
+    """A guide's check has its own label. Named by the metric's, the row read "itReturn rate reads a table…"."""
+    guide = G.BriefingGuide(checks=[G.Check(id="returns", label="Returned items", metric="return_rate")])
+    out = E.measure_edition("c1", replace(settling_week, still_moving=("items",)), guide, published=False, run_sql=_run(con),
+                            dialect="duckdb")
+    assert out["figures"][0]["equal_age"]["why"].startswith("Returned items reads a table")
+    (row,) = [n for n in out["not_read"] if "usual range" in n["label"]]
+    assert row["label"] == "Returned items against its usual range" and row["reason"].startswith("it reads a table")
+
+
+def test_one_row_says_each_reason_not_one_row_per_figure():
+    fig = lambda label, why: {"label": label, "equal_age": {"equal": False, "why": f"{label} {why}"}}
+    rows = E._not_at_equal_age([fig("Sales", "reads a table."), fig("Units", "reads a table."), fig("Visits", "rewrites."),
+                                {"label": "Margin", "equal_age": {"equal": True, "why": ""}}])
+    assert rows == [{"label": "Sales and Units against their usual range", "reason": "each reads a table.", "tables": []},
+                    {"label": "Visits against its usual range", "reason": "it rewrites.", "tables": []}]
+    assert E._not_at_equal_age([fig("A", "x."), fig("B", "x."), fig("C", "x.")])[0]["label"] == "A, B and C against their usual range"
+
+
+@pytest.mark.parametrize("m,expected", [
+    ({"tables": ["bigquery-public-data.thelook_ecommerce.orders"], "sql": "SUM(x)"}, "provisional"),
+    ({"tables": [], "sql": "SELECT SUM(x) FROM orders"}, "provisional"),      # a statement names its own tables
+    ({"tables": [], "sql": "SUM(x)", "time_column": "orders.created_at"}, "provisional"),      # no table, but dated by one
+    ({"tables": ["returns"], "sql": "SUM(x)", "outcome_column": "orders.returned_at"}, "provisional"),
+    ({"tables": ["returns"], "sql": "SUM(x)"}, "final")])
+def test_a_figure_is_unsettled_by_the_tables_it_reads_however_they_are_spelled(settling_week, m, expected):
+    assert ranges.range_status({**m, "time_kind": "flow"}, settling_week) == expected
+    assert ranges.range_status({**m, "time_kind": "flow"}, replace(settling_week, still_moving=("thelook.ORDERS",))) == expected
+
+
+def test_a_range_is_told_which_tables_rewrite_their_history(monkeypatch):
+    import aughor.settling.store as settling
+    monkeypatch.setattr(settling, "connection_lag", lambda c: {"days": 29, "source": "beyond_horizon", "horizon": 28,
+                                                              "still_moving": ["orders", "users"], "rewrites": ["orders"]})
+    monkeypatch.setattr(ranges, "data_edge", lambda *a, **k: {"through": None, "from": None, "held_by": [], "tables": {}, "why": ""})
+    spec, why = ranges.resolve_for("c1", "last_week", today=OCT29)
+    assert spec is not None and spec.rewrites == ("orders",) and spec.still_moving == ("orders", "users"), why
 
 
 @pytest.mark.parametrize("series,expected", [

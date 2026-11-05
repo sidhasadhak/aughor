@@ -49,6 +49,20 @@ describe("RangeMeasures", () => {
     expect(heads).toEqual(["Gross sales", "Discounts and returns", "Net sales", "Volume"]);
   });
 
+  it("says a table still moving in the server's words when the block carries them", () => {
+    const says = "items was still changing 14 days after a day ended and has not been seen to stop, so figures read from it may still move.";
+    render(<RangeMeasures block={{ ...BLOCK, settling: { kind: "moving", days: 15, tables: ["items"], says } }} />);
+    expect(screen.getByTestId("range-measures").textContent).toContain(`Read 15 days behind today. ${says}`);
+  });
+
+  it("says a source that rewrites its history as one, in the server's words", () => {
+    const says = "This source rewrites its history at each refresh: items changes at every age.";
+    render(<RangeMeasures block={{ ...BLOCK, rewrites: ["items"], settling: { kind: "rewrites", days: 15, tables: ["items"], says } }} />);
+    const said = screen.getByTestId("range-measures").textContent ?? "";
+    expect(said).toContain(`Read 15 days behind today. ${says}`);
+    expect(said).not.toContain("still changing 14 days");
+  });
+
   it("says beside a change when it is not at equal age, and where the data ends", () => {
     const why = "Revenue is still provisional, and what it is compared with has settled";
     render(<RangeMeasures block={{ ...BLOCK, edge_note: "Data runs to 2026-10-07: today (2026-10-08) has no rows yet.",
@@ -188,6 +202,32 @@ describe("a metric opens beside the page", () => {
     await waitFor(() => expect(screen.queryByTestId("metric-detail")).toBeNull());
   });
 
+  it("does not offer to ask why a figure moved when the page does not read its difference as a move", async () => {
+    const asked: string[] = [];
+    render(
+      <MetricDetailHost connectionId="thelook" pageKey="briefing" onAskWhy={q => asked.push(q)}>
+        <RangeMeasures block={{ ...BLOCK, measured: [{ ...BLOCK.measured[0], equal_age: { equal: false, why: "not read" } }] }} />
+      </MetricDetailHost>);
+    fireEvent.click(screen.getByRole("button", { name: "Revenue" }));
+    const drawer = await screen.findByTestId("metric-detail");
+    expect(screen.queryByRole("button", { name: "Ask why it moved" })).toBeNull();
+    expect(drawer.textContent).not.toContain("Asking starts a deep analysis");
+  });
+
+  it("says of a table never seen to settle what is true of it, not that its newest ranges are inside some days", async () => {
+    const says = "items was still changing 14 days after a day ended and has not been seen to stop, so figures read from it may still move.";
+    api.readMetricTrend.mockResolvedValue({ ...TREND, same_age: false, lag_days: 15, never_settled: says,
+      series: [{ ...TREND.series[0], settling: true }, { ...TREND.series[1], settling: true }] });
+    render(
+      <MetricDetailHost connectionId="thelook" pageKey="briefing">
+        <RangeMeasures block={BLOCK} />
+      </MetricDetailHost>);
+    fireEvent.click(screen.getByRole("button", { name: "Revenue" }));
+    const drawer = await screen.findByTestId("metric-detail");
+    await waitFor(() => expect(drawer.textContent).toContain(says));
+    expect(drawer.textContent).not.toContain("days this source keeps changing");
+  });
+
   it("says a flow's earlier ranges are read as they stand today, and which are still settling", async () => {
     api.readMetricTrend.mockResolvedValue({ ...TREND, same_age: false, lag_days: 15,
       series: [{ ...TREND.series[0], settling: false }, { ...TREND.series[1], settling: true }] });
@@ -199,7 +239,7 @@ describe("a metric opens beside the page", () => {
     const drawer = await screen.findByTestId("metric-detail");
     await waitFor(() => expect(drawer.textContent).toContain("each read as its rows stand today"));
     expect(drawer.textContent).toContain("The newest is inside the 15 days this source keeps changing");
-    expect(drawer.textContent).toContain("2026-08-17 to 2026-08-26 (this range) · still settling");
+    expect(drawer.textContent).toContain("2026-08-17 to 2026-08-26 (this range) · may still move");
     expect(drawer.textContent).not.toContain("each read at the same age");
   });
 
@@ -224,7 +264,7 @@ describe("what each metric is expected to read next", () => {
     why: "", target: { start: "2026-08-27", last_day: "2026-09-05", label: "2026-08-27 to 2026-09-05", settles_on: "2026-09-18" },
     items: [
       { metric: "revenue", name: "Revenue", why: "", expected: { claim_id: "p1", low: 120000, mid: 131000, high: 142000,
-        text: "$120,000 to $142,000", state: "open", scored_against: null, n: 6,
+        text: "$120,000 to $142,000", state: "open", scored_against: null, n: 6, held: 3, cases: 4, coverage: 0.8,
         must_say: ["6 earlier ranges, each read at the same age: $120,000 to $142,000 at 80% stated coverage", "on this metric the interval held 3 of 4 times"] } },
       { metric: "return_rate", name: "Return rate", expected: null, why: "only 2 earlier ranges held a reading; 3 are the least a band is drawn from" },
     ],

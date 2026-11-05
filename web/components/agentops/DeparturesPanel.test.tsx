@@ -96,7 +96,7 @@ describe("DeparturesPanel", () => {
     render(<DeparturesPanel />);
     expect(await screen.findByText("Receipt: promise dispatch of order_to_delivery · departure held1"))
       .toBeInTheDocument();
-    expect(window.location.search).toBe("?tab=agentic-ops&layer=departures");
+    await waitFor(() => expect(window.location.search).toBe("?tab=agentic-ops&layer=departures"));
   });
 
   it("filters to what needs a person", async () => {

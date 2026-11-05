@@ -22,6 +22,7 @@ import sqlglot
 from urllib.parse import urlsplit
 
 from aughor.db.dialects import known_dialect, sql_for_engine
+from aughor.db.signing import sign
 from aughor.db.doors import add as _add_doors, door_dialect, door_schema, passed as _passed, statement_is_internal, through_door
 from aughor.db.errors import ConnectionUnreachable, classify_error, is_unreachable
 from aughor.db.single_flight import single_flight_build
@@ -1143,6 +1144,14 @@ class DatabaseConnection(ABC):
         ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         return ok, reason
 
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — the statements people ran on this warehouse, as text, or the word that this engine keeps no
+        history the platform reads (`aughor.db.query_history`). The engines that keep one override this; the
+        default is the honest answer for a file, DuckDB and Postgres (whose activity view is the moment, not a log).
+        Never rows, and only when the organisation allows the read — the door checks, not the connection."""
+        from aughor.db.query_history import unsupported
+        return unsupported(str(getattr(self, "dialect", "") or "duckdb"))
+
     def translate(self, sql: str) -> str:
         """Rewrite SQL from any dialect to this backend's dialect."""
         if self.dialect == "duckdb":
@@ -1741,6 +1750,115 @@ class PostgresConnection(DatabaseConnection):
         types = [_pg_type_name(d[1]) for d in desc]
         return columns, rows, types
 
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — the statements run on this database, from `pg_stat_statements` where the extension is installed:
+        an AGGREGATE since its last reset (each normalised statement once, with its call count; literals read as
+        `$1`), top-level SELECTs on the current database, most-called first. ``hours`` does not apply to an aggregate
+        and the note says so. Without the extension the engine keeps no history the platform reads, and the answer
+        says what installs one. `pg_stat_activity` — the moment, not a log — is never read."""
+        from aughor.db.query_history import rows_from_result, unsupported
+        limit = max(1, min(int(limit), 10000))
+        absent = ("this database has no pg_stat_statements — the extension (shared_preload_libraries plus CREATE "
+                  "EXTENSION pg_stat_statements) is the history the platform reads on this engine; pg_stat_activity "
+                  "is the moment, never read")
+        # The extension's own schema first: this connection pins its search path to its schema, and the extension
+        # usually lives in `public` — on LuxExperience the unqualified read said "does not exist" of a view that was
+        # there (2026-11-04).
+        where = self.execute_bounded(
+            "__query_history__",
+            "SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
+            "WHERE e.extname = 'pg_stat_statements'", 1, sql_dialect=None, internal=True)
+        if getattr(where, "error", None):
+            return rows_from_result(where, self.dialect, source="pg_extension", hours=hours, limit=limit)
+        if not where.rows or not where.rows[0] or not where.rows[0][0] or where.rows[0][0] == "NULL":
+            return unsupported(self.dialect, absent)
+        schema = str(where.rows[0][0])
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", schema):
+            schema = '"' + schema.replace('"', '""') + '"'
+        source = f"{schema}.pg_stat_statements"
+        sql = (
+            f"SELECT (SELECT stats_reset::text FROM {schema}.pg_stat_statements_info) AS since, s.query, r.rolname, "
+            f"s.calls FROM {schema}.pg_stat_statements s LEFT JOIN pg_roles r ON r.oid = s.userid "
+            "WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) "
+            # a statement the platform signed opens with its comment, not with SELECT: read it too, so the reader can
+            # count what was ours and leave it out (Arc NV-7) rather than the engine hiding it
+            "AND s.toplevel AND (s.query ILIKE 'select%' OR s.query LIKE '/* aughor */%') "
+            "AND s.query NOT ILIKE '<insufficient privilege>%' "
+            f"ORDER BY s.calls DESC LIMIT {limit}"
+        )
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+        err = str(getattr(result, "error", "") or "")
+        if "pg_stat_statements" in err and "does not exist" in err:
+            return unsupported(self.dialect, absent)
+        history = rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit,
+                                   aggregate_note="an aggregate since the extension's last reset: each statement "
+                                                  "once with its call count, literals normalised to $n — the window "
+                                                  "in hours does not apply")
+        if history.rows:
+            since = history.rows[0].ended_at
+            if since and since != "NULL":
+                history.note = history.note.replace("last reset", f"last reset ({since})")
+        return history
+
+    def query_history_prerequisite(self) -> dict:
+        """Arc NV-5 — where pg_stat_statements stands on this server: available (the contrib package), preloaded
+        (`shared_preload_libraries`), created on this database. Three reads through the door; a failure is the
+        dict's `error`."""
+        state: dict = {"available": False, "preloaded": False, "created": False}
+        r = self.execute_bounded("__prerequisite__",
+                                 "SELECT count(*) FROM pg_available_extensions WHERE name = 'pg_stat_statements'",
+                                 1, sql_dialect=None, internal=True)
+        if r.error:
+            return {"error": r.error}
+        state["available"] = bool(r.rows and str(r.rows[0][0]) not in ("0", "NULL"))
+        # `SHOW` is a command the read door refuses ("Only SELECT is allowed") — found live on LuxExperience, where the
+        # unit test's fake door had let it through; the setting is read as a SELECT.
+        r = self.execute_bounded("__prerequisite__", "SELECT current_setting('shared_preload_libraries')", 1,
+                                 sql_dialect=None, internal=True)
+        if r.error:
+            return {"error": r.error}
+        state["preloaded"] = bool(r.rows and "pg_stat_statements" in str(r.rows[0][0]).lower())
+        r = self.execute_bounded("__prerequisite__",
+                                 "SELECT count(*) FROM pg_extension WHERE extname = 'pg_stat_statements'",
+                                 1, sql_dialect=None, internal=True)
+        if r.error:
+            return {"error": r.error}
+        state["created"] = bool(r.rows and str(r.rows[0][0]) not in ("0", "NULL"))
+        return state
+
+    def enable_query_history(self) -> tuple[bool, str]:
+        """Arc NV-5 — CREATE EXTENSION pg_stat_statements on this database, the one statement the platform writes to a
+        warehouse: DDL, no row touched, run only when the library is already preloaded (the probe says so) and only
+        from the prerequisites door, which the organisation's `read_query_history` setting gates and the ledger
+        journals. Refused, in words, when the server setting is missing — that step is the admin's, with a restart."""
+        state = self.query_history_prerequisite()
+        if state.get("error"):
+            return False, f"could not read where pg_stat_statements stands: {state['error']}"
+        if not state.get("available"):
+            return False, "pg_stat_statements is not available on this server — the contrib package is not installed"
+        if not state.get("preloaded"):
+            return False, ("pg_stat_statements is not preloaded: set `shared_preload_libraries = 'pg_stat_statements'` on "
+                           "the server and restart it; the platform creates the extension after that")
+        if state.get("created"):
+            return True, "pg_stat_statements is already created on this database"
+        # The session is read-only by default (`default_transaction_read_only=on`, WP-1d), so this one DDL runs in an
+        # explicit READ WRITE transaction of its own — the override lasts exactly these four statements, the session's
+        # default is untouched, and every other statement on this connection stays read-only. Found live on
+        # LuxExperience: "cannot execute CREATE EXTENSION in a read-only transaction".
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("BEGIN")
+                try:
+                    cur.execute("SET TRANSACTION READ WRITE")
+                    cur.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+                    cur.execute("COMMIT")
+                except Exception:
+                    cur.execute("ROLLBACK")
+                    raise
+            return True, "pg_stat_statements created; statements are kept from now on"
+        except Exception as e:
+            return False, f"CREATE EXTENSION pg_stat_statements was refused: {e}"
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")
@@ -1824,9 +1942,9 @@ class PostgresConnection(DatabaseConnection):
                     # breaks validation and the dialect rewrite.
                     from aughor.sql.params import expand_list_params, render_for_engine
                     exec_sql, bind_params = expand_list_params(sql, params)
-                    cur.execute(render_for_engine(exec_sql, "pyformat"), bind_params)
+                    cur.execute(sign(render_for_engine(exec_sql, "pyformat")), bind_params)
                 else:
-                    cur.execute(sql)
+                    cur.execute(sign(sql))
                 rows = cur.fetchmany(max_rows)
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)

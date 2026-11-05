@@ -76,6 +76,11 @@ describe("a figure", () => {
     expect(screen.getByTestId("tile-not-equal-age")).toBeInTheDocument();
   });
 
+  it("does not colour a difference it does not read as a move, even past its limit's good side", () => {
+    tile(card({ thresholds: { warning: 0.12, direction: "above" } }), ranged(0.1003, { ...JUNE, equal_age: false }), "within");
+    expect(screen.getByTestId("tile-change").style.color).toBe("var(--t2)");
+  });
+
   it("says when the period before has no figure — never a move from zero", () => {
     tile(card(), ranged(0.1003, { ...JUNE, value: null, why: "it has no figure there" }));
     expect(screen.getByTestId("tile-change")).toHaveTextContent("No figure for June to compare with");

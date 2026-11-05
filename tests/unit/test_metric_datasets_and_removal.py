@@ -244,6 +244,7 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
     out = ranges.measure_range("c", spec, run_sql=empty, dialect="duckdb")
     assert out["measured"] == []
     assert out["unmeasured"] == [{"name": "Completed rides", "metric": "rides",
+                                  "area": {"id": "other", "name": "Everything else the data holds", "order": 17},
                                   "reason": "its data has no rows in this range"}]
 
 

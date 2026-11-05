@@ -77,6 +77,10 @@ How to compose:
   line for a level shift; a control when the reader will want one segment at a time; a decision block when a decision
   is warranted; a quiet line for what held steady. A figure block is for one number that stands alone: use at most
   three, never where a comparison, bridge or line shows more. At most 14 blocks.
+- A deep analysis carrying measured_before finished before that metric's definition changed, so what it says of that
+  metric is about the old figures. Never use it to explain, doubt or discount this range's figure for that metric, and
+  never call that figure's move an artefact on its word. Mention it only as work done before the change, and if the move
+  still matters and nothing else answers it, start a deep analysis on the definition as it stands.
 - Every number in your words must come from a source, written as given (rounding allowed), and cited as
   {{words|source_id}} — cited to the source it comes from, said of the segment it belongs to, and moving the way it
   was measured to move (a segment below its usual never "rose"). A deep analysis's or a finding's numbers may be
@@ -85,6 +89,11 @@ How to compose:
   — and say it as the analysis's finding. Otherwise describe where the move sits and what it sits beside. Never
   predict.
 - Every figure marked floor must appear in a block (a figure block reading it is enough).
+- Anything marked at_equal_age false (a check, or a breakdown of one) is not read against its usual range, and its
+  caveat says why: part of any difference from older ranges may not be a move. It has no z and no streak and is never in
+  floor. Draw it if it matters and say what its caveat says; never say it rose or fell, never call it above, below or
+  outside its usual range, unusual, or the highest or lowest of anything, never lead with it, and never start a deep
+  analysis on it. Code holds a sentence that does.
 
 Block types (fields per type):
 {types}"""
@@ -130,7 +139,9 @@ def _known_for_model(src: S.Source) -> dict:
     if src.kind == "analysis":
         return {"id": src.id, "question": f.get("question"), "verdict": f.get("headline"), "summary": f.get("summary"),
                 "closing": f.get("closing"), "confidence": f.get("confidence"), "licence": f.get("licence"),
-                "what_it_cannot_say": f.get("gaps"), "recommends": f.get("recommendations"), "finished": f.get("completed")}
+                "what_it_cannot_say": f.get("gaps"), "recommends": f.get("recommendations"), "finished": f.get("completed"),
+                **({"measured_before": [{"metric": c["label"], "definition_changed_on": c["on"]} for c in f["definitions_changed"]]}
+                   if f.get("definitions_changed") else {})}
     if src.kind == "finding":
         return {"id": src.id, "question": f.get("question"), "finding": f.get("finding"), "domain": f.get("domain"),
                 "confidence": f.get("confidence")}
@@ -322,7 +333,8 @@ def compose(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None,
                 sid = f"{check.id}_by_{column}".lower()
                 src = S.breakdown(sid, f"{check.label} by {column.replace('_', ' ')}", m, column, spec,
                                   usual_n=usual_n, run_sql=run_sql, dialect=dialect, unit=check.unit,
-                                  better=check.better, check_id=check.id)
+                                  better=check.better, check_id=check.id,
+                                  not_read=S.age_caveat(sources[check.id]) if check.id in sources else "")
                 sources[sid] = src
                 return S.for_model(src)
 
@@ -461,7 +473,12 @@ def sheet_lines(entry: dict) -> list[tuple[str, list[str]]]:
         words = " ".join(P.plain(x) for x in (b.get("title"), b.get("text"), b.get("sub")) if x)
         if words.strip():
             prose.append(words.strip())
-    return [("narrative", prose)] if prose else []
+    out: list[tuple[str, list[str]]] = [("narrative", prose)] if prose else []
+    # What the edition did not read goes out with it, or a reader of the send is told less than a reader of the page.
+    unread = [f"{n['label']}: {n['reason']}" for n in entry.get("not_read") or [] if n.get("reason")]
+    if unread:
+        out.append(("not_read", unread))
+    return out
 
 
 # ── BC-4 · a drill, drawn in its card ────────────────────────────────────────────────────────
@@ -524,11 +541,12 @@ def drill(conn_id: str, spec, *, scope_key: str, schema: Optional[str] = None, r
     usual_n = guide.news.usual_for(spec.period if spec.period in ("day", "week", "month", "year") else "custom")
     with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
         new = S.breakdown(sid, label, m, column, spec, usual_n=usual_n, run_sql=run_sql, dialect=dialect,
-                          unit=check.unit, better=check.better, kind="drill", check_id=check.id, within=within)
+                          unit=check.unit, better=check.better, kind="drill", check_id=check.id, within=within,
+                          not_read=S.age_caveat(src))
     if new.error:
         raise ValueError(new.error)
-    block = P.Block(id=f"drill_{sid}", type="compare", source=sid, kicker="Drill", title=label + ", against usual",
-                    by_code=True)
+    block = P.Block(id=f"drill_{sid}", type="compare", source=sid, kicker="Drill", by_code=True,
+                    title=label if S.age_caveat(new) else label + ", against usual")
     keep_entry(key, {**entry, "sources": {**(entry.get("sources") or {}), sid: new.model_dump(mode="json")}})
     return {"block": block.model_dump(mode="json"), "source": new.model_dump(mode="json")}
 
@@ -618,14 +636,17 @@ def refreshed(src: S.Source) -> S.Source:
         return src
 
 
-def as_it_stands(entry: dict) -> dict:
-    """An edition as a reader is shown it, for a read, which keeps nothing: the blocks the model wrote, and every deep
-    analysis it started read as it stands now."""
+def as_it_stands(entry: dict, conn_id: str = "") -> dict:
+    """An edition as a reader is shown it, for a read, which keeps nothing: the blocks the model wrote, every deep
+    analysis it started read as it stands now, and, with ``conn_id``, any that finished before a metric it names changed
+    saying so, whatever the model made of it."""
     entry = {**entry, "blocks": P.written_blocks(entry)}
     srcs = entry.get("sources") or {}
-    if not any((raw or {}).get("kind") == "analysis" and (raw or {}).get("status") == "running" for raw in srcs.values()):
+    analyses = [raw for raw in srcs.values() if (raw or {}).get("kind") == "analysis"]
+    changes = S.definitions_changed(conn_id) if conn_id and analyses else []
+    if not changes and not any(raw.get("status") == "running" for raw in analyses):
         return entry
-    return {**entry, "sources": {sid: (refreshed(S.Source.model_validate(raw)).model_dump(mode="json")
+    return {**entry, "sources": {sid: (S.marked_measured_before(refreshed(S.Source.model_validate(raw)), changes).model_dump(mode="json")
                                        if (raw or {}).get("kind") == "analysis" else raw)
                                  for sid, raw in srcs.items()}}
 

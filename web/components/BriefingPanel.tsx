@@ -3387,7 +3387,8 @@ export function BriefingPanel({
       <PaperDateline today={paperDate(new Date())}
         covers={editionBlock ? `covering ${editionBlock.covers}` : rangeSelected ? "covering this range" : "everything recorded, not tied to dates"}
         lagDays={editionBlock?.lag_days} records={paperRefs.length}
-        endedOn={rangeSelected && editionBlock?.data_ended ? editionBlock.data_through ?? null : null} />
+        endedOn={rangeSelected && editionBlock?.data_ended ? editionBlock.data_through ?? null : null}
+        stillMoving={editionBlock?.still_moving} />
       {/* The data ENDED (design-mockups/briefing-data-ended.html): one line saying where, and what this
           edition became because of it; the table below lists where every edition landed. */}
       {rangeSelected && editionBlock?.data_ended && editionBlock.edge_note && (

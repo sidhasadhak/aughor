@@ -42,6 +42,9 @@ export default defineConfig({
           include: ["**/*.test.tsx"],
           exclude: ["**/node_modules/**", "**/.next/**"],
           setupFiles: ["./vitest.setup.ts"],
+          // Rendering and typing cost CPU, not logic. Under load (measured at 25-70) the slowest tests passed the 5 s default
+          // on every run with nothing wrong; a test that hangs still fails, later.
+          testTimeout: 30_000,
         },
       },
     ],

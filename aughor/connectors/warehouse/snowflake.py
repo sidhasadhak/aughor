@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import sign
 from aughor.db.doors import through_door
 from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
@@ -66,7 +67,7 @@ class SnowflakeConnection(Connector):
 
     def _bind_execute(self, sql: str, params: dict):
         cur = self._conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(sign(sql), params)
         cols = [d[0] for d in cur.description] if cur.description else []
         return cols, cur.fetchmany(self.max_rows + 1)   # one past the cap, so a cut read shows
 
@@ -103,7 +104,7 @@ class SnowflakeConnection(Connector):
         _t0 = time.monotonic()
         try:
             cur = self._conn.cursor()
-            cur.execute(sql)
+            cur.execute(sign(sql))
             # one row past the cap: a read the cap cut counts more rows than it keeps
             rows_raw = cur.fetchmany(max_rows + 1)
             columns = [desc[0] for desc in cur.description] if cur.description else []
@@ -129,6 +130,20 @@ class SnowflakeConnection(Connector):
             return True, ""
         except Exception as e:
             return False, str(e)
+
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — finished SELECT statements from `INFORMATION_SCHEMA.QUERY_HISTORY` (the account's last seven
+        days at most, which is what the table function keeps), newest first, through this connection's own door."""
+        from aughor.db.query_history import rows_from_result
+        hours, limit = max(1, int(hours)), max(1, min(int(limit), 10000))
+        source = "INFORMATION_SCHEMA.QUERY_HISTORY"
+        sql = (
+            "SELECT END_TIME, QUERY_TEXT, USER_NAME FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY("
+            f"END_TIME_RANGE_START => DATEADD('hour', -{hours}, CURRENT_TIMESTAMP()), RESULT_LIMIT => {limit})) "
+            "WHERE QUERY_TYPE = 'SELECT' AND EXECUTION_STATUS = 'SUCCESS' ORDER BY END_TIME DESC"
+        )
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+        return rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)
 
     def export_csv(self, sql: str, path: str, *, statement_timeout: int = 60) -> tuple[bool, str]:
         """Materialize a query's FULL result to a CSV written straight from the cursor.

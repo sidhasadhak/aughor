@@ -1505,7 +1505,10 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         _learned_lag = learned_lag_days(getattr(automation, "conn_id", "") or "")
     except Exception:
         _learned_lag = None
-    _grounding = scheduled_grounding(automation, effect.config, learned_lag=_learned_lag)
+    from aughor.settling import settling_answer
+    _source = settling_answer(getattr(automation, "conn_id", "") or "")
+    _grounding = scheduled_grounding(automation, effect.config, learned_lag=_learned_lag,
+                                     never_settles=_source.for_agents() if _source.never_settled else "")
     grounded_question = f"{_grounding}\n\n{question}" if _grounding else question
     # VA-13 — wait only when a later step binds to this one's answer (set by the chain
     # loop from `effect_refs`). An unconsumed investigate keeps submitting and returning,
