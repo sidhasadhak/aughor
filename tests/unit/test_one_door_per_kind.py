@@ -50,6 +50,14 @@ def test_every_warehouse_driver_call_is_signed_and_the_result_keeps_the_statemen
 
 # ── the reader leaves ours out, and says so ──────────────────────────────────────────────
 
+def test_the_postgres_reader_reads_signed_statements_so_it_can_count_them():
+    """Live, 2026-11-05: the first signed statement never reached the reader — its `ILIKE 'select%'` filter let the engine
+    hide every statement that opens with the comment, so `ours` read 0 while the engine held one."""
+    import inspect
+    from aughor.db import connection as C
+    src = inspect.getsource(C.PostgresConnection.__dict__["query_history"])
+    assert "OR s.query LIKE '/* aughor */%'" in src
+
 def test_the_history_reader_leaves_signed_statements_out_and_counts_them():
     h = QueryHistory(engine="postgres", supported=True, source="pg_stat_statements", rows=[
         HistoryRow("t", f"{SIGNATURE} SELECT SUM(gmv_eur) FROM orders", "lux", calls=302),

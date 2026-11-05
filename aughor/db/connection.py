@@ -1780,7 +1780,10 @@ class PostgresConnection(DatabaseConnection):
             f"SELECT (SELECT stats_reset::text FROM {schema}.pg_stat_statements_info) AS since, s.query, r.rolname, "
             f"s.calls FROM {schema}.pg_stat_statements s LEFT JOIN pg_roles r ON r.oid = s.userid "
             "WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) "
-            "AND s.toplevel AND s.query ILIKE 'select%' AND s.query NOT ILIKE '<insufficient privilege>%' "
+            # a statement the platform signed opens with its comment, not with SELECT: read it too, so the reader can
+            # count what was ours and leave it out (Arc NV-7) rather than the engine hiding it
+            "AND s.toplevel AND (s.query ILIKE 'select%' OR s.query LIKE '/* aughor */%') "
+            "AND s.query NOT ILIKE '<insufficient privilege>%' "
             f"ORDER BY s.calls DESC LIMIT {limit}"
         )
         result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
