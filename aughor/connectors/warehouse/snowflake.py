@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import sign
 from aughor.db.doors import through_door
 from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
@@ -66,7 +67,7 @@ class SnowflakeConnection(Connector):
 
     def _bind_execute(self, sql: str, params: dict):
         cur = self._conn.cursor()
-        cur.execute(sql, params)
+        cur.execute(sign(sql), params)
         cols = [d[0] for d in cur.description] if cur.description else []
         return cols, cur.fetchmany(self.max_rows + 1)   # one past the cap, so a cut read shows
 
@@ -103,7 +104,7 @@ class SnowflakeConnection(Connector):
         _t0 = time.monotonic()
         try:
             cur = self._conn.cursor()
-            cur.execute(sql)
+            cur.execute(sign(sql))
             # one row past the cap: a read the cap cut counts more rows than it keeps
             rows_raw = cur.fetchmany(max_rows + 1)
             columns = [desc[0] for desc in cur.description] if cur.description else []

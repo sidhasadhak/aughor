@@ -67,24 +67,27 @@ def test_staging_is_idempotent_and_says_what_it_could_not_stage():
     cands = [_c("measure", "SUM(gmv_eur)"), _c("join", "orders.region_code = regions.code"),
              _c("filter", "status IN ('shipped')", subject="orders.status")]
     first = stage_candidates(cands, _graph(), "c-stage", "main")
-    assert [p["declares"] for p in first["proposals"]] == ["computed_property", "segment"]
-    assert first["already_staged"] == 0 and first["unstageable"] == [
-        {"kind": "join", "proposal": "orders.region_code = regions.code", "why": "no entity backs regions in the served graph"}]
+    # Arc NV-7: a formula is never a card here — it is proposed in the Semantic Layer's catalogue (one door per kind)
+    assert [p["declares"] for p in first["proposals"]] == ["segment"]
+    assert first["already_staged"] == 0 and [u["kind"] for u in first["unstageable"]] == ["measure", "join"]
+    assert first["unstageable"][0]["why"].startswith("a formula is proposed and adopted in the Semantic Layer")
+    assert first["unstageable"][1]["why"] == "no entity backs regions in the served graph"
     again = stage_candidates(cands, _graph(), "c-stage", "main")
-    assert again["already_staged"] == 2 and [p["id"] for p in again["proposals"]] == [p["id"] for p in first["proposals"]]
+    assert again["already_staged"] == 1 and [p["id"] for p in again["proposals"]] == [p["id"] for p in first["proposals"]]
     row = inbox.get_proposal(first["proposals"][0]["id"])
-    assert row.kind == "ontology_candidate" and row.proposer == "query_history" and row.params["proposal"] == "SUM(gmv_eur)"
-    assert row.detail["declares"] == "computed_property" and row.action_id == "ontology.measure"
+    assert row.kind == "ontology_candidate" and row.proposer == "query_history" and row.params["proposal"] == "status IN ('shipped')"
+    assert row.detail["declares"] == "segment" and row.action_id == "ontology.filter"
 
 
 def test_a_rejected_candidate_is_kept_and_never_restaged():
     from aughor.routers.ontology import stage_candidates
-    out = stage_candidates([_c("measure", "SUM(refund_eur)")], _graph(), "c-reject", "main")
+    seg = _c("filter", "status IN ('returned')", subject="orders.status")
+    out = stage_candidates([seg], _graph(), "c-reject", "main")
     pid = out["proposals"][0]["id"]
     assert inbox.reject_proposal(pid, actor="ana")
     row = inbox.get_proposal(pid)
     assert row.status == "rejected" and row.resolved_by == "ana"
-    again = stage_candidates([_c("measure", "SUM(refund_eur)")], _graph(), "c-reject", "main")
+    again = stage_candidates([seg], _graph(), "c-reject", "main")
     assert again["proposals"][0]["id"] == pid and again["proposals"][0]["status"] == "rejected"
 
 
@@ -192,8 +195,8 @@ def test_the_mining_door_stages_when_asked(monkeypatch):
     import aughor.db.connection as C
     monkeypatch.setattr(C, "open_connection_for_with_schema", lambda cid, s=None: Conn())
     out = R.mine_ontology_candidates(R._MineCandidatesRequest(stage=True), connection_id="c-door", schema_name="main")
-    assert len(out["offered"]) == 1 and out["staged"]["proposals"][0]["declares"] == "computed_property"
-    assert inbox.get_proposal(out["staged"]["proposals"][0]["id"]).kind == "ontology_candidate"
+    assert len(out["offered"]) == 1 and out["staged"]["proposals"] == []       # Arc NV-7: a formula is not a card here
+    assert out["staged"]["unstageable"][0]["why"].startswith("a formula is proposed and adopted in the Semantic Layer")
     plain = R.mine_ontology_candidates(None, connection_id="c-door", schema_name="main")
     assert "staged" not in plain
 

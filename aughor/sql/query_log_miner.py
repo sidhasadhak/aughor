@@ -78,6 +78,9 @@ class QueryLogFacts:
     #: Arc NV-3 — (name, expr_sql) -> the tables the formula reads, aliases resolved, so a candidate can be bound
     #: outside the statement it came from (`SELECT <expr> FROM <tables>`). Empty when nothing named a table.
     formula_tables: dict = field(default_factory=dict)
+    #: Arc NV-7 — (name, expr_sql) -> the first statement it was seen in, so a metric proposed from it can carry that
+    #: statement's own FROM and JOINs rather than a cross join of the tables it names.
+    formula_examples: dict = field(default_factory=dict)
     column_usage: Counter = field(default_factory=Counter)      # "t.col" -> count
     #: AT-8 — ("t.col", role) -> count, role ∈ ROLES. What analysts DO with a column,
     #: which accretes from real history without anyone configuring anything.
@@ -232,6 +235,7 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                     seen_formulas.add(key)
                     facts.named_formulas[key] += 1
                     facts.formula_tables.setdefault(key, set()).update(tables)
+                    facts.formula_examples.setdefault(key, sql)
 
         for c in tree.find_all(exp.Column):
             qc = _qual(c)

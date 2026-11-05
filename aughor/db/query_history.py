@@ -56,26 +56,39 @@ class QueryHistory:
     error: str = ""     # the engine's refusal, when the read ran and failed
     source: str = ""    # the view or table the read came from
 
+    def _theirs(self) -> list[HistoryRow]:
+        """The rows that are not the platform's own (Arc NV-7: every statement the platform sends is signed)."""
+        from aughor.db.signing import is_signed
+        return [r for r in self.rows if r.sql and r.sql.strip() and not is_signed(r.sql)]
+
     @property
     def statements(self) -> list[str]:
-        return [r.sql for r in self.rows if r.sql and r.sql.strip()]
+        return [r.sql for r in self._theirs()]
 
     @property
     def calls(self) -> int:
-        return sum(max(1, r.calls) for r in self.rows if r.sql and r.sql.strip())
+        return sum(max(1, r.calls) for r in self._theirs())
+
+    @property
+    def ours(self) -> dict:
+        """What the platform's own statements amounted to in this history — said, so a reader knows the history was
+        larger than what was mined and why."""
+        from aughor.db.signing import is_signed
+        mine = [r for r in self.rows if r.sql and r.sql.strip() and is_signed(r.sql)]
+        return {"statements": len(mine), "calls": sum(max(1, r.calls) for r in mine)}
 
     def weighted_statements(self, cap: int = CALLS_CAP) -> list[str]:
         """Each statement once per run it stands for (at most ``cap``), so the miner's frequencies read as calls:
-        a log row counts once, an aggregate's row its call count."""
+        a log row counts once, an aggregate's row its call count. The platform's own statements are left out."""
         out: list[str] = []
-        for r in self.rows:
-            if r.sql and r.sql.strip():
-                out.extend([r.sql] * max(1, min(int(r.calls or 1), cap)))
+        for r in self._theirs():
+            out.extend([r.sql] * max(1, min(int(r.calls or 1), cap)))
         return out
 
     def to_dict(self) -> dict:
         return {"engine": self.engine, "supported": self.supported, "count": len(self.rows), "calls": self.calls,
-                "hours": self.hours, "limit": self.limit, "note": self.note, "error": self.error, "source": self.source}
+                "ours": self.ours, "hours": self.hours, "limit": self.limit, "note": self.note, "error": self.error,
+                "source": self.source}
 
 
 def unsupported(engine: str, why: str = "") -> QueryHistory:
@@ -218,6 +231,9 @@ def check_query_history(conn: Any) -> Readiness:
 def not_platform_statement(sql: str) -> bool:
     """Whether a statement is somebody's question rather than a catalog read: the platform's own metadata and history
     reads, and an engine's system views, teach the miner nothing about how the business is queried."""
+    from aughor.db.signing import is_signed
+    if is_signed(sql):
+        return False
     low = sql.lower()
     return not any(marker in low for marker in (
         "information_schema", "system.query_log", "system.columns", "system.tables", "query_history(",

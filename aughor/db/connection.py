@@ -22,6 +22,7 @@ import sqlglot
 from urllib.parse import urlsplit
 
 from aughor.db.dialects import known_dialect, sql_for_engine
+from aughor.db.signing import sign
 from aughor.db.doors import add as _add_doors, door_dialect, door_schema, passed as _passed, statement_is_internal, through_door
 from aughor.db.errors import ConnectionUnreachable, classify_error, is_unreachable
 from aughor.db.single_flight import single_flight_build
@@ -1938,9 +1939,9 @@ class PostgresConnection(DatabaseConnection):
                     # breaks validation and the dialect rewrite.
                     from aughor.sql.params import expand_list_params, render_for_engine
                     exec_sql, bind_params = expand_list_params(sql, params)
-                    cur.execute(render_for_engine(exec_sql, "pyformat"), bind_params)
+                    cur.execute(sign(render_for_engine(exec_sql, "pyformat")), bind_params)
                 else:
-                    cur.execute(sql)
+                    cur.execute(sign(sql))
                 rows = cur.fetchmany(max_rows)
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)

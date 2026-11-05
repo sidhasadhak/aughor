@@ -40,6 +40,11 @@ SOURCE_ONTOLOGY = "ontology"
 SOURCE_PATTERN = "pattern"
 SOURCE_AREA = "area"            # written for an area the knowledge base has no pattern for
 SOURCE_BLIND_SPOT = "blind_spot"
+#: Arc NV-7 (ROADMAP §6 item 61, one door per kind) — a formula other people compute in the warehouse's own query
+#: history, proposed here and adopted in the Semantic Layer like every other metric; never a card in Attention.
+SOURCE_QUERY_HISTORY = "query_history"
+#: how many runs by someone other than the platform a formula needs before it is proposed
+HISTORY_MIN_RUNS = 2
 
 #: Findings that must aggregate one measure, with no metric reading it, before it is proposed (MC-6's N).
 BLIND_SPOT_FINDINGS = 3
@@ -442,6 +447,117 @@ def blind_spot_proposals(connection_id: str, schema_name: Optional[str], mmap, m
 
 # ── the run ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+# ── Arc NV-7: the warehouse's own query history as a proposer ────────────────────────────────────────────────────────
+
+def formula_key(expr_sql: str, dialect: str) -> str:
+    """One spelling for one formula, so an approved metric's `NULLIF(x, 0)` and the history's `NULLIF(x, $1)` compare
+    equal: every numeric literal and parameter becomes a hole, whitespace and case fold. Aliases were already resolved
+    to table names by the miner, which both sides go through."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(expr_sql, read=dialect)
+    except Exception:  # noqa: BLE001 — an expression sqlglot cannot read compares by its text
+        return re.sub(r"\s+", " ", (expr_sql or "").strip().lower())
+    holed = tree.transform(lambda n: exp.Placeholder() if isinstance(n, (exp.Parameter, exp.Placeholder))
+                           or (isinstance(n, exp.Literal) and not n.is_string) else n)
+    return re.sub(r"\s+", " ", holed.sql(dialect=dialect).lower()).strip()
+
+
+def known_formula_keys(metrics: list, dialect: str) -> set[str]:
+    """The keys of every defined metric's formula, read through the same miner the history goes through."""
+    from aughor.sql.query_log_miner import mine_query_log
+    keys: set[str] = set()
+    for m in metrics:
+        sql = str(getattr(m, "sql", "") or "")
+        if not sql.strip():
+            continue
+        facts = mine_query_log([sql], dialect=dialect)
+        for (_alias, expr) in facts.named_formulas:
+            keys.add(formula_key(expr, dialect))
+    return keys
+
+
+def from_clause_of(statement: str, dialect: str) -> tuple[str, list[str]]:
+    """The FROM and JOINs of the statement a formula was seen in, aliases resolved to table names (the formula's own
+    columns were), filters left out — a metric's filter is a person's decision, said in its definition — and the tables
+    that clause reads. ("", []) when the statement has no FROM or does not parse."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(statement, read=dialect)
+    except Exception:  # noqa: BLE001
+        return "", []
+    sel = tree.find(exp.Select)
+    frm_node = (sel.args.get("from_") or sel.args.get("from")) if sel is not None else None   # sqlglot spells the key both ways across versions
+    if frm_node is None:
+        return "", []
+    a2t = {}
+    for t in tree.find_all(exp.Table):
+        if t.alias:
+            a2t[t.alias.lower()] = t.name
+
+    def _dealias(node):
+        if isinstance(node, exp.Column) and node.table and node.table.lower() in a2t:
+            node.set("table", exp.to_identifier(a2t[node.table.lower()]))
+        if isinstance(node, exp.Table) and node.alias:
+            node.set("alias", None)
+        return node
+    frm = frm_node.transform(_dealias)
+    joins = [j.transform(_dealias) for j in (sel.args.get("joins") or [])]
+    read = sorted({t.name for node in [frm, *joins] for t in node.find_all(exp.Table)})
+    return " ".join([frm.sql(dialect=dialect)] + [j.sql(dialect=dialect) for j in joins]), read
+
+
+def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metrics: list, db) -> list[dict]:
+    """Each formula that other people compute in the warehouse's own query history (`HISTORY_MIN_RUNS` runs or more),
+    that no defined metric computes — proposed as the metric it would be, with the FROM of the statement it was seen
+    in, through the same gates as every other proposal. The platform's own statements are signed and left out, so what
+    arrives here is how the business queries its warehouse, not how Aughor does (Arc NV-7)."""
+    from aughor.db.query_history import not_platform_statement, read_query_history
+    from aughor.semantic.metric_coverage import place_table, tables_of
+    from aughor.semantic.metric_map import OTHER
+    from aughor.sql.query_log_miner import mine_query_log
+    dialect = getattr(db, "dialect", "") or "duckdb"
+    history = read_query_history(db)
+    if not history.supported or history.error:
+        return []
+    statements = [s for s in history.weighted_statements() if not_platform_statement(s)]
+    if not statements:
+        return []
+    facts = mine_query_log(statements, dialect=dialect)
+    known = known_formula_keys(metrics, dialect)
+    by_table = {t.name: t for t in tables_of(connection_id, schema_name)}
+    areas = [a for a in mmap.readable]
+    out: list[dict] = []
+    for (alias, expr), runs in facts.named_formulas.most_common():
+        if runs < HISTORY_MIN_RUNS or str(alias).startswith("_"):
+            continue
+        if formula_key(expr, dialect) in known:
+            continue                                   # an approved or defined metric computes this already
+        tables = sorted(facts.formula_tables.get((alias, expr), set()))
+        if not tables:
+            continue
+        from_clause, read = from_clause_of(facts.formula_examples.get((alias, expr), ""), dialect)
+        if read:
+            tables = read                          # the statement's own FROM and JOINs, which the proposal carries
+        else:
+            from_clause = f"FROM {tables[0]}"
+        name = metric_name(alias)
+        lead = tables[0].split(".")[-1]
+        table_facts = by_table.get(lead)
+        placed = place_table(table_facts, areas) if table_facts else []
+        out.append({
+            "name": name, "label": str(alias).replace("_", " ").strip().capitalize(), "source": SOURCE_QUERY_HISTORY,
+            "area": placed[0].area if placed else OTHER, "pattern": "", "pack_id": "",
+            "definition": (f"computed as `{alias}` in {runs} runs of the warehouse's own query history, by someone other "
+                           f"than Aughor; no defined metric computes it — its source statement's filters are not carried"),
+            "sql": f"SELECT {expr} AS {name} {from_clause}", "tables": tables,
+            "time_column": f"{lead}.{table_facts.date_column}" if table_facts and table_facts.date_column else "",
+            "time_kind": "flow", "runs": runs, "made_at": now()})
+    return out
+
+
 def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = False, why: str = "") -> dict:
     """One coverage run: the code proposers, and — with ``write`` — one model call per uncovered area; every proposal
     through the gates; kept beside the profile. Returns the payload."""
@@ -466,6 +582,11 @@ def run(connection_id: str, schema_name: Optional[str] = None, *, write: bool = 
         from aughor.agent.framing import served_graph
         proposals += ontology_proposals(connection_id, schema_name, served_graph(connection_id, schema_name), db, mmap)
         proposals += blind_spot_proposals(connection_id, schema_name, mmap, metrics)
+        # Arc NV-7 — the warehouse's own history, while the organisation allows the read; a formula other people
+        # compute is proposed HERE and adopted in the Semantic Layer, the one door for a formula.
+        from aughor.orgsettings.allows import allows
+        if allows("read_query_history"):
+            proposals += history_proposals(connection_id, schema_name, mmap, metrics, db)
         if write:
             from aughor.semantic import coverage_writer
             written, spend = coverage_writer.write(connection_id, schema_name, mmap, db=db, taken=proposals)

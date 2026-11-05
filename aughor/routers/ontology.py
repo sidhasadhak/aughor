@@ -4477,6 +4477,13 @@ def stage_candidates(candidates, graph, connection_id: str, schema_name: str) ->
     unstageable: list[dict] = []
     seen_before = 0
     for c in candidates:
+        if c.kind == "measure":
+            # Arc NV-7 (§6 item 61, one door per kind): a formula is proposed in the Semantic Layer's catalogue by the
+            # coverage run's history proposer and adopted there, once; it is never a card here.
+            unstageable.append({"kind": c.kind, "proposal": c.proposal,
+                                "why": "a formula is proposed and adopted in the Semantic Layer (Metrics ▸ catalogue), "
+                                       "not here — one door per kind"})
+            continue
         detail, why = proposal_detail(c, graph.table_to_entity or {})
         if detail is None:
             unstageable.append({"kind": c.kind, "proposal": c.proposal, "why": why})

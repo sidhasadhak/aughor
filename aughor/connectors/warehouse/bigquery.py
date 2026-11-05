@@ -17,6 +17,7 @@ import re
 from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
+from aughor.db.signing import sign
 from aughor.db.doors import passed, through_door
 from aughor.db.errors import classify_error
 from aughor.control_plane.contracts.execution import QueryResult
@@ -232,7 +233,7 @@ class BigQueryConnection(Connector):
 
         from aughor.connectors.base import stage_type
         job_config = self._job_config(query_parameters=declared)
-        with self._running(self._client.query(sql, job_config=job_config)) as job:
+        with self._running(self._client.query(sign(sql), job_config=job_config)) as job:
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             schema = list(rows_it.schema)
             # each column's type, as the unbound read gives it: a bound read is typed too (Arc AP-8)
@@ -290,7 +291,7 @@ class BigQueryConnection(Connector):
             from aughor.connectors.base import stage_type
             from aughor.db.connection import offer_typed_rows
             job_config = self._job_config()
-            with self._running(self._client.query(sql, job_config=job_config)) as job:
+            with self._running(self._client.query(sign(sql), job_config=job_config)) as job:
                 # one row past the cap: a read the cap cut counts more rows than it keeps
                 rows_it = job.result(max_results=max_rows + 1)
                 schema = list(rows_it.schema)
