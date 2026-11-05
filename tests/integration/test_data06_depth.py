@@ -54,12 +54,12 @@ def test_monitor_by_id_is_org_scoped(client, monkeypatch):
     mon = _mk_monitor(cid)
     try:
         # wrong org cannot read the monitor by id
-        assert client.get(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_b"}).status_code == 403
+        assert client.get(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_b", "X-Aughor-User": "amit"}).status_code == 403
         # owner can
-        assert client.get(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_a"}).status_code == 200
+        assert client.get(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_a", "X-Aughor-User": "amit"}).status_code == 200
         # wrong org cannot delete it; owner can
-        assert client.delete(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_b"}).status_code == 403
-        assert client.delete(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_a"}).status_code == 204
+        assert client.delete(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_b", "X-Aughor-User": "amit"}).status_code == 403
+        assert client.delete(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_a", "X-Aughor-User": "amit"}).status_code == 204
     finally:
         delete_monitor(mon.id)
         registry.delete_connection(cid)
@@ -73,8 +73,8 @@ def test_monitor_list_is_org_scoped(client, monkeypatch):
     cid = _mk_conn("d6mlist_a", "mlist-a-conn")
     mon = _mk_monitor(cid, "mlist-mon")
     try:
-        seen_a = {m["id"] for m in client.get("/monitors", headers={"X-Aughor-Org": "d6mlist_a"}).json()}
-        seen_b = {m["id"] for m in client.get("/monitors", headers={"X-Aughor-Org": "d6mlist_b"}).json()}
+        seen_a = {m["id"] for m in client.get("/monitors", headers={"X-Aughor-Org": "d6mlist_a", "X-Aughor-User": "amit"}).json()}
+        seen_b = {m["id"] for m in client.get("/monitors", headers={"X-Aughor-Org": "d6mlist_b", "X-Aughor-User": "amit"}).json()}
         assert mon.id in seen_a, "org sees its own monitor"
         assert mon.id not in seen_b, "org must NOT see another org's monitor"
     finally:
@@ -92,10 +92,10 @@ def test_alert_ack_is_org_scoped(client, monkeypatch):
     alert = _mk_alert(cid, mon.id)
     try:
         # wrong org cannot acknowledge another org's alert
-        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Aughor-Org": "d6alert_b"}).status_code == 403
+        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Aughor-Org": "d6alert_b", "X-Aughor-User": "amit"}).status_code == 403
         assert not get_alert(alert.id).acknowledged, "the ack was blocked, not merely hidden"
         # owner can, and it sticks
-        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Aughor-Org": "d6alert_a"}).status_code == 200
+        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Aughor-Org": "d6alert_a", "X-Aughor-User": "amit"}).status_code == 200
         assert get_alert(alert.id).acknowledged
     finally:
         delete_monitor(mon.id)
@@ -111,8 +111,8 @@ def test_alert_feed_is_org_scoped(client, monkeypatch):
     mon = _mk_monitor(cid, "feed-mon")
     alert = _mk_alert(cid, mon.id)
     try:
-        seen_a = {a["id"] for a in client.get("/alerts", headers={"X-Aughor-Org": "d6feed_a"}).json()}
-        seen_b = {a["id"] for a in client.get("/alerts", headers={"X-Aughor-Org": "d6feed_b"}).json()}
+        seen_a = {a["id"] for a in client.get("/alerts", headers={"X-Aughor-Org": "d6feed_a", "X-Aughor-User": "amit"}).json()}
+        seen_b = {a["id"] for a in client.get("/alerts", headers={"X-Aughor-Org": "d6feed_b", "X-Aughor-User": "amit"}).json()}
         assert alert.id in seen_a
         assert alert.id not in seen_b, "another org's alert must not leak into the feed"
     finally:
@@ -130,7 +130,7 @@ def test_create_monitor_on_foreign_connection_403(client, monkeypatch):
         r = client.post(
             "/monitors",
             json={"conn_id": cid, "name": "sneaky", "custom_sql": "SELECT 1"},
-            headers={"X-Aughor-Org": "d6cm_b"},
+            headers={"X-Aughor-Org": "d6cm_b", "X-Aughor-User": "amit"},
         )
         assert r.status_code == 403
     finally:
@@ -147,8 +147,8 @@ def test_brief_by_id_is_org_scoped(client, monkeypatch):
     cid = _mk_conn("d6brief_a", "brief-a-conn")
     sub = _mk_subscription(cid)
     try:
-        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Aughor-Org": "d6brief_b"}).status_code == 403
-        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Aughor-Org": "d6brief_a"}).status_code == 204
+        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Aughor-Org": "d6brief_b", "X-Aughor-User": "amit"}).status_code == 403
+        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Aughor-Org": "d6brief_a", "X-Aughor-User": "amit"}).status_code == 204
     finally:
         delete_subscription(sub.id)
         registry.delete_connection(cid)
@@ -162,8 +162,8 @@ def test_brief_list_is_org_scoped(client, monkeypatch):
     cid = _mk_conn("d6blist_a", "blist-a-conn")
     sub = _mk_subscription(cid, "blist-sub")
     try:
-        got_a = client.get("/briefs/subscriptions", headers={"X-Aughor-Org": "d6blist_a"}).json()["subscriptions"]
-        got_b = client.get("/briefs/subscriptions", headers={"X-Aughor-Org": "d6blist_b"}).json()["subscriptions"]
+        got_a = client.get("/briefs/subscriptions", headers={"X-Aughor-Org": "d6blist_a", "X-Aughor-User": "amit"}).json()["subscriptions"]
+        got_b = client.get("/briefs/subscriptions", headers={"X-Aughor-Org": "d6blist_b", "X-Aughor-User": "amit"}).json()["subscriptions"]
         assert sub.id in {s["id"] for s in got_a}
         assert sub.id not in {s["id"] for s in got_b}
     finally:
@@ -181,11 +181,11 @@ def test_saved_query_by_id_is_org_scoped(client, monkeypatch):
     cid = _mk_conn("d6sq_a", "sq-a-conn")
     q = create_saved_query(cid, "sq-a", "SELECT 1", {})
     try:
-        assert client.get(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_b"}).status_code == 403
-        assert client.get(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_a"}).status_code == 200
-        assert client.delete(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_b"}).status_code == 403
+        assert client.get(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_b", "X-Aughor-User": "amit"}).status_code == 403
+        assert client.get(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_a", "X-Aughor-User": "amit"}).status_code == 200
+        assert client.delete(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_b", "X-Aughor-User": "amit"}).status_code == 403
         # list is org-scoped too
-        seen_b = {s["id"] for s in client.get("/saved-queries", headers={"X-Aughor-Org": "d6sq_b"}).json()}
+        seen_b = {s["id"] for s in client.get("/saved-queries", headers={"X-Aughor-Org": "d6sq_b", "X-Aughor-User": "amit"}).json()}
         assert q.id not in seen_b
     finally:
         delete_saved_query(q.id)
@@ -203,8 +203,8 @@ def test_canvas_list_is_org_scoped(client, monkeypatch):
     cid = _mk_conn("d6canv_a", "canv-a-conn")
     canvas = create_canvas(name="canv-a", scopes=[CanvasScope(connection_id=cid)])
     try:
-        seen_a = {c["id"] for c in client.get("/canvases", headers={"X-Aughor-Org": "d6canv_a"}).json()}
-        seen_b = {c["id"] for c in client.get("/canvases", headers={"X-Aughor-Org": "d6canv_b"}).json()}
+        seen_a = {c["id"] for c in client.get("/canvases", headers={"X-Aughor-Org": "d6canv_a", "X-Aughor-User": "amit"}).json()}
+        seen_b = {c["id"] for c in client.get("/canvases", headers={"X-Aughor-Org": "d6canv_b", "X-Aughor-User": "amit"}).json()}
         assert canvas.id in seen_a
         assert canvas.id not in seen_b, "another org's canvas must not appear in the list"
     finally:

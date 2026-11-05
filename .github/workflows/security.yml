@@ -1,0 +1,58 @@
+# Track A7 (docs/TENX_PROGRAM_2026-11-05.md) — the scheduled checks a public repository owes
+# itself, deliberately OFF the pull-request path: a dependency advisory published overnight
+# is not a reason a PR is red, and CodeQL's minutes belong to the night. Dependabot
+# (.github/dependabot.yml) opens the fixes; this is what finds them. Every action is pinned
+# to a commit, as in ci.yml.
+name: Security
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"      # Mondays, 03:17 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL · ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: github/codeql-action/init@9418214df1f2c4b8128c770156c409013b07d6b9  # v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9  # v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  dependency-audit:
+    name: Dependency audit · pip-audit + npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: "22"
+      # The locked resolution, every extra, no hashes (pip-audit reads names and versions).
+      - name: pip-audit over uv.lock
+        run: |
+          uv export --all-extras --frozen --no-hashes --format requirements-txt -o requirements-audit.txt
+          uvx pip-audit@2.9.0 -r requirements-audit.txt --strict --desc on
+      # Runtime dependencies only: a dev-only advisory never reaches a running install.
+      - name: npm audit (production)
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high

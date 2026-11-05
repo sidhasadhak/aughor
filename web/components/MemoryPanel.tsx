@@ -21,7 +21,7 @@ import {
   type Connection, type LearningDatasetDetail, type LearningDatasets, type LearningSummary, type RememberedReading,
   type TrustedQueryRow,
 } from "@/lib/api";
-import { claimsOf, getIdToken } from "@/lib/auth";
+import { signedInEmail } from "@/lib/auth";
 import {
   Bar, CARD, Chip, Columns, Dot, Empty, HBars, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE,
 } from "@/components/clarity/kit";
@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 /** The acting identity for governance writes — the signed-in email, else the
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
-const actorName = () => claimsOf(getIdToken())?.email || "human";
+const actorName = () => signedInEmail() || "human";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 

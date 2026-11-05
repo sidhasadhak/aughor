@@ -389,17 +389,17 @@ def offer_typed_rows(rows, *, truncated: bool, types: list[str]) -> None:
 
 def _row_policy_principal() -> "tuple[str, str, list[str]] | None":
     """``(org_id, user_id, roles)`` the RBAC row policy applies to for THIS request, or ``None`` when the
-    policy is inert *beyond the flag itself* — identity is not required, the org lacks the RBAC_SSO
-    capability, or there is no identified user (internal / background / localhost query). Callers MUST have
-    already checked ``flag_enabled('rbac.row_policy')``.
+    policy is inert *beyond the flag itself* — identity is not required, or there is no identified user
+    (internal / background / localhost query). The org's tier was a third condition until Track A3
+    (2026-11-05): a row filter a plan could switch off is not a row filter. Callers MUST have already
+    checked ``flag_enabled('rbac.row_policy')``.
 
     Shared by ``enforce_row_policy`` (which injects the filters) and ``result_cache_tenancy`` (which
     fingerprints them) so the two can never drift on *whether a request is scoped* and *by whom*. May raise
     on an unexpected resolver error — every caller treats a raise as FAIL-CLOSED."""
-    from aughor.licensing import Capability, has_capability
     from aughor.org.context import current_org_id, current_user_id
     from aughor.security.authz import Principal, require_identity_enabled
-    if not require_identity_enabled() or not has_capability(Capability.RBAC_SSO):
+    if not require_identity_enabled():
         return None
     user = current_user_id()
     if not user:                              # not an identified user request → nothing to scope

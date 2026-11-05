@@ -53,16 +53,16 @@ def test_connections_endpoint_is_org_scoped(client, monkeypatch):
         cid = registry.add_connection("orgA-conn", "duckdb", "data/aughor.duckdb")
     try:
         # orgA sees its connection in the list; orgB does not.
-        seen_a = {c["id"] for c in client.get("/connections", headers={"X-Aughor-Org": "orgA"}).json()}
-        seen_b = {c["id"] for c in client.get("/connections", headers={"X-Aughor-Org": "orgB"}).json()}
+        seen_a = {c["id"] for c in client.get("/connections", headers={"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"}).json()}
+        seen_b = {c["id"] for c in client.get("/connections", headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}).json()}
         assert cid in seen_a
         assert cid not in seen_b
         assert "fixture" in seen_b  # shared builtin still visible
 
         # A by-id route is blocked for the wrong org, allowed for the owner.
-        r_forbidden = client.delete(f"/connections/{cid}", headers={"X-Aughor-Org": "orgB"})
+        r_forbidden = client.delete(f"/connections/{cid}", headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"})
         assert r_forbidden.status_code == 403
-        r_ok = client.delete(f"/connections/{cid}", headers={"X-Aughor-Org": "orgA"})
+        r_ok = client.delete(f"/connections/{cid}", headers={"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"})
         assert r_ok.status_code == 204
     finally:
         registry.delete_connection(cid)  # idempotent cleanup
@@ -132,7 +132,7 @@ def test_the_ontology_and_object_doors_answer_only_the_org_that_owns_the_connect
         theirs = registry.add_connection("orgB-onto", "duckdb", "data/aughor.duckdb")
     OV.publish_override(mine, "main", OV.OntologyOverride(target_kind="entity", target_id="Order",   # in force
                                                           fields={"description": "orgA's words"}))
-    a, b = {"X-Aughor-Org": "orgA"}, {"X-Aughor-Org": "orgB"}
+    a, b = {"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"}, {"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}
     scope = {"connection_id": mine, "schema_name": "main"}
     try:
         own = client.get("/ontology/overrides", params=scope, headers=a)
@@ -173,7 +173,7 @@ def test_the_ontology_doors_are_unchanged_in_localhost_mode(client, monkeypatch)
     try:
         assert client.get("/ontology/overrides", params={"connection_id": mine, "schema_name": "main"}).status_code == 200
         assert client.get("/ontology/overrides", params={"connection_id": mine, "schema_name": "main"},
-                          headers={"X-Aughor-Org": "orgB"}).status_code == 200
+                          headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}).status_code == 200
     finally:
         registry.delete_connection(mine)
 

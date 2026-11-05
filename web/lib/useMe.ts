@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { getMyAccess, type MyAccess } from "./api";
-import { getIdToken } from "./auth";
+import { signedInEmail } from "./auth";
 
 /**
  * Who the person reading is, as the server records them (`GET /rbac/me`): the signed-in person,
@@ -11,12 +11,12 @@ import { getIdToken } from "./auth";
  * a form shows it and never asks for one.
  *
  * Read once and shared: several panels on one page ask, and one request answers them all. The
- * read is kept per sign-in token, so signing in or out reads it again; a failed read is not kept.
+ * read is kept per signed-in person, so signing in or out reads it again; a failed read is not kept.
  */
 let cached: { token: string | null; me: Promise<MyAccess | null> } | null = null;
 
 function token(): string | null {
-  try { return getIdToken(); } catch { return null; }
+  try { return signedInEmail(); } catch { return null; }
 }
 
 export function readMe(): Promise<MyAccess | null> {

@@ -2,7 +2,7 @@
 
 The ``gate_permission`` dependency is a NO-OP unless BOTH conditions hold:
   * ``AUGHOR_REQUIRE_IDENTITY`` is on (a principal is bound), AND
-  * the org's tier grants ``Capability.RBAC_SSO`` (default enterprise → on).
+  * (until Track A3, 2026-11-05: the org's tier granted ``Capability.RBAC_SSO`` — no longer a condition).
 When enforced, a caller whose roles don't grant the permission gets 403, and the
 org's first identified caller is bootstrapped as owner.
 
@@ -62,12 +62,16 @@ def test_localhost_is_unenforced(client, monkeypatch):
     assert client.get("/rbac/me").json()["roles"] == [OWNER]
 
 
-def test_not_enforced_without_rbac_sso_capability(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_TIER", "free")            # free tier lacks RBAC_SSO
+def test_the_decision_is_the_same_at_every_tier(client, monkeypatch):
+    """Track A3 (docs/TENX_PROGRAM_2026-11-05.md): until 2026-11-05 this test asserted the opposite —
+    a tier without ``RBAC_SSO`` made the gate inert, so 'vic', a viewer, read the roster on a free
+    plan. The tier is an unsigned env var; an access decision cannot depend on it."""
     monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
-    # 'vic' would be a viewer under enterprise, but without the capability the gate
-    # is inert — RBAC is an enterprise feature.
-    assert client.get("/rbac/assignments", headers=_h("rbacp3-free", "vic")).status_code == 200
+    for tier in ("free", "pro", "enterprise"):
+        monkeypatch.setenv("AUGHOR_TIER", tier)
+        r = client.get("/rbac/assignments", headers=_h("rbacp3-tiers", "vic"))
+        assert r.status_code == 403, (tier, r.text)
+        assert r.json()["detail"]["permission"] == "admin.manage_roles"
 
 
 # ── Enforcement: 403 for an insufficient role ────────────────────────────────

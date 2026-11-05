@@ -297,6 +297,11 @@ os.environ["AUGHOR_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
 # Set here rather than fixed per-test because the damage is done by threads that
 # outlive the test that started them. Tests that want a tick call it directly.
 os.environ["AUGHOR_DISABLE_SCHEDULERS"] = "1"
+# Track A2 (docs/TENX_PROGRAM_2026-11-05.md): identity required with no issuer is refused unless the
+# operator declares that a proxy sets the X-Aughor-* headers. The suite IS that proxy — every
+# identity-on test signs its requests with those headers — so it declares it once, here. A test of
+# the refusal itself deletes the variable (tests/unit/test_identity_unverifiable.py).
+os.environ["AUGHOR_IDENTITY_FROM_PROXY"] = "1"
 # TJ-1 — the usage summary now consults the provider's public model catalogue before
 # pricing a rollup; the suite never reaches a network. A test that exercises the fetch
 # sets "1" itself (test_llm_model_catalog.py does).
@@ -391,6 +396,18 @@ if os.path.isdir(_packs_src) and not os.path.exists(_packs_dst):
     _shutil.copytree(_packs_src, _packs_dst)
 os.environ["AUGHOR_PACKS_DIR"] = _packs_dst
 
+
+
+@pytest.fixture(autouse=True)
+def _fresh_stats():
+    """The in-process counters (`aughor.stats`) are since-BOOT diagnostics, and `/health` reads them as
+    `store_fallbacks` (Track A8): a test that provokes a store fallback — or any tolerated failure — left
+    the count raised for every later test in the process, and a health read then said `degraded` for
+    something another file did. Measured on the full suite, 2026-11-06: three health tests red by order
+    alone. So every test starts from zero; a test that asserts on a counter still sees its own bumps."""
+    from aughor.stats import stats
+    stats.reset()
+    yield
 
 
 @pytest.fixture(autouse=True)

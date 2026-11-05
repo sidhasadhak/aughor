@@ -13066,6 +13066,45 @@ three are this arc, in the study's own order of value over cost, each through th
 - **Not taken, by the study's §5.5:** the per-table LLM term pass, the lenient LLM intent validator, a settings table
   of feature flags, a hosted predictive service the rows are uploaded to.
 
+### 3.69 · The 10× program — the enterprise foundation under the intelligence loop (DRAFTED 2026-11-05 as `docs/TENX_PROGRAM_2026-11-05.md`; not yet adopted)
+
+An outside *Enterprise Architecture, Security and Engineering Assessment* (2026-11-04, written from public files, no
+clone) was checked finding by finding against `main` at `11aa35b0`; the user set four architecture decisions beside it;
+PipesHub (`pipeshub-ai/pipeshub-ai`) was read for the three designs it has that the assessment only asked for. The
+program doc holds the measured premise (§1: what the assessment got right, what is stale, the two holes it missed —
+`/slack-bots/runtime` lists every organisation's tokens, and identity-required without an issuer is a spoofable header
+identity), the decisions adopted with the code's corrections (§2), seven tracks with an exit, a falsifier and a
+starvation gate each (§3: close the doors · one truth · authority rides the job · data stays home · separate processes ·
+release gates · the loop), the sequence (§4) and the decisions only the user can make (§7: the identity provider, a
+second host, a second organisation, Postgres as default, PipesHub as a context source). Its thesis: hardening a platform
+one person uses does not 10× it; it makes it safe for ten — so no week in which the foundation tracks take more than
+half the time until the study's phase-0 install exists. **Open:** the user's adoption (§6).
+
+- **Track A1–A3 BUILT 2026-11-05** (the user: *"So, lets build!"*). A1: `/slack-bots/runtime` opens only to the
+  deployment's own credentials — proved first with a two-organisation test that read the first organisation's raw
+  tokens as the second's owner, then closed. A2 (the user chose *refuse unless declared*): identity required with no
+  issuer refuses every request but `/health` and `/auth/config`, with the sentence, unless `AUGHOR_IDENTITY_FROM_PROXY=1`
+  declares an authenticating proxy; said at boot, on `/health`, on `/auth/config` and by `aughor doctor`; the suite
+  declares it in `tests/conftest.py`. A3: no access decision reads the tier — the gate, the role ceiling and the row
+  policy all dropped `RBAC_SSO`; three tests that asserted the inert behaviour now assert the opposite. Receipt printed
+  from the app the same day (`docs/TENX_PROGRAM_2026-11-05.md` §3, Track A).
+- **Track A4–A5 BUILT 2026-11-05** (the user: *"Build A4 and A5"*). A4: ownership has five answers — OWNED · SHARED ·
+  FOREIGN · NOT_FOUND · UNRESOLVED — and only the first two allow; `None` used to be four of them, all allowed. A
+  missing id is 404 *"or not yours"*, a resolver that fails or a kind with no resolver is 503 *"refusing rather than
+  guessing"* (503, not the program's 404: an outage is not a missing id); shared is by record — a builtin id, a
+  `domain:` carrier, a document the resolver marks `""`. The property test drives every kind the agent registered
+  through a resolver that raises. A5: only a named person bootstraps as an organisation's first owner — `anonymous`
+  (an org header with no user) and a service principal never do, and a refused bootstrap leaves the organisation
+  claimable. Receipt printed from the app the same day.
+- **Track A6–A9 BUILT 2026-11-05** (the user: *"Build A6–A9"*). A6: every Compose image pinned to a digest, every port
+  on loopback, the file labelled dev-only. A7: Dependabot was already there (the assessment missed it); CodeQL and a
+  weekly `pip-audit` + `npm audit` in `.github/workflows/security.yml`, off the PR path; all twelve action uses pinned
+  to commits. A8: `/health` says `store_fallbacks` — how many store operations since boot served or wrote a legacy
+  file because the ledger was unreachable — and is degraded while it is above zero; the best-effort contract stays.
+  A9: the browser's credential is an HttpOnly session cookie (`POST`/`DELETE /auth/session`, `security/sessions.py`,
+  the ledger keeps the hash), the page keeps only the email, and CORS sends credentials only to named origins. Track A
+  is complete. Next: Track D (data stays home), then B1–B2.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

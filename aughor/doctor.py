@@ -115,6 +115,29 @@ def _state_writable() -> Check:
     return Check(label, OK, found=str(where), wanted="a writable directory")
 
 
+def _identity() -> Check:
+    """Track A2: identity required with nothing to verify it. Read from the environment only —
+    the same predicate the API refuses with, so the doctor and the door cannot disagree."""
+    from aughor.security.authz import IDENTITY_FROM_PROXY_ENV, identity_unverifiable, require_identity_enabled
+    from aughor.security import oidc
+    if not require_identity_enabled():
+        return Check("identity", OK, found="not required (AUGHOR_REQUIRE_IDENTITY unset)",
+                     wanted="off on a laptop; required on a shared install")
+    why = identity_unverifiable()
+    if why:
+        return Check("identity", FAIL, found="required, verified by nothing",
+                     wanted="an OIDC issuer, or a declared authenticating proxy",
+                     reason="the API refuses every request but /health and /auth/config",
+                     fix=f"set AUGHOR_OIDC_ISSUER + AUGHOR_OIDC_AUDIENCE, or {IDENTITY_FROM_PROXY_ENV}=1 "
+                         "only behind a proxy that sets and strips the X-Aughor-* headers")
+    how = f"OIDC issuer {oidc.issuer()}" if oidc.configured() else f"a declared proxy ({IDENTITY_FROM_PROXY_ENV}=1)"
+    return Check("identity", OK if oidc.configured() else WARN, found=f"required, verified by {how}",
+                 wanted="an OIDC issuer, or a declared authenticating proxy",
+                 reason="" if oidc.configured() else
+                        "the headers are trusted as presented — only safe if the proxy strips them from clients",
+                 fix="" if oidc.configured() else "set AUGHOR_OIDC_ISSUER when an identity provider exists")
+
+
 def _launcher() -> Check:
     from aughor.installer import LAUNCHER_MARK, find_uv, launcher_dir
     on_path = shutil.which("aughor")
@@ -207,6 +230,7 @@ def run(repo: Path, *, api_port: int, web_port: int) -> list[Check]:
         _port(f"port {api_port} (api)", api_port, "--api-port"),
         _port(f"port {web_port} (web)", web_port, "--web-port"),
         _state_writable(),
+        _identity(),
         _launcher(),
         _model(),
         _backups(),

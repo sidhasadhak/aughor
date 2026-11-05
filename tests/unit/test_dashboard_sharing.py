@@ -39,7 +39,10 @@ class Office:
     def __init__(self):
         tag = uuid.uuid4().hex[:6]
         self.org = f"org{tag}"
-        self.connection = f"conn{tag}"
+        # A REGISTERED connection: since Track A4 an id nothing holds is NOT_FOUND at every door, not "unknown → allow".
+        from aughor.db.registry import add_connection
+        with using_org(self.org):
+            self.connection = add_connection(name=f"conn{tag}", conn_type="duckdb", dsn=f"/tmp/{tag}.duckdb", meta={})
         with using_org(self.org):
             self.sales = upsert_group(self.org, f"sales-{tag}", "Sales team").id
             add_member(self.org, self.sales, user_principal(AMIT))

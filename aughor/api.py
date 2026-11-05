@@ -134,6 +134,12 @@ async def _lifespan(app: "FastAPI"):
     if not os.environ.get("VERCEL"):
         from aughor.db.serving import claim
         claim()
+    # Said at boot as well as per request: an API that is up and refuses everything looks
+    # healthy from a process list, and the first 503 should not be where an operator learns why.
+    from aughor.security.authz import identity_unverifiable
+    unverifiable = identity_unverifiable()
+    if unverifiable:
+        logger.error("refusing every request: %s", unverifiable)
     await _register_agent_plugins()
     # Then: make contextvars (current job id + per-run metering) cross the
     # run_in_executor boundary, before any startup step dispatches into a thread.
@@ -284,9 +290,14 @@ def _require_auth(request: Request, key: str | None = Security(_api_key_header))
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     # 2. Identity (SEC-01). Off by default; exempt paths (health/docs) never require it.
-    from aughor.security.authz import require_identity_enabled, resolve_principal
+    from aughor.security.authz import identity_unverifiable, require_identity_enabled, resolve_principal
     if exempt or not require_identity_enabled():
         return
+    # Required but unverifiable (no issuer, no declared proxy) is refused outright, with the
+    # reason: the alternative was trusting whatever organisation a client named (Track A2).
+    unverifiable = identity_unverifiable()
+    if unverifiable:
+        raise HTTPException(status_code=503, detail=unverifiable)
     principal = resolve_principal(request)
     if principal is None:
         from aughor.security import oidc
@@ -493,13 +504,31 @@ _cors_raw = os.environ.get(
     "AUGHOR_CORS_ORIGINS",
     "http://localhost:3000,http://localhost:3001,http://localhost:3210",
 )
-_cors_origins: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+
+
+def cors_policy(raw: str) -> tuple[list[str], bool]:
+    """The origins served, and whether they may send credentials (Track A9: the session cookie).
+
+    Credentials ride only when every origin is named. With ``*`` Starlette would ECHO any requesting
+    origin beside ``Access-Control-Allow-Credentials: true`` — the one combination the CORS spec
+    forbids a browser to honour, and the one that would let any site use a signed-in person's cookie.
+    So a wildcard keeps today's cookie-less behaviour, and the browser's sign-in (which needs the
+    cookie) requires the operator to name the origins they serve."""
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    return origins, "*" not in origins
+
+
+_cors_origins, _cors_credentials = cors_policy(_cors_raw)
+if not _cors_credentials:
+    logger.warning("AUGHOR_CORS_ORIGINS is a wildcard: the browser's session cookie will not be accepted — "
+                   "name the origins you serve to sign in from a browser")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=_cors_credentials,
 )
 
 

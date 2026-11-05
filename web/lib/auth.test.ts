@@ -3,7 +3,7 @@
  * it attaches is this function — testable with no window at all.
  */
 import { describe, expect, it } from "vitest";
-import { authHeaderFor, claimsOf } from "@/lib/auth";
+import { authHeaderFor, claimsOf, credentialsFor } from "@/lib/auth";
 
 const API = "http://localhost:8000";
 
@@ -40,5 +40,18 @@ describe("claimsOf", () => {
     expect(claimsOf(null)).toBeNull();
     expect(claimsOf("not-a-jwt")).toBeNull();
     expect(claimsOf("a.!!!.c")).toBeNull();
+  });
+});
+
+describe("credentialsFor (Track A9: the session cookie rides API calls only)", () => {
+  it("includes credentials on API-base URLs", () => {
+    expect(credentialsFor("http://api.test/rbac/me", "http://api.test")).toBe("include");
+  });
+  it("leaves other origins alone", () => {
+    expect(credentialsFor("https://accounts.google.com/x", "http://api.test")).toBeUndefined();
+    expect(credentialsFor("http://api.test/x", "")).toBeUndefined();
+  });
+  it("never overrides a caller's own choice", () => {
+    expect(credentialsFor("http://api.test/x", "http://api.test", "omit")).toBe("omit");
   });
 });

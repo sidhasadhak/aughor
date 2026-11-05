@@ -1531,6 +1531,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Session
+         * @description Exchange a verified ID token, presented ONCE as a bearer, for an HttpOnly session cookie.
+         *
+         *     The token is verified exactly as every bearer is (``security/oidc.py``); nothing weaker mints a
+         *     session — not the header seam, not a service principal, which already carry their own credential
+         *     per request. The page then holds no credential a script can read (``web/lib/auth.ts``).
+         */
+        post: operations["open_session_auth_session_post"];
+        /**
+         * Close Session
+         * @description Sign out: the session row goes, and the cookie is cleared. Idempotent — a cookie nobody holds
+         *     any more answers the same, so a double click or a stale tab never errors.
+         */
+        delete: operations["close_session_auth_session_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/authority": {
         parameters: {
             query?: never;
@@ -28417,6 +28446,46 @@ export interface operations {
         };
     };
     auth_config_auth_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    open_session_auth_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    close_session_auth_session_delete: {
         parameters: {
             query?: never;
             header?: never;
