@@ -13037,6 +13037,20 @@ three are this arc, in the study's own order of value over cost, each through th
   are actually rendered (the candidate drivers), not on the one-hop relationship lines. **Receipt, live through the
   validate door:** Superstore's text date, a ratio of counts on Lux's Postgres, a percent against Lux's `fraud_score`
   — each said; the same filter within range, silent.
+- **NV-7 · one door per kind** (§6 item 61, the user: *"Yes, adopt it"*). Measured first: on LuxExperience the
+  warehouse's history was almost entirely the platform's own statements, and NV-4 had proposed twelve approved metrics
+  back to the person in Attention — nothing on a statement said who sent it, and the miner asked no store what was
+  already known. Now the platform signs every statement it hands a driver (`db/signing.py`; the statement a result
+  carries stays as written), the history reader leaves signed statements out and counts them (`ours`), and a formula
+  other people compute is proposed where metrics are proposed: the coverage run's fourth proposer
+  (`coverage_proposals.history_proposals`, while the organisation allows the read) normalises each recurring formula
+  through the same miner as the defined metrics, skips the known by key and the platform's aliases, and proposes the
+  rest with the FROM of the statement it was seen in, through the same gates; the catalogue says where it came from;
+  adopting it in the Semantic Layer is the one approval. Attention takes no formula and says where one goes; the
+  sixteen cards were rejected with that reason, the one the user had accepted (`gmv_eur` on Order) waiting in the
+  draft as the second door this closes. **Receipt, live on Lux:** the engine kept the signature on the first statement
+  through the door; the reader read 842 statements and counted the platform's own. The statistics gathered before the
+  signature went live cannot be told apart and are the user's to reset (PENDING item 76).
 - **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
   falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
   study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
@@ -15567,6 +15581,20 @@ the browser** · **measure the premise before building.**
     - **The user turned on *Read each warehouse's own query history*** the same day (*"Yes, turn it on"*); the door ran
       on theLook and BigQuery refused for a missing `bigquery.jobs.list`. **Owed to the user:** that grant on the
       project, then one more run of the door for the study's receipt.
+
+61. ✅ **DECIDED 2026-11-05 — one door per kind** (§3.68, NV-7). Asked by the user after the first live mining put
+    sixteen formula candidates in Agent Ops ▸ Attention, twelve of them LuxExperience's own approved metrics: *"if I
+    approve in Agentic Ops → Attention, should I again approve in Semantic Layer? This is not ideal. One approval door
+    either upstream or downstream"*. Decided downstream, as recommended, the user: *"Yes, adopt it"*:
+    - **A formula is approved once, in the Semantic Layer**, whoever proposed it — the explorer, the coverage pass, the
+      warehouse's own history. Adopting it is the approval; the entity gets the formula by lifting, with no second door.
+      The computed-property door stays for entity-local values a person declares by hand; nothing routes to it.
+    - **Structure is published once, in the Ontology**: links, segments, junctions, bindings — the draft and its release.
+    - **Actions and sends are accepted once, in Attention** — what it was built for. It takes no formula.
+    - **The platform signs every statement it sends** (`/* aughor */`, at the driver call), so a warehouse's own history
+      can tell the platform's statements from everyone else's; the reader leaves them out and says how many.
+    - *Why not upstream:* the Briefing and the dashboards read approved metrics only, so an object-layer approval would
+      still need the metric's; and the metric is where the governance lives (owner, grain, additivity, figure gates, twins).
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

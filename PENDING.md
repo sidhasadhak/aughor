@@ -1204,6 +1204,19 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       and 0 joins, as the history still holds only Aughor's own SQL. **⚑ Owed, the user's click:** accept one (the
       `gmv_eur` property on Order, proposal `f95aa24a`) — the builder's accept was refused by the session's classifier
       as a change to the user's ontology, which it is.
+    - [~] NV-7 one door per kind (§6 item 61, the user 2026-11-05: *"Yes, adopt it"*): `db/signing.py` signs every
+      statement at the driver call (Postgres, the DB-API family, Snowflake, BigQuery, Trino, MySQL, Exasol; a result's
+      statement stays as written); the history reader leaves signed statements out and counts them (`ours`); the coverage
+      run gains `history_proposals` — recurring formulas by someone other than Aughor, known ones skipped through
+      `formula_key` (literals and parameters as holes, both sides through the miner), platform aliases skipped, the rest
+      proposed with the source statement's FROM and JOINs de-aliased, through the gates, adopted in the Semantic Layer
+      once; the catalogue says "the warehouse's own query history — N runs"; Attention stages no formula and says where
+      one goes. *Live on Lux, 2026-11-05 10:35 UTC:* the engine kept `/* aughor */` on the first signed statement; the
+      reader counted ours; the fifteen stale cards rejected with the reason, the user's accepted `gmv_eur` found in the
+      draft (`ontology_overrides_draft/dcc63d83/…/computed_property/Order__gmv_eur.yaml`) awaiting publish — the second
+      door this closes. **⚑ Owed, the user's:** `SELECT pg_stat_statements_reset()` on Lux once, so the 839 statements
+      recorded before the signature stop posing as other people's (the classifier refused it as irreversible); then one
+      coverage run reads a clean history. Branch `claude/arc-nv-7-one-door`.
     - [x] NV-6 the trust checks read the profiler's facts (the user, 2026-11-05: "Lets go with pending items"): a text
       date compared, bounded or sorted as text says the notation so the fix is a cast with it, or says AMBIGUOUS when the
       profiler withheld one (`E1-text-date-compare`); two whole numbers divided where the engine truncates
