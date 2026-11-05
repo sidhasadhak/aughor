@@ -1204,10 +1204,20 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       and 0 joins, as the history still holds only Aughor's own SQL. **⚑ Owed, the user's click:** accept one (the
       `gmv_eur` property on Order, proposal `f95aa24a`) — the builder's accept was refused by the session's classifier
       as a change to the user's ontology, which it is.
-    - [ ] The trust checks read `format`: a text date column compared to a literal says "compare as a date, not as text".
+    - [x] NV-6 the trust checks read the profiler's facts (the user, 2026-11-05: "Lets go with pending items"): a text
+      date compared, bounded or sorted as text says the notation so the fix is a cast with it, or says AMBIGUOUS when the
+      profiler withheld one (`E1-text-date-compare`); two whole numbers divided where the engine truncates
+      (`E1-integer-division`, sqlglot's own `typed` flag; DuckDB's `safe` division left alone); a literal 100× the
+      observed maximum or a percent compared to a fraction of 1 (`E1-scale-mismatch`, with the fraction to use). Facts
+      from `profile_cache.load_column_facts` through `connection_column_facts`, cached per process and dropped when a
+      profile is saved; none → the three checks say nothing. The frame says a two-link path is followed whole, never
+      shortened (the study's §5.4 wording). *Live, 2026-11-05 08:48 UTC, through `/query/validate`:* Superstore
+      `"Order Date" > '6/1/2017'` → "written MM/DD/YYYY … STRPTIME"; Lux `COUNT(*) / COUNT(DISTINCT customer_id)` on
+      Postgres → "truncates (7 / 2 = 3)"; Lux `fraud_score > 15` → "a fraction of 1 (observed 0–0.202) … Compare to
+      0.15"; `fraud_score > 0.15` → nothing. Branch `claude/arc-nv-6-guards`.
     - [ ] The compiler traverses an N:N through a marked junction with pre-aggregation on the far side — only once a
       live connection has a table that qualifies.
-    - [ ] The study's §5.4: 100× scale and integer-division pre-checks as deterministic guards; embedding-assisted
-      foreign-key target proposals for roots that name no table (then the containment probe); "VERIFIED OPTIONS … never
-      shorten the path" on a multi-hop relationship line.
+    - [~] The study's §5.4: ~~100× scale and integer-division pre-checks as deterministic guards~~ (NV-6, above);
+      ~~"never shorten the path" on a multi-hop line~~ (NV-6, said on the frame's candidate drivers); still open:
+      embedding-assisted foreign-key target proposals for roots that name no table (then the containment probe).
     - [ ] Ossie depth: `ontology/ossie.py` re-read against NVIDIA's converter before any claim either way (study §6).

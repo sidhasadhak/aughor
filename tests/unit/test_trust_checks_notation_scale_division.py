@@ -37,7 +37,8 @@ def test_a_text_date_compared_to_a_literal_names_the_notation():
     h = _hits('SELECT COUNT(*) FROM superstore WHERE "Order Date" > \'6/1/2017\'', col_facts=FACTS)
     assert "E1-text-date-compare" in h
     m = h["E1-text-date-compare"]
-    assert "written MM/DD/YYYY" in m and "character by character" in m and "STRPTIME" in m and "'11/8/2016'" in m
+    assert "written MM/DD/YYYY" in m and "character by character" in m and "'11/8/2016'" in m
+    assert "`> '6/1/2017'`" in m and 'STRPTIME("Order Date"' in m      # the operator as written, the name quoted as SQL needs it
 
 
 def test_between_order_by_and_min_max_on_a_text_date_fire_too():

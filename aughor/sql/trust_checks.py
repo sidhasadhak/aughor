@@ -270,7 +270,7 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
             _emit("E1-text-date-compare", col.name,
                   f"'{col.name}' is a text column whose dates are written {f['format']}; {how} compares it character by "
                   f"character ('2/1/2017' sorts before '11/8/2016'). Parse it with that notation first — on DuckDB "
-                  f"STRPTIME({col.name}, <{f['format']} as a format string>), on Postgres TO_DATE, on BigQuery PARSE_DATE — "
+                  f"STRPTIME({col.sql()}, <{f['format']} as a format string>), on Postgres TO_DATE, on BigQuery PARSE_DATE — "
                   f"and compare the result as a date.")
         else:
             _emit("E1-text-date-compare", col.name,
@@ -278,12 +278,13 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                   f"and MM/DD); {how} compares it as text, and no cast can be trusted until a person declares the notation "
                   f"on the property.")
 
+    _OP = {exp.GT: ">", exp.LT: "<", exp.GTE: ">=", exp.LTE: "<=", exp.EQ: "=", exp.NEQ: "<>"}
     for cmp_cls in (exp.GT, exp.LT, exp.GTE, exp.LTE, exp.EQ, exp.NEQ):
         for node in tree.find_all(cmp_cls):
             for col, lit in ((node.left, node.right), (node.right, node.left)):
                 f = _text_date(col)
                 if f and isinstance(lit, exp.Literal) and lit.is_string:
-                    _say_text_date(col, f, f"`{cmp_cls.__name__.lower()} '{lit.this}'`")
+                    _say_text_date(col, f, f"`{_OP[cmp_cls]} '{lit.this}'`")
     for b in tree.find_all(exp.Between):
         f = _text_date(b.this)
         if f:
