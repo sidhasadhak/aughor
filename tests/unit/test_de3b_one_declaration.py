@@ -227,7 +227,9 @@ def test_trino_connector_runs_through_the_door_on_a_fake_driver(monkeypatch):
     res = conn.execute("h1", "SELECT 1 AS n, 'a' AS s", internal=True)
     assert not res.error, res.error
     assert res.columns == ["n", "s"] and res.rows == [["1", "a"], ["2", "NULL"]]
-    assert log and log[-1].startswith("SELECT 1 AS n")
+    # Arc NV-7: the driver receives the statement signed as the platform's own; the result keeps it as written
+    from aughor.db.signing import SIGNATURE
+    assert log and log[-1].startswith(SIGNATURE) and "SELECT 1 AS n" in log[-1]
 
     lost = conn.execute("h2", "SELECT boom FROM t", internal=False)
     assert lost.error and lost.error_kind == "connection"

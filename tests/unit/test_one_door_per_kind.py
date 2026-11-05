@@ -33,7 +33,7 @@ def test_every_warehouse_driver_call_is_signed_and_the_result_keeps_the_statemen
     driver call. DuckDB and the file connectors keep no history and are left alone."""
     sites = {
         "aughor/db/connection.py": 2,                        # Postgres: the bound and the plain branch
-        "aughor/connectors/warehouse/dbapi.py": 2,           # ClickHouse, Databricks and the DB-API family
+        "aughor/connectors/warehouse/dbapi.py": 2,           # ClickHouse, the lakehouse connector and the DB-API family
         "aughor/connectors/warehouse/snowflake.py": 2,
         "aughor/connectors/warehouse/bigquery.py": 2,        # execute and the typed read
         "aughor/connectors/warehouse/trino.py": 1,
