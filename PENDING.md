@@ -1220,9 +1220,15 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       or, for a hole, proposed as `needs_formula` with the hole said. The second run: 24 history formulas — 3 proposed
       (`m_dutyeur`, `m_refundeur`, `eur`), 7 `needs_formula`, 14 failing honest gates (no date on `financial_summary`,
       a MIN that returns no figure); every one of the 24 is still Aughor's own pre-signing SQL, which is why the number
-      is not yet the receipt. **⚑ Owed, the user's:** `SELECT pg_stat_statements_reset()` on Lux once, so the statements
-      recorded before the signature stop posing as other people's (the classifier refused it as irreversible); then one
-      coverage run reads a clean history. Branch `claude/arc-nv-7-one-door`, PR #645.
+      is not yet the receipt. *The receipt, 2026-11-05 11:46–11:50 UTC:* the user reset the statistics
+      (`luxexperience.pg_stat_statements_reset()` — the function lives in the extension's schema; the classifier refused
+      the call from the builder as irreversible, twice) and the coverage run read a clean history: **0 formulas proposed
+      from it**; afterwards the history held 105 statements and 222 calls, 101 of them the platform's own, signed and left
+      out. With nobody but the platform querying LuxExperience, the Semantic Layer receives nothing from the platform's
+      own work — which is the whole point; the ETL's statements arrive with its 02:47 load. Also found on the way: the
+      unweighted miner repeated each history row once per call (up to 100×) and pinned the API at 99.9% CPU for 35
+      minutes — a row is now parsed once and counted by its weight, the door answering in 10 s. Branch
+      `claude/arc-nv-7-one-door`, PR #645.
     - [x] NV-6 the trust checks read the profiler's facts (the user, 2026-11-05: "Lets go with pending items"): a text
       date compared, bounded or sorted as text says the notation so the fix is a cast with it, or says AMBIGUOUS when the
       profiler withheld one (`E1-text-date-compare`); two whole numbers divided where the engine truncates

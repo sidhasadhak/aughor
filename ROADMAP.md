@@ -13052,8 +13052,11 @@ three are this arc, in the study's own order of value over cost, each through th
   through the door; the reader read 842 statements and counted the platform's own; two coverage runs on the unreset
   history took the proposer from 95 formulas (92 refused by the gates) to 24 (3 proposed, 7 `needs_formula`, 14 honest
   gate failures), the first run's refusals read first now — every one of the 24 still the platform's own pre-signing
-  SQL. The statistics gathered before the signature went live cannot be told apart and are the user's to reset
-  (PENDING item 76).
+  SQL. After the user's reset of the statistics, the coverage run read a clean history and proposed **nothing from it**:
+  105 statements since, 101 of them the platform's own, signed and left out — nobody but the platform queries
+  LuxExperience yet, and the Semantic Layer now receives nothing from the platform's own work. On the way the
+  unweighted miner was found pinning the API at full CPU for half an hour; a history row is parsed once and counted by
+  its weight (PENDING item 76).
 - **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
   falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
   study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
