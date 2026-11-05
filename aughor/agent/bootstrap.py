@@ -25,11 +25,20 @@ def register_agent_plugins() -> None:
     _register_schema_annotators()
     _register_authz_resolvers()
     _register_value_sample_loader()
+    _register_column_facts_source()
     _register_readings_loader()
     _register_guard_receipt_forwarder()
     _register_exclusions()
     _register_object_policies()
     _REGISTERED = True
+
+
+def _register_column_facts_source() -> None:
+    """Arc NV-6 — where the SQL trust checks read a column's profiled facts (a text date's notation, the value range,
+    what the values mean) for the checks that say the notation, a truncating division and a scale mismatch at the
+    comparison. The profile cache registers itself when imported; importing it here means a fresh process has the
+    source before the first statement is checked, not after the first profile build happens to load it."""
+    import aughor.tools.profile_cache  # noqa: F401 — the import is the registration
 
 
 def _register_exclusions() -> None:

@@ -13027,6 +13027,16 @@ three are this arc, in the study's own order of value over cost, each through th
   segment overrides (bound before they earn `verified`), into the draft as the accepting person's declaration; a
   door's refusal is the outcome, verbatim; a rejection is kept and never re-staged. **Receipt, live on Lux:** 19
   bound, 16 staged, 3 said unstageable (formulas over several tables); the accept is the user's click (PENDING item 76).
+- **NV-6 · said at the comparison** (the user, 2026-11-05: *"Lets go with pending items"*). The trust checks that run
+  on every statement now read the profiler's facts: a text date compared, bounded or sorted as text is told its
+  notation so the fix is a cast with it, or told the notation is ambiguous when the profiler withheld one; two whole
+  numbers divided where the engine truncates are told so, with the decimal to put on one side; a literal a hundred
+  times a column's observed maximum, or a percent compared to a fraction of 1, is told it keeps no row, with the
+  fraction to use. Without the facts the checks say nothing. The frame tells a writer to follow a two-link path whole
+  and never shorten it to a join the graph does not hold — the study's §5.4 wording, placed where multi-hop paths
+  are actually rendered (the candidate drivers), not on the one-hop relationship lines. **Receipt, live through the
+  validate door:** Superstore's text date, a ratio of counts on Lux's Postgres, a percent against Lux's `fraud_score`
+  — each said; the same filter within range, silent.
 - **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
   falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
   study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for
