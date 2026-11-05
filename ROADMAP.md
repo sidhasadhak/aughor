@@ -13049,8 +13049,11 @@ three are this arc, in the study's own order of value over cost, each through th
   adopting it in the Semantic Layer is the one approval. Attention takes no formula and says where one goes; the
   sixteen cards were rejected with that reason, the one the user had accepted (`gmv_eur` on Order) waiting in the
   draft as the second door this closes. **Receipt, live on Lux:** the engine kept the signature on the first statement
-  through the door; the reader read 842 statements and counted the platform's own. The statistics gathered before the
-  signature went live cannot be told apart and are the user's to reset (PENDING item 76).
+  through the door; the reader read 842 statements and counted the platform's own; two coverage runs on the unreset
+  history took the proposer from 95 formulas (92 refused by the gates) to 24 (3 proposed, 7 `needs_formula`, 14 honest
+  gate failures), the first run's refusals read first now — every one of the 24 still the platform's own pre-signing
+  SQL. The statistics gathered before the signature went live cannot be told apart and are the user's to reset
+  (PENDING item 76).
 - **Not built, named:** the compiler traversing an N:N through a marked junction with pre-aggregation on the far side (waits on the
   falsifier); the trust checks reading `format` to say "compare as a date, not as text" at the comparison; and the
   study's §5.4 — the 100× scale and integer-division pre-checks, embedding-assisted foreign-key target proposals for

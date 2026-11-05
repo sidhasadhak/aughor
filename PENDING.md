@@ -1214,9 +1214,15 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       one goes. *Live on Lux, 2026-11-05 10:35 UTC:* the engine kept `/* aughor */` on the first signed statement; the
       reader counted ours; the fifteen stale cards rejected with the reason, the user's accepted `gmv_eur` found in the
       draft (`ontology_overrides_draft/dcc63d83/…/computed_property/Order__gmv_eur.yaml`) awaiting publish — the second
-      door this closes. **⚑ Owed, the user's:** `SELECT pg_stat_statements_reset()` on Lux once, so the 839 statements
+      door this closes. *Two coverage runs on the unreset history (10:39 and 10:56 UTC):* the first put 95 history
+      formulas through the gates and 92 failed — projections that aggregate nothing, a program's aliases as names, an
+      alias no table resolves, formulas over CTEs, and `$1` holes that cannot run; each is now refused before the gates
+      or, for a hole, proposed as `needs_formula` with the hole said. The second run: 24 history formulas — 3 proposed
+      (`m_dutyeur`, `m_refundeur`, `eur`), 7 `needs_formula`, 14 failing honest gates (no date on `financial_summary`,
+      a MIN that returns no figure); every one of the 24 is still Aughor's own pre-signing SQL, which is why the number
+      is not yet the receipt. **⚑ Owed, the user's:** `SELECT pg_stat_statements_reset()` on Lux once, so the statements
       recorded before the signature stop posing as other people's (the classifier refused it as irreversible); then one
-      coverage run reads a clean history. Branch `claude/arc-nv-7-one-door`.
+      coverage run reads a clean history. Branch `claude/arc-nv-7-one-door`, PR #645.
     - [x] NV-6 the trust checks read the profiler's facts (the user, 2026-11-05: "Lets go with pending items"): a text
       date compared, bounded or sorted as text says the notation so the fix is a cast with it, or says AMBIGUOUS when the
       profiler withheld one (`E1-text-date-compare`); two whole numbers divided where the engine truncates
