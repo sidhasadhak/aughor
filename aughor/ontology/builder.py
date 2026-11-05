@@ -553,6 +553,9 @@ def _build_entity_properties(
             value_interpretation=cp.value_interpretation or "",
             unit=cp.unit or "",
             sample_values=[str(v) for v in (cp.top_values or [])][:10] if include_samples else [],
+            # Arc NV-1 — the text column's date notation, or the note that withheld one.
+            format=getattr(cp, "date_format", "") or "",
+            format_note=getattr(cp, "date_format_note", "") or "",
         )
 
     return props
@@ -1098,6 +1101,22 @@ def render_ontology_annotations(graph: OntologyGraph) -> str:
                 f"    active_filter (apply only when user asks for active/valid rows): "
                 f"WHERE {entity.active_filter}"
             )
+
+        # Arc NV-2 — a junction is said as what it is: the two entities it relates and the columns it relates
+        # them by, so the writer joins THROUGH it and never aggregates on it.
+        if entity.junction and len(entity.junction.between) == 2:
+            j = entity.junction
+            cols = ", ".join(j.through)
+            check = "" if j.verified else "  (an edge unmeasured)"
+            lines.append(f"    junction between {j.between[0]} and {j.between[1]} ({cols}) — join through it; "
+                         f"it carries no measure{check}")
+
+        # Arc NV-1 — a text column's date notation, or the ambiguity that withheld one. Both are printed: a model that
+        # compares '20260131' as text, or casts it with the wrong notation, answers about the wrong month in silence.
+        text_dates = [p for p in entity.properties.values() if p.format or p.format_note]
+        if text_dates:
+            said = [f"{p.name} written {p.format}" if p.format else f"{p.name} {p.format_note}" for p in text_dates[:6]]
+            lines.append("    text dates (cast before comparing): " + "; ".join(said))
 
         if entity.default_filters:
             for f in entity.default_filters[:2]:

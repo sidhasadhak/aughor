@@ -45,6 +45,7 @@ from typing import Any, Callable, Literal, Optional, Union, get_args, get_origin
 from pydantic import BaseModel
 
 from aughor.ontology.models import (
+    Junction,
     ActionParameter,
     Impact,
     Binding,
@@ -160,7 +161,15 @@ def fixture_graph() -> OntologyGraph:
             "shipped_at": EntityProperty(name="shipped_at", data_type="TIMESTAMP", semantic_type="timestamp"),
             "ship_by": EntityProperty(name="ship_by", data_type="TIMESTAMP", semantic_type="timestamp"),
             "delivered_at": EntityProperty(name="delivered_at", data_type="TIMESTAMP", semantic_type="timestamp"),
+            # Arc NV-1 — a TEXT date column with its notation and the note (appended, same reason as above).
+            "booked_on": EntityProperty(name="booked_on", data_type="VARCHAR", semantic_type="dimension",
+                                        format="YYYYMMDD",
+                                        format_note="text dates written YYYYMMDD; every one of 120 distinct values parses"),
         },
+        # Arc NV-2 — a junction mark, populated so the walk reaches every one of its fields.
+        junction=Junction(between=["Customer", "Product"], through=["customer_id", "product_id"],
+                          overlaps=[0.98, 0.97], verified=True,
+                          note="every non-key column is a foreign key and the table carries no measure"),
         computed_properties=[ComputedProperty(
             id="days_since_order", label="Days Since Order",
             formula_sql="DATEDIFF('day', created_at, NOW())", unit="days",
@@ -186,6 +195,7 @@ def fixture_graph() -> OntologyGraph:
         join_confidence="verified", nullable=True, value_overlap=0.98,
         name="order_placed_by_customer",   # ON-3b — a person's business-verb link name, so the walk reaches it
         measured_cardinality="N:1",        # ON-10 — measured, so the frame follows it from Order to Customer
+        via="OrderProduct",                # Arc NV-2 — a junction the link goes through, so the walk reaches it
     )
     metric = OntologyMetric(
         id="revenue", display_name="Revenue", description="Recognised order revenue",
@@ -520,7 +530,12 @@ def _fresh(t: Any) -> Any:
 
 
 def _apply(obj: Any, parts: list[str], ann: Any) -> None:
-    """Mutate the leaf at ``parts`` on EVERY instance reachable from ``obj``."""
+    """Mutate the leaf at ``parts`` on EVERY instance reachable from ``obj``.
+
+    An optional nested fact the fixture sets on one entity and leaves None on another (a junction mark, NV-2) is
+    mutated where it exists; None is not an instance to reach into."""
+    if obj is None:
+        return
     head, rest = parts[0], parts[1:]
     if head == "*":
         for v in obj.values():

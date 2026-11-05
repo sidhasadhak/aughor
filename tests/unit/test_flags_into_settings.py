@@ -160,13 +160,24 @@ def test_a_setting_is_off_until_an_admin_sets_it(setting, settings, monkeypatch)
     assert A.allows(setting) is True
 
 
-@pytest.mark.parametrize("setting", sorted(A.FORMER_ENV))
+@pytest.mark.parametrize("setting", sorted(s for s in A.FORMER_ENV if A.FORMER_ENV[s]))
 def test_while_unset_the_former_variable_answers_and_once_set_the_setting_does(setting, settings, monkeypatch):
     var = A.FORMER_ENV[setting][-1]
     monkeypatch.setenv(var, "1")
     assert A.allows(setting) is True
     save_org_settings(load_org_settings().model_copy(update={setting: False}))
     assert A.allows(setting) is False
+
+
+@pytest.mark.parametrize("setting", sorted(s for s in A.FORMER_ENV if not A.FORMER_ENV[s]))
+def test_a_setting_born_without_a_flag_reads_off_until_an_admin_sets_it(setting, settings, monkeypatch):
+    """Arc NV-3's `read_query_history` replaced no flag: no environment variable can turn it on, unset is off, and
+    only the admin's own choice answers."""
+    assert A.allows(setting) is False
+    monkeypatch.setenv(f"AUGHOR_{setting.upper()}", "1")
+    assert A.allows(setting) is False
+    save_org_settings(load_org_settings().model_copy(update={setting: True}))
+    assert A.allows(setting) is True
 
 
 def test_an_unknown_setting_is_refused():

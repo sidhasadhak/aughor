@@ -63,6 +63,7 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   agent_limit: { hue: "accent", label: "agent limit" },
   cockpit_draft: { hue: "info", label: "dashboard" },
   cockpit_publish: { hue: "info", label: "dashboard · publish" },
+  ontology_candidate: { hue: "info", label: "from query history" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -516,6 +517,24 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
         </div>
       )}
       {(p.kind === "cockpit_draft" || p.kind === "cockpit_publish") && <DashboardBody p={p} />}
+      {p.kind === "ontology_candidate" && (
+        <div className="flex flex-col gap-1">
+          <Row label="Proposes" mono>{String(p.params?.proposal ?? "")}</Row>
+          <Row label="Seen">{String(p.params?.evidence ?? "")}</Row>
+          <Row label="On accept">
+            {p.detail?.declares === "link"
+              ? `a link ${String(p.detail?.from_entity ?? "")} → ${String(p.detail?.to_entity ?? "")} on ${String(p.detail?.from_column ?? "")} = ${String(p.detail?.to_column ?? "")}, measured and bound first`
+              : p.detail?.declares === "computed_property"
+                ? `a computed property ${String(p.detail?.label ?? "")} on ${String(p.detail?.entity_id ?? "")}`
+                : p.detail?.declares === "segment"
+                  ? `a segment "${String(p.detail?.display_name ?? "")}" on ${String(p.detail?.entity_id ?? "")}`
+                  : "nothing the doors accept"}
+          </Row>
+          <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+            Mined from the warehouse&apos;s own query history and EXPLAIN-bound; accepting declares it in the ontology&apos;s draft as yours. Rejecting keeps the record.
+          </span>
+        </div>
+      )}
       {(p.kind === "declared_action" || p.kind === "integration") && (
         <div className="flex flex-col gap-1">
           <Row label="Action" mono>{p.action_id}</Row>

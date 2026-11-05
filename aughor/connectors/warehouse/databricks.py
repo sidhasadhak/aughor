@@ -34,3 +34,17 @@ class DatabricksConnection(DbApiWarehouse):
     def _columns_sql(self) -> str:
         return ("SELECT table_name, column_name, full_data_type FROM INFORMATION_SCHEMA.COLUMNS "
                 f"WHERE table_schema = {literal(self._schema_name)} ORDER BY table_name, ordinal_position")
+
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — finished SELECT statements from `system.query.history` (the workspace's system tables, which an
+        admin enables), newest first and bounded: the view is billed as a scan, so the LIMIT is the cost."""
+        from aughor.db.query_history import rows_from_result
+        hours, limit = max(1, int(hours)), max(1, min(int(limit), 10000))
+        source = "system.query.history"
+        sql = (
+            "SELECT end_time, statement_text, executed_by FROM system.query.history "
+            "WHERE statement_type = 'SELECT' AND execution_status = 'FINISHED' "
+            f"AND end_time > current_timestamp() - INTERVAL {hours} HOURS ORDER BY end_time DESC LIMIT {limit}"
+        )
+        result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+        return rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)

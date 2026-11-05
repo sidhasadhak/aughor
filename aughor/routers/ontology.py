@@ -443,6 +443,12 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
 #: also read it was deleted 2026-10-04, kill 8 of the 2027 study.)
 served_ontology_graph = _get_ontology_graph
 
+#: Arc NV-4 — the doors an accepted candidate declares through (`actions/inbox._accept_ontology_candidate`), public
+#: by name so the inbox reads an interface and not this router's internals. Bound below, after each is defined.
+declare_link_core = None   # set after _declare_link_core
+bind_and_persist_override = None   # set after _bind_and_persist
+served_scope = None   # set after _served_scope
+
 
 def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -> Optional[str]:
     from aughor.ontology.store import _load, _schema_prefix
@@ -4451,6 +4457,154 @@ def rebuild_ontology(
     return out
 
 
+class _MineCandidatesRequest(BaseModel):
+    """Arc NV-3 — what the candidate door reads. Only the warehouse's own history for now; trusted queries and
+    verdicts keep their own miners and arrive here when their doors are wired. Arc NV-4 — `stage` puts every bound
+    candidate into the resolve-once inbox, where a person accepts (it is declared) or rejects (kept)."""
+    hours: int = Field(default=24 * 14, ge=1, le=24 * 180)
+    limit: int = Field(default=2000, ge=1, le=10000)
+    stage: bool = False
+
+
+def stage_candidates(candidates, graph, connection_id: str, schema_name: str) -> dict:
+    """Arc NV-4 — every bound candidate into the resolve-once inbox (J10: ONE queue), idempotent by the candidate's own
+    text so a second mining never duplicates and never resurrects one a person already resolved. A candidate whose
+    declaration cannot be resolved against the served graph is not staged, and the answer says why."""
+    import hashlib
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.ontology.candidates import proposal_detail
+    staged: list[dict] = []
+    unstageable: list[dict] = []
+    seen_before = 0
+    for c in candidates:
+        detail, why = proposal_detail(c, graph.table_to_entity or {})
+        if detail is None:
+            unstageable.append({"kind": c.kind, "proposal": c.proposal, "why": why})
+            continue
+        call_id = hashlib.sha1(f"{c.kind}|{c.proposal}|{c.subject}".encode()).hexdigest()[:16]
+        p = StagedProposal(
+            kind="ontology_candidate", connection_id=connection_id, schema_name=schema_name,
+            action_id=f"ontology.{c.kind}", params=c.to_dict(), detail=detail,
+            reasoning=c.evidence, proposer="query_history", source="candidates:query_history",
+            run_id=f"candidates:{connection_id}:{schema_name}", call_id=call_id)
+        row = stage_proposal(p)
+        if row.id != p.id:
+            seen_before += 1
+        staged.append({"id": row.id, "kind": c.kind, "proposal": c.proposal, "status": row.status,
+                       "declares": detail["declares"]})
+    return {"proposals": staged, "already_staged": seen_before, "unstageable": unstageable}
+
+
+@router.post("/ontology/candidates/mine", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def mine_ontology_candidates(
+    body: Optional[_MineCandidatesRequest] = None,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc NV-3 (ROADMAP §3.68) — read the warehouse's OWN query history and mine it into typed candidates: join edges
+    the join map lacks, recurring filter values, recurring named formulas (`aughor.ontology.candidates`). Each is
+    EXPLAIN-bound on this connection before it is offered; the report states what was refused. Nothing is written:
+    a candidate is a proposal for a person, and reaches no prompt until declared through the ontology's own doors.
+
+    Said, never implied: refused with 409 while the organisation has not allowed the read (and where to allow it);
+    `supported=false` with the engine's own note when it keeps no history the platform reads; the engine's error
+    when the read failed. No model call."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.db.query_history import not_platform_statement, read_query_history
+    from aughor.ontology.candidates import mine
+    from aughor.orgsettings.allows import WHERE, allows
+
+    body = body or _MineCandidatesRequest()
+    if not allows("read_query_history"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Reading the warehouse's query history is off for this organisation. An admin turns it on under "
+                   f"{WHERE} ('Read each warehouse's own query history'). Statement text is read, never rows.")
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        history = read_query_history(db, hours=body.hours, limit=body.limit)
+        out: dict[str, Any] = {"connection_id": connection_id, "schema_name": graph.schema_name or effective,
+                               "history": history.to_dict()}
+        if not history.supported or history.error:
+            # Arc NV-5 — not readable: say the admin's step, and whether the platform can take it itself.
+            from aughor.db.query_history import check_query_history
+            readiness = check_query_history(db)
+            out.update({"summary": readiness.sentence(), "readiness": readiness.as_dict(),
+                        "offered": [], "refused": [], "mined": 0})
+            return out
+        statements = [sql for sql in history.weighted_statements() if not_platform_statement(sql)]
+        known = {f"{r.from_table}.{r.from_col} = {r.to_table}.{r.to_col}" for r in graph.relationships.values()}
+        tables = {t for e in graph.entities.values() for t in e.source_tables}
+
+        def _bind_sql(c) -> Optional[str]:
+            """The statement whose EXPLAIN decides whether a candidate binds; None when none can be written."""
+            import sqlglot
+            from sqlglot import exp
+            if c.kind == "join":
+                left, right = [side.strip() for side in c.proposal.split("=", 1)]
+                lt, rt = left.split(".")[0], right.split(".")[0]
+                return f"SELECT COUNT(*) FROM {lt} JOIN {rt} ON {left} = {right}"
+            if c.kind == "filter":
+                return f"SELECT COUNT(*) FROM {c.subject.split('.')[0]} WHERE {c.proposal}"
+            if c.kind == "measure":
+                try:
+                    tree = sqlglot.parse_one(c.proposal, read=getattr(db, "dialect", "duckdb"))
+                except Exception as parse_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(parse_exc, "a mined formula sqlglot cannot parse is refused, never offered",
+                             counter="ontology.candidates_unparsed", conn_id=connection_id)
+                    return None
+                # The miner resolved the statement's aliases and recorded the tables the formula reads (its subject);
+                # the formula's own qualified columns must agree with them, and every one must be this schema's.
+                refs = {t.strip() for t in c.subject.split(",") if t.strip()} | {
+                    col.table for col in tree.find_all(exp.Column) if col.table}
+                if not refs or any(r not in tables for r in refs):
+                    return None
+                # A normalised constant ($1) is a hole EXPLAIN cannot plan; NULL stands in it for the bind alone.
+                bindable = tree.transform(
+                    lambda n: exp.Null() if isinstance(n, (exp.Parameter, exp.Placeholder)) else n)
+                return f"SELECT {bindable.sql(dialect=getattr(db, 'dialect', 'duckdb'))} FROM {', '.join(sorted(refs))}"
+            return None
+
+        def _binder(c):
+            sql = _bind_sql(c)
+            if sql is None:
+                return False, ("the formula reads no table of this schema, or one it does not have; it cannot be "
+                               "bound outside its own statement")
+            return db.dry_run(sql)
+
+        report = mine(connection_id, query_log=statements, dialect=getattr(db, "dialect", "duckdb"),
+                      known_joins=known, binder=_binder)
+        out.update(report.to_dict())
+        if body.stage:
+            out["staged"] = stage_candidates(report.offered, graph, connection_id, graph.schema_name or effective)
+        out["mined"] = len(report.candidates)
+        out["statements"] = len({s for s in statements})
+        out["calls"] = len(statements)
+        try:
+            from aughor.kernel.ledger import Ledger
+            Ledger.default().emit("ontology.candidates.mined",
+                                  {"statements": len(statements), "mined": len(report.candidates),
+                                   "offered": len(report.offered), "refused": len(report.refused),
+                                   "source": history.source}, conn_id=connection_id)
+        except Exception as emit_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(emit_exc, "the candidate mining journal is best-effort",
+                     counter="ontology.candidates_journal", conn_id=connection_id)
+        return out
+    finally:
+        try:
+            db.close()
+        except Exception as close_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(close_exc, "closing the connection after a history read is best-effort",
+                     counter="ontology.candidates_close", conn_id=connection_id)
+
+
 @router.get("/ontology/build-status")
 def ontology_build_status(connection_id: str = BUILTIN_ID, limit: int = 5):
     """Surface the ontology build outcome — the WCH-3 observability the original
@@ -4791,3 +4945,9 @@ def withdraw_sensitive_property(entity_id: str, prop: str, connection_id: str = 
         raise HTTPException(status_code=404, detail=f"{entity_id}.{prop} is not declared sensitive")
     current.pop(prop)
     return _set_entity_field(connection_id, effective, entity_id, "sensitive", current)
+
+
+# Arc NV-4 — the public names the inbox declares through (see their declaration near `served_ontology_graph`).
+declare_link_core = _declare_link_core
+bind_and_persist_override = _bind_and_persist
+served_scope = _served_scope

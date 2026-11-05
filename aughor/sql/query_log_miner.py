@@ -75,6 +75,9 @@ class QueryLogFacts:
     join_edges: Counter = field(default_factory=Counter)        # "a.c1 = b.c2" (sorted) -> count
     filter_values: dict = field(default_factory=dict)           # "t.col" -> Counter(literal -> count)
     named_formulas: Counter = field(default_factory=Counter)    # (name, expr_sql) -> count
+    #: Arc NV-3 — (name, expr_sql) -> the tables the formula reads, aliases resolved, so a candidate can be bound
+    #: outside the statement it came from (`SELECT <expr> FROM <tables>`). Empty when nothing named a table.
+    formula_tables: dict = field(default_factory=dict)
     column_usage: Counter = field(default_factory=Counter)      # "t.col" -> count
     #: AT-8 — ("t.col", role) -> count, role ∈ ROLES. What analysts DO with a column,
     #: which accretes from real history without anyone configuring anything.
@@ -134,7 +137,10 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
         facts.n_parsed += 1
 
         a2t = _alias_to_table(tree)
-        all_tables = {t.name for t in tree.find_all(exp.Table)}
+        # A CTE's name is not a table of the warehouse: a formula read from one is read from the tables behind it.
+        cte_names = {c.alias.lower() for c in tree.find_all(exp.CTE) if c.alias}
+        all_tables = {t.name for t in tree.find_all(exp.Table) if t.name.lower() not in cte_names}
+        a2t = {k: v for k, v in a2t.items() if v.lower() not in cte_names}
         single = next(iter(all_tables)) if len(all_tables) == 1 else None
 
         def _qual(col: exp.Column) -> Optional[str]:
@@ -193,10 +199,39 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb") -> QueryLogFacts:
                         if lit is not None:
                             facts.filter_values.setdefault(qc, Counter())[str(lit)] += 1
 
+        # A formula counts ONCE per statement (a CTE's SELECT and the outer SELECT repeating it are one habit, not
+        # two), with its column aliases resolved to the tables they stand for, so the text is the same whatever the
+        # statement called its tables and a candidate made of it can be bound on its own.
+        seen_formulas: set = set()
         for sel in tree.find_all(exp.Select):
             for proj in sel.expressions:
                 if isinstance(proj, exp.Alias) and _is_computation(proj.this):
-                    facts.named_formulas[(proj.alias, proj.this.sql())] += 1
+                    expr = proj.this.copy()
+                    if not list(expr.find_all(exp.Column)):
+                        continue          # COUNT(*), a constant: a row count is not a business formula to propose
+                    # An aggregate's history normalises every constant to a numbered parameter ($62), so one formula
+                    # reads as six. Renumbered per formula ($1, $2 …) they are one key, and the text keeps the engine's
+                    # own notation for "a value went here".
+                    for i, param in enumerate(list(expr.find_all(exp.Parameter, exp.Placeholder)), start=1):
+                        param.replace(exp.Parameter(this=exp.Literal.number(i)))
+                    tables: set = set()
+                    unqualified = False
+                    for col in expr.find_all(exp.Column):
+                        if col.table:
+                            real = a2t.get(col.table.lower())
+                            if real:
+                                col.set("table", exp.to_identifier(real))
+                                tables.add(real)
+                        else:
+                            unqualified = True
+                    if unqualified or not list(expr.find_all(exp.Column)):
+                        tables |= {single} if single else (all_tables if len(all_tables) <= 3 else set())
+                    key = (proj.alias, expr.sql(dialect=dialect))
+                    if key in seen_formulas:
+                        continue
+                    seen_formulas.add(key)
+                    facts.named_formulas[key] += 1
+                    facts.formula_tables.setdefault(key, set()).update(tables)
 
         for c in tree.find_all(exp.Column):
             qc = _qual(c)

@@ -56,6 +56,9 @@ CATEGORIES: tuple[str, ...] = (
 #: Ledger event kind → category. The one place that mapping lives.
 KIND_CATEGORY: dict[str, str] = {
     "action.approval": "action_decision",
+    # Arc NV-5: the platform wrote DDL to a warehouse (pg_stat_statements created) — a governance change on the
+    # install's posture, journaled with the connection and the engine's answer.
+    "connection.prerequisite_enabled": "governance_change",
     "govern.tag": "governance_change",
     "metric.governance": "governance_change",
     # KI-0 (§3.10) — the trusted-SQL door's lifecycle trail (seed / edit / propose /
@@ -149,6 +152,9 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     "investigation.dispatched", "investigations.swept", "job.foreign", "job.orphaned",
     "job.state", "monitor.alert", "node.span", "pack.status_changed", "phase_complete",
     "playbook.use", "store.wal_drift", "eval.graduation", "ontology.build",
+    # Arc NV-3: a mining pass over the warehouse's query history — operational, like the build; it writes nothing, and
+    # the read it depends on is the organisation's setting, whose change RBAC journals.
+    "ontology.candidates.mined",
     # PENDING items 8 and 12: a re-check's verdict and a question that framed on nothing are
     # operational readings — a correction a re-check SENDS is judged and journaled as a departure.
     "answer.rechecked", "framing.miss",
@@ -579,6 +585,7 @@ _SINKS: list[tuple[str, Callable[..., list[AuditEvent]]]] = [
     ("data_access", lambda n, **w: _from_ledger("mcp.tool_call", n, **w)),
     ("data_access", lambda n, **w: _from_ledger("agent.grounding_read", n, **w)),
     ("action_decision", lambda n, **w: _from_ledger("action.approval", n, **w)),
+    ("governance_change", lambda n, **w: _from_ledger("connection.prerequisite_enabled", n, **w)),
     ("action_decision", lambda n, **w: _from_ledger("action.autonomous", n, **w)),
     ("action_decision", lambda n, **w: _from_ledger("action.undone", n, **w)),
     ("governance_change", lambda n, **w: _from_ledger("govern.tag", n, **w)),

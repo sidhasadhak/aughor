@@ -130,6 +130,14 @@ class OrgSettings(BaseModel):
                     "questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that "
                     "ran on its own. Off by default.",
     )
+    # Arc NV-3 (ROADMAP §3.68, 2026-11-04) — a whole-workspace read of what everyone ran there is a connection
+    # admin's choice, not the platform's: the SQL text of other people's statements is read, never their rows.
+    read_query_history: Optional[bool] = Field(
+        default=None,
+        description="Read each warehouse's own query history — the SQL people ran there — and mine it for joins, "
+                    "filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt "
+                    "until a person confirms it and it binds. Off by default.",
+    )
 
     # ── Working memory (CB-6) ──
     priorities: list[Priority] = Field(

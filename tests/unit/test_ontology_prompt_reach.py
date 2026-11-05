@@ -55,6 +55,10 @@ REACH_BASELINE: dict[str, set[str]] = {
     "relationships.*.from_entity": {'explorer_catalogue', 'question_frame', 'relationships'},
     "relationships.*.to_entity": {'explorer_catalogue', 'question_frame', 'relationships'},
     "relationships.*.verb": {'relationships'},
+    # 2026-11-04, Arc NV-2 — an N:N declared THROUGH a junction prints both hops: `join_sql` reaches the block for the
+    # first time (it never had before — the block spelled the edge from the four column fields), and `via` names it.
+    "relationships.*.join_sql": {'relationships'},
+    "relationships.*.via": {'relationships'},
     "relationships.*.cardinality": {'relationships'},
     "relationships.*.from_table": {'explorer_catalogue', 'relationships'},
     "relationships.*.from_col": {'explorer_catalogue', 'relationships', 'question_frame'},
@@ -106,7 +110,15 @@ REACH_BASELINE: dict[str, set[str]] = {
     "entities.*.backing.verified": {'explorer_catalogue', 'question_frame'},
     "entities.*.bindings[].properties.*.semantic_type": {'question_frame'},
     "entities.*.bindings[].verified": {'question_frame'},
-    "entities.*.properties.*.name": {'question_frame'},
+    "entities.*.properties.*.name": {'question_frame', 'entity_model'},   # +entity_model 2026-11-04 (NV-1: the text-dates line names the column)
+    # 2026-11-04, Arc NV-1 — a text column's date notation, or the note that withheld one, reaches the ENTITY MODEL block.
+    "entities.*.properties.*.format": {'entity_model'},
+    "entities.*.properties.*.format_note": {'entity_model'},
+    # 2026-11-04, Arc NV-2 — the junction mark: the two far entities, the columns and whether both edges were measured
+    # reach the ENTITY MODEL block; `overlaps` and `note` are read by the pages and doors, never by a prompt.
+    "entities.*.junction.between": {'entity_model'},
+    "entities.*.junction.through": {'entity_model'},
+    "entities.*.junction.verified": {'entity_model'},
     "entities.*.properties.*.semantic_type": {'explorer_catalogue', 'question_frame'},
     "relationships.*.measured_cardinality": {'explorer_catalogue', 'question_frame'},
     "relationships.*.api_name": {'question_frame'},
@@ -206,7 +218,9 @@ REACH_BASELINE: dict[str, set[str]] = {
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 368   # +31 (2026-10-10, Arc OC-5): a declared, measured impact on the fixture — 11 of its fields reach the
+FIELDS_WALKED = 389   # +21 (2026-11-04, Arc NV): `format` and `format_note` on every property (the entity's, each binding's and each
+#   proposed binding's), the junction mark's five fields and a link's `via` — the bindings' copies unreached by design (no prompt renders a
+#   binding's property), `overlaps` and `note` read by the pages; +31 (2026-10-10, Arc OC-5): a declared, measured impact on the fixture — 11 of its fields reach the
 #   question frame through its reading and compiled comparison, the rest (window, lag, flags, note, …) the doors and panels; +3 (2026-09-24, PENDING item 27): a declared reading on the fixture, its `over`, `note` and `take` —
 #   main walked 334 that day, grown past this baseline unrecorded since; +14 (2026-09-17): five claims on the fixture, so the explorer catalogue's gate is
 #   measured from both sides (a deployed pack's confirmed claim, and every tier and pack it must drop); +71 ON-10 (2026-09-13): a declared process with two promises and a rule on the fixture, and the

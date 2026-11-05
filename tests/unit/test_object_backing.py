@@ -23,6 +23,17 @@ from aughor.ontology.validator import _entity_table, validate_semantics
 REPO = Path(__file__).resolve().parents[2]
 LUX = REPO / "evals" / "ablation_luxexperience_ontology.json"
 
+
+def _every_recorded_field_unchanged(raw, dumped) -> bool:
+    """Every key the recorded graph holds is byte-identical in the loaded one, nested too; a field the model gained
+    since (Arc NV-1's `format` on a property) may appear in the dump at its default and is not a change."""
+    if isinstance(raw, dict):
+        return isinstance(dumped, dict) and all(k in dumped and _every_recorded_field_unchanged(v, dumped[k]) for k, v in raw.items())
+    if isinstance(raw, list):
+        return isinstance(dumped, list) and len(raw) == len(dumped) and all(
+            _every_recorded_field_unchanged(a, b) for a, b in zip(raw, dumped))
+    return raw == dumped
+
 _WH = """
 CREATE SCHEMA crm;
 CREATE TABLE crm.customers (customer_id INT, name VARCHAR);
@@ -72,7 +83,7 @@ def test_a_graph_built_before_on1_loads_with_every_single_table_type_unchanged()
         assert e.backing.primary_key == e.identity_key and e.api_name == snake_name(e.id)
     raw = json.loads(LUX.read_text())["entities"]["Order"]
     dumped = g.entities["Order"].model_dump()
-    assert all(dumped[k] == raw[k] for k in raw)                    # every pre-existing field byte-identical
+    assert _every_recorded_field_unchanged(raw, dumped)             # every pre-existing field byte-identical
     assert g.table_to_entity == json.loads(LUX.read_text())["table_to_entity"]   # the ERD underneath is untouched
 
 

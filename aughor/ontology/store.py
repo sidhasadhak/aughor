@@ -451,6 +451,11 @@ def get_or_build_ontology(
                     from aughor.packs.ontology_map import apply_bound_pack_claims, bound_end_state_names
                     from aughor.ontology.backing import apply_backing_measurements, measure_override_backings
                     apply_cardinality_measurements(graph, _vdb)
+                    # Arc NV-2 — an entity whose every non-key column is a measured foreign key, and which carries
+                    # no measure, is a junction: marked, and one N:N link declared through it. Pure, on the edges
+                    # the two passes above just measured.
+                    from aughor.ontology.junction import mark_junctions
+                    mark_junctions(graph)
                     apply_lifecycle_measurements(graph, _vdb, bound_end_state_names(connection_id, graph.schema_name))
                     apply_backing_measurements(graph, _vdb)
                     measure_override_backings(connection_id, graph.schema_name, _vdb)

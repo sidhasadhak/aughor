@@ -118,6 +118,29 @@ class EntityProperty(BaseModel):
     p25: Optional[float] = None       # 25th percentile
     p50: Optional[float] = None       # median
     p75: Optional[float] = None       # 75th percentile
+    #: Arc NV-1 — the notation a TEXT column writes its dates in ("YYYYMMDD", "DD/MM/YYYY"), inferred from every
+    #: distinct value by the profiler (`aughor.tools.date_format`): a fact about the whole column, never a guess
+    #: from its first rows. "" for a typed date, a non-date, or an AMBIGUOUS column (every day ≤ 12 parses both
+    #: DD/MM and MM/DD) — then `format_note` says so, and the ENTITY MODEL block prints the note: withheld is said.
+    format: str = ""
+    format_note: str = ""
+
+
+class Junction(BaseModel):
+    """Arc NV-2 — an entity that only joins two others: a measured fact, never a guess.
+
+    A table whose every non-key column is a foreign key with a MEASURED overlap to another entity, and which carries
+    no measure of its own, exists to relate those entities — `order_products`, `user_groups`. The builder marks it
+    (`aughor.ontology.junction.mark_junctions`) after the join edges were value-verified and the cardinalities
+    counted, then declares ONE N:N link between the two far entities THROUGH it (`OntologyRelationship.via`) with
+    both overlaps on record. The ENTITY MODEL block says "junction between X and Y"; the object compiler still
+    refuses an N:N hop — that change waits for a live table that qualifies (the study's falsifier).
+    """
+    between: list[str] = Field(default_factory=list)   # the two far entity ids, sorted
+    through: list[str] = Field(default_factory=list)   # the junction's FK columns, in the same order
+    overlaps: list[float] = Field(default_factory=list)  # each FK's measured containment, in the same order
+    verified: bool = False                              # every FK edge measured (none unprobed or declared-only)
+    note: str = ""
 
 
 def snake_name(name: str) -> str:
@@ -433,6 +456,10 @@ class OntologyEntity(BaseModel):
     lifecycle_verified: Optional[bool] = None
     lifecycle_note: str = ""
 
+    #: Arc NV-2 — set when this entity's table only relates two others (see `Junction`). None for every other
+    #: entity, and for every graph built before: a missing mark reads as "not a junction", which is the default.
+    junction: Optional[Junction] = None
+
     # Routing guidance (Wave 2 / Layer 1.1) — "for questions of this shape, query
     # {table} rather than this entity's own table". Human-authored only: it arrives
     # through the override store, which existence-binds the named table first, and an
@@ -572,6 +599,10 @@ class OntologyRelationship(BaseModel):
     #: from the two types' connections (`aughor.ontology.domains.stamp_traversals`) by the law the compiler follows,
     #: so a graph built before reads `join`.
     traversal: Literal["join", "cross-source"] = "join"
+    #: Arc NV-2 — the junction entity this link goes THROUGH, when it is the N:N the builder declared between a
+    #: junction's two far entities: `join_sql` then holds both hops. "" for a direct link, and for every graph built
+    #: before. The relationship block names it, and the compiler reads it as the N:N it already refuses.
+    via: str = ""
 
     @model_validator(mode="after")
     def _fill_link_names(self) -> "OntologyRelationship":

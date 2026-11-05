@@ -513,7 +513,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # driver's name, and the two suites that list the declared engines.
         ("aughor/connectors/warehouse/databricks.py", "aughor/connectors/declarations.py", "aughor/connectors/catalog.json",
          "aughor/connectors/registry.py", "web/lib/connectors.gen.ts", "tests/unit/test_connector_capabilities.py",
-         "tests/unit/test_de3b_one_declaration.py"),
+         "tests/unit/test_de3b_one_declaration.py",
+         # 2026-11-04, Arc NV-3: the third suite that lists the declared engines — the four whose query history is read.
+         "tests/unit/test_query_history_candidates.py",
+         # 2026-11-04, Arc NV-5: the engine's dialect is the key of its prerequisite, and the suite that lists them.
+         "aughor/db/query_history.py", "tests/unit/test_query_history_prerequisites.py"),
         "keep it only where we genuinely integrate; elsewhere describe the behaviour",
     ),
     "copilotkit": (r"(?i)copilotkit", CODE_ROOTS, (), "the protocol we speak is AG-UI"),

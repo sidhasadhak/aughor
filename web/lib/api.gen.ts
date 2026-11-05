@@ -3645,6 +3645,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/{conn_id}/prerequisites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connection Prerequisites
+         * @description Arc NV-5 — what a feature needs from this engine and whether it is there now: today the query history's
+         *     prerequisite (`aughor.db.query_history.check_query_history`), said with the admin's step and whether the platform
+         *     can take it itself. Read-only; no model call.
+         */
+        get: operations["connection_prerequisites_connections__conn_id__prerequisites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/{conn_id}/prerequisites/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Connection Prerequisite
+         * @description Arc NV-5 — provision the query history's prerequisite where the platform can: on Postgres, CREATE EXTENSION
+         *     pg_stat_statements once the library is preloaded. The one statement the platform writes to a warehouse — DDL, no
+         *     row touched — so it runs only while the organisation reads warehouse history (409 otherwise, saying where to turn
+         *     it on), is refused in words where the server setting is the admin's, and is journaled.
+         */
+        post: operations["enable_connection_prerequisite_connections__conn_id__prerequisites_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{conn_id}/prewarm": {
         parameters: {
             query?: never;
@@ -4079,7 +4124,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test Connection */
+        /**
+         * Test Connection
+         * @description The connection answers — and, where the organisation reads warehouse history (Arc NV-5), whether this
+         *     engine's history is readable now, with the admin's step when it is not: the Test button is where a person looks.
+         */
         post: operations["test_connection_connections__conn_id__test_post"];
         delete?: never;
         options?: never;
@@ -11947,6 +11996,33 @@ export interface paths {
         get: operations["ontology_build_status_ontology_build_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/candidates/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mine Ontology Candidates
+         * @description Arc NV-3 (ROADMAP §3.68) — read the warehouse's OWN query history and mine it into typed candidates: join edges
+         *     the join map lacks, recurring filter values, recurring named formulas (`aughor.ontology.candidates`). Each is
+         *     EXPLAIN-bound on this connection before it is offered; the report states what was refused. Nothing is written:
+         *     a candidate is a proposal for a person, and reaches no prompt until declared through the ontology's own doors.
+         *
+         *     Said, never implied: refused with 409 while the organisation has not allowed the read (and where to allow it);
+         *     `supported=false` with the engine's own note when it keeps no history the platform reads; the engine's error
+         *     when the read failed. No model call.
+         */
+        post: operations["mine_ontology_candidates_ontology_candidates_mine_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21879,6 +21955,11 @@ export interface components {
              */
             priorities?: components["schemas"]["Priority"][];
             /**
+             * Read Query History
+             * @description Read each warehouse's own query history — the SQL people ran there — and mine it for joins, filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt until a person confirms it and it binds. Off by default.
+             */
+            read_query_history?: boolean | null;
+            /**
              * Reason To Read Runs
              * @description Ask for a reason, recorded with who read it, before anyone reads a run's details or exports the ledger. Off by default.
              */
@@ -24882,6 +24963,29 @@ export interface components {
             grain?: string | null;
             /** Unit */
             unit?: string | null;
+        };
+        /**
+         * _MineCandidatesRequest
+         * @description Arc NV-3 — what the candidate door reads. Only the warehouse's own history for now; trusted queries and
+         *     verdicts keep their own miners and arrive here when their doors are wired. Arc NV-4 — `stage` puts every bound
+         *     candidate into the resolve-once inbox, where a person accepts (it is declared) or rejects (kept).
+         */
+        _MineCandidatesRequest: {
+            /**
+             * Hours
+             * @default 336
+             */
+            hours: number;
+            /**
+             * Limit
+             * @default 2000
+             */
+            limit: number;
+            /**
+             * Stage
+             * @default false
+             */
+            stage: boolean;
         };
         /** _OpenCaptureRequest */
         _OpenCaptureRequest: {
@@ -32144,6 +32248,70 @@ export interface operations {
     connection_declared_metadata_connections__conn_id__metadata_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connection_prerequisites_connections__conn_id__prerequisites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_connection_prerequisite_connections__conn_id__prerequisites_enable_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
             header?: never;
             path: {
                 conn_id: string;
@@ -45903,6 +46071,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mine_ontology_candidates_ontology_candidates_mine_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["_MineCandidatesRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
