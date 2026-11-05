@@ -13,18 +13,20 @@ Usage (opt-in, per route — no handler-body change):
                    dependencies=[gate_permission(Permission.CONNECTION_DELETE)])
     def remove_connection(...): ...
 
-Two conditions make the gate a NO-OP, so adding it is safe everywhere and does
-nothing until a deployment opts into RBAC:
+One condition makes the gate a NO-OP, so adding it is safe everywhere:
 
-  1. **identity off / localhost** — no principal is bound, the resolver treats the
-     caller as owner, so every permission is granted (byte-identical to today).
-  2. **the org's tier lacks ``Capability.RBAC_SSO``** — RBAC is an enterprise
-     capability; a plan without it keeps the REC-05 identity + owner-checks but no
-     per-permission enforcement.
+  **identity off / localhost** — no principal is bound, the resolver treats the
+  caller as owner, so every permission is granted (byte-identical to today).
 
-When both the identity flag and the RBAC_SSO capability are present, the gate
-resolves the caller's roles (bootstrapping the org's first user as owner) and 403s
-a caller whose roles don't grant ``perm``.
+There was a second — the org's tier lacking ``Capability.RBAC_SSO`` — and it went on
+2026-11-05 (the 10× program, Track A3): whether a permission is EVALUATED is not a
+thing a plan may switch off. The tier is an unsigned environment variable that defaults
+to enterprise, so the skip was latent; had anyone set a lower tier, every identified
+caller would have passed every gate. A capability may still gate an administration
+SURFACE (SCIM, a roster); it never gates the decision itself.
+
+With a principal bound, the gate resolves the caller's roles (bootstrapping the org's
+first user as owner) and 403s a caller whose roles don't grant ``perm``.
 """
 from __future__ import annotations
 
@@ -40,10 +42,6 @@ def require_permission(perm: Permission):
         principal = get_principal(request)
         if principal is None:
             return  # identity off / localhost — unchanged behaviour
-
-        from aughor.licensing import Capability, has_capability
-        if not has_capability(Capability.RBAC_SSO):
-            return  # RBAC is an enterprise capability; not enforced without it
 
         from aughor.rbac.resolver import has_permission, maybe_bootstrap_owner
         maybe_bootstrap_owner(principal)  # the org's first identified user becomes owner
@@ -77,9 +75,8 @@ def enforce_rbac(request: Request) -> None:
 
     A global dependency that resolves the permission each endpoint requires from the
     declarative ``policy.py`` table and 403s a caller whose roles don't grant it. Like
-    the per-route gate it is a **double no-op** — inert unless identity is on AND the
-    org's tier grants ``Capability.RBAC_SSO`` — so localhost and non-RBAC tiers are
-    unchanged. The org's first identified caller is bootstrapped as owner.
+    the per-route gate it is inert while identity is off, so localhost is unchanged;
+    the tier plays no part (Track A3). The org's first identified caller is bootstrapped as owner.
 
     Self-contained (resolves its own principal) so it's order-independent w.r.t.
     ``api._require_auth``; when identity is required but absent, ``_require_auth``
@@ -95,10 +92,6 @@ def enforce_rbac(request: Request) -> None:
     principal = resolve_principal(request)
     if principal is None:
         return  # _require_auth issues the 401 for a missing identity
-
-    from aughor.licensing import Capability, has_capability
-    if not has_capability(Capability.RBAC_SSO):
-        return  # RBAC is an enterprise capability; not enforced without it
 
     from aughor.rbac.resolver import has_permission, maybe_bootstrap_owner
     maybe_bootstrap_owner(principal)  # first identified caller of the org → owner

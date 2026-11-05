@@ -12913,7 +12913,16 @@ starvation gate each (§3: close the doors · one truth · authority rides the j
 release gates · the loop), the sequence (§4) and the decisions only the user can make (§7: the identity provider, a
 second host, a second organisation, Postgres as default, PipesHub as a context source). Its thesis: hardening a platform
 one person uses does not 10× it; it makes it safe for ten — so no week in which the foundation tracks take more than
-half the time until the study's phase-0 install exists. **Open:** the user's adoption (§6), then Track A1–A3 first.
+half the time until the study's phase-0 install exists. **Open:** the user's adoption (§6).
+
+- **Track A1–A3 BUILT 2026-11-05** (the user: *"So, lets build!"*). A1: `/slack-bots/runtime` opens only to the
+  deployment's own credentials — proved first with a two-organisation test that read the first organisation's raw
+  tokens as the second's owner, then closed. A2 (the user chose *refuse unless declared*): identity required with no
+  issuer refuses every request but `/health` and `/auth/config`, with the sentence, unless `AUGHOR_IDENTITY_FROM_PROXY=1`
+  declares an authenticating proxy; said at boot, on `/health`, on `/auth/config` and by `aughor doctor`; the suite
+  declares it in `tests/conftest.py`. A3: no access decision reads the tier — the gate, the role ceiling and the row
+  policy all dropped `RBAC_SSO`; three tests that asserted the inert behaviour now assert the opposite. Receipt printed
+  from the app the same day (`docs/TENX_PROGRAM_2026-11-05.md` §3, Track A). Next: A4 (five-valued ownership), A5, A8.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

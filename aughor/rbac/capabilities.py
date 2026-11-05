@@ -85,14 +85,13 @@ def effective_capabilities(
 ) -> frozenset[Capability]:
     """The capabilities a caller can actually exercise: ``tier_caps ∩ role_ceiling``.
 
-    No-op (returns the full tier set) when identity is off (``principal is None``) or
-    the tier doesn't include ``RBAC_SSO`` — so localhost and non-RBAC plans are
-    unchanged, and the role ceiling only bites where RBAC is actually active.
+    No-op (returns the full tier set) when identity is off (``principal is None``), so
+    localhost is unchanged. The ceiling once lifted on a tier without ``RBAC_SSO`` too;
+    that went with the gate's tier check (Track A3, 2026-11-05) — a plan decides what
+    the org may use, never whether a role is read.
     """
     tier_caps = frozenset(capabilities_for(resolve_tier(conn_id, workspace_id)))
     if principal is None:
-        return tier_caps
-    if Capability.RBAC_SSO not in tier_caps:
         return tier_caps
     return tier_caps & ceiling_for_roles(resolve_roles(principal))
 

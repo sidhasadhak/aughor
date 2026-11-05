@@ -51,6 +51,41 @@ def require_identity_enabled() -> bool:
     return os.environ.get("AUGHOR_REQUIRE_IDENTITY", "") == "1"
 
 
+#: The operator's statement that an authenticating proxy in front of this API sets
+#: ``X-Aughor-Org`` / ``X-Aughor-User`` and strips them from clients. The ONLY deployment
+#: where the header seam is a credential rather than a label — and the app cannot tell it
+#: apart from an open port, so the operator has to say so. A deployment setting like
+#: ``AUGHOR_OIDC_ISSUER``, read at request time from the environment like the switch above.
+IDENTITY_FROM_PROXY_ENV = "AUGHOR_IDENTITY_FROM_PROXY"
+
+
+def identity_from_proxy() -> bool:
+    return os.environ.get(IDENTITY_FROM_PROXY_ENV, "") == "1"
+
+
+def identity_unverifiable() -> str:
+    """Why this deployment cannot verify who is calling, or "" when it can (or need not).
+
+    Found for the 10× program (`docs/TENX_PROGRAM_2026-11-05.md` §1.3, Track A2): with
+    ``AUGHOR_REQUIRE_IDENTITY=1`` and no issuer, the transitional headers WERE the identity —
+    anyone on the port could name any organisation and, being its first caller, become its
+    owner — and nothing said so. So the combination is refused, per request, with this
+    sentence (``api._require_auth``), and said again at boot, on ``/health``, on
+    ``/auth/config`` and by ``aughor doctor``. The one legitimate form of the seam is the
+    declared one: :data:`IDENTITY_FROM_PROXY_ENV`.
+    """
+    if not require_identity_enabled():
+        return ""
+    from aughor.security import oidc
+    if oidc.configured() or identity_from_proxy():
+        return ""
+    return ("identity is required (AUGHOR_REQUIRE_IDENTITY=1) but nothing here can verify who is "
+            "calling: set AUGHOR_OIDC_ISSUER and AUGHOR_OIDC_AUDIENCE to verify sign-ins, or set "
+            f"{IDENTITY_FROM_PROXY_ENV}=1 only if an authenticating proxy in front of this API sets "
+            f"{IDENTITY_ORG_HEADER} and {IDENTITY_USER_HEADER} and strips them from clients. Until "
+            "then every request but /health and /auth/config is refused.")
+
+
 def resolve_principal(request: Request) -> Optional[Principal]:
     """Resolve the calling principal from the request, or None if no identity is
     presented. Never raises — the org middleware calls this outside FastAPI's
@@ -65,7 +100,10 @@ def resolve_principal(request: Request) -> Optional[Principal]:
     2. While OIDC is configured AND identity is required, the header seam is DEAD —
        otherwise `X-Aughor-User: mallory` would still work beside real tokens,
        which is the exact hole VA-10 exists to close.
-    3. The transitional ``X-Aughor-*`` headers (self-host / dev, unchanged).
+    3. The transitional ``X-Aughor-*`` headers — as a LABEL while identity is off (who a
+       write is recorded under), and as a credential only where the operator declared a
+       proxy sets them (:func:`identity_from_proxy`). Required and undeclared, the seam is
+       dead here too, and ``_require_auth`` refuses the request with the reason.
     """
     from aughor.security import oidc, service_principals
 
@@ -87,6 +125,8 @@ def resolve_principal(request: Request) -> Optional[Principal]:
             return verified
         if require_identity_enabled():
             return None
+    elif require_identity_enabled() and not identity_from_proxy():
+        return None
     org = (request.headers.get(IDENTITY_ORG_HEADER) or "").strip()
     if not org:
         return None

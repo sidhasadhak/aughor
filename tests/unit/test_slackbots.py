@@ -438,3 +438,36 @@ def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, sla
     mine = next(b for b in r.json()["bots"] if b["name"] == "front-door-bot")
     assert mine["bot_token"] == "xoxb-t"
     assert "•" not in mine["app_token"]
+
+
+def test_an_identified_caller_from_another_org_cannot_read_the_tokens(client, slack_ok, monkeypatch):
+    """Found reading the code for the 10× program (`docs/TENX_PROGRAM_2026-11-05.md` §1.3, Track A1):
+    the gate's third door — "identity is required and the tier grants RBAC" — admitted ANY identified
+    caller, and the tier defaults to enterprise. The route then listed every bot the deployment holds,
+    because a bot carries no organisation. So the first identified user of a second organisation
+    (bootstrapped as its owner on sight) read the first organisation's `xoxb-`/`xapp-` tokens raw.
+
+    The supervisor is the DEPLOYMENT's process, not an organisation's, so the route is opened by the
+    deployment's own credentials — the supervisor key issued from the app, or the operator's shared
+    key — and never by who a person is."""
+    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
+    acme = {"X-Aughor-Org": "acme-a1", "X-Aughor-User": "amit"}
+    rival = {"X-Aughor-Org": "rival-a1", "X-Aughor-User": "mallory"}
+    made = client.post("/slack-bots", headers=acme,
+                       json={"name": "acme-socket", "bot_token": "xoxb-acme", "app_token": "xapp-acme",
+                             "signing_secret": "sig"})
+    assert made.status_code == 200, made.text
+
+    r = client.get("/slack-bots/runtime", headers=rival)
+    assert r.status_code == 503, r.text
+    assert "xoxb-acme" not in r.text
+
+    # The first organisation's own owner is a person too, not the supervisor: the same answer.
+    assert client.get("/slack-bots/runtime", headers=acme).status_code == 503
+
+    # The supervisor key still opens it — the route keeps its one job.
+    key = client.post("/slack-bots/supervisor-key", headers=acme).json()["key"]
+    ok = client.get("/slack-bots/runtime", headers={**acme, "X-Aughor-Runtime-Key": key})
+    assert ok.status_code == 200
+    assert next(b for b in ok.json()["bots"] if b["name"] == "acme-socket")["bot_token"] == "xoxb-acme"

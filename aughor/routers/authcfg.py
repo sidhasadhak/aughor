@@ -24,11 +24,14 @@ def auth_config():
     verification path is issuer-generic; only the sign-in widget is provider-shaped,
     and today the one widget shipped is Google Identity Services."""
     from aughor.security import oidc
-    from aughor.security.authz import require_identity_enabled
+    from aughor.security.authz import identity_unverifiable, require_identity_enabled
 
     if not oidc.configured():
+        # Required with nothing to verify it: the sentence every other route refuses with,
+        # served here because this is where a client with no token learns what to do.
         return {"oidc_configured": False,
-                "identity_required": require_identity_enabled()}
+                "identity_required": require_identity_enabled(),
+                "refusal": identity_unverifiable()}
     issuer = oidc.issuer()
     return {
         "oidc_configured": True,

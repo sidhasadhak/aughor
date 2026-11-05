@@ -131,7 +131,7 @@ claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
 | `AUGHOR_API_KEY` | _(unset)_ | Sent as `X-Api-Key` when the API enforces one (`AUGHOR_API_KEY` on the server). |
 | `AUGHOR_MCP_TIMEOUT` | `60` | Timeout (s) for plain calls. |
 | `AUGHOR_MCP_DEEP_TIMEOUT` | `300` | Timeout (s) for the streaming `ask` / `deep_analysis` tools. A `deep_analysis` that exceeds it returns an `investigation_id` to poll with `get_investigation`. |
-| `AUGHOR_MCP_ORG` | _(unset)_ | The principal this server acts as when the API requires identity (`AUGHOR_REQUIRE_IDENTITY=1`) and no OIDC issuer is configured: sent as `X-Aughor-Org`, with `AUGHOR_MCP_USER` (default `mcp`) as `X-Aughor-User`. Unset, every MCP call is refused with a 401 in identity mode (DE-2a). |
+| `AUGHOR_MCP_ORG` | _(unset)_ | The principal this server acts as when the API requires identity (`AUGHOR_REQUIRE_IDENTITY=1`) and no OIDC issuer is configured (the API then also needs `AUGHOR_IDENTITY_FROM_PROXY=1`, or it refuses every request): sent as `X-Aughor-Org`, with `AUGHOR_MCP_USER` (default `mcp`) as `X-Aughor-User`. Unset, every MCP call is refused with a 401 in identity mode (DE-2a). |
 | `AUGHOR_MCP_USER` | `mcp` | The user the server acts as, beside `AUGHOR_MCP_ORG`. |
 | `AUGHOR_MCP_BEARER` | _(unset)_ | An OIDC token for an API with an issuer configured, sent as `Authorization: Bearer …`. |
 | `AUGHOR_MCP_TOKEN` | _(unset)_ | **Server side, `--http` only.** The bearer every HTTP MCP client must present; `--http` refuses to start without it. |

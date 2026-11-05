@@ -104,9 +104,21 @@ def health():
         backups = health_block()
     except Exception as exc:
         backups = {"ok": False, "detail": f"the backups could not be read ({type(exc).__name__}: {exc})"}
+    # Track A2 — identity required with nothing to verify it refuses every other route; this one is
+    # exempt so an operator (or the launcher's poll) reads WHY here instead of from the first 503.
+    from aughor.security import oidc
+    from aughor.security.authz import identity_from_proxy, identity_unverifiable, require_identity_enabled
+    identity_refusal = identity_unverifiable()
+    identity = {
+        "required": require_identity_enabled(),
+        "verified_by": ("off" if not require_identity_enabled() else "oidc" if oidc.configured()
+                        else "proxy" if identity_from_proxy() else "nothing"),
+        "ok": not identity_refusal,
+        "refusal": identity_refusal,
+    }
     return {
         "status": "degraded" if (ledger_error or wal_drifted or not migrations["ok"]
-                                 or backups["ok"] is False) else "ok",
+                                 or backups["ok"] is False or identity_refusal) else "ok",
         "ledger": {"ok": not ledger_error, "error": ledger_error},
         "migrations": {
             **migrations,
@@ -117,6 +129,8 @@ def health():
             ),
         },
         "backups": backups,
+        # After the four blocks test_backups pins the order of; the key, not its place, is what readers use.
+        "identity": identity,
         "stores": {
             "ok": not wal_drifted,
             "wal_drifted": wal_drifted,

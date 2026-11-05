@@ -134,6 +134,12 @@ async def _lifespan(app: "FastAPI"):
     if not os.environ.get("VERCEL"):
         from aughor.db.serving import claim
         claim()
+    # Said at boot as well as per request: an API that is up and refuses everything looks
+    # healthy from a process list, and the first 503 should not be where an operator learns why.
+    from aughor.security.authz import identity_unverifiable
+    unverifiable = identity_unverifiable()
+    if unverifiable:
+        logger.error("refusing every request: %s", unverifiable)
     await _register_agent_plugins()
     # Then: make contextvars (current job id + per-run metering) cross the
     # run_in_executor boundary, before any startup step dispatches into a thread.
@@ -284,9 +290,14 @@ def _require_auth(request: Request, key: str | None = Security(_api_key_header))
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     # 2. Identity (SEC-01). Off by default; exempt paths (health/docs) never require it.
-    from aughor.security.authz import require_identity_enabled, resolve_principal
+    from aughor.security.authz import identity_unverifiable, require_identity_enabled, resolve_principal
     if exempt or not require_identity_enabled():
         return
+    # Required but unverifiable (no issuer, no declared proxy) is refused outright, with the
+    # reason: the alternative was trusting whatever organisation a client named (Track A2).
+    unverifiable = identity_unverifiable()
+    if unverifiable:
+        raise HTTPException(status_code=503, detail=unverifiable)
     principal = resolve_principal(request)
     if principal is None:
         from aughor.security import oidc

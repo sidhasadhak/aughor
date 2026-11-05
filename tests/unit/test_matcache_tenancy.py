@@ -81,10 +81,12 @@ def test_tenancy_none_when_flag_off(monkeypatch):
     assert _fingerprint(org="o1", user="u1") is None          # legacy key → byte-identical to today
 
 
-def test_tenancy_none_without_capability(monkeypatch):
+def test_tenancy_does_not_depend_on_the_tier(monkeypatch):
+    """Track A3 (2026-11-05): this asserted the opposite — no RBAC_SSO capability, no scoping — so a
+    plan switched the row policy and the cache key's tenancy off together. A tier never decides it."""
     _enable(monkeypatch, roles=["viewer"])
-    monkeypatch.setattr(_lic, "has_capability", lambda *a, **k: False)   # RBAC_SSO absent → policy inert
-    assert _fingerprint(org="o1", user="u1") is None
+    monkeypatch.setattr(_lic, "has_capability", lambda *a, **k: False)
+    assert _fingerprint(org="o1", user="u1") is not None
 
 
 def test_tenancy_none_for_internal_query_without_user(monkeypatch):

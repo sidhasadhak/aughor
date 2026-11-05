@@ -4,8 +4,8 @@ This is the seam every later phase consumes:
 
   - **P2** replaces the flat licensing ``resolve_tier`` decision with a role-aware
     one (a role can gate a capability).
-  - **P3** wires ``has_permission`` into route dependencies (behind
-    ``Capability.RBAC_SSO``) and adds the admin roster endpoints.
+  - **P3** wires ``has_permission`` into route dependencies (once behind
+    ``Capability.RBAC_SSO``; not since Track A3) and adds the admin roster endpoints.
 
 P1 delivers only the pure resolution — no route touches it yet, so blast radius is
 zero. Two fallbacks preserve today's behaviour and keep an identity-on deployment

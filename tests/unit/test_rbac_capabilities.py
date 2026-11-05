@@ -62,8 +62,11 @@ def test_effective_caps_intersect_tier_and_role(monkeypatch):
     assert role_has_capability(p, Capability.CATALOG)
 
 
-def test_no_ceiling_when_tier_lacks_rbac_sso(monkeypatch):
-    monkeypatch.setenv("AUGHOR_TIER", "free")         # free lacks RBAC_SSO → no role gate
-    p = Principal(user_id="v", org_id="caps-org-2")    # would be a viewer under enterprise
-    # the ceiling doesn't bite: the caller gets the full (free) tier set
-    assert effective_capabilities(p) == frozenset(capabilities_for(Tier.FREE))
+def test_the_ceiling_applies_at_every_tier(monkeypatch):
+    """Track A3: the role ceiling once lifted on a tier without RBAC_SSO, so a viewer on a free
+    plan got the whole tier set. A plan decides what the org may use, never whether a role is read."""
+    monkeypatch.setenv("AUGHOR_TIER", "free")
+    p = Principal(user_id="v", org_id="caps-org-2")    # a default viewer
+    caps = effective_capabilities(p)
+    assert caps < frozenset(capabilities_for(Tier.FREE))   # strictly less: the ceiling bit
+    assert Capability.CATALOG in caps

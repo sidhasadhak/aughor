@@ -66,15 +66,22 @@ exposing it to a network:
 
 - Set `AUGHOR_API_KEY` to a strong random value. Every request must then carry
   it as `X-Api-Key` (`/health`, `/docs`, `/redoc`, and `/openapi.json` stay open).
-- **`GET /slack-bots/runtime` refuses every unauthenticated caller.** It is the one
-  route that returns raw Slack `xoxb-`/`xapp-` tokens (a socket cannot be opened with
-  a mask), and handing a credential to an unauthenticated caller is giving it away.
-  Its RBAC entry alone is not enough: that gate is inert without an enterprise licence.
-  You do **not** have to lock the whole API to open it — generate a scoped key in
+- **`GET /slack-bots/runtime` opens only to the deployment's own credentials.** It is the
+  one route that returns raw Slack `xoxb-`/`xapp-` tokens (a socket cannot be opened with
+  a mask), and handing a credential to anyone but the bot supervisor is giving it away —
+  a signed-in person of any organisation included: a bot carries no organisation, and
+  the supervisor is one process for the whole deployment. Its RBAC entry alone is not
+  enough. You do **not** have to lock the whole API to open it — generate a scoped key in
   **Integrations → Slack → Supervisor key** and give it to the bot supervisor as
   `AUGHOR_RUNTIME_KEY`. An org-wide `AUGHOR_API_KEY` satisfies it too. Nothing else is
   affected: automations posting to Slack read the bot from the store server-side and
   never touch that route.
 - Set `AUGHOR_CORS_ORIGINS` to the exact origins you serve.
 - Terminate TLS in front of the app; Aughor speaks plain HTTP.
+- **Requiring identity needs something that can verify it.** With `AUGHOR_REQUIRE_IDENTITY=1`
+  and no `AUGHOR_OIDC_ISSUER`, the API refuses every request but `/health` and `/auth/config`
+  (which say why) — before 2026-11-05 it trusted whatever `X-Aughor-Org` a client sent, and
+  the first caller to name an organisation became its owner. The one deployment where those
+  headers are a credential is an authenticating proxy that sets them and strips them from
+  clients; declare that with `AUGHOR_IDENTITY_FROM_PROXY=1`, and nothing else.
 - Give the warehouse credential the narrowest read-only grant that works.

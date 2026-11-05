@@ -6,9 +6,10 @@ user* may do. A request is authorized when both hold.
 
 **Enforcement is live** (P4): ``policy.py`` maps every ``(method, route)`` to the
 permission it requires, and ``deps.enforce_rbac`` is an app-wide dependency wired at
-``aughor/api.py``. It stays a no-op in two situations by design — identity off /
-localhost (the caller resolves to owner) and an org tier without
-``Capability.RBAC_SSO`` — so a deployment that has not opted into RBAC is unaffected.
+``aughor/api.py``. It stays a no-op in one situation by design — identity off /
+localhost (the caller resolves to owner). The org's tier was a second until
+2026-11-05 (Track A3 of ``docs/TENX_PROGRAM_2026-11-05.md``): a plan never decides
+whether a permission is evaluated.
 
 This docstring said the opposite until 2026-07-28, describing a P1 in which "no
 enforcement is wired into any route yet". It had been wrong since P3 landed, and the

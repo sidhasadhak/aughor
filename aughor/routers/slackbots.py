@@ -307,10 +307,20 @@ def _refuse_without_a_front_door(request: Request) -> None:
     plaintext to any caller that could reach the port — proved with an unauthenticated
     `curl` on a live instance, 2026-08-30.
 
-    So this one route asks whether the deployment can identify its callers AT ALL, and
-    refuses when it cannot. Every other route may reasonably be open on a laptop; this
-    is the one place raw credentials leave the server, and a credential handed to an
-    unauthenticated caller is a credential given away.
+    So this one route is opened by the DEPLOYMENT's own credentials and nothing else.
+    Every other route may reasonably be open on a laptop; this is the one place raw
+    credentials leave the server, and a credential handed to an unauthenticated caller
+    is a credential given away.
+
+    Two doors, both the deployment's: the supervisor key issued from the app, and the
+    operator's shared `AUGHOR_API_KEY` (whoever holds that owns the deployment already).
+    There was a third — "identity is required and the tier grants RBAC" — which admitted
+    any identified PERSON, and the tier defaults to enterprise. A bot carries no
+    organisation, so the route listed every bot the deployment holds, and the first user
+    of a second organisation (made its owner on sight) read the first organisation's
+    tokens raw. Proved by `test_an_identified_caller_from_another_org_cannot_read_the_tokens`
+    (2026-11-05, the 10× program's Track A1). The supervisor is one process for the whole
+    deployment, so who a person is can never be what opens it.
 
     The posture is read from `aughor.api` rather than from `os.environ`, deliberately:
     that module captured the key at import, and it is what actually enforces. A gate
@@ -325,13 +335,9 @@ def _refuse_without_a_front_door(request: Request) -> None:
     from aughor.api import api_key_configured
     if api_key_configured():
         return
-    from aughor.licensing import Capability, has_capability
-    from aughor.security.authz import require_identity_enabled
-    if require_identity_enabled() and has_capability(Capability.RBAC_SSO):
-        return
     raise HTTPException(
         status_code=503,
-        detail="refusing to serve Slack tokens: this caller is unauthenticated. "
+        detail="refusing to serve Slack tokens: this caller is not the deployment's supervisor. "
                "Generate a supervisor key in Integrations → Slack and put it in the bot "
                "supervisor's environment as AUGHOR_RUNTIME_KEY (an org-wide "
                "AUGHOR_API_KEY works too, if this deployment already sets one). Posting "
