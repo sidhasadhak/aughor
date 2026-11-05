@@ -27,9 +27,9 @@ def test_query_run_body_conn_is_org_scoped(client, monkeypatch):
     try:
         payload = {"conn_id": cid, "sql": "SELECT 1"}
         assert client.post("/query/run", json=payload,
-                           headers={"X-Aughor-Org": "se0run_b"}).status_code == 403
+                           headers={"X-Aughor-Org": "se0run_b", "X-Aughor-User": "amit"}).status_code == 403
         assert client.post("/query/run", json=payload,
-                           headers={"X-Aughor-Org": "se0run_a"}).status_code != 403
+                           headers={"X-Aughor-Org": "se0run_a", "X-Aughor-User": "amit"}).status_code != 403
     finally:
         registry.delete_connection(cid)
 
@@ -40,11 +40,11 @@ def test_query_validate_and_semantic_context_are_org_scoped(client, monkeypatch)
     cid = _mk_conn("se0val_a", "se0-val-conn")
     try:
         assert client.post("/query/validate", json={"conn_id": cid, "sql": "SELECT 1"},
-                           headers={"X-Aughor-Org": "se0val_b"}).status_code == 403
+                           headers={"X-Aughor-Org": "se0val_b", "X-Aughor-User": "amit"}).status_code == 403
         assert client.post("/query/semantic-context", json={"conn_id": cid, "question": "q"},
-                           headers={"X-Aughor-Org": "se0val_b"}).status_code == 403
+                           headers={"X-Aughor-Org": "se0val_b", "X-Aughor-User": "amit"}).status_code == 403
         assert client.post("/query/validate", json={"conn_id": cid, "sql": "SELECT 1"},
-                           headers={"X-Aughor-Org": "se0val_a"}).status_code != 403
+                           headers={"X-Aughor-Org": "se0val_a", "X-Aughor-User": "amit"}).status_code != 403
     finally:
         registry.delete_connection(cid)
 
@@ -60,7 +60,7 @@ def test_cross_source_join_checks_both_sides(client, monkeypatch):
         assert client.post("/query/cross-source-join", json={
             "left_conn_id": mine, "left_sql": "SELECT 1 AS k", "left_key": "k",
             "right_conn_id": theirs, "right_table": "t", "right_key": "k",
-        }, headers={"X-Aughor-Org": "se0xj_a"}).status_code == 403
+        }, headers={"X-Aughor-Org": "se0xj_a", "X-Aughor-User": "amit"}).status_code == 403
     finally:
         registry.delete_connection(mine)
         registry.delete_connection(theirs)
@@ -73,9 +73,9 @@ def test_chat_feedback_is_org_scoped(client, monkeypatch):
     try:
         payload = {"conn_id": cid, "turn_id": "t1", "verdict": "helpful"}
         assert client.post("/chat/feedback", json=payload,
-                           headers={"X-Aughor-Org": "se0fb_b"}).status_code == 403
+                           headers={"X-Aughor-Org": "se0fb_b", "X-Aughor-User": "amit"}).status_code == 403
         assert client.post("/chat/feedback", json=payload,
-                           headers={"X-Aughor-Org": "se0fb_a"}).status_code != 403
+                           headers={"X-Aughor-Org": "se0fb_a", "X-Aughor-User": "amit"}).status_code != 403
     finally:
         registry.delete_connection(cid)
 
@@ -87,8 +87,8 @@ def test_conn_id_path_params_on_query_router_are_org_scoped(client, monkeypatch)
     from aughor.db import registry
     cid = _mk_conn("se0path_a", "se0-path-conn")
     try:
-        wrong = {"X-Aughor-Org": "se0path_b"}
-        mine = {"X-Aughor-Org": "se0path_a"}
+        wrong = {"X-Aughor-Org": "se0path_b", "X-Aughor-User": "amit"}
+        mine = {"X-Aughor-Org": "se0path_a", "X-Aughor-User": "amit"}
         assert client.get(f"/connections/{cid}/measure-grains", headers=wrong).status_code == 403
         assert client.get(f"/connections/{cid}/distinct",
                           params={"table": "t", "column": "c"}, headers=wrong).status_code == 403

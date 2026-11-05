@@ -58,7 +58,7 @@ def test_exempt_paths_open_even_with_identity_on(client, monkeypatch):
 
 def test_owner_org_may_read_canvas_and_investigation(client, acme_resources, monkeypatch):
     monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    h = {"X-Aughor-Org": "acme"}
+    h = {"X-Aughor-Org": "acme", "X-Aughor-User": "amit"}
     assert client.get(f"/canvases/{acme_resources['canvas_id']}", headers=h).status_code == 200
     assert client.get(f"/investigations/{acme_resources['inv_id']}", headers=h).status_code == 200
 
@@ -81,9 +81,9 @@ def test_cross_org_delete_is_blocked_and_resource_survives(client, acme_resource
     # Intruder cannot delete...
     assert client.delete(f"/investigations/{inv_id}", headers={"X-Aughor-Org": "intruder"}).status_code == 403
     # ...and the investigation is still there (the delete never ran).
-    assert client.get(f"/investigations/{inv_id}", headers={"X-Aughor-Org": "acme"}).status_code == 200
+    assert client.get(f"/investigations/{inv_id}", headers={"X-Aughor-Org": "acme", "X-Aughor-User": "amit"}).status_code == 200
     # The owner can delete it.
-    assert client.delete(f"/investigations/{inv_id}", headers={"X-Aughor-Org": "acme"}).status_code == 204
+    assert client.delete(f"/investigations/{inv_id}", headers={"X-Aughor-Org": "acme", "X-Aughor-User": "amit"}).status_code == 204
 
 
 def test_org_contextvar_is_bound_in_the_handler(client, monkeypatch):
@@ -103,7 +103,7 @@ def test_org_contextvar_is_bound_in_the_handler(client, monkeypatch):
         seen["org"] = current_org_id()
         return {"org": seen["org"]}
 
-    r = client.get("/_authz_probe_org", headers={"X-Aughor-Org": "acme"})
+    r = client.get("/_authz_probe_org", headers={"X-Aughor-Org": "acme", "X-Aughor-User": "amit"})
     assert r.status_code == 200 and r.json()["org"] == "acme"
     assert seen["org"] == "acme"                # bound inside the handler (the point)
     assert current_org_id() == DEFAULT_ORG_ID   # never leaks into the ambient context

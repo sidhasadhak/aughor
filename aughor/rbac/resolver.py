@@ -82,6 +82,21 @@ def has_permission(principal: Optional[Principal], perm: Permission) -> bool:
 _bootstrapped_orgs: set[str] = set()  # per-process cache: orgs already checked
 
 
+def bootstrappable(principal: Principal) -> bool:
+    """Whether this principal may become an organisation's first owner — Track A5 (2026-11-05,
+    `docs/TENX_PROGRAM_2026-11-05.md`): only a NAMED PERSON whose identity was verified.
+
+    Two callers used to qualify and must not. ``anonymous`` — the header seam with an org and no
+    user — made "nobody in particular" the owner, and every later user-less request owned the org.
+    A service principal (``service:<name>``, an outside vendor's agent) is not a person and never
+    administers the organisation it was granted a slice of. Verified, since Track A2, is what a
+    principal already is: an OIDC bearer, a service principal's key, or the headers behind a
+    proxy the operator declared — the undeclared seam resolves no principal at all."""
+    from aughor.security.service_principals import PREFIX
+    user = str(principal.user_id or "").strip()
+    return bool(user) and user != "anonymous" and not user.startswith(PREFIX)
+
+
 def auto_bootstrap_enabled() -> bool:
     return os.getenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "1") != "0"
 
@@ -95,6 +110,8 @@ def maybe_bootstrap_owner(principal: Optional[Principal]) -> bool:
     """
     if principal is None or not auto_bootstrap_enabled():
         return False
+    if not bootstrappable(principal):
+        return False      # the org is NOT cached as checked: its first named person may still claim it
     org = principal.org_id
     if org in _bootstrapped_orgs:
         return False

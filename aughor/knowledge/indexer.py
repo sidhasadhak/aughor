@@ -114,10 +114,13 @@ def entry_org(entry: dict) -> Optional[str]:
 
 
 def document_org(doc_id: str) -> Optional[str]:
-    """The organisation that owns a registered document (``entry_org``), or ``None`` for an
-    unregistered id — the ownership guard then lets the door answer its own 404."""
+    """The organisation that owns a registered document (``entry_org``); ``""`` for a registered one
+    every organisation may read (a shared builtin's schema docs); ``None`` for an unregistered id.
+    The ownership guard reads the three apart (Track A4): ``""`` is shared, ``None`` is not found."""
     entry = get_document(doc_id)
-    return entry_org(entry) if entry else None
+    if entry is None:
+        return None
+    return entry_org(entry) or ""
 
 
 def in_scope(entry: dict, *, connection_id: Optional[str] = None,

@@ -117,10 +117,15 @@ def test_another_org_is_refused_by_the_guard_on_every_door_that_names_its_connec
                 url = re.sub(r"{%s(?::[^}]+)?}" % re.escape(param), theirs if _names_a_connection(param) else "x", url)
             query = {n: theirs for n in named if _names_a_connection(n) and n not in route.param_convertors}
             method = sorted(route.methods)[0]
-            r = client.request(method, url, params=query, headers={"X-Aughor-Org": "orgB"})
+            r = client.request(method, url, params=query, headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"})
             answered[_door(route)] = (r.status_code, r.text[:100])
         assert len(answered) >= 140, len(answered)
-        wrong = {door: got for door, got in answered.items() if got[0] != 403 or "belongs to another org" not in got[1]}
+        # Two refusals count. 403 "belongs to another org" is the guard on the connection; 404 "or not yours" is
+        # the door's own resource ("x", which nothing holds) refused first — since Track A4 a missing id is NOT_FOUND
+        # at the ownership check, never "unknown → allow", so the door never reaches the connection guard.
+        def _refused(got):
+            return (got[0] == 403 and "belongs to another org" in got[1]) or (got[0] == 404 and "or not yours" in got[1])
+        wrong = {door: got for door, got in answered.items() if not _refused(got)}
         assert not wrong, wrong
     finally:
         registry.delete_connection(theirs)
@@ -143,10 +148,10 @@ def test_the_grounding_receipt_refuses_another_orgs_connection_and_answers_its_o
         theirs = registry.add_connection("orgA-grounding", "duckdb", str(tmp_path / "orgA.duckdb"))
     try:
         refused = client.get("/ask/context", params={"connection": theirs, "question": "revenue"},
-                             headers={"X-Aughor-Org": "orgB"})
+                             headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"})
         assert refused.status_code == 403 and "belongs to another org" in refused.text
         own = client.get("/ask/context", params={"connection": theirs, "question": "revenue"},
-                         headers={"X-Aughor-Org": "orgA"})
+                         headers={"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"})
         assert own.status_code == 200, own.text
         assert own.json()["receipt"]["connection_id"] == theirs
     finally:

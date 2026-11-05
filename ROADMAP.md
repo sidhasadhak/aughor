@@ -12922,7 +12922,15 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   declares an authenticating proxy; said at boot, on `/health`, on `/auth/config` and by `aughor doctor`; the suite
   declares it in `tests/conftest.py`. A3: no access decision reads the tier — the gate, the role ceiling and the row
   policy all dropped `RBAC_SSO`; three tests that asserted the inert behaviour now assert the opposite. Receipt printed
-  from the app the same day (`docs/TENX_PROGRAM_2026-11-05.md` §3, Track A). Next: A4 (five-valued ownership), A5, A8.
+  from the app the same day (`docs/TENX_PROGRAM_2026-11-05.md` §3, Track A).
+- **Track A4–A5 BUILT 2026-11-05** (the user: *"Build A4 and A5"*). A4: ownership has five answers — OWNED · SHARED ·
+  FOREIGN · NOT_FOUND · UNRESOLVED — and only the first two allow; `None` used to be four of them, all allowed. A
+  missing id is 404 *"or not yours"*, a resolver that fails or a kind with no resolver is 503 *"refusing rather than
+  guessing"* (503, not the program's 404: an outage is not a missing id); shared is by record — a builtin id, a
+  `domain:` carrier, a document the resolver marks `""`. The property test drives every kind the agent registered
+  through a resolver that raises. A5: only a named person bootstraps as an organisation's first owner — `anonymous`
+  (an org header with no user) and a service principal never do, and a refused bootstrap leaves the organisation
+  claimable. Receipt printed from the app the same day. Next: A6–A9, then Track D.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

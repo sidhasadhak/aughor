@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
 from fastapi import HTTPException, Request
@@ -202,63 +203,133 @@ def acting_person(principal, named: str = "") -> str:
 
 # ── Ownership resolution: resource → connection → org ────────────────────────────
 
-def _resource_org(kind: str, resource_id: str) -> Optional[str]:
-    """The org that owns a resource, or None when it can't be determined (missing
-    resource, or a shared builtin connection).
+class Ownership(str, Enum):
+    """What a resource is to a principal — five answers, because ``None`` used to be four of them.
 
-    Every resource resolves its tenant through its connection — ``connections`` is
-    the one table that carries ``org_id`` (DATA-06). Monitors, alerts and brief
-    subscriptions all key by ``conn_id``, so the resolution is uniform.
+    Until Track A4 (2026-11-05, `docs/TENX_PROGRAM_2026-11-05.md` §1.1) the resolver returned an
+    org id or ``None``, and ``None`` meant a shared builtin, a missing id, a kind with no resolver
+    registered, or a resolver that raised — and every one of them was ALLOWED. The form here is
+    PipesHub's rule (`docs/connectors/06-permissions.md`): "unknown is not empty", and a check that
+    cannot answer raises rather than returning an empty or a full answer. Only the first two allow.
     """
-    from aughor.db.registry import get_connection_org
+    OWNED = "owned"            #: the principal's own organisation owns it
+    SHARED = "shared"          #: a shared builtin, or a resource that belongs to no organisation BY RECORD
+    FOREIGN = "foreign"        #: another organisation's
+    NOT_FOUND = "not_found"    #: no such resource — said here, before the door's own 404
+    UNRESOLVED = "unresolved"  #: no resolver for the kind, or the resolver failed — refused, never guessed
+
+
+#: What a resolver says about a resource: ``("org", <id>)``, ``("shared", None)`` or ``("missing", None)``.
+_Owner = tuple[str, Optional[str]]
+
+#: The prefix an ontology-domain id carries where a connection id is expected. The same string as
+#: ``aughor.ontology.overrides.DOMAIN_CARRIER`` — spelled here because the platform must not import the
+#: agent (`tests/unit/test_platform_agent_boundary.py`); `test_ownership_is_five_valued` holds the two equal.
+DOMAIN_CARRIER = "domain:"
+
+
+def _connection_owner(conn_id: Optional[str]) -> _Owner:
+    """A connection's owner by RECORD: its ``org_id`` when it has one; shared when it is a builtin (same id
+    on every install) or a saved connection with no organisation; missing when nothing holds that id."""
+    if not conn_id:
+        return ("missing", None)
+    # A ``domain:<name>`` id names an organisation's own ontology domain, read inside the caller's org
+    # context, not a connection: there is no row to own, and the org binding is the boundary. Shared,
+    # by the record that the id carries its kind.
+    if conn_id.startswith(DOMAIN_CARRIER):
+        return ("shared", None)
+    from aughor.db.registry import get_connection_org, is_registered
+    org = get_connection_org(conn_id)
+    if org:
+        return ("org", org)
+    return ("shared", None) if is_registered(conn_id) else ("missing", None)
+
+
+def _owner_of(kind: str, resource_id: str) -> _Owner:
+    """Who owns a resource, through its connection — ``connections`` is the one table that carries
+    ``org_id`` (DATA-06), and monitors, alerts and brief subscriptions all key by ``conn_id``, so the
+    resolution is uniform. Raises when it cannot answer; the caller says so."""
     if kind == "connection":
-        return get_connection_org(resource_id)
+        return _connection_owner(resource_id)
     if kind == "canvas":
         from aughor.canvas.store import resolve_connection_id
         conn_id = resolve_connection_id(resource_id)
-        return get_connection_org(conn_id) if conn_id else None
+        return _connection_owner(conn_id) if conn_id else ("missing", None)
     if kind == "investigation":
         from aughor.db.history import get_investigation
         inv = get_investigation(resource_id)
-        conn_id = (inv or {}).get("connection_id")
-        return get_connection_org(conn_id) if conn_id else None
+        if inv is None:
+            return ("missing", None)
+        conn_id = inv.get("connection_id")
+        return _connection_owner(conn_id) if conn_id else ("shared", None)
     if kind == "saved_query":
         from aughor.savedquery.store import get_saved_query
         q = get_saved_query(resource_id)
-        return get_connection_org(q.connection_id) if q and q.connection_id else None
+        if q is None:
+            return ("missing", None)
+        return _connection_owner(q.connection_id) if q.connection_id else ("shared", None)
     # Agent-owned resources live in agent stores the platform must not import — the Agent
     # registers resolvers in the registry at bootstrap. A resource that carries its OWN owner
     # (a document, PENDING item 16: an upload belongs to the org that indexed it, a schema doc
-    # to its connection's org, a shared builtin's to none) resolves straight to its org; the
-    # rest (monitor / alert / brief subscription) resolve to a connection, and conn→org here
-    # (org lives on the connection). Bare platform (no agent) → no resolver → None → allow.
+    # to its connection's org, a shared builtin's to none — "") resolves straight to its org;
+    # the rest (monitor / alert / brief subscription) resolve to a connection, and conn→org
+    # here. A kind nobody registered a resolver for is UNRESOLVED, not allowed: the bare
+    # platform cannot own-check an agent's resource, and saying so beats guessing.
     from aughor.kernel.registries import resource_org as _rreg
     if _rreg.resolves_org(kind):
-        return _rreg.resolve_resource_org(kind, resource_id)
+        org = _rreg.resolve_resource_org(kind, resource_id)
+        if org is None:
+            return ("missing", None)
+        return ("org", org) if org else ("shared", None)
+    if not _rreg.resolves_conn(kind):
+        raise LookupError(f"no ownership resolver is registered for {kind!r}")
     conn_id = _rreg.resolve_resource_conn(kind, resource_id)
-    return get_connection_org(conn_id) if conn_id else None
+    return _connection_owner(conn_id) if conn_id else ("missing", None)
+
+
+def resolve_ownership(kind: str, resource_id: Optional[str], principal: Optional[Principal]) -> Ownership:
+    """What ``resource_id`` is to ``principal``. ``OWNED`` in localhost mode (``principal is None``: identity
+    is not enforced and one operator owns everything). A resolver that raises is ``UNRESOLVED`` — logged,
+    counted, and never read as either empty or shared."""
+    if principal is None:
+        return Ownership.OWNED
+    if not resource_id:
+        return Ownership.NOT_FOUND
+    try:
+        state, org = _owner_of(kind, resource_id)
+    except Exception as exc:  # noqa: BLE001 — any failure to answer is the same answer: refuse
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, f"ownership of {kind} {resource_id!r} could not be resolved; refusing",
+                 counter=f"authz.unresolved.{kind}")
+        return Ownership.UNRESOLVED
+    if state == "org":
+        return Ownership.OWNED if org == principal.org_id else Ownership.FOREIGN
+    if state == "shared":
+        return Ownership.SHARED
+    return Ownership.NOT_FOUND
 
 
 def authorize_resource(kind: str, resource_id: Optional[str], principal: Optional[Principal]) -> bool:
-    """True if ``principal`` may act on the resource.
-
-    No-op (True) in localhost mode: ``principal is None`` means identity isn't
-    being enforced. A resource whose org can't be resolved (missing, or a shared
-    builtin) is allowed here — the handler's own 404 covers a missing id, and we
-    don't want to 403 the shared builtins.
-    """
-    if principal is None:
-        return True
-    owner_org = _resource_org(kind, resource_id) if resource_id else None
-    if owner_org is None:
-        return True
-    return owner_org == principal.org_id
+    """True if ``principal`` may act on the resource: it is theirs, or shared by record. Nothing else —
+    not a missing id, not a kind without a resolver, not a resolver that failed (Track A4)."""
+    return resolve_ownership(kind, resource_id, principal) in (Ownership.OWNED, Ownership.SHARED)
 
 
 def check_owner(kind: str, resource_id: Optional[str], principal: Optional[Principal]) -> None:
-    """Raise 403 when ``principal`` doesn't own the resource; no-op in localhost mode."""
-    if not authorize_resource(kind, resource_id, principal):
+    """Refuse unless ``principal`` may act on the resource; no-op in localhost mode.
+
+    Each refusal says which it is: 403 for another organisation's, 404 for one that is not here, 503 for
+    one whose owner could not be resolved — the last is an outage to fix, not a missing id, and a 404
+    there would send someone looking for a resource that exists."""
+    state = resolve_ownership(kind, resource_id, principal)
+    if state in (Ownership.OWNED, Ownership.SHARED):
+        return
+    if state is Ownership.FOREIGN:
         raise HTTPException(status_code=403, detail=f"forbidden: {kind} belongs to another org")
+    if state is Ownership.NOT_FOUND:
+        raise HTTPException(status_code=404, detail=f"no such {kind} here, or not yours")
+    raise HTTPException(status_code=503,
+                        detail=f"could not resolve who owns this {kind}; refusing rather than guessing")
 
 
 def connection_owner_guard(request: Request) -> None:

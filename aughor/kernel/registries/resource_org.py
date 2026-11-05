@@ -11,11 +11,13 @@ registers a ``kind -> (resource_id -> conn_id | None)`` resolver here at startup
 (``agent.bootstrap.register_agent_plugins``); ``authz`` consults the registry for any
 kind it doesn't resolve itself.
 
-With nothing registered the platform simply can't own-check those kinds — the
-bare-platform degrade — which is safe: ``authz`` treats an unresolvable org as
-"allow" (a shared/unknown resource), and the handler's own 404 still covers a
-missing id. It is a *tightening* seam: registering a resolver can only add 403s, and
-never for the localhost/identity-off path (that short-circuits before resolution).
+With nothing registered the platform cannot own-check those kinds — and since Track A4
+(2026-11-05) ``authz`` says so and REFUSES, rather than reading an unresolvable owner
+as "allow": a kind without a resolver is ``UNRESOLVED``, a resolver that raises is
+``UNRESOLVED`` (the failure is logged and counted here, then re-raised so the caller
+cannot mistake it for "no owner"), and ``None`` from a resolver means exactly one
+thing: the resource does not exist. Never for the localhost/identity-off path, which
+short-circuits before resolution.
 """
 from __future__ import annotations
 
@@ -34,17 +36,22 @@ def register_resource_conn_resolver(kind: str, fn: ConnResolver) -> None:
     _RESOLVERS[kind] = fn
 
 
+def resolves_conn(kind: str) -> bool:
+    return kind in _RESOLVERS
+
+
 def resolve_resource_conn(kind: str, resource_id: str) -> Optional[str]:
-    """The connection id owning a resource, via the registered resolver — or None if
-    no resolver is registered (bare platform) or resolution fails (best-effort)."""
+    """The connection id owning a resource, via the registered resolver; ``None`` when the resource
+    does not exist. Raises ``LookupError`` when no resolver is registered for the kind, and re-raises
+    a resolver's own failure after logging it — neither is "no owner"."""
     fn = _RESOLVERS.get(kind)
     if fn is None:
-        return None
+        raise LookupError(f"no connection resolver is registered for {kind!r}")
     try:
         return fn(resource_id)
     except Exception as e:
         tolerate(e, f"resource-conn resolver {kind!r}", counter=f"authz.resolver.{kind}")
-        return None
+        raise
 
 
 OrgResolver = Callable[[str], Optional[str]]
@@ -66,16 +73,17 @@ def resolves_org(kind: str) -> bool:
 
 
 def resolve_resource_org(kind: str, resource_id: str) -> Optional[str]:
-    """The org owning a resource, via its registered org resolver — None when none is registered, the resource is
-    shared, or resolution fails (best-effort, like `resolve_resource_conn`)."""
+    """The org owning a resource, via its registered org resolver: an org id, ``""`` for a resource that
+    belongs to no organisation by record (shared), ``None`` for one that does not exist. Raises
+    ``LookupError`` when no resolver is registered, and re-raises a resolver's failure after logging it."""
     fn = _ORG_RESOLVERS.get(kind)
     if fn is None:
-        return None
+        raise LookupError(f"no org resolver is registered for {kind!r}")
     try:
         return fn(resource_id)
     except Exception as e:
         tolerate(e, f"resource-org resolver {kind!r}", counter=f"authz.org_resolver.{kind}")
-        return None
+        raise
 
 
 def registered_kinds() -> list[str]:

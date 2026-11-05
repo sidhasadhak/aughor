@@ -127,7 +127,7 @@ def test_indexing_stamps_the_owner_and_a_reindex_keeps_it(monkeypatch, tmp_path)
     assert idx.get_document("doctree::connA::main")["connection_id"] == "connA"
     assert idx.get_document("doctree::samples::main")["org_id"] == ""         # every org's
     assert idx.document_org("u9") == "orgA"
-    assert idx.document_org("doctree::samples::main") is None
+    assert idx.document_org("doctree::samples::main") == ""     # shared by record (Track A4): "", never None
     assert idx.document_org("never-registered") is None
 
 
@@ -139,7 +139,7 @@ def test_the_by_id_doors_refuse_another_organisations_document(corpus):
 
     assert authorize_resource("document", "u2", a_user_in_org_a) is False
     assert authorize_resource("document", "doctree::samples::main", a_user_in_org_a) is True
-    assert authorize_resource("document", "missing", a_user_in_org_a) is True  # the door's 404
+    assert authorize_resource("document", "missing", a_user_in_org_a) is False  # NOT_FOUND refuses (Track A4)
     assert authorize_resource("document", "u2", None) is True                  # sign-in off
 
 
