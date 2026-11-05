@@ -1175,6 +1175,12 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       the engine's words (a CTE's alias, a CASE over parameters planned as `sum(text)`, a CTE column); **0 join
       candidates — every join in the history is in the graph**, and the history is Aughor's own SQL so far: the
       falsifier (no join the map lacked, on two connections) is not decided until the ETL's nightly statements are in.
+      *2026-11-05 07:10 UTC, after the ETL's 02:47 load (the user: "Yes, tomorrow"):* 1,247 statements and 28,286 calls
+      on record, 424 of them the ETL's writes; the door read 823 SELECTs (21,067 calls), mined 25, bound 19 — and
+      **0 join candidates again: every one of the 22 joins the history uses is in the graph.** On the one connection
+      with a readable history the falsifier HOLDS: the reader stays a connector method and the candidate door proposes
+      measures, not joins. The second connection the clause asks for (theLook) still waits on the `bigquery.jobs.list`
+      binding. Arc NV itself MERGED 2026-11-05 in #642 (`f65b21c9`), the branch's thirteen commits squashed.
       Not yet right: a formula's parameters renumber in walk order (`$2` before `$1` in the text) — cosmetic.
     - [x] NV-5 a feature's prerequisite on the engine, said and provisioned (the user, 2026-11-04: *"make sure that
       similar features like pg_stat_statements are enabled by default in our platform"*): what each engine needs before
