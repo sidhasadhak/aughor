@@ -336,6 +336,36 @@ def load_semantic_types(connection_id: str) -> dict[tuple[str, str], str]:
     return out
 
 
+def load_column_facts(connection_id: str) -> dict[tuple[str, str], dict]:
+    """Arc NV-6 — the profiled facts a SQL check reads at the comparison, keyed (table, column): the column's type, a text
+    column's date notation (`date_format`) or the note that withheld one, the measured value range and what the values
+    mean (`value_interpretation`). Newest fingerprint wins, for the reason spelled out on :func:`load_concepts`. Read-only;
+    an unreadable cache is an empty dict, never a raise."""
+    out: dict[tuple[str, str], dict] = {}
+    try:
+        cache = _load()
+    except Exception:
+        return out
+    prefix = f"{connection_id}:"
+    for k, entry in cache.items():
+        if not k.startswith(prefix):
+            continue
+        for d in (entry.get("columns") or {}).values():
+            tbl, col = d.get("table"), d.get("column")
+            if not (tbl and col):
+                continue
+            vr = d.get("value_range")
+            out[(str(tbl), str(col))] = {
+                "dtype": str(d.get("dtype") or ""),
+                "format": str(d.get("date_format") or ""),
+                "format_note": str(d.get("date_format_note") or ""),
+                "value_range": (float(vr[0]), float(vr[1])) if isinstance(vr, (list, tuple)) and len(vr) == 2
+                               and vr[0] is not None and vr[1] is not None else None,
+                "value_interpretation": str(d.get("value_interpretation") or ""),
+            }
+    return out
+
+
 def save_profiles(
     connection_id: str,
     fingerprint: str,
@@ -348,6 +378,13 @@ def save_profiles(
         "columns": {k: cp.to_dict() for k, cp in column_profiles.items()},
     })
     _store.trim_prefix(f"{connection_id}:", _MAX_PER_CONNECTION)
+    # Arc NV-6 — the SQL checks read these profiles' facts through a per-process cache; a new profile is read again.
+    try:
+        from aughor.sql.trust_checks import forget_column_facts
+        forget_column_facts(connection_id)
+    except Exception as exc:  # noqa: BLE001 — a stale fact cache costs a check its notation until the next restart
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the column-facts cache could not be dropped after a profile save", counter="trust.e1_colfacts")
 
 
 def invalidate(connection_id: str) -> None:
