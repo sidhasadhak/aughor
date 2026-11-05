@@ -12901,6 +12901,20 @@ user!"* The canvas mockup on live LuxExperience data was accepted (*"Whats next?
   claims) is read by the Briefing and put in every question's context with the platform's earlier work; an exploration
   run now asks up to 300 questions of a dataset across its domains (it asked 15).
 
+### 3.68 · The 10× program — the enterprise foundation under the intelligence loop (DRAFTED 2026-11-05 as `docs/TENX_PROGRAM_2026-11-05.md`; not yet adopted)
+
+An outside *Enterprise Architecture, Security and Engineering Assessment* (2026-11-04, written from public files, no
+clone) was checked finding by finding against `main` at `11aa35b0`; the user set four architecture decisions beside it;
+PipesHub (`pipeshub-ai/pipeshub-ai`) was read for the three designs it has that the assessment only asked for. The
+program doc holds the measured premise (§1: what the assessment got right, what is stale, the two holes it missed —
+`/slack-bots/runtime` lists every organisation's tokens, and identity-required without an issuer is a spoofable header
+identity), the decisions adopted with the code's corrections (§2), seven tracks with an exit, a falsifier and a
+starvation gate each (§3: close the doors · one truth · authority rides the job · data stays home · separate processes ·
+release gates · the loop), the sequence (§4) and the decisions only the user can make (§7: the identity provider, a
+second host, a second organisation, Postgres as default, PipesHub as a context source). Its thesis: hardening a platform
+one person uses does not 10× it; it makes it safe for ten — so no week in which the foundation tracks take more than
+half the time until the study's phase-0 install exists. **Open:** the user's adoption (§6), then Track A1–A3 first.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
