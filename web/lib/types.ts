@@ -182,6 +182,9 @@ export interface InvestigationFinding {
   /** Chart-grammar exhibit spec — semantic color / ref lines /
    *  point labels. Absent → legacy rendering. */
   exhibit?: import("@/components/charts/exhibit").ExhibitSpec;
+  /** 2026-11-06 — `names`: what the model's cryptic columns read as, from their SQL
+   *  (`aughor/answer/series_names.py`). Absent on a finding from before it. */
+  chart_config?: Record<string, unknown>;
 }
 
 export interface InvestigationPhase {

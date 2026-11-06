@@ -361,9 +361,27 @@ class EnvelopeFolder:
                                 note=str(f.get("note") or ""))
                          for f in (rep.get("figures") or []) if isinstance(f, dict) and str(f.get("value") or "").strip()]
         self._gaps = " ".join(str(rep.get("gaps") or "").split())
-        self._exhibits = _exhibits_of(rep)
+        self._exhibits = _exhibits_of(rep, connection_id=self.connection_id)
 
     # ── the envelope ──
+    def _named_main(self, grid: Grid) -> dict:
+        """The main result's chart config with the names its cryptic columns read as: the cited
+        result's with the same columns when there is one, else read from the statements that ran."""
+        config = dict(self._chart_config or {})
+        if "names" in config:
+            return config
+        same = next((e for e in self._exhibits if e.grid.columns == grid.columns
+                     and "names" in (e.chart.chart_config or {})), None)
+        if same is not None:
+            config["names"] = same.chart.chart_config["names"]
+            return config
+        from aughor.answer.series_names import connection_metrics, cryptic, names_for
+        if any(cryptic(c) for c in grid.columns) and self._sql:
+            names = names_for(grid.columns, self._sql, metrics=connection_metrics(self.connection_id))
+            if names:
+                config["names"] = names
+        return config
+
     def finish(self) -> AnswerEnvelope:
         head_text, lifted_h = lift_tables(self._headline)
         body, lifted_b = lift_tables(self._narrative or self._summary)
@@ -390,7 +408,7 @@ class EnvelopeFolder:
         chart = None
         if grid is not None:
             chart = ChartDecision(chart_type=self._chart_type or "auto",
-                                  chart_config=self._chart_config)
+                                  chart_config=self._named_main(grid))
         elif self._exhibits:
             # A door that takes "the grid once" (Slack) takes the first result the answer
             # rests on, captioned by its claim — the exhibit the canvas draws first.
@@ -430,7 +448,21 @@ class EnvelopeFolder:
 EXHIBIT_ROWS = 50
 
 
-def _exhibits_of(rep: dict) -> list[Exhibit]:
+def _named_config(finding: dict, columns: list[str], connection_id: str) -> dict:
+    """The names a result's cryptic columns read as (`answer/series_names.py`): the finding's own
+    when the analyst recorded them, else read now from its SQL — a run from before 2026-11-06."""
+    config = dict(finding.get("chart_config") or {}) if isinstance(finding.get("chart_config"), dict) else {}
+    if "names" not in config:
+        from aughor.answer.series_names import connection_metrics, cryptic, names_for
+        if any(cryptic(c) for c in columns) and finding.get("sql"):
+            names = names_for(columns, [str(finding["sql"])],
+                              metrics=connection_metrics(connection_id))
+            if names:
+                config["names"] = names
+    return config
+
+
+def _exhibits_of(rep: dict, *, connection_id: str = "") -> list[Exhibit]:
     """The results a concluded report cites (`exhibits`), in the order the answer reaches them,
     each with its claim, its rows (capped as the canvas caps them), the picture the finding
     wants, and the caveats of the phase that produced it. A cited id the report no longer holds
@@ -457,7 +489,8 @@ def _exhibits_of(rep: dict) -> list[Exhibit]:
             continue
         claim = " ".join(str(e.get("claim") or "").split())
         out.append(Exhibit(claim=claim, grid=Grid(columns=columns, rows=rows, caption=claim),
-                           chart=ChartDecision(chart_type=str(f.get("chart_type") or "auto")),
+                           chart=ChartDecision(chart_type=str(f.get("chart_type") or "auto"),
+                                               chart_config=_named_config(f, columns, connection_id or str(rep.get("connection_id") or ""))),
                            caveats=[c for c in _strs(phase.get("caveats")) if c]))
     return out
 

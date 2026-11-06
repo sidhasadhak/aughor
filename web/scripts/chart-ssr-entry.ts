@@ -22,6 +22,7 @@ import { resolveTier3Spec, TIER3_TYPES } from "../components/charts/vega/tier3";
 import { inferChartType } from "../components/charts/chartTypeInference";
 import { buildVegaConfig, buildVegaRuntimeConfig, printVegaTokens } from "../components/charts/vega/config";
 import { setCurrentDataset, setDataCurrency } from "../lib/orgSettings";
+import { namesOf } from "../components/charts/vega/names";
 
 interface ChartRequest {
   columns?: string[];
@@ -39,6 +40,27 @@ interface ChartRequest {
 const TOKENS = printVegaTokens();
 const VL_CONFIG = buildVegaConfig(TOKENS);
 const VEGA_CONFIG = buildVegaRuntimeConfig(TOKENS);
+
+/**
+ * A title longer than the chart is wide is broken into lines (three at most). Vega-Lite sizes the
+ * view around a one-line title, so the Daily Briefing's finding sentence as a title squeezed a line
+ * chart into a third of its width (measured 2026-11-06). The width is known only here.
+ */
+function wrapTitle<T>(spec: T, width: number): T {
+  const title = (spec as { title?: unknown }).title;
+  if (typeof title !== "string") return spec;
+  const perLine = Math.max(24, Math.floor(width / 8.6));      // the title's 16px semibold, measured
+  if (title.length <= perLine) return spec;
+  const lines: string[] = [];
+  let line = "";
+  for (const word of title.split(/\s+/)) {
+    if (line && (line + " " + word).length > perLine) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  const kept = lines.length > 3 ? [...lines.slice(0, 2), `${lines.slice(2).join(" ").slice(0, perLine - 1)}…`] : lines;
+  return { ...spec, title: kept } as T;
+}
 
 async function renderOne(req: ChartRequest): Promise<string | null> {
   const columns = req.columns ?? [];
@@ -97,6 +119,7 @@ async function renderOne(req: ChartRequest): Promise<string | null> {
 
   const resolved = resolveVegaSpec({
     columns, rows, chartType,
+    names: namesOf(req.chart_config),
     exhibit: req.exhibit ?? null,
     columnUnits: req.column_units ?? null,
     showLabels: req.labels !== false,
@@ -105,7 +128,7 @@ async function renderOne(req: ChartRequest): Promise<string | null> {
   if (!resolved) return null;
 
   const height = req.height && req.height > 0 ? req.height : Math.min(Math.max(resolved.defaultH, 200), 560);
-  const compiled = vl.compile({ ...resolved.spec, width, height } as Parameters<typeof vl.compile>[0],
+  const compiled = vl.compile({ ...wrapTitle(resolved.spec, width), width, height } as Parameters<typeof vl.compile>[0],
                               { config: VL_CONFIG }).spec;
   const view = new vega.View(vega.parse(compiled), { renderer: "none" });
   const svg = await view.toSVG();

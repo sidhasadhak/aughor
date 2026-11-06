@@ -524,6 +524,17 @@ const KIND_HUE: Record<string, string> = {
   integration_call: "var(--chart-7)",
 };
 
+/** A Slack step's picture setting, as the node face says it. */
+export function pictureSummary(config: Record<string, unknown>): string {
+  const picture = String(config.picture || "chart");
+  if (picture === "none") return "picture: none";
+  const from = { main: "", over_time: " · over time", every: " · every result" }[String(config.picture_from || "main")] ?? "";
+  if (picture === "table") return `picture: table${from}`;
+  const kind = { auto: "auto", bar: "bars", bar_horizontal: "horizontal bars", line: "line", pie: "pie",
+                 counter: "number" }[String(config.chart_kind || "auto")] ?? String(config.chart_kind);
+  return `picture: chart · ${kind}${from}`;
+}
+
 function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
   const handlers = useContext(NodeHandlersContext);
   // Operator WORDS come from the server's vocabulary (cached module-side, so N nodes
@@ -644,6 +655,12 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
             </div>
           );
         })}
+        {data.kind === "slack_post" && (
+          // 2026-11-06 — what the post's picture is, in a word (`automations/WhatGetsPosted.tsx`).
+          <span className="aug-fs-xs" data-testid="node-picture" style={{ color: "var(--t3)" }}>
+            {pictureSummary(data.config)}
+          </span>
+        )}
       </div>
 
       {/* W1 — "only if", with a port of its own. An input port that DECIDES rather than
@@ -1437,6 +1454,10 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
     const nodes: RFNode[] = [{
       id: "__trigger",
       type: "designTrigger",
+      // The selection rides the rebuild: every draft edit makes new node objects, and a node
+      // without `selected` reads to React Flow as deselected — the inspector closed on every
+      // change made in it (found driving the What gets posted panel, 2026-11-06).
+      selected: selectedAlias === "__trigger",
       measured: sizes["__trigger"],
       position: livePos["__trigger"] ?? positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
@@ -1445,6 +1466,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
+      selected: selectedAlias === s.alias,
       measured: sizes[s.alias],
       position: livePos[s.alias] ?? positions[s.alias] ?? { x: 260 + i * (NODE_W + 90), y: 0 },
       data: {
@@ -1517,7 +1539,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, positions, livePos, vocab, automation, sizes, runningTo]);
+  }, [draft, positions, livePos, vocab, automation, sizes, runningTo, selectedAlias]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -1944,6 +1966,8 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
               logicLabel={(automation?.condition_logic ?? "all") === "all"
                 ? "all match" : "any match"}
               onClose={() => setSelectedAlias(null)}
+              automationId={automationId}
+              onSelect={setSelectedAlias}
             />
           )}
         </div>

@@ -13165,6 +13165,34 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   (delivered · uncertain · not_delivered); those counts skip what did not arrive, and Departures says *departed — not
   delivered*. A ratchet holds every gated send to telling its transport which departure it is.
 
+### 3.70 · What gets posted — a person's say over every scheduled post (BUILT 2026-11-06 at the user's *"What the hell is r29 r28? … how do I, as a user, be able to modify this from the UI?"* and *"User should be able to control everything that gets posted in general — the prompt, the picture or not, what kind of picture"* · mockup `design-mockups/automation-what-gets-posted.html`, the user: *"Build as mocked"*)
+
+The Daily Briefing's 09:00 post carried a chart titled with the automation's name, its legend `r28 · r29`
+over an axis called "Value": the analyst had aliased revenue on Oct 28 and Oct 29 that way, and the
+engine chose the picture alone. Two halves, one build:
+
+- **Readable by default.** `answer/series_names.py` reads what a cryptic column IS from its own SQL —
+  `SUM(IF(DATE(created_at)='2026-10-29', sale_price, 0)) r29` is "Oct 29" — names measures that differ
+  only by a condition by what differs and the axis by what they share, and gives the axis a governed
+  metric's label only when the query computes that metric, filter and all (SUM(sale_price) without the
+  revenue metric's status filter is "Sale price"). The names are DISPLAY labels laid over the resolved
+  spec (`web/components/charts/vega/names.ts`), never renamed columns: a column renamed "Oct 28" was
+  read as a date and the chart lost a series (measured). The finding carries them (the Data Canvas), the
+  answer's results carry them (Slack, the export), and an older run is named on demand from its SQL. A
+  long title wraps instead of squeezing the plot to a third of its width.
+- **The step's own settings.** A Slack step's inspector widens into *What gets posted*: the question it
+  answers (opened on its own step), the words (summary · headline · both · own words — bindings the
+  canvas draws), picture none · table · chart, the kind of chart (only what the result can take; the
+  rest said with why), drawn from a rule (main · over time · every result — the investigation writes
+  new results each run), the title, and the names. `automations/picture.plan` is read by the post AND
+  by `POST /automations/{id}/picture-preview`, which draws the step's post from the last fired run,
+  read-only — so the preview is what posts. A kind the next run's rows cannot take is drawn as auto and
+  says why on the picture; "Bars" over several series is the grouped form (the plain bar drew one and
+  dropped the other — found in the preview).
+
+Found on the way and fixed: the automation canvas rebuilt its nodes on every edit without their
+selection, so ANY change made in the step inspector closed it.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

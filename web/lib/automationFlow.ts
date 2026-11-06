@@ -187,6 +187,9 @@ export interface FlowEdgeSpec {
 }
 
 /** The pseudo-field a guard edge lands on. Not a config key — the guard is not one. */
+/** The deep-analysis step's KIND — a wire literal (`automations/models.py`), spelled once here. */
+export const ANALYSIS_KIND = "investigate";
+
 export const GUARD_FIELD = "__guard";
 
 /** W2 — the pseudo-field a fan-out's SOURCE edge lands on. A list is not a config field

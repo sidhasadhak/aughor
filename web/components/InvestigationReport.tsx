@@ -72,6 +72,8 @@ interface InvestigationFinding {
   exhibit?: import("@/components/charts/exhibit").ExhibitSpec | null;  // chart-grammar semantics
   claim?: string | null;     // CA-4: the one-sentence claim — the chart's title when present
   subtitle?: string | null;  // CA-4: scope · period · unit under the claim
+  /** 2026-11-06 — `names`: what the model's cryptic columns read as (`answer/series_names.py`). */
+  chart_config?: Record<string, unknown>;
 }
 
 interface InvestigationPhase {
@@ -291,7 +293,7 @@ function EvidenceBlock({ finding, onShowSource, answer = "", repeat = false }: {
         <BriefFigure caption={headline} subcaption={finding.subtitle?.trim() || undefined}>
           {/* Deep Analysis chart — renders clean; the hover pencil opens the side-panel
               viz editor (chart type / fields / transform / labels), Databricks-style. */}
-          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={headline} chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
+          <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={headline} chartType={finding.chart_type} chartConfig={finding.chart_config} columnUnits={finding.column_units} exhibit={finding.exhibit} defaultShowLabels />
         </BriefFigure>
       )}
 
@@ -550,8 +552,8 @@ function Exhibit({ n, finding, claim, answer, onShowSource }: {
       </div>
       {hasChart && (
         <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={caption}
-                         chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit}
-                         defaultShowLabels onViewChange={setCardView} />
+                         chartType={finding.chart_type} chartConfig={finding.chart_config} columnUnits={finding.column_units}
+                         exhibit={finding.exhibit} defaultShowLabels onViewChange={setCardView} />
       )}
       {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} answer={answer} />}
       {warning && <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {warning}</div>}

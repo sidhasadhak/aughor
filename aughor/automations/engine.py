@@ -740,12 +740,17 @@ def chart_grid(effect: Effect, context: dict) -> dict:
             raw_rows = g.get("rows")
             if cols and isinstance(raw_rows, list) and raw_rows:
                 chart = env.get("chart") if isinstance(env.get("chart"), dict) else {}
-                return {"columns": cols,
+                main = {"columns": cols,
                         "rows": [list(r) if isinstance(r, (list, tuple))
                                  else [r.get(c) for c in cols] for r in raw_rows
                                  if isinstance(r, (list, tuple, dict))],
                         "chart_type": str(chart.get("chart_type") or "auto"),
                         "chart_config": dict(chart.get("chart_config") or {})}
+                # 2026-11-06 — every result the answer cites, the main first, each with its own
+                # sentence: what a step's `picture_from` chooses among (`automations/picture.py`).
+                results = _envelope_results(env, main)
+                return {**main, "claim": results[0]["claim"], "results": results,
+                        "sql": [str(s) for s in ((env.get("provenance") or {}).get("sql") or [])]}
         columns = [str(c) for c in (entry.get("columns") or [])]
         raw = entry.get("rows")
         if not columns or not isinstance(raw, list) or not raw:
@@ -759,6 +764,32 @@ def chart_grid(effect: Effect, context: dict) -> dict:
         if rows:
             return {"columns": columns, "rows": rows}
     return {}
+
+
+def _envelope_results(env: dict, main: dict) -> list[dict]:
+    """The main grid, then every other result the envelope cites, each ``{claim, columns, rows,
+    chart_type, chart_config}``. The main's sentence is its own result's claim when it is one of
+    them, else the answer's headline."""
+    out = [dict(main, claim="")]
+    for ex in env.get("exhibits") or []:
+        g = (ex or {}).get("grid") or {}
+        cols = [str(c) for c in (g.get("columns") or [])]
+        rows = [list(r) for r in (g.get("rows") or []) if isinstance(r, (list, tuple))]
+        if not cols or not rows:
+            continue
+        chart = (ex.get("chart") or {}) if isinstance(ex.get("chart"), dict) else {}
+        claim = str(ex.get("claim") or "")
+        if cols == main["columns"] and not out[0]["claim"]:
+            out[0]["claim"] = claim
+            if "names" in (chart.get("chart_config") or {}) and "names" not in out[0]["chart_config"]:
+                out[0]["chart_config"] = {**out[0]["chart_config"], "names": chart["chart_config"]["names"]}
+            continue
+        out.append({"claim": claim, "columns": cols, "rows": rows,
+                    "chart_type": str(chart.get("chart_type") or "auto"),
+                    "chart_config": dict(chart.get("chart_config") or {})})
+    if not out[0]["claim"]:
+        out[0]["claim"] = str(env.get("headline") or "")
+    return out
 
 
 def departure_basis(effect: Effect, context: dict) -> dict:
@@ -987,6 +1018,7 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
     if not channel_id:
         return
     try:
+        from aughor.automations import picture
         from aughor.export.echarts import render_chart_svg, svg_to_png
         from aughor.slackbots.post import upload_file
 
@@ -994,38 +1026,41 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
         if automation.conn_id:
             from aughor.routers.investigations import resolve_currency_symbol
             money = resolve_currency_symbol(automation.conn_id, None) or ""
-        capped = rows[:_CHART_MAX_ROWS]
-        # CP-4 — the decision is the core's when the grid came with one (an envelope);
-        # `auto` is what a bare grid always meant. The encoding below stays this door's.
-        decided = str(grid.get("chart_type") or "auto")
-        exhibit = (grid.get("chart_config") or {}).get("exhibit")
-        svg = render_chart_svg(columns, capped, decided, automation.name or "",
-                               exhibit=exhibit if isinstance(exhibit, dict) else None,
-                               money_symbol=money)
-        if not svg and _ranked_magnitudes(columns, capped):
-            # The headless renderer is Vega ONLY, and Vega draws six types; the browser
-            # falls back to ECharts for the rest. `auto` sends a category plus an ADDITIVE
-            # measure at 7-24 rows to a treemap (`chartTypeInference.ts`), which Vega
-            # refuses — so the most ordinary business grid there is, "top sellers by
-            # revenue", renders nothing at all on every headless surface.
-            #
-            # The retry is deliberately NOT a blanket "try bar". Tier 1's refusal exists
-            # because falling through to bar drew a `scatter` as a bar chart: well-formed,
-            # correctly themed and entirely wrong. Bar is only honest here because the
-            # shape is already one label against one magnitude — the same ranked bar the
-            # inference comment says "reads the magnitudes directly". Anything else keeps
-            # the null and posts no picture.
-            svg = render_chart_svg(columns, capped, "bar", automation.name or "",
-                                   money_symbol=money)
-        png = svg_to_png(svg) if svg else None
-        if not png:
-            return
-        ok, up = upload_file(bot.bot_token, channel_id, data=png,
-                             filename="chart.png", title=automation.name or "chart",
-                             thread_ts=thread_ts or None)
-        if not ok:
-            logger.warning("slack chart upload failed for %s: %s",
-                           automation.id, up.get("error"))
+        # 2026-11-06 — the step's own settings decide the picture (`automations/picture.py`): none,
+        # a table or a chart, which kind, drawn from which result, titled how, named how. The
+        # preview on the step plans through the same function, so it shows what posts.
+        source = {**grid, "rows": rows[:_CHART_MAX_ROWS]}
+        for p in picture.plan(effect.config, source, automation_name=automation.name or "",
+                              connection_id=automation.conn_id or ""):
+            png = picture.render(p, money_symbol=money)
+            if not png and p["as"] == "chart" and _ranked_magnitudes(p["columns"], p["rows"]):
+                # The headless renderer is Vega ONLY, and Vega draws six types; the browser
+                # falls back to ECharts for the rest. `auto` sends a category plus an ADDITIVE
+                # measure at 7-24 rows to a treemap (`chartTypeInference.ts`), which Vega
+                # refuses — so the most ordinary business grid there is, "top sellers by
+                # revenue", renders nothing at all on every headless surface.
+                #
+                # The retry is deliberately NOT a blanket "try bar". Tier 1's refusal exists
+                # because falling through to bar drew a `scatter` as a bar chart: well-formed,
+                # correctly themed and entirely wrong. Bar is only honest here because the
+                # shape is already one label against one magnitude — the same ranked bar the
+                # inference comment says "reads the magnitudes directly". Anything else keeps
+                # the null and posts no picture.
+                svg = render_chart_svg(p["columns"], p["rows"], "bar", p["title"],
+                                       chart_config={"names": p["names"]} if p["names"] else None,
+                                       money_symbol=money)
+                png = svg_to_png(svg) if svg else None
+            if not png:
+                continue
+            # A kind the rows could not take says so on the file itself — a picture that quietly
+            # became another kind would read as the one asked for.
+            ok, up = upload_file(bot.bot_token, channel_id, data=png,
+                                 filename="table.png" if p["as"] == "table" else "chart.png",
+                                 title=p["note"] or p["title"] or automation.name or "chart",
+                                 thread_ts=thread_ts or None)
+            if not ok:
+                logger.warning("slack chart upload failed for %s: %s",
+                               automation.id, up.get("error"))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a scheduled post's chart is best-effort; the message already landed",
@@ -1058,7 +1093,20 @@ def _slack_message_text(effect: Effect, automation: Automation) -> str:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "a bound envelope that does not validate is not posted as itself",
                      counter="automations.envelope_render")
-    return str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    message = str(effect.config.get("message") or "")
+    # 2026-11-06 — "headline, then summary" (the What gets posted panel): the step binds the
+    # headline as a field of its own, so the canvas draws both bindings, and it leads the message.
+    headline = str(effect.config.get("headline") or "").strip()
+    if headline and message.strip() and message.strip().split("\n", 1)[0].strip() != headline:
+        message = f"{headline}\n\n{message}"
+    elif headline and not message.strip():
+        message = headline
+    return message or f"Automation '{automation.name}' fired"
+
+
+def slack_message_text(effect: Effect, automation: Automation) -> str:
+    """The text a Slack step posts, from its bound config — what its preview shows, too."""
+    return _slack_message_text(effect, automation)
 
 
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:

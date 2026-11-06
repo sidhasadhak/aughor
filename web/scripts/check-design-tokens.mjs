@@ -63,8 +63,9 @@ const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
  *  Activity, Gate map and Policies, redone to CLARITY. 444 → 463 the same day: Security's Activity lens was kept as
  *  it was (the user), and its 19 literals came back with it. 463 → 457 the same day: Agent Ops' Activity tab folded
  *  into the Overview, and the Usage view and the deep-run list it took with it went to CLARITY lists. 457 → 456
- *  (2026-10-28): an off-path screen deleted with the flags (ROADMAP §3.65), measured. */
-const FONT_SIZE_BASELINE = 456;
+ *  (2026-10-28): an off-path screen deleted with the flags (ROADMAP §3.65), measured. 456 → 453 (2026-11-06):
+ *  measured while the Slack step's What gets posted panel was built on the type scale's classes. */
+const FONT_SIZE_BASELINE = 453;
 
 const RADIUS_RULES = [
   {

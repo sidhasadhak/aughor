@@ -834,6 +834,115 @@ def runs(automation_id: str, limit: int = 50):
                      for r in rows]}
 
 
+class PicturePreviewRequest(BaseModel):
+    """A Slack step's settings as the person has them now — saved or not."""
+    step: int = Field(ge=0, description="The step's position in the chain")
+    config: dict = Field(default_factory=dict, description="The step's config, as edited")
+
+
+class PicturePreviewImage(BaseModel):
+    picture: str = Field(description="table · chart")
+    kind: str = Field(description="The kind it is drawn as")
+    asked: str = Field(description="The kind the step asked for")
+    title: str = ""
+    note: str = Field("", description="Why it is drawn differently from what was asked, when it is")
+    result: int = Field(description="Which result it is drawn from (an index into `results`)")
+    image: str = Field("", description="The picture as a data: URI; empty when the rows have no honest picture")
+
+
+class PicturePreviewResult(BaseModel):
+    claim: str = ""
+    columns: list[str] = Field(default_factory=list)
+    rows: int = 0
+
+
+class PicturePreview(BaseModel):
+    run_id: str = ""
+    run_at: str = ""
+    said: str = Field("", description="Why there is nothing to preview, when there is not")
+    words: str = Field("", description="The message text, as it would post")
+    results: list[PicturePreviewResult] = Field(default_factory=list)
+    kinds: dict[str, dict] = Field(default_factory=dict, description="kind → {ok, why} for the first picture's result")
+    names: dict = Field(default_factory=dict, description="What the first picture's columns read as")
+    pictures: list[PicturePreviewImage] = Field(default_factory=list)
+
+
+def _step_context(automation: Automation, run) -> dict[str, dict]:
+    """What each step published on a recorded run, by alias — the run's flat outcomes walked in
+    the chain's order (one per step, ``fan_count`` for a fanned one), the order they were written in."""
+    from aughor.automations.dataflow import alias_for
+    out: dict[str, dict] = {}
+    effects, at = list(getattr(run, "effects", None) or []), 0
+    for i, effect in enumerate(automation.effects):
+        if at >= len(effects) or effects[at].kind != effect.kind:
+            continue
+        n = max(1, int(effects[at].fan_count or 0))
+        out[alias_for(effect, i)] = dict(effects[at + n - 1].data or {})
+        at += n
+    return out
+
+
+@router.post("/automations/{automation_id}/picture-preview", response_model=PicturePreview)
+def picture_preview(automation_id: str, body: PicturePreviewRequest, request: Request):
+    """What a Slack step would post — its words and its pictures — drawn from the chain's last run
+    with the step's settings as edited (2026-11-06; the What gets posted panel). Read-only: nothing
+    runs, nothing is sent, no model is called. The post plans its pictures through the same
+    `automations/picture.plan`, so this is what posts."""
+    import base64
+
+    from aughor.automations import picture
+    from aughor.automations.dataflow import UnresolvedBinding, resolve
+    from aughor.automations.engine import chart_grid, slack_message_text
+    from aughor.security.authz import check_owner, get_principal
+    a = get_automation(automation_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    if a.conn_id:
+        check_owner("connection", a.conn_id, get_principal(request))
+    if body.step >= len(a.effects) or a.effects[body.step].kind != "slack_post":
+        raise HTTPException(status_code=422, detail=f"step {body.step + 1} is not a Slack post")
+    # Asked for by outcome, never by window: a daily chain writes ~1,440 `not_fired` rows between
+    # its fired ones (`get_runs`' own note) — the newest 200 rows at 15:12 held no 09:00 run.
+    run = next((r for r in get_runs(automation_id=automation_id, limit=5, outcomes=("fired",)) if r.effects), None)
+    if run is None:
+        return PicturePreview(said="This chain has not run yet — a dry run or its first run gives the preview "
+                                   "something to draw.")
+    context = _step_context(a, run)
+    # Built without the save checks: a step half-edited (no channel yet) still previews its post,
+    # and nothing here is stored.
+    draft = Effect.model_construct(kind="slack_post", config=dict(body.config or {}))
+    out = PicturePreview(run_id=run.id, run_at=run.started_at)
+    try:
+        out.words = slack_message_text(Effect.model_construct(kind="slack_post", config=resolve(draft.config, context)), a)
+    except UnresolvedBinding as exc:
+        out.said = f"The words did not resolve on the last run: {exc}"
+    source = chart_grid(draft, context)
+    results = list(source.get("results") or ([{"claim": "", "columns": source["columns"], "rows": source["rows"]}]
+                                             if source.get("columns") else []))
+    out.results = [PicturePreviewResult(claim=r.get("claim") or "", columns=r["columns"], rows=len(r["rows"]))
+                   for r in results]
+    if not results:
+        out.said = out.said or "The step's words read nothing with rows in it, so there is no picture to draw."
+        return out
+    money = ""
+    if a.conn_id:
+        from aughor.routers.investigations import resolve_currency_symbol
+        money = resolve_currency_symbol(a.conn_id, None) or ""
+    planned = picture.plan(draft.config, source, automation_name=a.name or "", connection_id=a.conn_id or "")
+    first = results[planned[0]["result"]] if planned else results[0]
+    names = planned[0]["names"] if planned else picture.merged_names(
+        first, draft.config, sqls=list(source.get("sql") or []), connection_id=a.conn_id or "")
+    out.names = names
+    out.kinds = {k: dict(zip(("ok", "why"), picture.kind_fit(k, first["columns"], first["rows"], names)))
+                 for k in picture.KINDS}
+    for p in planned:
+        png = picture.render(p, money_symbol=money)
+        out.pictures.append(PicturePreviewImage(
+            picture=p["as"], kind=p["kind"], asked=p["asked"], title=p["title"], note=p["note"], result=p["result"],
+            image=("data:image/png;base64," + base64.b64encode(png).decode()) if png else ""))
+    return out
+
+
 @router.get("/automations/{automation_id}/versions")
 def automation_versions(automation_id: str, request: Request, limit: int = 50):
     """TC-3 — every kept version of this automation, newest first, each with who saved it, when,
