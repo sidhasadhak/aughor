@@ -124,7 +124,7 @@ def test_brief_effect_delivers_the_subscription(monkeypatch):
     save_subscription(_sub(id="s-eq", conn_id="c-eq"))
     delivered: list = []
 
-    def fake_deliver(sub, persist=True):
+    def fake_deliver(sub, persist=True, delivery_key=""):
         delivered.append(sub.id)
         return {"status": "ok"}
 

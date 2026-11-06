@@ -13147,6 +13147,16 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   80%, 1.39× the width, no series below 60% (was 8 of 34).** On theLook's 94 stored predictions the t part alone
   lifts 47% → 54%; a week its source redrew at three times its size is not a band's to cover. Predictions already
   booked keep their old bands: the North Star's 0.40 falls only as new ones settle, once this is live.
+- **Track C3 BUILT 2026-11-06** (the user: *"Yes, do C3"*). A retried send leaves once. Measured first: most paths
+  had a partial guard of their own (the inbox's resolve-once, the engine's period claim, the action outbox, the
+  departure gate's seven-day repeat law), and every sender carried a `delivery_key` only a receiver could honour.
+  Now the two transports honour it (`notifications/sent_once.py`): claimed before the send, settled after it; a key
+  delivered answers a retry with the first send's record, a key whose worker died mid-send is never sent blind and
+  says *it may already have been delivered*, a send that did not arrive is released for its retry. The engine keys
+  each send by run and step, and an unattended Slack post is claimed like the other outward sends (it was missing —
+  a tick killed after one re-posted its period). A ratchet holds every transport call site to a key, or names the
+  person who is the check. Receipt: a worker process SIGKILLed with its message on the wire; its retry sent nothing.
+  Two API processes ticking one automation still make two runs — E2's scheduler leader, gated on a second host.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

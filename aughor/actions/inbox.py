@@ -888,7 +888,10 @@ def _accept_outbound_send(p: StagedProposal, *, actor: str, mint_grant: bool = F
 
     ok, info = post_as_bot(bot.bot_token, channel,
                            str(d.get("message") or ""),
-                           thread_ts=str(d.get("thread_ts") or "") or None)
+                           thread_ts=str(d.get("thread_ts") or "") or None,
+                           # Stable per PROPOSAL, as the notify branch's. The accept is already once
+                           # (resolve-once above); the key says so to the transport too (Track C3).
+                           delivery_key=f"{d.get('automation_id') or ''}:{p.id}")
     if ok:
         outcome = {"ts": info.get("ts", ""), "channel": info.get("channel", "") or channel,
                    "bot_id": bot_id}

@@ -231,7 +231,9 @@ def _bot_outcome(ok: bool, info: dict) -> tuple:
     if ok:
         return "ok", 200, None
     if info.get("uncertain"):
-        return "uncertain", None, "post timed out — it may have arrived, so it is not retried"
+        from aughor.notifications.sent_once import stopped
+        return "uncertain", None, (info["error"] if stopped(info.get("error"))
+                                   else "post timed out — it may have arrived, so it is not retried")
     return "failed", None, f"Slack refused the post: {info.get('error', 'unknown')}"
 
 
@@ -265,8 +267,11 @@ def _supersede(sub: BriefSubscription) -> str:
 _SUPERSEDED_UNTIL = "9999-12-31T00:00:00Z"
 
 
-def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dict:
+def deliver_subscription(sub: BriefSubscription, *, persist: bool = True, delivery_key: str = "") -> dict:
     """Build + send the brief for *sub*. Records last_sent_at/status when persist.
+
+    ``delivery_key`` (Track C3): the automation run's key for this send, so a retry of it sends
+    once. "" from the test endpoint, where a person pressed Send now.
 
     Returns {status, http_status, error, summary, markdown}. Never raises — a
     delivery failure is captured in the returned dict and on the subscription.
@@ -286,7 +291,7 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
     elif trigger is None and not sub.bot_id:
         result["error"] = "Delivery trigger not found"
     elif sub.content == "briefing":
-        _deliver_period(sub, trigger, result)
+        _deliver_period(sub, trigger, result, delivery_key=delivery_key)
     else:
         try:
             from aughor.govern.departure import gate_departure
@@ -319,6 +324,7 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
                     headline=md[:_HEADLINE_CAP],
                     trigger_id=sub.trigger_id,
                     triggered_at=_dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+                    delivery_key=delivery_key,
                     context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()},
                 )
                 log = fire_action(trigger, payload)
@@ -398,7 +404,7 @@ def _paused_on_ended_data(sub: BriefSubscription) -> str:
             f"for {covers} was sent on {sent[:10]}; sending resumes when new rows arrive")
 
 
-def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
+def _deliver_period(sub: BriefSubscription, trigger, result: dict, *, delivery_key: str = "") -> None:
     """Send the Briefing written for *sub*'s period through the same departure gate and
     trigger as the alert summary. A period that does not exist is refused — and said: a
     subscription saved as "briefing" never silently degrades into the alert summary. Fills
@@ -452,7 +458,8 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
                 return
             receipt = verdict.receipt_line()
             text = built["markdown"]
-            ok, info = post_as_bot(bot.bot_token, sub.channel, f"{text}\n\n{receipt}" if receipt else text)
+            ok, info = post_as_bot(bot.bot_token, sub.channel, f"{text}\n\n{receipt}" if receipt else text,
+                                   delivery_key=delivery_key)
             result["status"], result["http_status"], result["error"] = _bot_outcome(ok, info)
             _book_delivery(sub, built, verdict, result, to=f"{sub.channel} as {bot.name}", to_kind="slack")
             return
@@ -461,6 +468,7 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
             metric_name=sub.conn_id, headline=built["markdown"][:_HEADLINE_CAP],
             trigger_id=sub.trigger_id,
             triggered_at=_dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+            delivery_key=delivery_key,
             context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()}))
         result["status"], result["http_status"], result["error"] = log.status, log.http_status, log.error
         _book_delivery(sub, built, verdict, result, to=str(getattr(trigger, "name", "") or sub.trigger_id),

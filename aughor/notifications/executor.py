@@ -247,6 +247,35 @@ def _build_jira_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict:
     }
 
 
+def _not_sent_again(trigger: ActionTrigger, payload: ActionPayload, prior: dict,
+                    log_id: str, fired_at: str) -> ActionLog:
+    """Track C3 — the answer to a send whose key already left, or may have. Delivered: the first
+    send's own record, as an idempotent create replays its id (the row written here says nothing
+    left this time). Maybe delivered: `timeout`, the status every caller already reads as "it may
+    have arrived; do not retry"."""
+    from dataclasses import fields
+
+    from aughor.notifications import sent_once
+    why = sent_once.why_not_sent(prior)
+    delivered = prior.get("state") == sent_once.DELIVERED
+    row = ActionLog(
+        id=log_id, trigger_id=trigger.id, trigger_name=trigger.name,
+        investigation_id=payload.investigation_id, rec_index=payload.rec_index,
+        recommendation=payload.recommendation,
+        status="skipped" if delivered else "timeout", http_status=None, error=why, fired_at=fired_at,
+    )
+    log_action(row)
+    logger.info("Action %s not sent: %s (%s)", trigger.name, why, payload.delivery_key)
+    if not delivered:
+        return row
+    first = prior.get("result") or {}
+    try:
+        return ActionLog(**{f.name: first[f.name] for f in fields(ActionLog) if f.name in first},
+                         not_sent_again=why)
+    except TypeError:
+        return ActionLog(**{**row.to_dict(), "status": "ok"}, not_sent_again=why)
+
+
 def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
     """Dispatch a trigger and return an ActionLog record."""
     # Full uuid4, not the first 8 hex digits it used to be. The log became a
@@ -288,6 +317,15 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
         )
         log_action(log)
         return log
+
+    # Track C3 — a keyed send leaves once (`notifications/sent_once.py`): claimed here, before the
+    # post, and settled after it, so a retry — of a step, after a crash, from a second process —
+    # cannot send what already left.
+    from aughor.notifications import sent_once
+    scope = f"trigger:{trigger.id}"
+    prior = sent_once.claim(scope, payload.delivery_key)
+    if prior is not None:
+        return _not_sent_again(trigger, payload, prior, log_id, fired_at)
 
     headers = {**trigger.headers, "Content-Type": "application/json"}
 
@@ -335,6 +373,9 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
         status=status, http_status=status_code or None,
         error=error or None, fired_at=fired_at, resource_ref=resource_ref,
     )
+    sent_once.settle(scope, payload.delivery_key,
+                     {"ok": sent_once.DELIVERED, "timeout": sent_once.UNCERTAIN}.get(status, sent_once.NOT_DELIVERED),
+                     result=log.to_dict())
     log_action(log)
 
     # `trigger.url[:60]` used to go here, on every fire. For a Slack webhook that is the

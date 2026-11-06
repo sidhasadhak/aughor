@@ -413,17 +413,29 @@ def slack_thread(session_id: str) -> Optional[tuple[str, str]]:
     return (m.group(1), m.group(2)) if m else None
 
 
+def _said(e: dict) -> set:
+    """What a re-check would tell: each changed figure's new value, and each row gone."""
+    return ({(c["column"], str(c.get("label")), c["new"]) for c in e.get("changes") or []}
+            | {("gone", str(m)) for m in e.get("missing") or []})
+
+
 def _told_before(answer: dict, entry: dict) -> bool:
     """The same numbers, already told — a change is news once."""
-    def said(e: dict) -> set:
-        return ({(c["column"], str(c.get("label")), c["new"]) for c in e.get("changes") or []}
-                | {("gone", str(m)) for m in e.get("missing") or []})
-    mine = said(entry)
+    mine = _said(entry)
     for prior in (answer.get("report") or {}).get("rechecks") or []:
         told = prior.get("told") or {}
-        if told.get("status") in ("sent", "shown") and said(prior) == mine:
+        if told.get("status") in ("sent", "shown") and _said(prior) == mine:
             return True
     return False
+
+
+def _correction_key(answer: dict, entry: dict) -> str:
+    """Track C3 — one correction's delivery key: the answer and what it tells, the identity
+    `_told_before` reads. A pass killed after the post and before the entry was recorded posts the
+    same correction again on the next pass; under this key the transport posts it once."""
+    import hashlib
+    told = repr(sorted(map(repr, _said(entry)))).encode()
+    return f"answer-correction:{answer['id']}:{hashlib.sha1(told).hexdigest()[:12]}"
 
 
 def _bot_for(answer: dict):
@@ -474,7 +486,7 @@ def tell(answer: dict, entry: dict) -> dict:
         return {"door": "slack", "status": "held", "note": verdict.reason_sentence(),
                 "departure_id": verdict.record_id}
     ok, info = post_as_bot(bot.bot_token, channel, f"{text}\n\n{verdict.receipt_line()}",
-                           thread_ts=thread_ts)
+                           thread_ts=thread_ts, delivery_key=_correction_key(answer, entry))
     return {"door": "slack", "status": "sent" if ok else "failed", "departure_id": verdict.record_id,
             "ts": info.get("ts", ""), "note": "" if ok else str(info.get("error", "unknown"))}
 

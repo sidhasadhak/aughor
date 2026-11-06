@@ -620,7 +620,9 @@ def give(conn_id: str, spec, *, scope_key: str, reader_id: str = "", block_id: s
                          "receipt_line": verdict.receipt_line()}))
             status = getattr(log, "status", "") or "unknown"
             record.update(status="sent" if status == "ok" else status,
-                          note="" if status == "ok" else str(getattr(log, "error", "") or ""))
+                          # Track C3 — a give pressed again for the same question and group: said, once sent
+                          note=(getattr(log, "not_sent_again", "") if status == "ok"
+                                else str(getattr(log, "error", "") or "")))
     keep_entry(key, {**entry, "given": given + [record]})
     return record
 
