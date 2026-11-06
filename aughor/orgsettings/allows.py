@@ -17,6 +17,9 @@ FORMER_ENV: dict[str, tuple[str, ...]] = {
     "reason_to_read_runs": ("AUGHOR_GOVERN_JUSTIFICATIONS",),
     "scheduled_model_work": ("AUGHOR_AGENTS_TESTING_CENTRE", "AUGHOR_AGENTS_LEARNING_LOOP"),
     "read_query_history": (),
+    # Track D1 (docs/TENX_PROGRAM_2026-11-05.md, 2026-11-06) — rows copied out of one source into the federation
+    # engine for a cross-source join. Data stays in the warehouse by default; a copy is an admin's choice.
+    "copy_rows_across_sources": (),
 }
 
 #: Where a person changes them, for the sentences that say a thing is off.

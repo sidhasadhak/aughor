@@ -26,7 +26,7 @@ import duckdb
 from aughor.db.duckdb_ext import prepare_extensions
 
 from aughor.connectors.base import Connector
-from aughor.db.doors import through_door
+from aughor.db.doors import passed, through_door
 from aughor.control_plane.contracts.execution import QueryResult
 
 if TYPE_CHECKING:
@@ -35,6 +35,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 MAX_ROWS         = 2_000
 MATERIALIZE_CAP  = 500_000   # max rows pulled into federation DuckDB for non-native connectors
+#: Track D1 — the organisation setting that allows a member's rows to be copied into this engine.
+COPY_SETTING     = "copy_rows_across_sources"
 
 
 class FederatedConnection(Connector):
@@ -67,6 +69,11 @@ class FederatedConnection(Connector):
 
         # namespace → {"conn_id": …, "source_type": …, "tables": […]}
         self._namespaces: dict[str, dict] = {}
+        # Track D (docs/TENX_PROGRAM_2026-11-05.md): members whose rows were COPIED into this engine (D2 — said on
+        # every answer's door trail), and members that could only be read by copying while the organisation does
+        # not allow it (D1 — every answer refuses and says where to allow it, rather than failing on a missing view).
+        self._copied: list[str] = []
+        self._refused: dict[str, str] = {}
 
         for cid in self._member_ids:
             try:
@@ -150,10 +157,18 @@ class FederatedConnection(Connector):
         }
 
     def _materialise(self, conn: "DatabaseConnection", ns: str) -> list[str]:
-        """Copy tables from an in-memory connector into federation DuckDB via Arrow."""
+        """Copy tables from an in-memory connector into federation DuckDB via Arrow — only where the organisation
+        allows rows to leave their source (Track D1); otherwise the member is recorded as refused, and said."""
         inner = getattr(conn, "_duckdb", None)
         if inner is None:
             return []
+        from aughor.orgsettings.allows import WHERE, allows
+        if not allows(COPY_SETTING):
+            self._refused[ns] = (f"a cross-source join over {ns} would copy its rows into the federation engine, "
+                                 f"and this organisation does not allow that; turn on \"{COPY_SETTING}\" in {WHERE}")
+            logger.info("Federation: %s not materialised — %s is off", ns, COPY_SETTING)
+            return []
+        self._copied.append(ns)
         registered: list[str] = []
         try:
             tables = [r[0] for r in inner.execute("SHOW TABLES").fetchall()]
@@ -181,13 +196,38 @@ class FederatedConnection(Connector):
         cols = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
         return cols, self._duckdb.fetchall()
 
+    def _refusal(self, hypothesis_id: str, sql: str) -> QueryResult | None:
+        """The answer while a member could only be read by a copy the organisation has not allowed (D1): said,
+        never a missing-view error from the engine."""
+        # `getattr`: the door-contract tests build a connection with `__new__` and no `__init__`, and a door's
+        # contract must hold for one that never attached a member.
+        refused = getattr(self, "_refused", None)
+        if not refused:
+            return None
+        from aughor.db.doors import add as _add_doors
+        why = "; ".join(refused.values())
+        return _add_doors(QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=why),
+                          ["blocked:copy-not-allowed"])
+
+    def _read(self, hypothesis_id: str, statement: str, max_rows: int) -> QueryResult:
+        """Inside the door: say the copy (D2) before the read, so the trail carries it on every answer."""
+        if getattr(self, "_copied", None):
+            passed("copied:duckdb")
+        return self._duckdb_read(self._duckdb, hypothesis_id, statement, max_rows)
+
     def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
-        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, MAX_ROWS), internal=internal)
+        refused = self._refusal(hypothesis_id, sql)
+        if refused is not None:
+            return refused
+        return through_door(self, sql, sql_dialect, lambda statement: self._read(hypothesis_id, statement, MAX_ROWS), internal=internal)
 
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
                         sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
         """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
-        return through_door(self, sql, sql_dialect, lambda statement: self._duckdb_read(self._duckdb, hypothesis_id, statement, max(1, max_rows)), internal=internal)
+        refused = self._refusal(hypothesis_id, sql)
+        if refused is not None:
+            return refused
+        return through_door(self, sql, sql_dialect, lambda statement: self._read(hypothesis_id, statement, max(1, max_rows)), internal=internal)
 
     def get_schema(self) -> str:
         """Build a federated schema context showing all member namespaces."""

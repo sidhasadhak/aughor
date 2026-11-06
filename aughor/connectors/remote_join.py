@@ -281,12 +281,18 @@ def batched_foreach_join(
     from aughor.stats import bump
     bump("federation.remote_join.executed")
     right_label = right_table or "(subquery)"
-    return QueryResult(
+    merged = QueryResult(
         hypothesis_id="__remote_join__",
         sql=(f"-- batched foreach join: left.{left_key} = {right_label}.{right_key} ({how}); "
              f"{chosen_note}, {fetched} right rows, {len(out_rows)} joined"),
         columns=out_cols, rows=out_rows, row_count=len(out_rows),
     )
+    # Track D2 — the answer says its rows were joined to another source's: the left read's own doors first,
+    # then the movement, named by the connection the right rows were read from.
+    from aughor.db.doors import add as _add_doors
+    right_id = str(getattr(right_conn, "connection_id", "") or getattr(right_conn, "_connection_id", "")
+                   or "another connection")
+    return _add_doors(merged, [*(getattr(left, "doors", None) or []), f"cross-source:{right_id}"])
 
 
 def _try_reconcile(
