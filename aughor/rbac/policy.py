@@ -210,3 +210,14 @@ def required_permission(method: str, template: str) -> Optional[P]:
     if method in SAFE_METHODS:
         return None
     return DEFAULT_WRITE
+
+
+def policy_version() -> str:
+    """A short, stable fingerprint of the route permission table and its defaults (Track C1).
+
+    Recorded on every job's authority (`kernel/job_auth.py`) so a later check can tell that the rules
+    changed under a job that was waiting — the table is code, so its version is its content."""
+    import hashlib
+    rows = sorted(f"{m} {t} {p.value if p else '-'}" for (m, t), p in POLICY.items())
+    rows += [f"default-write {DEFAULT_WRITE.value}", "safe " + ",".join(sorted(SAFE_METHODS))]
+    return hashlib.sha1("\n".join(rows).encode()).hexdigest()[:12]

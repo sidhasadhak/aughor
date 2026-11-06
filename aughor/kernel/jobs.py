@@ -40,7 +40,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from aughor.kernel import metering
 from aughor.kernel.ledger import Ledger
-from aughor.org.context import DEFAULT_ORG_ID, reset_org_id, set_org_id
+from aughor.org.context import DEFAULT_ORG_ID, reset_actor, reset_org_id, set_actor, set_org_id
 
 logger = logging.getLogger(__name__)
 
@@ -327,10 +327,20 @@ class JobKernel:
                 return existing[0]["id"]
 
         job_id = uuid.uuid4().hex[:12]
+        # Track C1 — whose authority this job spends, taken once here, while the request (or its
+        # absence) is still in context, and never rewritten (`kernel/job_auth.py`).
+        from aughor.kernel.job_auth import job_auth_context
+        try:
+            auth = job_auth_context(kind, org_id)
+        except Exception as _a_exc:  # noqa: BLE001 — a job is never refused for want of its record
+            from aughor.kernel.errors import tolerate
+            tolerate(_a_exc, "the job's authority could not be taken; recorded as unknown", counter="kernel.job_auth")
+            auth = {"person": "", "org": org_id or "", "verified_by": "unknown", "roles": [],
+                    "policy": "", "purpose": kind, "at": _now(), "error": f"{type(_a_exc).__name__}: {_a_exc}"}
         self.ledger.job_insert({
             "id": job_id, "kind": kind, "conn_id": conn_id, "canvas_id": canvas_id,
             "org_id": org_id, "state": JobState.PENDING, "payload": payload,
-            "idempotency_key": idempotency_key, "attempt": 1, "created_at": _now(),
+            "idempotency_key": idempotency_key, "attempt": 1, "created_at": _now(), "auth": auth,
         })
         self.ledger.emit("job.state", {"state": JobState.PENDING, "kind": kind},
                          conn_id=conn_id, canvas_id=canvas_id, job_id=job_id)
@@ -465,7 +475,12 @@ class JobKernel:
         # was captured on the job row at submit; binding it HERE — not relying on the
         # implicit contextvar copy — means a job re-run by boot-recovery (no request
         # context) still operates in its own org, not 'default'.
-        _org_token = set_org_id((self.ledger.job_get(job_id) or {}).get("org_id") or DEFAULT_ORG_ID)
+        _row = self.ledger.job_get(job_id) or {}
+        _org_token = set_org_id(_row.get("org_id") or DEFAULT_ORG_ID)
+        # Track C1 — and the person it acts for, from the authority written at submit, so a run that
+        # resumes off any request (boot recovery, another process) records its writes under the same name.
+        _person = ((_row.get("auth") or {}) if isinstance(_row.get("auth"), dict) else {}).get("person") or ""
+        _actor_token = set_actor(_person) if _person else None
         _m_token = metering.start()
         metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
         # Arm the SAME budget the heartbeat enforces as the run's IN-CONTEXT budget too.
@@ -584,6 +599,8 @@ class JobKernel:
             if _charter_token is not None:
                 _current_charter.reset(_charter_token)
             reset_org_id(_org_token)
+            if _actor_token is not None:
+                reset_actor(_actor_token)
             hb.cancel()
             self._tasks.pop(job_id, None)
             if on_finish is not None:

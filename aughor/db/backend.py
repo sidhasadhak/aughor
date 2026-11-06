@@ -453,6 +453,12 @@ def _schema_name(path: Union[str, Path], default: Union[str, Path, None]) -> str
     return f"store_{stem}_{hashlib.sha1(str(path).encode()).hexdigest()[:10]}"
 
 
+def store_schema(path: Union[str, Path]) -> str:
+    """The Postgres schema a store at ``path`` lives in — public for a store that does not open through
+    :func:`connect_store` but must land where it would have (the LangGraph checkpointer, Track B2)."""
+    return _schema_name(path, default_for_path(path))
+
+
 def insert_returning_id(conn, sql: str, params: Sequence = (), *, pk: str = "id") -> int:
     """Run an INSERT and return the new row's integer key on either backend.
 

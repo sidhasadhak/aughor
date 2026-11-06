@@ -35,6 +35,14 @@ DOOR_ASK = "ask"
 #: Per guard: what the hold MEANS in the reader's words, what to change (and that the next
 #: run is the send), and the screens that hold the fix.
 REMEDIES: dict[str, dict] = {
+    "authority": {
+        "meaning": ("The job that made this message runs for a person who no longer holds the right to send "
+                    "information out in this organisation — their roles changed after the job was submitted. "
+                    "Nothing a job sends leaves on authority its person has lost."),
+        "action": ("If they should still send it, an administrator restores their role (Editor or Owner) and the "
+                   "automation runs again; otherwise someone who holds the role starts it, and it runs for them."),
+        "doors": [DOOR_AUTOMATION],
+    },
     "remeasure": {
         "meaning": ("The message states numbers the analysis never measured. Only measured "
                     "numbers leave the platform, and a figure the writer computed from "

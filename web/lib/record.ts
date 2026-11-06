@@ -402,6 +402,26 @@ export const bookScenario = (decisionId: string, body: ScenarioBody) =>
 export const getCalibration = (connectionId?: string) =>
   read<CalibrationRow[]>(`/record/calibration${qs({ connection_id: connectionId })}`);
 
+/** The study's North Star for one quarter (Track G5, `record/north_star.py`): loops closed · calibration error,
+ *  each with its n; every outcome that did not close names the rule it failed. */
+export interface NorthStarLoop {
+  decision: string; question: string; owner: string; outcome_written: string; verdict: string;
+  /** Set on a loop that did not close: the full sentence, and the rule it names without its dates. */
+  not_closed?: string; rule?: string;
+}
+export interface NorthStarClass {
+  method: string; metric: string; judged: number; cannot_tell: number;
+  stated?: number; observed?: number; gap: number | null;
+}
+export interface NorthStar {
+  quarter: string; from: string; until: string;
+  loops_closed: number; outcomes_written: number; reliance_without_expectation: number;
+  closed: NorthStarLoop[]; not_closed: NorthStarLoop[];
+  calibration: { error: number | null; n: number; classes: NorthStarClass[] };
+  sentence: string;
+}
+export const getNorthStar = (quarter = "") => read<NorthStar>(`/record/north-star${qs({ quarter })}`);
+
 // ── corrections ──────────────────────────────────────────────────────────────────────────
 
 export type CorrectionKind =

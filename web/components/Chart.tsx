@@ -15,6 +15,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOrgSettings } from "@/lib/useOrgSettings";
+import { barsPerBand } from "@/components/charts/vega/bandFit";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { resolveTier3Spec } from "@/components/charts/vega/tier3";
@@ -233,13 +234,13 @@ export function Chart({
         </div>
       )}
 
-      {/* Chart viewport — caps at 350px with internal scroll; the chart renders at its natural height.
-          A vertical bar chart with only a few categories no longer stretches across the full panel
-          (3 skinny bars adrift in empty space) — width scales with the category count instead. */}
+      {/* Chart viewport — the chart takes the whole row (2026-11-06). A vertical bar chart with few
+          categories used to be capped at n × 130 + 150 px, which counted categories, not bars: a
+          four-platform, two-measure exhibit drew at 670px beside an empty half-row. The bars now keep
+          their thickness by widening the gaps between categories instead (`vega/bandFit.ts`). */}
       {(() => {
         const _catN = built.xCategories;
-        // In fill mode the chart takes the whole box (no few-category width cap).
-        const _maxW = fill ? undefined : (_catN > 0 && _catN <= 6 ? Math.max(340, _catN * 130 + 150) : undefined);
+        const _perBand = _catN > 0 ? barsPerBand(built.spec, columns, rows) : 1;
         const ready = (inst: ChartInstance) => { instRef.current = inst; onInstanceReady?.(inst); };
         /* A chart is a picture, not a viewport. It used to cap at 350px and scroll inside
            that box, so a ranking with many categories became a thing you scrolled through
@@ -247,8 +248,9 @@ export function Chart({
            chart now renders at its natural height and the card grows; orientation flips to
            upright before the category count gets that far (HORIZONTAL_MAX_CATS). */
         return (
-      <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%", maxWidth: _maxW }}>
-        <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready} />
+      <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%" }}>
+        <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready}
+                   bands={_catN} barsPerBand={_perBand} />
       </div>
         );
       })()}

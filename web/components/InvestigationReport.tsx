@@ -528,6 +528,9 @@ function Exhibit({ n, finding, claim, answer, onShowSource }: {
   n: number; finding: InvestigationFinding; claim: string; answer: string; onShowSource?: ShowSource;
 }) {
   const [open, setOpen] = useState(false);
+  // What the card above is showing. A table needs no "Table" beneath it (the user, 2026-11-06), so the
+  // disclosure is offered only beside a chart, or where no card is drawn at all.
+  const [cardView, setCardView] = useState<"chart" | "table" | "pivot" | null>(null);
   const { warning } = splitStatNote(finding.stat_note);
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
@@ -535,7 +538,7 @@ function Exhibit({ n, finding, claim, answer, onShowSource }: {
   const source = deriveFigureSource(finding.sql, finding.columns, finding.rows as unknown[][], finding.row_count);
   const caption = claim.trim() || finding.title;
   return (
-    <div className="flex flex-col gap-2 pt-3" style={RULE} data-testid={`exhibit-${finding.finding_id}`}>
+    <div className="aug-hover-frame flex flex-col gap-2 pt-3" style={RULE} data-testid={`exhibit-${finding.finding_id}`}>
       <div style={{ ...ROW, alignItems: "baseline" }}>
         <span className="aug-fs-xs font-semibold" style={{ color: "var(--blue4)" }}>{n}</span>
         <span className="aug-text-ui font-medium text-zinc-100">{caption}</span>
@@ -548,7 +551,7 @@ function Exhibit({ n, finding, claim, answer, onShowSource }: {
       {hasChart && (
         <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={caption}
                          chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit}
-                         defaultShowLabels />
+                         defaultShowLabels onViewChange={setCardView} />
       )}
       {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} answer={answer} />}
       {warning && <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {warning}</div>}
@@ -558,9 +561,11 @@ function Exhibit({ n, finding, claim, answer, onShowSource }: {
           {source?.tables?.length ? <span className="font-mono">{source.tables.join(" · ")}</span> : null}
           <span>{finding.row_count || finding.rows.length} rows</span>
           <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
-            <Button variant="ghost" size="xs" onClick={() => setOpen(v => !v)}>
-              {open ? <Icon name="chevd" size={16} /> : <Icon name="chevr" size={16} />}Table
-            </Button>
+            {(!hasChart || cardView === "chart") && (
+              <Button variant="ghost" size="xs" onClick={() => setOpen(v => !v)}>
+                {open ? <Icon name="chevd" size={16} /> : <Icon name="chevr" size={16} />}Table
+              </Button>
+            )}
             {onShowSource && (
               <Button variant="ghost" size="xs" title={`Data + SQL behind “${finding.title}”`}
                       onClick={() => onShowSource({ columns: finding.columns, rows: finding.rows as unknown[][], sql: finding.sql || null, title: finding.title })}>
@@ -570,7 +575,7 @@ function Exhibit({ n, finding, claim, answer, onShowSource }: {
           </span>
         </div>
       )}
-      {open && hasData && <ExhibitGrid finding={finding} />}
+      {open && hasData && (!hasChart || cardView === "chart") && <ExhibitGrid finding={finding} />}
     </div>
   );
 }

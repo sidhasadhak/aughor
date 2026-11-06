@@ -12,6 +12,15 @@ call to a transport that neither asks this gate in the same function nor is list
 The laws, in the order they run — each deterministic, each named in the record and on the
 receipt the message carries:
 
+- **authority** — a departure a JOB makes is re-checked, as it leaves, against the live grants
+  of the person the job runs for (the authority written at submit, `kernel/job_auth.py`, Track
+  C1): information leaving the platform is an export, so a person who no longer holds
+  `resource.export` in the job's organisation — roles revoked while the job waited, or never
+  granted — is HELD from everyone, and the record says what was held at submit against what is
+  held now. Outside a job a person pressed the button and the door checked them; with sign-in
+  off one operator owns the install; a job no request named anyone for (a clock) has no person
+  to re-check and departs under its declarer's rules (probation) — each recorded, never passed
+  silently. Track C2 of `docs/TENX_PROGRAM_2026-11-05.md`.
 - **trust** — a brief whose headline figure a computation-error trust check flagged carries
   the reframe banner (`aughor/agent/investigate.py` composes it from ``TRUST_BANNER``, one
   source of truth). On the screen that banner is honesty; in a channel it is a wrong number
@@ -139,8 +148,8 @@ UNATTENDED = "unattended"
 PERSON = "person"
 
 #: Every guard, in the order it runs; a receipt lists outcomes in this order.
-GUARDS: tuple[str, ...] = ("trust", "caveat", "tie_out", "definition", "remeasure", "freshness",
-                           "claims", "disagreement", "repeat", "probation", "attention")
+GUARDS: tuple[str, ...] = ("authority", "trust", "caveat", "tie_out", "definition", "remeasure",
+                           "freshness", "claims", "disagreement", "repeat", "probation", "attention")
 
 #: What a guard concluded.
 PASSED = "passed"
@@ -151,7 +160,7 @@ UNAVAILABLE = "unavailable"
 EXEMPT = "exempt"
 
 GUARD_LABELS: dict[str, str] = {
-    "trust": "trust", "caveat": "caveat", "tie_out": "tie-out", "definition": "definition",
+    "authority": "authority", "trust": "trust", "caveat": "caveat", "tie_out": "tie-out", "definition": "definition",
     "remeasure": "re-measure", "freshness": "freshness", "claims": "claim type",
     "disagreement": "disagreement", "repeat": "repeat", "probation": "probation",
     "attention": "attention budget",
@@ -300,6 +309,7 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
     found: dict[str, _Check] = {}
     conn = _LazyConnection(conn_id)
     try:
+        found["authority"] = _guarded("authority", lambda: _authority(org_id))
         found["trust"] = _guarded("trust", lambda: _trust(text))
         found["caveat"] = _guarded("caveat", lambda: _caveat(measurement))
         found["tie_out"] = _guarded("tie_out", lambda: _tie_out(text, conn_id, conn))
@@ -495,6 +505,59 @@ def answer_owner_question(departure_id: str, reading: str, *, answered_by: str =
 
 
 # ── the guards ────────────────────────────────────────────────────────────────────
+
+# ── the authority law (Track C2) ──────────────────────────────────────────────
+
+#: Information leaving the platform is an export; the permission a job's person must still hold.
+AUTHORITY_PERMISSION = "resource.export"
+
+
+def _authority(org_id: str) -> _Check:
+    """Re-check the job in flight's recorded authority against the person's grants NOW.
+
+    Fails CLOSED where it applies: under sign-in, a job whose authority cannot be read or
+    resolved holds, unlike an accuracy guard whose infrastructure hiccup is recorded and
+    passes — a send whose sender cannot be established is not a send."""
+    from aughor.kernel.jobs import current_job_id
+    job_id = current_job_id()
+    if not job_id:
+        return _Check(NOT_APPLICABLE, "not sent from a job — the person who sent it passed the door's own check")
+    from aughor.security.authz import Principal, require_identity_enabled
+    if not require_identity_enabled():
+        return _Check(EXEMPT, "sign-in is off: one operator owns this install and every job runs for them")
+    try:
+        from aughor.kernel.ledger import Ledger
+        auth = (Ledger.default().job_get(job_id) or {}).get("auth")
+        if not isinstance(auth, dict):
+            return _Check(NOT_APPLICABLE, f"job {job_id} was submitted before jobs recorded their authority")
+        person = str(auth.get("person") or "")
+        if not person:
+            return _Check(NOT_APPLICABLE, f"job {job_id} was started by no person (a clock or the platform); "
+                                          "it departs under its declarer's rules")
+        from aughor.rbac.permissions import Permission
+        from aughor.rbac.policy import policy_version
+        from aughor.rbac.resolver import has_permission, resolve_roles
+        org = str(auth.get("org") or org_id)
+        principal = Principal(user_id=person, org_id=org)
+        now_roles = resolve_roles(principal)
+        then_roles = list(auth.get("roles") or [])
+        detail = {"job": job_id, "person": person, "org": org, "roles_at_submit": then_roles,
+                  "roles_now": now_roles, "policy_at_submit": auth.get("policy", ""),
+                  "policy_changed": bool(auth.get("policy")) and auth.get("policy") != policy_version()}
+        if has_permission(principal, Permission(AUTHORITY_PERMISSION)):
+            return _Check(PASSED, f"{person} still holds {AUTHORITY_PERMISSION} in {org}", detail=detail)
+    except Exception as exc:  # noqa: BLE001 — under sign-in, an unreadable authority holds
+        tolerate(exc, "departure gate: the job's authority could not be re-checked; holding",
+                 counter="departures.authority_unreadable")
+        return _Check(HOLDS, f"authority unreadable ({type(exc).__name__})",
+                      f"job {job_id}'s authority could not be re-checked as it left, so nothing it sends leaves")
+    was = ", ".join(then_roles) or "nothing"
+    now = ", ".join(now_roles) or "nothing"
+    since = f"held {was} when the job was submitted and holds {now} now" if then_roles != now_roles else f"holds {now}"
+    return _Check(HOLDS, f"{person} lacks {AUTHORITY_PERMISSION} in {org} ({since})",
+                  f"the job runs for {person}, who no longer holds {AUTHORITY_PERMISSION} in {org} ({since}); "
+                  "nothing a job sends leaves on authority its person has lost", detail=detail)
+
 
 def _guarded(name: str, run: Callable[[], _Check]) -> _Check:
     """One guard's defect is that guard's outcome, never the transport's failure."""

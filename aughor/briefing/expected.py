@@ -111,8 +111,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
                 f"only {len(read)} earlier range{'s' if len(read) != 1 else ''} held a reading; "
                 f"{MIN_RANGES} are the least a band is drawn from")})
             continue
-        mu, sd = S._mean(read), S._sd(read)
-        low, high = mu - S._Z80 * sd, mu + S._Z80 * sd
+        mu, low, high = S.band(read, coverage=S.HISTORY_COVERAGE)      # the Record's one formula
         if m.time_kind != "cohort" and all(v >= 0 for v in read):
             low = max(low, 0.0)          # a count or a sum that was never below zero is not expected to be
         unit = R._read_unit(m.time_kind, m.unit or "", read)

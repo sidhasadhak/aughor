@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { bandPaddingFor, withBandPadding } from "@/components/charts/vega/bandFit";
 import { buildVegaConfig, buildVegaRuntimeConfig, readVegaTokens } from "@/components/charts/vega/config";
 import type { ChartInstance, PngOptions } from "@/lib/chartExport";
 
@@ -48,9 +49,13 @@ interface Props {
   onSelect?: (datum: Record<string, unknown>) => void;
   /** Hand an export handle back to the parent, same contract as EChart's onReady. */
   onReady?: (instance: ChartInstance) => void;
+  /** Band fit (`bandFit.ts`): the distinct categories on a VERTICAL band axis and the bars in each,
+   *  so the bars keep a readable thickness while the chart takes the whole row. 0/absent = no fit. */
+  bands?: number;
+  barsPerBand?: number;
 }
 
-export function VegaChart({ spec, tier = 1, height = 300, className, onCompiled, onSelect, onReady }: Props) {
+export function VegaChart({ spec, tier = 1, height = 300, className, onCompiled, onSelect, onReady, bands, barsPerBand }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<{ finalize: () => void } | null>(null);
   const onCompiledRef = useRef(onCompiled);
@@ -103,7 +108,8 @@ export function VegaChart({ spec, tier = 1, height = 300, className, onCompiled,
           const w = el.clientWidth;
           if (w <= 0) return;
           try {
-            const sized = { ...spec, width: w, height };
+            const fit = tier === 3 ? null : bandPaddingFor(w, bands ?? 0, barsPerBand ?? 1);
+            const sized = withBandPadding({ ...spec, width: w, height }, fit);
             // vl.compile() IS the tier-3 eject: its output is a valid raw Vega spec. A spec
             // that is ALREADY tier 3 is parsed as written.
             const runtime = tier === 3
@@ -169,7 +175,7 @@ export function VegaChart({ spec, tier = 1, height = 300, className, onCompiled,
       viewRef.current?.finalize();
       viewRef.current = null;
     };
-  }, [spec, tier, height, themeTick]);
+  }, [spec, tier, height, themeTick, bands, barsPerBand]);
 
   if (error) {
     return (

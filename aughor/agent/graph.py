@@ -1,6 +1,8 @@
 """LangGraph StateGraph — the investigative loop."""
 from __future__ import annotations
 
+import os
+import threading
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -56,12 +58,55 @@ from aughor.db.sqlite_util import resolve_db_path, tune
 _CHECKPOINT_DB = resolve_db_path("AUGHOR_CHECKPOINTS_DB", Path(__file__).parent.parent.parent / "data" / "checkpoints.db")
 
 
+#: One saver per (database, schema) for the process: the pool behind it is the expensive part.
+_PG_SAVERS: dict[tuple[str, str], object] = {}
+_PG_LOCK = threading.Lock()
+
+
+def _postgres_checkpointer():
+    """LangGraph's own PostgresSaver, in the schema the seam gives ``checkpoints.db`` (Track B2).
+
+    Measured 2026-11-06 for the 10× program: with ``AUGHOR_DB_URL`` naming a Postgres, every store
+    moved to it except this one, which kept writing a SQLite file on the local disk — so a paused
+    investigation could only ever resume on the host that paused it, and a second process sharing the
+    database saw no checkpoint at all. The library's saver, not SQL translation: its tables, its
+    migrations, its pipelining (the swap recorded in docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md §6 Q4).
+    """
+    from aughor.db.backend import DB_URL_ENV, store_schema
+    url = os.environ[DB_URL_ENV]
+    schema = store_schema(_CHECKPOINT_DB)
+    with _PG_LOCK:
+        saver = _PG_SAVERS.get((url, schema))
+        if saver is not None:
+            return saver
+        try:
+            import psycopg
+            from langgraph.checkpoint.postgres import PostgresSaver
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+        except ImportError as exc:
+            raise RuntimeError(
+                f"{DB_URL_ENV} names a Postgres, so investigations checkpoint there through LangGraph's own "
+                "saver, which is not installed here: install the shared-state extra "
+                "(uv sync --extra shared-state)") from exc
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        pool = ConnectionPool(url, min_size=1, max_size=4, open=True, kwargs={
+            "autocommit": True, "prepare_threshold": 0, "row_factory": dict_row,
+            "options": f"-c search_path={schema}"})
+        saver = PostgresSaver(pool)
+        saver.setup()
+        _PG_SAVERS[(url, schema)] = saver
+        return saver
+
+
 def _checkpointer():
-    # Deliberately NOT on the connect_store seam: this connection belongs to
+    from aughor.db.backend import is_postgres
+    if is_postgres():
+        return _postgres_checkpointer()
+    # On SQLite, deliberately NOT on the connect_store seam: this connection belongs to
     # LangGraph's SqliteSaver, whose internals speak to it directly — wrapping it
-    # is unproven territory. The Postgres story for checkpoints is the library's
-    # own PostgresSaver (a swap recorded in docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md
-    # §6 Q4), not SQL translation.
+    # is unproven territory. On Postgres it is the library's own PostgresSaver, above.
     #
     # ⚠️ Opting out of the seam is NOT opting out of the WAL guarantee, and for two days
     # it silently was. #379 removed the SIGBUS precondition for every store that goes

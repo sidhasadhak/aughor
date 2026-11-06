@@ -13109,8 +13109,44 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   organisation allows it, and otherwise every answer refuses naming the setting and the place. D2: two door words,
   `copied:duckdb` on every answer a federation gives over copied rows, `cross-source:<connection>` on a join made in
   the platform. D3 measured already true (purge takes the cache rows, the clock evicts, `cache_stats` says the
-  retention) — the program's row came from the assessment's reading, not the code's. Next: B1–B2 (Postgres in CI,
-  the checkpointer on the seam), then C1.
+  retention) — the program's row came from the assessment's reading, not the code's.
+- **Track B1–B2 BUILT 2026-11-06** (the user: *"Build B1-B2"*). B1: a pgvector Postgres service in the backend CI job;
+  the shared-state tests that skipped on every CI run (23 of 36 — claim contention, peer boot, schema isolation,
+  migrations once — and 4 pgvector tests) now run, and `AUGHOR_REQUIRE_PG_TESTS=1` turns a missing service into a failure. B2: on a shared
+  Postgres the LangGraph checkpointer is the library's own `PostgresSaver` in the store's schema (new extra
+  `shared-state`, the saver pinned to 3.1.2 so LangGraph's core does not move); a run paused in one process resumes
+  and finishes in another, asserted where the rows live. Same branch: Data Canvas charts fill their row (a few-category
+  width cap counted categories, not bars), an exhibit drawn as a table offers no second "Table", and a drawn result is
+  framed on hover.
+- **Track C1 BUILT 2026-11-06** (the user: *"Lets keep building"*). Every job carries the authority it runs on,
+  written once at submit into `jobs.auth` (ledger Migration 13): who, which organisation, how they were known, their
+  roles, the permission table's version, the purpose — and an empty person, said, for a job no request named anyone
+  for. The ledger refuses to rewrite it; a run binds the person from the row; `/jobs` shows it.
+- **Track C2 BUILT 2026-11-06** (the user: *"Build C2"*). Every effect already leaves through the departure gate, so
+  the re-check is one new first law there, `authority`: a send made inside a job re-checks the job's person against
+  their roles now, and a person who lost `resource.export` while the job waited is held from everyone, with what they
+  held at submit and hold now, as a departures row with its remedy. Sign-in off is exempt; a clock's job and a send
+  outside a job are not applicable, each said; an unreadable authority holds. Next: the loop's receipts (G) — the
+  program's starvation gate says the foundation has had its half; C3 (idempotency keys) waits behind it.
+- **Track G5 BUILT, G3 measured 2026-11-06** (the user: *"Move to Track G"*; placement and *ask, don't require* their
+  choices). The North Star is a query now (`record/north_star.py`, `GET /record/north-star`, the head of Record ›
+  Decisions): **2026-Q4: 0 loops closed of 16 outcomes written · calibration error 0.40 over 101 settled predictions**.
+  The 16 outcomes are the 2026-10-26 scenario's, each prediction booked weeks after its back-dated decision — hindsight
+  under the study's rule — and none of the 21 decisions still waiting carries a prediction, so nothing on the install
+  can close a loop yet. The Declare form and the reader now say so. The history method's 80% intervals hold about half
+  the time; that, not the foundation, is the next thing worth fixing. The first loop is a person's: a decision declared
+  today with what it expects, answered on its review date.
+- **The history method's interval, calibrated 2026-11-06** (the user: *"Fix calibration"*). Measured first: the misses
+  were one-sided (actuals above the band), and the method's own backtest had said "held 0 of 4" on the worst metrics
+  while it printed "80%". The formula was `mean ± 1.28·sd` — the interval for the MEAN, the spread taken as exact —
+  and it lived in two places (the Briefing re-implemented it). Now one function, `record/scenario.band`: the
+  prediction interval for one new reading (t on n − 1 df × sd·√(1 + 1/n)), never narrower than the method's own
+  largest miss on the same windows (split conformal); methods 3 and 4, a segment's comparison, the backtest and the
+  Briefing's expected band all draw it. **Backtested on 782 rolling origins of LuxExperience's real weekly and
+  monthly series (read-only, local Postgres; theLook is BigQuery and was not spent on): 65% → 81% held at a stated
+  80%, 1.39× the width, no series below 60% (was 8 of 34).** On theLook's 94 stored predictions the t part alone
+  lifts 47% → 54%; a week its source redrew at three times its size is not a band's to cover. Predictions already
+  booked keep their old bands: the North Star's 0.40 falls only as new ones settle, once this is live.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

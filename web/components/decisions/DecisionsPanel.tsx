@@ -46,6 +46,7 @@ import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Segmented } from "@/components/ui/segmented";
 import { Callout } from "@/components/ui/callout";
+import { NorthStarLine } from "@/components/decisions/NorthStarLine";
 
 type Filter = "all" | "due" | "waiting" | "reviewed";
 
@@ -101,6 +102,7 @@ function DecisionLedger({ connections, selectedConn, onOpen }: {
   );
   return (
     <ClarityPage testId="decisions-page">
+      <NorthStarLine />
       <Gate load={load} what="decisions">
         {all => <DecisionOverview all={all} connections={connections} onOpen={onOpen} form={form}
           declaring={declaring} onDeclare={() => setDeclaring(v => !v)} />}
@@ -421,6 +423,13 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
 
 const num = (v: string): number | null => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
+/** Whether a prediction was written after the decision it predicts — the North Star's hindsight rule, with
+ *  the same five minutes' grace for one booking writing both (`record/north_star.BOOKING_SLACK`). */
+export function bookedAfter(bookedAt: string | undefined, decidedAt: string | undefined): boolean {
+  const b = Date.parse(bookedAt ?? ""), d = Date.parse(decidedAt ?? "");
+  return Number.isFinite(b) && Number.isFinite(d) && b > d + 5 * 60_000;
+}
+
 /** "We decided this elsewhere" — the question, what was chosen, and the expectation booked with it. */
 /** Approvers as the Record names them: an address is `email:<address>`, a name is `person:<name>`. */
 export function approverRefs(text: string): string[] {
@@ -511,6 +520,10 @@ function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQu
           <Input aria-label="Expected low" value={low} onChange={e => setLow(e.target.value)} placeholder="from" inputMode="decimal" style={{ flex: "1 1 80px" }} />
           <Input aria-label="Expected high" value={high} onChange={e => setHigh(e.target.value)} placeholder="to" inputMode="decimal" style={{ flex: "1 1 80px" }} />
           <Input aria-label="Unit" value={unit} onChange={e => setUnit(e.target.value)} placeholder="unit" style={{ flex: "1 1 70px" }} />
+          <span className="aug-fs-sm" style={{ color: "var(--t3)", flex: "1 1 100%" }}>
+            {metric.trim() ? "scored on the review date against what you expect"
+              : "what you expect it to move, so the review can score it — left empty, the decision is on the record but cannot close a loop"}
+          </span>
         </div>
         <label className="aug-fs-sm" htmlFor="dec-r">Review on</label>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -520,7 +533,12 @@ function DeclareForm({ connectionId, onBooked, onCancel, revises = "", initialQu
         <label className="aug-fs-sm" htmlFor="dec-d">Decided on</label>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Input id="dec-d" type="date" value={decidedOn} max={new Date().toISOString().slice(0, 10)} onChange={e => setDecidedOn(e.target.value)} style={{ width: 170 }} />
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>left empty, today. A past decision, with its outcome booked, becomes a case later ones are projected from.</span>
+          <span className="aug-fs-sm" style={{ color: decidedOn && decidedOn < new Date().toISOString().slice(0, 10) && metric.trim() ? "var(--amb4)" : "var(--t3)" }}
+            data-testid="decided-on-hint">
+            {decidedOn && decidedOn < new Date().toISOString().slice(0, 10) && metric.trim()
+              ? "A past decision's expectation is booked today, after it: it becomes a case later ones are projected from, but it cannot close a loop."
+              : "left empty, today. A past decision, with its outcome booked, becomes a case later ones are projected from."}
+          </span>
         </div>
         <span />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -766,7 +784,14 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
               <span>booked by {whoLabel(d.expectation.author)}</span>
             </div>
           </div>
-        ) : <Absent>No expectation was booked with this decision, so its outcome can only be read against the baseline.</Absent>}
+        ) : <Absent>No expectation was booked with this decision, so its outcome can only be read against the baseline —
+          it is on the record, but it cannot close a loop.</Absent>}
+        {d.expectation && bookedAfter(d.expectation.recorded_at, d.decided_at) && (
+          <p className="aug-fs-sm" data-testid="expectation-hindsight" style={{ color: "var(--amb4)", margin: "6px 0 0" }}>
+            Booked {day(d.expectation.recorded_at)}, after the decision it predicts ({day(d.decided_at)}): it serves as a case
+            later decisions are projected from, but it cannot close a loop — a prediction has to come before the decision.
+          </p>
+        )}
       </Section>
 
       <Section label="What became of it">
