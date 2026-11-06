@@ -213,12 +213,12 @@ one week; C1 alone is most of the value.
 
 | # | Change | Receipt |
 |---|---|---|
-| D1 | An organisation setting in `orgsettings/allows.py`: *may a cross-source join copy rows out of this connection* — off by default, like every setting there | the join refuses and says so until it is on |
-| D2 | A door word `copied:duckdb` on any result whose rows now live in a second engine; the receipt shows it | the door trail on a cross-source answer carries it |
-| D3 | The materialization cache records retention, and a removed connection takes its rows (the 10-11 removal rule) | remove a connection; its cache rows are gone; the audit row stays |
+| D1 | **Built 2026-11-06.** `copy_rows_across_sources` in `orgsettings/allows.py` (born without a flag, off by default, in Settings ▸ Organization ▸ What Aughor may do). Where the federation engine cannot read a member in place (an upload, an API mirror, a bucket — anything ATTACH cannot reach), it used to copy the member's rows into DuckDB at init; now it copies only when the organisation allows it, and otherwise every answer over that federation refuses with the sentence naming the setting and where to turn it on — never a missing-view error from the engine. Postgres and DuckDB members ATTACH read-only and are read in place; a live read is not a copy. The batched cross-source join reads its right rows through the right connection's own door and joins in the platform; it moves no rows into a second engine, so it is not gated | `test_track_d_data_stays_home.py`: setting off → no tables, refusal names setting and place; setting on → copied, and said |
+| D2 | **Built 2026-11-06.** Two door words in `db/doors.WORDS`: `copied:duckdb` on every answer a federation gives while a member's rows sit copied in it ("run over rows COPIED out of their source … the organisation allows it"), and `cross-source:<connection>` on a join made in the platform, after the left read's own doors — so the receipt says whose rows were joined. `docs/SQL_DOORS.json` is the census of door CALL SITES, not words, and gains nothing; the exit as written was imprecise | the two tests above; `test_de5d_count_and_more` holds every word seen to `WORDS` |
+| D3 | **Measured 2026-11-06: already true, no code.** A removed connection takes its cache rows (`db/purge.py`, `test_connection_purge.py`); expired rows are evicted on the monitors' clock (`monitors/scheduler.py:47`, `test_matcache_evict.py`); `cache_stats()` says the retention (`ttl_default_s`, one hour, TTL on read); keys carry the tenancy. The program's row was written from the assessment's reading, not the code's — the repo's own rule, applied to the repo's own plan | the tests named |
 
-**Exit:** `docs/SQL_DOORS.json` gains the word; no copy without a setting. **Starvation gate:** one
-week, any time.
+**Exit (met 2026-11-06):** no copy without a setting, and every copy or join said on the trail. **Starvation gate:** one
+week, any time — it took an afternoon.
 
 ### Track E · Separately deployable — decision 1, gated
 

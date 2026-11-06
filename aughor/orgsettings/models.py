@@ -138,6 +138,14 @@ class OrgSettings(BaseModel):
                     "filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt "
                     "until a person confirms it and it binds. Off by default.",
     )
+    # Track D1 (2026-11-06) — a cross-source join over a source the federation engine cannot read in place (an
+    # upload, an API mirror, a bucket) COPIES that source's rows into DuckDB for the length of the session. Data
+    # stays in the warehouse by default; a copy is an admin's choice, said on the result's door trail when taken.
+    copy_rows_across_sources: Optional[bool] = Field(
+        default=None,
+        description="Copy a source's rows into the federation engine for cross-source joins, where it cannot be "
+                    "read in place. Rows leave their source for the session. Off by default.",
+    )
 
     # ── Working memory (CB-6) ──
     priorities: list[Priority] = Field(

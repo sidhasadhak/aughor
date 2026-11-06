@@ -210,11 +210,13 @@ export interface OrgSettings {
   scheduled_model_work?: boolean | null;
   /** Arc NV-3 (ROADMAP §3.68) — read each warehouse's own query history for candidates; born a setting. */
   read_query_history?: boolean | null;
+  /** Track D1 (ROADMAP §3.69) — copy a source's rows into the federation engine for a cross-source join. */
+  copy_rows_across_sources?: boolean | null;
 }
 
 /** The choices an organisation makes about what Aughor may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
 export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work"
-  | "read_query_history";
+  | "read_query_history" | "copy_rows_across_sources";
 
 /** Each choice's answer, and whether an admin set it — one never set answers from the server's environment. */
 export type OrgAllows = Record<OrgAllowSetting, { allowed: boolean; set: boolean }>;

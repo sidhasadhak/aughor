@@ -21938,6 +21938,11 @@ export interface components {
              */
             company_name: string;
             /**
+             * Copy Rows Across Sources
+             * @description Copy a source's rows into the federation engine for cross-source joins, where it cannot be read in place. Rows leave their source for the session. Off by default.
+             */
+            copy_rows_across_sources?: boolean | null;
+            /**
              * Currency Code
              * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts; a figure carries the currency a person confirmed for its dataset (store.data_currency). Empty = unset.
              * @default

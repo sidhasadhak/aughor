@@ -58,6 +58,9 @@ WORDS: dict[str, str] = {
     "retried": "run once more after a {d} error, being a platform statement (a person's or a model's is never "
                "retried)",
     "guarded": "checked by the {d} guard",
+    # Track D2 (2026-11-06) — rows that moved between sources are said on the answer that moved them.
+    "copied": "run over rows COPIED out of their source into {d} for this session (the organisation allows it)",
+    "cross-source": "joined in the platform to rows read from {d}",
     "unchecked": "NOT checked by the {d} guard: it could not run on this statement",
     # DE-5d — what the engine said the statement cost, where the engine bills by bytes (BigQuery): the
     # measurement the study's paging falsifier asks for, on the trail of every statement that has one.

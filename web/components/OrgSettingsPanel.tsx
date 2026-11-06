@@ -215,6 +215,8 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       hint: "Nightly runs of each custom agent's checked questions, and re-tests after reviews, within the Spend budget." },
     { k: "read_query_history", label: "Read each warehouse's own query history",
       hint: "The SQL people ran there, mined for joins, filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt until a person confirms it." },
+    { k: "copy_rows_across_sources", label: "Copy a source's rows into the federation engine for cross-source joins",
+      hint: "Only where a source cannot be read in place (an upload, an API mirror, a bucket). Rows leave their source for the session; the answer's door trail says so." },
   ];
   const allowField = ({ k, label, hint }: { k: OrgAllowSetting; label: string; hint: string }) => {
     const chosen = s[k];
