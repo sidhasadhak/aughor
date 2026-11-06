@@ -16235,6 +16235,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/north-star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Record North Star
+         * @description The study's North Star for one quarter (Track G5): loops closed · calibration error, each with its n,
+         *     every outcome that did not close with the rule it failed. ``quarter`` is ``2026-Q4``; empty = this one.
+         */
+        get: operations["record_north_star_record_north_star_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/set-aside": {
         parameters: {
             query?: never;
@@ -53401,6 +53422,40 @@ export interface operations {
                 "application/json": components["schemas"]["MissionStateRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_north_star_record_north_star_get: {
+        parameters: {
+            query?: {
+                quarter?: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

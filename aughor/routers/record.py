@@ -809,6 +809,19 @@ def record_calibration(connection_id: Optional[str] = None) -> list[dict]:
     return calibration(conn_id=connection_id)
 
 
+@router.get("/record/north-star")
+def record_north_star(quarter: str = "", connection_id: Optional[str] = None) -> dict:
+    """The study's North Star for one quarter (Track G5): loops closed · calibration error, each with its n,
+    every outcome that did not close with the rule it failed. ``quarter`` is ``2026-Q4``; empty = this one."""
+    from aughor.record.north_star import north_star
+    if connection_id and not _visible(connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    try:
+        return north_star(quarter, conn_id=connection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"{exc} — a quarter reads like 2026-Q4") from exc
+
+
 # ── set aside: "not now" on what waits on a person (the Now page) ──────────────────────────
 
 class SetAsideRequest(BaseModel):

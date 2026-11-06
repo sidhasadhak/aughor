@@ -13128,6 +13128,14 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   held at submit and hold now, as a departures row with its remedy. Sign-in off is exempt; a clock's job and a send
   outside a job are not applicable, each said; an unreadable authority holds. Next: the loop's receipts (G) — the
   program's starvation gate says the foundation has had its half; C3 (idempotency keys) waits behind it.
+- **Track G5 BUILT, G3 measured 2026-11-06** (the user: *"Move to Track G"*; placement and *ask, don't require* their
+  choices). The North Star is a query now (`record/north_star.py`, `GET /record/north-star`, the head of Record ›
+  Decisions): **2026-Q4: 0 loops closed of 16 outcomes written · calibration error 0.40 over 101 settled predictions**.
+  The 16 outcomes are the 2026-10-26 scenario's, each prediction booked weeks after its back-dated decision — hindsight
+  under the study's rule — and none of the 21 decisions still waiting carries a prediction, so nothing on the install
+  can close a loop yet. The Declare form and the reader now say so. The history method's 80% intervals hold about half
+  the time; that, not the foundation, is the next thing worth fixing. The first loop is a person's: a decision declared
+  today with what it expects, answered on its review date.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
