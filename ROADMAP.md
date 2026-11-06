@@ -13121,8 +13121,13 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
 - **Track C1 BUILT 2026-11-06** (the user: *"Lets keep building"*). Every job carries the authority it runs on,
   written once at submit into `jobs.auth` (ledger Migration 13): who, which organisation, how they were known, their
   roles, the permission table's version, the purpose — and an empty person, said, for a job no request named anyone
-  for. The ledger refuses to rewrite it; a run binds the person from the row; `/jobs` shows it. Next: C2 (re-check it
-  at every effect), then the loop's receipts (G) — the program's starvation gate says the foundation has had its half.
+  for. The ledger refuses to rewrite it; a run binds the person from the row; `/jobs` shows it.
+- **Track C2 BUILT 2026-11-06** (the user: *"Build C2"*). Every effect already leaves through the departure gate, so
+  the re-check is one new first law there, `authority`: a send made inside a job re-checks the job's person against
+  their roles now, and a person who lost `resource.export` while the job waited is held from everyone, with what they
+  held at submit and hold now, as a departures row with its remedy. Sign-in off is exempt; a clock's job and a send
+  outside a job are not applicable, each said; an unreadable authority holds. Next: the loop's receipts (G) — the
+  program's starvation gate says the foundation has had its half; C3 (idempotency keys) waits behind it.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

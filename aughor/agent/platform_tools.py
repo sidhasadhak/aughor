@@ -679,7 +679,7 @@ def _departure_shelf() -> tuple[dict[str, str], dict[str, str]]:
         "The departure gate is content customs: every message that leaves the platform "
         "— a Slack post, a scheduled briefing, a monitor alert, an Action Hub send — is "
         "checked first, and every decision (departed or held) lands in the departures "
-        "ledger with its reasons. Ten guards run in order, each a law the receipt names:\n"
+        "ledger with its reasons. " + f"{len(lines)} guards run in order, each a law the receipt names:\n"
         + "\n".join(lines)
         + f"\n\n{HOLD_LEAD} The departures screen (Agent Ops › Departures) shows every "
           "held row with what to change and doors to the fix; ask for one guard by name "
