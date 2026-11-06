@@ -486,7 +486,8 @@ def tell(answer: dict, entry: dict) -> dict:
         return {"door": "slack", "status": "held", "note": verdict.reason_sentence(),
                 "departure_id": verdict.record_id}
     ok, info = post_as_bot(bot.bot_token, channel, f"{text}\n\n{verdict.receipt_line()}",
-                           thread_ts=thread_ts, delivery_key=_correction_key(answer, entry))
+                           thread_ts=thread_ts, delivery_key=_correction_key(answer, entry),
+                           departure_id=verdict.record_id)
     return {"door": "slack", "status": "sent" if ok else "failed", "departure_id": verdict.record_id,
             "ts": info.get("ts", ""), "note": "" if ok else str(info.get("error", "unknown"))}
 

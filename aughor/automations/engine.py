@@ -1136,6 +1136,7 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
         bot.bot_token, channel, message_text,
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
         delivery_key=str(effect.config.get(DELIVERY_KEY_KEY) or ""),     # Track C3
+        departure_id=getattr(verdict, "record_id", "") or "",
     )
     if ok and info.get("not_sent_again"):
         # Track C3 — this send's key already posted: that post is the answer, and its picture and

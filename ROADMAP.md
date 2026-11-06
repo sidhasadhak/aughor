@@ -13157,6 +13157,13 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   a tick killed after one re-posted its period). A ratchet holds every transport call site to a key, or names the
   person who is the check. Receipt: a worker process SIGKILLed with its message on the wire; its retry sent nothing.
   Two API processes ticking one automation still make two runs — E2's scheduler leader, gated on a second host.
+- **A departure learns whether its send arrived, 2026-11-06** (the user: *"Go ahead"*). Found by running it: a
+  notify its receiver refused was retried by the engine and HELD at the gate — *"the same message already departed"*;
+  the receiver had one request, the refused one, and the record said it departed. The gate writes `departed` before
+  the send, and law 7, the attention budget and a mission's charge all read it as *heard*, so a refused send blocked
+  its retry and the same words to that place for seven days. Now the transport writes `delivery` onto the departure
+  (delivered · uncertain · not_delivered); those counts skip what did not arrive, and Departures says *departed — not
+  delivered*. A ratchet holds every gated send to telling its transport which departure it is.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

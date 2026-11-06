@@ -247,6 +247,16 @@ def _build_jira_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict:
     }
 
 
+def _report_delivery(payload: ActionPayload, outcome: str) -> None:
+    """Write what became of this send onto the departure the gate recorded for it before it left
+    (its id rides the receipt in the payload's context). The gate's `departed` is a verdict
+    taken before the send; a send the receiver refused must not count as heard."""
+    departure_id = str(((payload.context or {}).get("receipt") or {}).get("departure_id") or "")
+    if departure_id:
+        from aughor.govern.departure_store import record_delivery
+        record_delivery(departure_id, outcome)
+
+
 def _not_sent_again(trigger: ActionTrigger, payload: ActionPayload, prior: dict,
                     log_id: str, fired_at: str) -> ActionLog:
     """Track C3 — the answer to a send whose key already left, or may have. Delivered: the first
@@ -298,6 +308,7 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
             status="skipped", http_status=None, error="Trigger is disabled", fired_at=fired_at,
         )
         log_action(log)
+        _report_delivery(payload, "not_delivered")     # nothing left: never heard
         return log
 
     # SSRF guard at SEND time (SEC-04): triggers persist and DNS can rebind, so
@@ -316,6 +327,7 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
             fired_at=fired_at,
         )
         log_action(log)
+        _report_delivery(payload, "not_delivered")     # nothing left: never heard
         return log
 
     # Track C3 — a keyed send leaves once (`notifications/sent_once.py`): claimed here, before the
@@ -373,9 +385,9 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
         status=status, http_status=status_code or None,
         error=error or None, fired_at=fired_at, resource_ref=resource_ref,
     )
-    sent_once.settle(scope, payload.delivery_key,
-                     {"ok": sent_once.DELIVERED, "timeout": sent_once.UNCERTAIN}.get(status, sent_once.NOT_DELIVERED),
-                     result=log.to_dict())
+    outcome = {"ok": sent_once.DELIVERED, "timeout": sent_once.UNCERTAIN}.get(status, sent_once.NOT_DELIVERED)
+    sent_once.settle(scope, payload.delivery_key, outcome, result=log.to_dict())
+    _report_delivery(payload, outcome)
     log_action(log)
 
     # `trigger.url[:60]` used to go here, on every fire. For a Slack webhook that is the

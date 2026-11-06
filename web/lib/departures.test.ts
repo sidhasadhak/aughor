@@ -27,6 +27,17 @@ describe("normalizeDeparture", () => {
   });
 });
 
+describe("what became of a departed message", () => {
+  it("says when the gate let it go and the send did not arrive", () => {
+    expect(stateLabel(row())).toBe("departed");
+    expect(stateLabel(row({ delivery: "delivered" }))).toBe("departed");
+    expect(stateLabel(row({ delivery: "not_delivered" }))).toBe("departed — not delivered");
+    expect(stateHue(row({ delivery: "not_delivered" }))).toBe("negative");
+    expect(stateLabel(row({ delivery: "uncertain" }))).toBe("departed — no answer from the receiver");
+    expect(stateHue(row({ delivery: "uncertain" }))).toBe("caution");
+  });
+});
+
 describe("what a person owes", () => {
   it("a probation departure wants its declarer's mark until marked", () => {
     expect(owes(row({ state: "held_probation" }))).toBe("mark");

@@ -6825,6 +6825,10 @@ export interface Departure {
   answer: string;
   answered_by: string;
   answered_at: string;
+  /** 2026-11-06 — what became of a departed message once it was sent. `state` is the gate's
+   *  verdict, taken before the send; this is the send's. "" when nothing reported (an older row,
+   *  a send that never reported back). Absent on an API older than it. */
+  delivery?: "" | "delivered" | "uncertain" | "not_delivered";
   /** SP-15 — on a row that held or asked: the lead sentence and, per guard that held,
    *  what it means, what to change and where. Served from ONE module beside the laws
    *  (`aughor/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.

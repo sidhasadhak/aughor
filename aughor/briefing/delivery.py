@@ -459,7 +459,7 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict, *, delivery_k
             receipt = verdict.receipt_line()
             text = built["markdown"]
             ok, info = post_as_bot(bot.bot_token, sub.channel, f"{text}\n\n{receipt}" if receipt else text,
-                                   delivery_key=delivery_key)
+                                   delivery_key=delivery_key, departure_id=verdict.record_id)
             result["status"], result["http_status"], result["error"] = _bot_outcome(ok, info)
             _book_delivery(sub, built, verdict, result, to=f"{sub.channel} as {bot.name}", to_kind="slack")
             return

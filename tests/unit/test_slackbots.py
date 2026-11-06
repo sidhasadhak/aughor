@@ -258,7 +258,7 @@ def test_a_cron_posts_as_the_bot_and_the_thread_is_repliable(monkeypatch):
     bot = store.save_bot(_bot(name="salesbot", bot_token="xoxb-live-token"))
     seen = {}
 
-    def _fake_post(token, channel, text, thread_ts=None, delivery_key=""):
+    def _fake_post(token, channel, text, thread_ts=None, delivery_key="", departure_id=""):
         seen.update(token=token, channel=channel, text=text)
         return True, {"ts": "1788000000.000100", "channel": channel}
 

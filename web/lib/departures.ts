@@ -68,7 +68,10 @@ export function filterDepartures(rows: Departure[], filter: DepartureFilter): De
 
 export function stateLabel(d: Departure): string {
   switch (d.state) {
-    case "departed": return "departed";
+    case "departed":
+      // The gate let it go; the send is a separate fact, said when it did not go as well.
+      return d.delivery === "not_delivered" ? "departed — not delivered"
+        : d.delivery === "uncertain" ? "departed — no answer from the receiver" : "departed";
     case "held_probation": return d.verdict ? `marked ${d.verdict}` : "awaiting its declarer";
     case "held_owner": return d.answer ? "answered" : "asking its owner";
     case "held_budget": return "held — the week's slots were spent";
@@ -77,7 +80,8 @@ export function stateLabel(d: Departure): string {
 }
 
 export function stateHue(d: Departure): ChipHue {
-  if (d.state === "departed") return "positive";
+  if (d.state === "departed") return d.delivery === "not_delivered" ? "negative"
+    : d.delivery === "uncertain" ? "caution" : "positive";
   if (d.state === "held") return "negative";
   if (d.state === "held_probation") return d.verdict ? "muted" : "caution";
   if (d.state === "held_budget") return "muted";          // nothing wrong with the number; the slots were spent

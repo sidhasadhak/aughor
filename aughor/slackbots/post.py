@@ -41,7 +41,8 @@ _MAX_TEXT = 30_000
 
 
 def post_as_bot(bot_token: str, channel: str, text: str,
-                thread_ts: Optional[str] = None, *, delivery_key: str = "") -> tuple[bool, dict]:
+                thread_ts: Optional[str] = None, *, delivery_key: str = "",
+                departure_id: str = "") -> tuple[bool, dict]:
     """``(ok, info)``. Never raises; the caller turns this into an EffectOutcome.
 
     ``info`` carries ``ts`` on success — the thread root a reply will land in, and the id
@@ -51,10 +52,16 @@ def post_as_bot(bot_token: str, channel: str, text: str,
     key of its own for chat.postMessage, so this side does (`notifications/sent_once.py`): a key
     already posted answers with that post's ``ts`` and posts nothing; one that may have posted
     answers ``uncertain`` and posts nothing.
+
+    ``departure_id``: the departure the gate recorded for this post before it left. What became
+    of the post is written onto it (`departure_store.record_delivery`) — the gate's `departed` is
+    a verdict taken before the send, and a post Slack refused must not count as heard.
     """
     if not (bot_token or "").strip():
+        _report(departure_id, "not_delivered")
         return False, {"error": "no bot token"}
     if not (channel or "").strip():
+        _report(departure_id, "not_delivered")
         return False, {"error": "no channel"}
 
     body = (text or "").strip() or "(no message)"
@@ -81,6 +88,11 @@ def post_as_bot(bot_token: str, channel: str, text: str,
         if prior.get("state") == sent_once.DELIVERED:
             return True, {**(prior.get("result") or {}), "not_sent_again": why}
         return False, {"error": why, "uncertain": True}
+
+    def _ended(outcome: str, result: Optional[dict] = None) -> None:
+        sent_once.settle(scope, delivery_key, outcome, result=result)
+        _report(departure_id, outcome)
+
     # VA-9a — through the outbound seam: budgeted before the send, visible in the
     # waterfall after it. `OutboundBlocked` is caught here because this function
     # promises never to raise and already has an honest failure shape to return.
@@ -93,21 +105,27 @@ def post_as_bot(bot_token: str, channel: str, text: str,
     except OutboundBlocked as blocked:
         # Not "uncertain": nothing was sent, so a retry is legitimate once the window
         # rolls over. Saying uncertain here would suppress a send that never happened.
-        sent_once.settle(scope, delivery_key, sent_once.NOT_DELIVERED)
+        _ended(sent_once.NOT_DELIVERED)
         return False, {"error": blocked.reason, "blocked": True}
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         # Distinguished from a Slack refusal on purpose: a transport failure MAY have
         # delivered, and the engine treats "uncertain" differently from "failed" —
         # a retried maybe-delivered message is the duplicate that layer exists to stop.
         logger.warning("slack chat.postMessage unreachable: %s", exc)
-        sent_once.settle(scope, delivery_key, sent_once.UNCERTAIN)
+        _ended(sent_once.UNCERTAIN)
         return False, {"error": str(exc), "uncertain": True}
     if not data.get("ok"):
-        sent_once.settle(scope, delivery_key, sent_once.NOT_DELIVERED)
+        _ended(sent_once.NOT_DELIVERED)
         return False, {"error": data.get("error", "unknown")}
     info = {"ts": data.get("ts", ""), "channel": data.get("channel", "")}
-    sent_once.settle(scope, delivery_key, sent_once.DELIVERED, result=info)
+    _ended(sent_once.DELIVERED, info)
     return True, info
+
+
+def _report(departure_id: str, outcome: str) -> None:
+    if departure_id:
+        from aughor.govern.departure_store import record_delivery
+        record_delivery(departure_id, outcome)
 
 
 def upload_file(bot_token: str, channel_id: str, *, data: bytes, filename: str,
