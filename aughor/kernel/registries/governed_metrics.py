@@ -1,12 +1,12 @@
 """Which governed metrics a connection has — the platform's seam (2026-11-06).
 
-A chart names its axis by the governed metric a query computes (`answer/series_names.py`): "Revenue"
-when the query is the revenue metric, filter and all. The metrics live in the semantic layer, on the
+A chart names its axis by the governed metric a query computes (`answer/series_names.py`): the metric's
+own label when the query is that metric, filter and all. The metrics live in the semantic layer, on the
 agent side of the boundary, so the agent registers its reader here at bootstrap and the platform reads
 through the seam, never importing it.
 
 With no reader registered (a bare platform, a harness outside the app) a connection has no governed
-metrics, and an axis is named by its column — "Sale price", never a metric's name it did not earn.
+metrics, and an axis is named by its column — never a metric's name it did not earn.
 """
 from __future__ import annotations
 
