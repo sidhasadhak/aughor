@@ -13109,8 +13109,15 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   organisation allows it, and otherwise every answer refuses naming the setting and the place. D2: two door words,
   `copied:duckdb` on every answer a federation gives over copied rows, `cross-source:<connection>` on a join made in
   the platform. D3 measured already true (purge takes the cache rows, the clock evicts, `cache_stats` says the
-  retention) — the program's row came from the assessment's reading, not the code's. Next: B1–B2 (Postgres in CI,
-  the checkpointer on the seam), then C1.
+  retention) — the program's row came from the assessment's reading, not the code's.
+- **Track B1–B2 BUILT 2026-11-06** (the user: *"Build B1-B2"*). B1: a pgvector Postgres service in the backend CI job;
+  the shared-state tests that skipped on every CI run (23 of 36 — claim contention, peer boot, schema isolation,
+  migrations once — and 4 pgvector tests) now run, and `AUGHOR_REQUIRE_PG_TESTS=1` turns a missing service into a failure. B2: on a shared
+  Postgres the LangGraph checkpointer is the library's own `PostgresSaver` in the store's schema (new extra
+  `shared-state`, the saver pinned to 3.1.2 so LangGraph's core does not move); a run paused in one process resumes
+  and finishes in another, asserted where the rows live. Same branch: Data Canvas charts fill their row (a few-category
+  width cap counted categories, not bars), an exhibit drawn as a table offers no second "Table", and a drawn result is
+  framed on hover. Next: C1.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

@@ -613,6 +613,19 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 
 /* Citation marker, inline in prose: the dashed underline says the figure is checkable, the
    superscript says where. An amber superscript is a note that argues with the sentence. */
+/* A drawn result — an exhibit, a chart or table under an answer — is framed while the pointer is on it,
+   so a reader always sees which component they are on (the user, 2026-11-06). The whole component, at
+   half the accent; an outline, so nothing moves, offset so the frame clears the content. */
+.aug-hover-frame {
+  outline: 1px solid transparent;
+  outline-offset: 6px;
+  border-radius: var(--r3);
+  transition: outline-color 120ms ease-out;
+}
+.aug-hover-frame:hover, .aug-hover-frame:focus-within {
+  outline-color: color-mix(in srgb, var(--blue4) 50%, transparent);
+}
+
 .aug-cite { font-family: var(--font-mono); border-bottom: 1px dashed color-mix(in srgb, currentColor 50%, transparent); cursor: help; }
 .aug-cite-ref { font-family: var(--font-mono); font-size: 11px; line-height: 0; vertical-align: super; color: var(--blue4); }
 .aug-cite-ref-dissent { color: var(--amb4); }

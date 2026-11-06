@@ -186,8 +186,8 @@ A1–A3 in the first.
 
 | # | Change | Receipt |
 |---|---|---|
-| B1 | A Postgres service in CI; `needs_pg` tests run on every PR; the sqlglot seam gains the isolation, concurrency and migration tests the assessment's F-08 lists | a CI run with the Postgres job green and its row count in the log |
-| B2 | The LangGraph checkpointer goes through `connect_store` (the WAL-hold reason is recorded in `graph.py`; it dies with the SQLite path) | a paused investigation resumes on a second process pointed at the same `AUGHOR_DB_URL` |
+| B1 | **Built 2026-11-06.** The backend CI job starts a `pgvector/pgvector:pg16` service (pinned by digest) and points both `AUGHOR_PG_TEST_URL` and `AUGHOR_PGVECTOR_TEST_URL` at it. **Measured first:** the isolation, concurrency and migration tests F-08 asked for already existed — claim contention, peer-boot recovery, live cross-instance writes, schema isolation, migrations run once — and **CI skipped 23 of the 36 on every run**, plus the 4 pgvector tests. Locally against one throwaway pgvector server all 52 Postgres-backed tests pass, none skipped. `AUGHOR_REQUIRE_PG_TESTS=1` makes a missing service a failure, not 23 quiet skips, and `-rs` lists every skip with its reason in the log | `tests/unit/test_postgres_is_proven_in_ci.py`: red with its sentence when the promised Postgres does not answer (falsifier run), and a ratchet on the promise in `ci.yml`; the first CI run's log is the receipt |
+| B2 | **Built 2026-11-06, the library's saver rather than the seam.** With `AUGHOR_DB_URL` naming a Postgres, `agent/graph._checkpointer` returns LangGraph's own `PostgresSaver` over a small pool, in the schema the seam would give `checkpoints.db` (`db/backend.store_schema`); SQLite is unchanged. New extra `shared-state` (`langgraph-checkpoint-postgres==3.1.2` + `psycopg[binary]`) — pinned below 3.1.3, which needs `langgraph-checkpoint ≥ 4.3` and would move LangGraph's core under every investigation; without the extra the first checkpoint names it | `tests/unit/test_checkpoints_on_shared_postgres.py`: a run paused here resumes and finishes in a SECOND PROCESS, and the rows are asserted in the Postgres schema and absent from the local file. The first falsifier run did NOT fire — two processes on one machine also share the SQLite file — so the location assertion was added; the mutant (Postgres branch off) now fails on it |
 | B3 | Every write path classified — durable record · evidence · artifact · ephemeral — in `docs/STATE_CLASSES.md`, with the store that owns each; artifacts (sheets' projections, dashboards, uploads) get an object-store door beside the file one | the classification is a test: a new store without a class fails |
 | B4 | The hourly-backup week is read and the second restore proven (Arc SV's owed graduation) | the receipt in ROADMAP |
 
@@ -195,7 +195,7 @@ A1–A3 in the first.
 explore, Briefing — with a receipt. **Falsifier:** point the live install at Postgres on a copy of
 state and diff every store's row counts against SQLite (`backups.restore`'s own oracle).
 **Starvation gate:** B1 and B2 only, until a second host or a second organisation is on the
-calendar.
+calendar. *B1–B2 built 2026-11-06; B3/B4 wait on that calendar.*
 
 ### Track C · Authority rides the job — decision 3's missing half
 

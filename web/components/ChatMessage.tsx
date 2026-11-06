@@ -406,7 +406,7 @@ function ResultFigure({
   if (showChart) {
     return (
       <div className="flex flex-col gap-1.5">
-        <BriefFigure caption={sourceTitle} source={source}>
+        <BriefFigure caption={sourceTitle} source={source} className="aug-hover-frame">
           <ResultChartCard columns={columns} rows={rows} chartType={isCheck ? "bar" : chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
         </BriefFigure>
         {onShowSource && (

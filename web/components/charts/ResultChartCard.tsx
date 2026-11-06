@@ -155,12 +155,15 @@ interface Props {
    *  goes (a pinned card's `render`, or `viz_configs` for a card-less chart) and is expected to
    *  debounce — this fires per interaction. Absent → the chart is ephemeral, exactly as before. */
   onConfigChange?: (config: VizConfig) => void;
+  /** Fired with what the card is showing — on mount and on every switch — so a caller that offers its
+   *  own "Table" disclosure can withhold it while the card already IS a table (2026-11-06). */
+  onViewChange?: (view: "chart" | "table" | "pivot") => void;
 }
 
 export function ResultChartCard({
   columns, rows, title, chartType, chartConfig, custom, exhibit: exhibitProp,
   columnUnits, defaultShowLabels, heightScale, fillHeight, onSelect,
-  config, onConfigChange,
+  config, onConfigChange, onViewChange,
 }: Props) {
   // Saved display choices seed the controls ONCE. A lazy useState (not a ref) because this is
   // read during render: it captures the first value and never changes, so a parent re-render —
@@ -202,6 +205,9 @@ export function ResultChartCard({
   // form — the chart toggle stays available); everything else opens on the chart.
   const [view, setView] = useState<"chart" | "table" | "pivot">(
     seed.view ?? (chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table"));
+  const viewChanged = useRef(onViewChange);
+  viewChanged.current = onViewChange;
+  useEffect(() => { viewChanged.current?.(view); }, [view]);
   const [typeSel, setTypeSel] = useState<ChartType | "auto">(seed.type ?? "auto");
   const [metricSel, setMetricSel] = useState<string | null>(seed.metric ?? null);
   const [dimSel, setDimSel] = useState<string | null>(seed.dim ?? null);
