@@ -13103,7 +13103,14 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   file because the ledger was unreachable — and is degraded while it is above zero; the best-effort contract stays.
   A9: the browser's credential is an HttpOnly session cookie (`POST`/`DELETE /auth/session`, `security/sessions.py`,
   the ledger keeps the hash), the page keeps only the email, and CORS sends credentials only to named origins. Track A
-  is complete. Next: Track D (data stays home), then B1–B2.
+  is complete.
+- **Track D BUILT 2026-11-06** (the user: *"Lets build Track D"*). D1: `copy_rows_across_sources`, an organisation
+  setting born without a flag, off by default — a federation copies a member it cannot read in place only when the
+  organisation allows it, and otherwise every answer refuses naming the setting and the place. D2: two door words,
+  `copied:duckdb` on every answer a federation gives over copied rows, `cross-source:<connection>` on a join made in
+  the platform. D3 measured already true (purge takes the cache rows, the clock evicts, `cache_stats` says the
+  retention) — the program's row came from the assessment's reading, not the code's. Next: B1–B2 (Postgres in CI,
+  the checkpointer on the seam), then C1.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
