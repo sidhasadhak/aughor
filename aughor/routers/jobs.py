@@ -62,6 +62,8 @@ def _view(job: dict) -> dict:
         "agent": agent_for(job.get("kind")),
         "title": _title(job),
         "cost": job.get("metrics"),        # parsed dict (tokens/queries/rows/time) or None
+        # Track C1 — whose authority the job runs on, as written at submit; None on a row older than it.
+        "auth": job.get("auth") if isinstance(job.get("auth"), dict) else None,
         "duration_ms": _duration_ms(job),
     }
 

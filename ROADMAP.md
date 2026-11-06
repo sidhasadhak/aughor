@@ -13117,7 +13117,12 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   `shared-state`, the saver pinned to 3.1.2 so LangGraph's core does not move); a run paused in one process resumes
   and finishes in another, asserted where the rows live. Same branch: Data Canvas charts fill their row (a few-category
   width cap counted categories, not bars), an exhibit drawn as a table offers no second "Table", and a drawn result is
-  framed on hover. Next: C1.
+  framed on hover.
+- **Track C1 BUILT 2026-11-06** (the user: *"Lets keep building"*). Every job carries the authority it runs on,
+  written once at submit into `jobs.auth` (ledger Migration 13): who, which organisation, how they were known, their
+  roles, the permission table's version, the purpose — and an empty person, said, for a job no request named anyone
+  for. The ledger refuses to rewrite it; a run binds the person from the row; `/jobs` shows it. Next: C2 (re-check it
+  at every effect), then the loop's receipts (G) — the program's starvation gate says the foundation has had its half.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

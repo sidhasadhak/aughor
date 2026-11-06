@@ -624,6 +624,10 @@ _MIGRATIONS = [
     #: user_version` on the deployed `data/system.db` returns 11 on 2026-09-19, and this
     #: file's highest was 11, so 12 is both next-in-file and next-to-execute.
     Migration(12, "events: trace correlation + retention indexes", _add_events_indexes),
+    #: Version 13 (Track C1, 2026-11-06): every local and remote branch's ledger was checked and none
+    #: carries a 13, and `main` has stopped at 12 since 2026-09-19 — next in the file and next to execute.
+    Migration(13, "jobs: the authority a job runs on (Track C1)",
+              lambda c: add_column_if_missing(c, "jobs", "auth", "TEXT")),
 ]
 
 
@@ -1055,13 +1059,13 @@ class Ledger:
     def job_insert(self, row: dict) -> None:
         cols = ("id", "kind", "conn_id", "canvas_id", "org_id", "state", "payload", "error",
                 "idempotency_key", "attempt", "created_at", "started_at",
-                "heartbeat_at", "finished_at")
+                "heartbeat_at", "finished_at", "auth")
         row = {**row, "org_id": row.get("org_id") or current_org_id()}
         with self._lock, self._conn:
             self._conn.execute(
                 f"INSERT INTO jobs ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
                 tuple(
-                    json.dumps(row.get(c), default=str) if c == "payload" and row.get(c) is not None
+                    json.dumps(row.get(c), default=str) if c in ("payload", "auth") and row.get(c) is not None
                     else row.get(c)
                     for c in cols
                 ),
@@ -1070,6 +1074,10 @@ class Ledger:
     def job_update(self, job_id: str, **fields) -> None:
         if not fields:
             return
+        if "auth" in fields:
+            # Track C1: the authority a job runs on is written once, at submit. A retry, a resume or a
+            # transition never widens or rewrites it; a different authority is a different job.
+            raise ValueError("a job's authority is written once, at submit, and never updated")
         sets = ", ".join(f"{k}=?" for k in fields)
         with self._lock, self._conn:
             self._conn.execute(
@@ -1084,7 +1092,7 @@ class Ledger:
                 return None
             cols = [d[0] for d in cur.description]
         out = dict(zip(cols, row))
-        for _jf in ("payload", "metrics"):
+        for _jf in ("payload", "metrics", "auth"):
             if out.get(_jf):
                 try:
                     out[_jf] = json.loads(out[_jf])
@@ -1147,7 +1155,7 @@ class Ledger:
         out = []
         for r in rows:
             d = dict(zip(cols, r))
-            for _jf in ("payload", "metrics"):
+            for _jf in ("payload", "metrics", "auth"):
                 if d.get(_jf):
                     try:
                         d[_jf] = json.loads(d[_jf])
