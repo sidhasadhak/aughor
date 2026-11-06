@@ -829,6 +829,9 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
                     "interpretation": "",
                     "key_numbers": [],
                     "chart_type": "auto",
+                    # The model's own aliases (r29, d) named from their SQL, for every chart of
+                    # this result (`answer/series_names.py`); display only, the columns keep theirs.
+                    "chart_config": _named(cols, ran, getattr(turn, "connection_id", "")),
                     "stat_note": None,
                     "is_significant": False,
                     # What the guards said about these rows reaches the page and the
@@ -1897,6 +1900,16 @@ def _describe_rules(budget: int) -> list[str]:
         "",
         *closing,
     ]
+
+
+def _named(columns: list, sql: str, connection_id: str) -> dict:
+    """A finding's chart config carrying the names its cryptic columns read as — ``{}`` when every
+    column already reads, so a result whose model named it well costs no metric read."""
+    from aughor.answer.series_names import connection_metrics, cryptic, names_for
+    if not any(cryptic(str(c)) for c in columns or []):
+        return {}
+    names = names_for(list(columns), [sql], metrics=connection_metrics(connection_id))
+    return {"names": names} if names else {}
 
 
 def analyst_system_prompt(connection_id: str, intake: dict, budget: int,

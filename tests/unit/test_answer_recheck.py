@@ -142,7 +142,7 @@ def test_a_slack_answer_is_told_in_its_own_thread_through_the_gate(con, lag, mon
     monkeypatch.setattr(bots, "list_bots", lambda include_disabled=True: [bot])
     monkeypatch.setattr(bots, "get_bot_decrypted", lambda bot_id: bot)
     sent = []
-    monkeypatch.setattr(post, "post_as_bot", lambda token, channel, text, thread_ts=None:
+    monkeypatch.setattr(post, "post_as_bot", lambda token, channel, text, thread_ts=None, delivery_key="", departure_id="":
                         (sent.append((channel, thread_ts, text)) or True, {"ts": "1726.9"}))
     answer = answer_from(con, session_id="slack:C0TEAM:1726000000.000100")
     con.execute("INSERT INTO orders SELECT TIMESTAMP '2026-09-20 23:00' FROM range(0, 158)")

@@ -6825,6 +6825,10 @@ export interface Departure {
   answer: string;
   answered_by: string;
   answered_at: string;
+  /** 2026-11-06 — what became of a departed message once it was sent. `state` is the gate's
+   *  verdict, taken before the send; this is the send's. "" when nothing reported (an older row,
+   *  a send that never reported back). Absent on an API older than it. */
+  delivery?: "" | "delivered" | "uncertain" | "not_delivered";
   /** SP-15 — on a row that held or asked: the lead sentence and, per guard that held,
    *  what it means, what to change and where. Served from ONE module beside the laws
    *  (`aughor/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.
@@ -7116,6 +7120,32 @@ export async function runAutomation(id: string, runId?: string): Promise<Automat
     body: JSON.stringify({ run_id: runId ?? null }),
   });
   if (!res.ok) throw new Error("Failed to run automation");
+  return res.json();
+}
+
+/** 2026-11-06 — what a Slack step would post, drawn from the chain's last run with the step's
+ *  settings as edited (`POST /automations/{id}/picture-preview`; read-only — nothing runs or sends). */
+export interface PicturePreview {
+  run_id: string;
+  run_at: string;
+  /** Why there is nothing to preview, when there is not. */
+  said: string;
+  words: string;
+  results: { claim: string; columns: string[]; rows: number }[];
+  /** kind → whether the first picture's result can be drawn as it, and why not. */
+  kinds: Record<string, { ok: boolean; why: string }>;
+  names: { labels?: Record<string, string>; y_title?: string };
+  pictures: { picture: string; kind: string; asked: string; title: string; note: string;
+              result: number; image: string }[];
+}
+
+export async function previewStepPicture(id: string, step: number,
+                                         config: Record<string, unknown>): Promise<PicturePreview> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/picture-preview`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step, config }),
+  });
+  if (!res.ok) throw new Error(`Preview failed (${res.status})`);
   return res.json();
 }
 

@@ -48,7 +48,18 @@ _ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("answer", "TEXT NOT NULL DEFAULT ''"),
     ("answered_by", "TEXT NOT NULL DEFAULT ''"),
     ("answered_at", "TEXT NOT NULL DEFAULT ''"),
+    # 2026-11-06 — what became of a departed message once it was sent: '' (not reported — a row
+    # from before, a send that never reported back, a replay) · delivered · uncertain ·
+    # not_delivered. `state` is the gate's verdict, taken BEFORE the send; this is the send's.
+    ("delivery", "TEXT NOT NULL DEFAULT ''"),
 )
+
+#: The departures a person may have heard: departed, and not known to have failed to arrive. Law 7,
+#: the attention budget and a mission's charge each count only these — a message nobody received
+#: cannot have been heard before, interrupted nobody, and charged nothing. Before 2026-11-06 they
+#: counted every departed row, so a send the receiver refused held its own retry as "the same
+#: message already departed", and the same words to that place for seven days after.
+HEARD = "state = 'departed' AND delivery != 'not_delivered'"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS departures (
@@ -104,6 +115,27 @@ def _connect() -> sqlite3.Connection:
         conn.commit()
         _READY.add(key)
     return conn
+
+
+def record_delivery(departure_id: str, outcome: str) -> None:
+    """What became of a departed message once it was sent (`notifications/sent_once`'s words:
+    delivered · uncertain · not_delivered). Best-effort: a row the send could not mark stays
+    unreported, which every count reads as heard — the reading before this column existed."""
+    if not departure_id or not outcome:
+        return
+    try:
+        with _LOCK:
+            conn = _connect()
+            try:
+                conn.execute("UPDATE departures SET delivery = ? WHERE id = ? AND state = 'departed'",
+                             (outcome, departure_id))
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as exc:  # noqa: BLE001 — the send already happened; its record is the loser
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "departures: a send's outcome could not be written — the row reads as heard",
+                 counter="departures.delivery_unrecorded")
 
 
 def record_departure(**fields) -> str:
@@ -162,7 +194,7 @@ def count_departed_to(addressee: str, *, since: str) -> int:
         conn = _connect()
         try:
             row = conn.execute(
-                "SELECT COUNT(*) AS n FROM departures WHERE state = 'departed' AND origin = 'unattended' "
+                f"SELECT COUNT(*) AS n FROM departures WHERE {HEARD} AND origin = 'unattended' "
                 "AND ts >= ? AND (target = ? OR addressed_to = ?)", (since, addressee, addressee)).fetchone()
             return int(row["n"] if row else 0)
         finally:
@@ -170,16 +202,18 @@ def count_departed_to(addressee: str, *, since: str) -> int:
 
 
 def _bearing_rows(mission_id: str, *, state: str, since: str, limit: int) -> list[dict]:
-    """Rows whose checks name this mission (``checks["mission"]``, the ids joined by " · ")."""
+    """Rows whose checks name this mission (``checks["mission"]``, the ids joined by " · ").
+    ``departed`` means `HEARD`: a send that did not arrive bore on nothing."""
     if not mission_id:
         return []
     import json
+    which, args = (HEARD, ()) if state == "departed" else ("state = ?", (state,))
     with _LOCK:
         conn = _connect()
         try:
             rows = conn.execute(
-                "SELECT * FROM departures WHERE state = ? AND origin = 'unattended' AND ts >= ? AND checks LIKE ? "
-                "ORDER BY ts DESC LIMIT ?", (state, since or "", f"%{mission_id}%", max(1, min(int(limit), 2000)))).fetchall()
+                f"SELECT * FROM departures WHERE {which} AND origin = 'unattended' AND ts >= ? AND checks LIKE ? "
+                "ORDER BY ts DESC LIMIT ?", (*args, since or "", f"%{mission_id}%", max(1, min(int(limit), 2000)))).fetchall()
         finally:
             conn.close()
     out = []
@@ -300,12 +334,13 @@ def summary_counts(since: str = "", *, org_id: str = "") -> dict:
 def last_departed(*, source: str, target: str, fingerprint: str, since: str) -> Optional[dict]:
     """Law 7's lookup: the latest row that actually DEPARTED from this source to this
     target saying the same thing (same fingerprint) since ``since``. A held row never
-    counts — a message nobody received cannot have been heard before."""
+    counts, nor one whose send did not arrive (`HEARD`) — a message nobody received cannot
+    have been heard before."""
     with _LOCK:
         conn = _connect()
         try:
             row = conn.execute(
-                "SELECT * FROM departures WHERE state = 'departed' AND target = ? "
+                f"SELECT * FROM departures WHERE {HEARD} AND target = ? "
                 "AND fingerprint = ? AND ts >= ? AND (automation_id = ? OR source_id = ?) "
                 "ORDER BY ts DESC LIMIT 1",
                 (target, fingerprint, since, source, source)).fetchone()

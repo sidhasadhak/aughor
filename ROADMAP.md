@@ -13147,6 +13147,51 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   80%, 1.39× the width, no series below 60% (was 8 of 34).** On theLook's 94 stored predictions the t part alone
   lifts 47% → 54%; a week its source redrew at three times its size is not a band's to cover. Predictions already
   booked keep their old bands: the North Star's 0.40 falls only as new ones settle, once this is live.
+- **Track C3 BUILT 2026-11-06** (the user: *"Yes, do C3"*). A retried send leaves once. Measured first: most paths
+  had a partial guard of their own (the inbox's resolve-once, the engine's period claim, the action outbox, the
+  departure gate's seven-day repeat law), and every sender carried a `delivery_key` only a receiver could honour.
+  Now the two transports honour it (`notifications/sent_once.py`): claimed before the send, settled after it; a key
+  delivered answers a retry with the first send's record, a key whose worker died mid-send is never sent blind and
+  says *it may already have been delivered*, a send that did not arrive is released for its retry. The engine keys
+  each send by run and step, and an unattended Slack post is claimed like the other outward sends (it was missing —
+  a tick killed after one re-posted its period). A ratchet holds every transport call site to a key, or names the
+  person who is the check. Receipt: a worker process SIGKILLed with its message on the wire; its retry sent nothing.
+  Two API processes ticking one automation still make two runs — E2's scheduler leader, gated on a second host.
+- **A departure learns whether its send arrived, 2026-11-06** (the user: *"Go ahead"*). Found by running it: a
+  notify its receiver refused was retried by the engine and HELD at the gate — *"the same message already departed"*;
+  the receiver had one request, the refused one, and the record said it departed. The gate writes `departed` before
+  the send, and law 7, the attention budget and a mission's charge all read it as *heard*, so a refused send blocked
+  its retry and the same words to that place for seven days. Now the transport writes `delivery` onto the departure
+  (delivered · uncertain · not_delivered); those counts skip what did not arrive, and Departures says *departed — not
+  delivered*. A ratchet holds every gated send to telling its transport which departure it is.
+
+### 3.70 · What gets posted — a person's say over every scheduled post (BUILT 2026-11-06 at the user's *"What the hell is r29 r28? … how do I, as a user, be able to modify this from the UI?"* and *"User should be able to control everything that gets posted in general — the prompt, the picture or not, what kind of picture"* · mockup `design-mockups/automation-what-gets-posted.html`, the user: *"Build as mocked"*)
+
+The Daily Briefing's 09:00 post carried a chart titled with the automation's name, its legend `r28 · r29`
+over an axis called "Value": the analyst had aliased revenue on Oct 28 and Oct 29 that way, and the
+engine chose the picture alone. Two halves, one build:
+
+- **Readable by default.** `answer/series_names.py` reads what a cryptic column IS from its own SQL —
+  `SUM(IF(DATE(created_at)='2026-10-29', sale_price, 0)) r29` is "Oct 29" — names measures that differ
+  only by a condition by what differs and the axis by what they share, and gives the axis a governed
+  metric's label only when the query computes that metric, filter and all (SUM(sale_price) without the
+  revenue metric's status filter is "Sale price"). The names are DISPLAY labels laid over the resolved
+  spec (`web/components/charts/vega/names.ts`), never renamed columns: a column renamed "Oct 28" was
+  read as a date and the chart lost a series (measured). The finding carries them (the Data Canvas), the
+  answer's results carry them (Slack, the export), and an older run is named on demand from its SQL. A
+  long title wraps instead of squeezing the plot to a third of its width.
+- **The step's own settings.** A Slack step's inspector widens into *What gets posted*: the question it
+  answers (opened on its own step), the words (summary · headline · both · own words — bindings the
+  canvas draws), picture none · table · chart, the kind of chart (only what the result can take; the
+  rest said with why), drawn from a rule (main · over time · every result — the investigation writes
+  new results each run), the title, and the names. `automations/picture.plan` is read by the post AND
+  by `POST /automations/{id}/picture-preview`, which draws the step's post from the last fired run,
+  read-only — so the preview is what posts. A kind the next run's rows cannot take is drawn as auto and
+  says why on the picture; "Bars" over several series is the grouped form (the plain bar drew one and
+  dropped the other — found in the preview).
+
+Found on the way and fixed: the automation canvas rebuilt its nodes on every edit without their
+selection, so ANY change made in the step inspector closed it.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 

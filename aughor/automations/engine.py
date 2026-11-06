@@ -152,7 +152,7 @@ _CLAIM_STORE = "automation_delivery_claims"
 #: What an uncertain delivery means, in one sentence. Deliberately the same shape as
 #: the kernel's UNCERTAIN_RESULT for interrupted jobs — "we do not know" is one fact
 #: and should read the same wherever it surfaces.
-UNCERTAIN_DELIVERY = "it may already have been delivered, so it was not retried"
+UNCERTAIN_DELIVERY = "it may already have been delivered, so it was not retried"     # = sent_once.MAY_HAVE_ARRIVED
 
 #: Effect kinds that reach a person. Only these are claimed: a claim narrows when an
 #: automation may run again, and paying that for a purely internal effect (a rebuild, a
@@ -162,7 +162,10 @@ UNCERTAIN_DELIVERY = "it may already have been delivered, so it was not retried"
 #: in-app rules that were never at risk and letting a channel-backed rule double-page when
 #: two loops tick together. The rule's own debounce cannot close that race — both ticks read
 #: `last_notified_at` before either writes it. A duplicate page is the worse failure.
-OUTWARD_EFFECT_KINDS = frozenset({"notify", "brief", "agent_alert"})
+#: ``slack_post`` since Track C3 (2026-11-06): it reaches a channel of people, and it was missing only
+#: because the set predates it (#278 was written before RC-5 made a Slack bot a record) — a tick
+#: killed after an unattended post re-posted the same period on the next one.
+OUTWARD_EFFECT_KINDS = frozenset({"notify", "brief", "agent_alert", "slack_post"})
 
 
 def has_outward_effect(automation: Automation) -> bool:
@@ -690,6 +693,14 @@ DISAGREEMENT_KEY = "_readings_disagree"
 #: The step kinds that leave the platform through the engine's departure gate.
 DEPARTURE_SENDS = frozenset({"slack_post", "notify"})
 
+#: Track C3 — engine→dispatcher plumbing on the `DEPARTURE_BASIS_KEY` precedent: the delivery key of
+#: THIS send — the automation, the run, the step (with its iteration when fanned out). Stable across
+#: the step's retries and a resume of the run, distinct for every other send, so the transport
+#: (`notifications/sent_once.py`) can send it once. Never authored, never stored.
+DELIVERY_KEY_KEY = "_delivery_key"
+#: The step kinds that send through a transport keyed by it.
+KEYED_SENDS = frozenset({"slack_post", "notify", "brief"})
+
 #: RC-2 on the unattended path — the grid an outward Slack post should draw a picture of.
 #: Engine→dispatcher plumbing on the `DEPARTURE_BASIS_KEY` precedent: by dispatch time the
 #: message is a bound string and the rows behind it are gone, so the chart would have
@@ -729,12 +740,17 @@ def chart_grid(effect: Effect, context: dict) -> dict:
             raw_rows = g.get("rows")
             if cols and isinstance(raw_rows, list) and raw_rows:
                 chart = env.get("chart") if isinstance(env.get("chart"), dict) else {}
-                return {"columns": cols,
+                main = {"columns": cols,
                         "rows": [list(r) if isinstance(r, (list, tuple))
                                  else [r.get(c) for c in cols] for r in raw_rows
                                  if isinstance(r, (list, tuple, dict))],
                         "chart_type": str(chart.get("chart_type") or "auto"),
                         "chart_config": dict(chart.get("chart_config") or {})}
+                # 2026-11-06 — every result the answer cites, the main first, each with its own
+                # sentence: what a step's `picture_from` chooses among (`automations/picture.py`).
+                results = _envelope_results(env, main)
+                return {**main, "claim": results[0]["claim"], "results": results,
+                        "sql": [str(s) for s in ((env.get("provenance") or {}).get("sql") or [])]}
         columns = [str(c) for c in (entry.get("columns") or [])]
         raw = entry.get("rows")
         if not columns or not isinstance(raw, list) or not raw:
@@ -748,6 +764,32 @@ def chart_grid(effect: Effect, context: dict) -> dict:
         if rows:
             return {"columns": columns, "rows": rows}
     return {}
+
+
+def _envelope_results(env: dict, main: dict) -> list[dict]:
+    """The main grid, then every other result the envelope cites, each ``{claim, columns, rows,
+    chart_type, chart_config}``. The main's sentence is its own result's claim when it is one of
+    them, else the answer's headline."""
+    out = [dict(main, claim="")]
+    for ex in env.get("exhibits") or []:
+        g = (ex or {}).get("grid") or {}
+        cols = [str(c) for c in (g.get("columns") or [])]
+        rows = [list(r) for r in (g.get("rows") or []) if isinstance(r, (list, tuple))]
+        if not cols or not rows:
+            continue
+        chart = (ex.get("chart") or {}) if isinstance(ex.get("chart"), dict) else {}
+        claim = str(ex.get("claim") or "")
+        if cols == main["columns"] and not out[0]["claim"]:
+            out[0]["claim"] = claim
+            if "names" in (chart.get("chart_config") or {}) and "names" not in out[0]["chart_config"]:
+                out[0]["chart_config"] = {**out[0]["chart_config"], "names": chart["chart_config"]["names"]}
+            continue
+        out.append({"claim": claim, "columns": cols, "rows": rows,
+                    "chart_type": str(chart.get("chart_type") or "auto"),
+                    "chart_config": dict(chart.get("chart_config") or {})})
+    if not out[0]["claim"]:
+        out[0]["claim"] = str(env.get("headline") or "")
+    return out
 
 
 def departure_basis(effect: Effect, context: dict) -> dict:
@@ -976,6 +1018,7 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
     if not channel_id:
         return
     try:
+        from aughor.automations import picture
         from aughor.export.echarts import render_chart_svg, svg_to_png
         from aughor.slackbots.post import upload_file
 
@@ -983,38 +1026,41 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
         if automation.conn_id:
             from aughor.routers.investigations import resolve_currency_symbol
             money = resolve_currency_symbol(automation.conn_id, None) or ""
-        capped = rows[:_CHART_MAX_ROWS]
-        # CP-4 — the decision is the core's when the grid came with one (an envelope);
-        # `auto` is what a bare grid always meant. The encoding below stays this door's.
-        decided = str(grid.get("chart_type") or "auto")
-        exhibit = (grid.get("chart_config") or {}).get("exhibit")
-        svg = render_chart_svg(columns, capped, decided, automation.name or "",
-                               exhibit=exhibit if isinstance(exhibit, dict) else None,
-                               money_symbol=money)
-        if not svg and _ranked_magnitudes(columns, capped):
-            # The headless renderer is Vega ONLY, and Vega draws six types; the browser
-            # falls back to ECharts for the rest. `auto` sends a category plus an ADDITIVE
-            # measure at 7-24 rows to a treemap (`chartTypeInference.ts`), which Vega
-            # refuses — so the most ordinary business grid there is, "top sellers by
-            # revenue", renders nothing at all on every headless surface.
-            #
-            # The retry is deliberately NOT a blanket "try bar". Tier 1's refusal exists
-            # because falling through to bar drew a `scatter` as a bar chart: well-formed,
-            # correctly themed and entirely wrong. Bar is only honest here because the
-            # shape is already one label against one magnitude — the same ranked bar the
-            # inference comment says "reads the magnitudes directly". Anything else keeps
-            # the null and posts no picture.
-            svg = render_chart_svg(columns, capped, "bar", automation.name or "",
-                                   money_symbol=money)
-        png = svg_to_png(svg) if svg else None
-        if not png:
-            return
-        ok, up = upload_file(bot.bot_token, channel_id, data=png,
-                             filename="chart.png", title=automation.name or "chart",
-                             thread_ts=thread_ts or None)
-        if not ok:
-            logger.warning("slack chart upload failed for %s: %s",
-                           automation.id, up.get("error"))
+        # 2026-11-06 — the step's own settings decide the picture (`automations/picture.py`): none,
+        # a table or a chart, which kind, drawn from which result, titled how, named how. The
+        # preview on the step plans through the same function, so it shows what posts.
+        source = {**grid, "rows": rows[:_CHART_MAX_ROWS]}
+        for p in picture.plan(effect.config, source, automation_name=automation.name or "",
+                              connection_id=automation.conn_id or ""):
+            png = picture.render(p, money_symbol=money)
+            if not png and p["as"] == "chart" and _ranked_magnitudes(p["columns"], p["rows"]):
+                # The headless renderer is Vega ONLY, and Vega draws six types; the browser
+                # falls back to ECharts for the rest. `auto` sends a category plus an ADDITIVE
+                # measure at 7-24 rows to a treemap (`chartTypeInference.ts`), which Vega
+                # refuses — so the most ordinary business grid there is, "top sellers by
+                # revenue", renders nothing at all on every headless surface.
+                #
+                # The retry is deliberately NOT a blanket "try bar". Tier 1's refusal exists
+                # because falling through to bar drew a `scatter` as a bar chart: well-formed,
+                # correctly themed and entirely wrong. Bar is only honest here because the
+                # shape is already one label against one magnitude — the same ranked bar the
+                # inference comment says "reads the magnitudes directly". Anything else keeps
+                # the null and posts no picture.
+                svg = render_chart_svg(p["columns"], p["rows"], "bar", p["title"],
+                                       chart_config={"names": p["names"]} if p["names"] else None,
+                                       money_symbol=money)
+                png = svg_to_png(svg) if svg else None
+            if not png:
+                continue
+            # A kind the rows could not take says so on the file itself — a picture that quietly
+            # became another kind would read as the one asked for.
+            ok, up = upload_file(bot.bot_token, channel_id, data=png,
+                                 filename="table.png" if p["as"] == "table" else "chart.png",
+                                 title=p["note"] or p["title"] or automation.name or "chart",
+                                 thread_ts=thread_ts or None)
+            if not ok:
+                logger.warning("slack chart upload failed for %s: %s",
+                               automation.id, up.get("error"))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a scheduled post's chart is best-effort; the message already landed",
@@ -1047,7 +1093,20 @@ def _slack_message_text(effect: Effect, automation: Automation) -> str:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "a bound envelope that does not validate is not posted as itself",
                      counter="automations.envelope_render")
-    return str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    message = str(effect.config.get("message") or "")
+    # 2026-11-06 — "headline, then summary" (the What gets posted panel): the step binds the
+    # headline as a field of its own, so the canvas draws both bindings, and it leads the message.
+    headline = str(effect.config.get("headline") or "").strip()
+    if headline and message.strip() and message.strip().split("\n", 1)[0].strip() != headline:
+        message = f"{headline}\n\n{message}"
+    elif headline and not message.strip():
+        message = headline
+    return message or f"Automation '{automation.name}' fired"
+
+
+def slack_message_text(effect: Effect, automation: Automation) -> str:
+    """The text a Slack step posts, from its bound config — what its preview shows, too."""
+    return _slack_message_text(effect, automation)
 
 
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -1124,7 +1183,16 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
     ok, info = post_as_bot(
         bot.bot_token, channel, message_text,
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
+        delivery_key=str(effect.config.get(DELIVERY_KEY_KEY) or ""),     # Track C3
+        departure_id=getattr(verdict, "record_id", "") or "",
     )
+    if ok and info.get("not_sent_again"):
+        # Track C3 — this send's key already posted: that post is the answer, and its picture and
+        # filing were made with it. Doing either again would be the duplicate the key prevents.
+        return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="executed",
+                             message=info["not_sent_again"],
+                             data={"ts": info.get("ts", ""), "channel": info.get("channel", "") or channel,
+                                   "bot_id": bot_id})
     if ok:
         # RC-2 — the picture, into the thread the message just opened. After the post and
         # never instead of it: the numbers are the answer, and a renderer that is slow,
@@ -1146,8 +1214,10 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
     if info.get("uncertain"):
         # It may have arrived. Saying "failed" would license a retry, and a retried
         # maybe-delivered message is the duplicate this layer exists to prevent.
+        from aughor.notifications.sent_once import stopped
         return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="uncertain",
-                             message=f"post timed out — {UNCERTAIN_DELIVERY}")
+                             message=info["error"] if stopped(info.get("error"))
+                             else f"post timed out — {UNCERTAIN_DELIVERY}")
     return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="failed",
                          message=f"Slack refused the post: {info.get('error', 'unknown')}")
 
@@ -1335,11 +1405,12 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
         headline=automation.name,
         trigger_id=trigger_id,
         triggered_at=now_iso_z(),
-        # 4.1a — stable across every attempt of THIS delivery, so a receiver can drop
-        # the duplicate our own inner HTTP retry may produce. Keyed by the automation
-        # and the period, never by a fresh timestamp (which is what `triggered_at` is,
-        # and why the receiver could not tell a retry from a new alert).
-        delivery_key=f"{automation.id}:{last_delivery_claim(automation.id) or 'unclaimed'}",
+        # 4.1a — stable across every attempt of THIS delivery, never a fresh timestamp (which is
+        # what `triggered_at` is, and why a receiver could not tell a retry from a new alert).
+        # Track C3: the run's own key for this step (`DELIVERY_KEY_KEY`), which the transport now
+        # honours itself. It was `automation:period`, one key for every step of a run, and
+        # `automation:unclaimed` on a run that claimed nothing — one key for every such run.
+        delivery_key=str(effect.config.get(DELIVERY_KEY_KEY) or ""),
         # HB-2 law 8 — the receipt rides the payload's context (a receiver routes on it; the
         # Slack and Jira renderings print its sentence).
         context=_receipt_context(_verdict),
@@ -1348,9 +1419,16 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
     if _status == "timeout":
         # It may have arrived. Saying "failed" would license a retry, and a retried
         # maybe-delivered webhook is the duplicate this layer exists to prevent.
+        from aughor.notifications.sent_once import stopped
+        _error = getattr(log, "error", "")
         return EffectOutcome(kind=effect.kind, target=trigger_id, status="uncertain",
-                             message=f"delivery timed out — {UNCERTAIN_DELIVERY}")
+                             message=_error if stopped(_error)
+                             else f"delivery timed out — {UNCERTAIN_DELIVERY}")
     ok = _status == "ok"
+    if ok and getattr(log, "not_sent_again", ""):
+        # Track C3 — the first send under this key is the answer; it was filed when it was made.
+        return EffectOutcome(kind=effect.kind, target=trigger_id, status="executed", message=log.not_sent_again,
+                             data={"resource_ref": log.resource_ref} if log.resource_ref else {})
     if ok:
         _ref = getattr(log, "resource_ref", "") or getattr(log, "id", "")
         link_id = _file_departure_link(
@@ -1378,7 +1456,7 @@ def _dispatch_brief(effect: Effect, automation: Automation) -> EffectOutcome:
     if sub is None:
         return EffectOutcome(kind=effect.kind, target=sub_id, status="dispatch_error",
                              message=f"unknown brief subscription: {sub_id}")
-    result = deliver_subscription(sub) or {}
+    result = deliver_subscription(sub, delivery_key=str(effect.config.get(DELIVERY_KEY_KEY) or "")) or {}
     _status = result.get("status")
     if _status == "held":
         # HB-2 — the briefing was held at departure: a verdict with its reason, never retried.
@@ -2523,6 +2601,8 @@ def _walk_automation(
             # and produce a chart nothing could ever post.
             if effect.kind == "slack_post" and not dry_run:
                 bound = {**bound, CHART_GRID_KEY: chart_grid(effect, step_context)}
+            if effect.kind in KEYED_SENDS and not dry_run:
+                bound = {**bound, DELIVERY_KEY_KEY: f"{automation.id}:{run_id}:{label}"}
             if effect.kind == "synthesize":
                 # Read off the AUTHORED config, which still holds the reference.
                 ref = (effect.config or {}).get("data")
@@ -2791,7 +2871,11 @@ def _walk_automation(
             and paused_at is None
             and all(o.status != "executed" for o in attempted)):
         fallback_used = True
-        outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,
+        fallback = automation.fallback_effect
+        if fallback.kind in KEYED_SENDS:
+            fallback = fallback.model_copy(update={"config": {
+                **(fallback.config or {}), DELIVERY_KEY_KEY: f"{automation.id}:{run_id}:fallback"}})
+        outcomes.append(_run_effect(fallback, automation, dispatch_fn,
                                     sleeper=sleeper, rng=rng, sleep_budget=sleep_budget))
 
     # 5 — the tick FIRED: commit source-version baselines now, and only now. Committing at

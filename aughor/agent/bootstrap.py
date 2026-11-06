@@ -30,7 +30,20 @@ def register_agent_plugins() -> None:
     _register_guard_receipt_forwarder()
     _register_exclusions()
     _register_object_policies()
+    _register_governed_metrics()
     _REGISTERED = True
+
+
+def _register_governed_metrics() -> None:
+    """2026-11-06 — the governed metrics a chart's axis may be named by (`answer/series_names.py`), readable by the
+    platform through the registry seam (no Platform→Agent import). Unregistered, axes are named by their columns."""
+    from aughor.kernel.registries.governed_metrics import register_metric_reader
+
+    def _reader(connection_id):
+        from aughor.semantic.metrics import list_metrics
+        return list_metrics(connection_id=connection_id)
+
+    register_metric_reader(_reader)
 
 
 def _register_column_facts_source() -> None:

@@ -30,6 +30,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { WhatGetsPosted } from "@/components/automations/WhatGetsPosted";
 import {
   ConditionRow, EffectRow, effectsForWire, labelStyle, missingKeys, newCondition,
 } from "@/components/automations/AutomationRows";
@@ -266,8 +267,12 @@ export function DesignControls({ automation, connId, name, draft, keeps, onDraft
  * room than a node row — scoped to the one node being asked about.
  */
 export function StepInspector({ draft, onDraft, selection, logicLabel, onClose,
-                                timezone }: {
+                                timezone, automationId, onSelect }: {
   draft: Draft;
+  /** The saved chain, so a Slack step can preview its post from the last run. */
+  automationId?: string;
+  /** Select another node — the What gets posted panel opens the question on its own step. */
+  onSelect?: (alias: string) => void;
   onDraft: (d: Draft) => void;
   /** "__trigger" or a step alias (`step3`, or an explicit alias). */
   selection: string;
@@ -292,12 +297,14 @@ export function StepInspector({ draft, onDraft, selection, logicLabel, onClose,
     onDraft({ ...draft, conditions: draft.conditions.map((x, j) => (j === i ? c : x)) });
   const setEff = (i: number, e: AutoEffect) =>
     onDraft({ ...draft, effects: draft.effects.map((x, j) => (j === i ? e : x)) });
+  // A Slack step's post is the reason the chain exists: its inspector widens to say all of it.
+  const posting = index >= 0 && draft.effects[index]?.kind === "slack_post";
 
   return (
     <div
       data-testid="step-inspector"
       style={{
-        position: "absolute", top: 8, right: 8, bottom: 8, width: 312, zIndex: 5,
+        position: "absolute", top: 8, right: 8, bottom: 8, width: posting ? "min(980px, calc(100% - 16px))" : 312, zIndex: 5,
         display: "flex", flexDirection: "column",
         border: "1px solid var(--b1)", borderRadius: "var(--r3)",
         background: "var(--bg-1)", boxShadow: "var(--shadow-md)", overflow: "hidden",
@@ -333,11 +340,18 @@ export function StepInspector({ draft, onDraft, selection, logicLabel, onClose,
           </>
         ) : (
           <>
-            <label style={{ ...labelStyle }}>everything this step takes</label>
+            <label style={{ ...labelStyle }}>{posting ? "where it posts" : "everything this step takes"}</label>
             <EffectRow e={draft.effects[index]} agents={agents} bots={bots}
-              siblings={draft.effects} index={index}
+              siblings={draft.effects} index={index} wordsElsewhere={posting}
               onChange={ee => setEff(index, ee)}
               onRemove={undefined /* removal lives on the node face — one door */} />
+            {posting && (
+              <div style={{ marginTop: 14 }}>
+                <label style={{ ...labelStyle }}>what gets posted</label>
+                <WhatGetsPosted automationId={automationId} index={index} e={draft.effects[index]}
+                  siblings={draft.effects} onChange={ee => setEff(index, ee)} onOpenStep={onSelect} />
+              </div>
+            )}
           </>
         )}
       </div>

@@ -38,7 +38,7 @@ def sent(monkeypatch):
 
     monkeypatch.setattr("aughor.slackbots.store.get_bot_decrypted", lambda bot_id: _Bot())
     monkeypatch.setattr("aughor.slackbots.post.post_as_bot",
-                        lambda token, channel, text, thread_ts=None: (posts.append((channel, text)) or True, {"ts": "1"}))
+                        lambda token, channel, text, thread_ts=None, delivery_key="", departure_id="": (posts.append((channel, text)) or True, {"ts": "1"}))
     monkeypatch.setattr("aughor.knowledge.period_brief.refusal", lambda period: None)
     return posts
 

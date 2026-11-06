@@ -59,6 +59,7 @@ def render_charts_svg(charts: list[dict[str, Any]], *,
 
 def render_chart_svg(columns: list, rows: list, chart_type: str, title: str, *,
                      units: Optional[dict] = None, exhibit: Optional[dict] = None,
+                     chart_config: Optional[dict] = None,
                      labels: bool = True, width: int = 760, height: int = 0,
                      money_symbol: str = "") -> Optional[str]:
     """Single-chart convenience over :func:`render_charts_svg`."""
@@ -66,6 +67,8 @@ def render_chart_svg(columns: list, rows: list, chart_type: str, title: str, *,
         "columns": columns or [], "rows": rows or [],
         "chart_type": chart_type or "auto", "title": title or "",
         "column_units": units or None, "exhibit": exhibit or None,
+        # `names` (`answer/series_names.py`) ride here: what cryptic columns read as.
+        "chart_config": chart_config or None,
         "labels": labels, "width": width, "height": height,
     }], money_symbol=money_symbol)[0]
 

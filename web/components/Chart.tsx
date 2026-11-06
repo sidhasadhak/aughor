@@ -22,6 +22,7 @@ import { resolveTier3Spec } from "@/components/charts/vega/tier3";
 import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
 import type { ChartCustom } from "@/components/charts/chartCustom";
 import type { ExhibitSpec } from "@/components/charts/exhibit";
+import { namesOf } from "@/components/charts/vega/names";
 import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 
@@ -149,7 +150,7 @@ export function Chart({
     if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
 
     const v = resolveVegaSpec({
-      columns, rows, chartType, showLabels, exhibit, measure,
+      columns, rows, chartType, showLabels, exhibit, measure, names: namesOf(chartConfig),
       format: userFormat ?? custom?.format ?? null,
       xTitle: custom?.xTitle ?? null,
       yTitle: custom?.yTitle ?? null,
@@ -172,7 +173,7 @@ export function Chart({
       if (retreat === String(chartType ?? "auto") && !custom && !userFormat && !exhibit) continue;
       const bare = resolveVegaSpec({
         // `measure` survives the retreat: it is the user's intent, not styling.
-        columns, rows, chartType: retreat, showLabels, exhibit: null, measure,
+        columns, rows, chartType: retreat, showLabels, exhibit: null, measure, names: namesOf(chartConfig),
         format: null, xTitle: null, yTitle: null, orient: null, transform: null,
       });
       if (bare) return { spec: bare.spec, defaultH: bare.defaultH, xCategories: bare.xCategories, tier: 1 };

@@ -22,6 +22,7 @@ import { classifyColumns, isIdLike, isPriorPeriodCol, isUngraphableGrid, percent
 import { EXTENDED_TYPES, resolveExtendedForm } from "@/components/charts/vega/forms";
 import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
+import { applyNames, type SeriesNames } from "@/components/charts/vega/names";
 
 /** The four post-processing ops the edit panel offers, mirroring aughor/tools/postproc.py. */
 export type TransformOp = "pop" | "contribution" | "rolling" | "cumulative";
@@ -112,6 +113,9 @@ function transformBlocks(t: TransformSpec): { transform: Record<string, unknown>
 export interface ResolveSpecArgs {
   columns: string[];
   rows: unknown[][];
+  /** What the model's cryptic columns read as (`names.ts`) — laid over the resolved spec, never
+   *  renamed into the columns this resolver classifies by. */
+  names?: SeriesNames | null;
   /** Backend hint (`bar_horizontal`, `auto`, …) or an internal ChartType. */
   chartType?: string | null;
   /** d3-format string for the quantitative axis, e.g. ",.0f" / "$,.2f" / "~s". */
@@ -290,6 +294,11 @@ function axisTitle(explicit: string | null | undefined, field: string): string {
  * verdict the ECharts resolver reaches, so both engines refuse the same data.
  */
 export function resolveVegaSpec(args: ResolveSpecArgs): ResolvedSpec | null {
+  const resolved = resolveUnnamed(args);
+  return resolved && args.names ? { ...resolved, spec: applyNames(resolved.spec, args.names) } : resolved;
+}
+
+function resolveUnnamed(args: ResolveSpecArgs): ResolvedSpec | null {
   const { columns, rows, chartType, format, xTitle, yTitle, showLabels = false, title, orient,
           transform, exhibit: exhibitRaw, columnUnits, measure: chosenMeasure } = args;
   // Fail-open on a malformed spec: a bad exhibit costs its semantics, never the chart —

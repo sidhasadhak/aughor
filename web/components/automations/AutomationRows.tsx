@@ -911,8 +911,11 @@ export function McpCallRows({ e, onChange }: {
   );
 }
 
-export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange, onRemove }: {
+export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange, onRemove, wordsElsewhere = false }: {
   e: AutoEffect; agents: UserAgent[];
+  /** 2026-11-06 — a Slack step whose words are chosen in the What gets posted panel beside it: the
+   *  raw message field is that panel's, so it is not drawn twice. */
+  wordsElsewhere?: boolean;
   /** W1 — the step list this row belongs to, so its "Only if" picker can offer what the
    *  steps BEFORE it publish. Defaults to the row alone, which offers nothing: a surface
    *  that has not been taught about order shows no guard rather than a wrong one. */
@@ -998,14 +1001,14 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
             {/* Left as free text on purpose: a step whose message is
                 `{"$from": "step1.answer"}` is the whole reason the chain exists, and a
                 plain input is the only editor that can hold either that or a sentence. */}
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {!wordsElsewhere && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <Input style={{ ...inputStyle, flex: 1 }} value={messageText(e)}
                 onChange={ev => set({ message: parseMessage(ev.target.value) })}
                 title={BINDING_HINT}
                 placeholder={'message, or {"$from": "step1.answer", "$as": "text"}'} />
               <BindingCast value={e.config.message}
                 onChange={next => set({ message: next })} />
-            </div>
+            </div>}
           </div>
         )}
         {e.kind === "integration_call" && <IntegrationRows e={e} onChange={onChange} />}

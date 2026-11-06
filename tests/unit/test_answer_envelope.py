@@ -534,7 +534,7 @@ def test_a_bound_envelope_posts_its_slack_selection_and_the_gate_judges_that_tex
     monkeypatch.setattr(engine, "_file_departure_link", lambda *a, **kw: "")
     monkeypatch.setattr("aughor.slackbots.store.get_bot_decrypted", lambda bot_id: _Bot())
     monkeypatch.setattr("aughor.slackbots.post.post_as_bot",
-                        lambda token, channel, text, thread_ts=None:
+                        lambda token, channel, text, thread_ts=None, delivery_key="", departure_id="":
                         posted.append(text) or (True, {"ts": "1.2", "channel": "C1"}))
 
     # The envelope is bound (already resolved by the engine); `message` is bound too and

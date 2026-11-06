@@ -2238,6 +2238,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/{automation_id}/picture-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Picture Preview
+         * @description What a Slack step would post — its words and its pictures — drawn from the chain's last run
+         *     with the step's settings as edited (2026-11-06; the What gets posted panel). Read-only: nothing
+         *     runs, nothing is sent, no model is called. The post plans its pictures through the same
+         *     `automations/picture.plan`, so this is what posts.
+         */
+        post: operations["picture_preview_automations__automation_id__picture_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/{automation_id}/run": {
         parameters: {
             query?: never;
@@ -22160,6 +22183,124 @@ export interface components {
              */
             until?: string | null;
         };
+        /** PicturePreview */
+        PicturePreview: {
+            /**
+             * Kinds
+             * @description kind → {ok, why} for the first picture's result
+             */
+            kinds?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /**
+             * Names
+             * @description What the first picture's columns read as
+             */
+            names?: {
+                [key: string]: unknown;
+            };
+            /** Pictures */
+            pictures?: components["schemas"]["PicturePreviewImage"][];
+            /** Results */
+            results?: components["schemas"]["PicturePreviewResult"][];
+            /**
+             * Run At
+             * @default
+             */
+            run_at: string;
+            /**
+             * Run Id
+             * @default
+             */
+            run_id: string;
+            /**
+             * Said
+             * @description Why there is nothing to preview, when there is not
+             * @default
+             */
+            said: string;
+            /**
+             * Words
+             * @description The message text, as it would post
+             * @default
+             */
+            words: string;
+        };
+        /** PicturePreviewImage */
+        PicturePreviewImage: {
+            /**
+             * Asked
+             * @description The kind the step asked for
+             */
+            asked: string;
+            /**
+             * Image
+             * @description The picture as a data: URI; empty when the rows have no honest picture
+             * @default
+             */
+            image: string;
+            /**
+             * Kind
+             * @description The kind it is drawn as
+             */
+            kind: string;
+            /**
+             * Note
+             * @description Why it is drawn differently from what was asked, when it is
+             * @default
+             */
+            note: string;
+            /**
+             * Picture
+             * @description table · chart
+             */
+            picture: string;
+            /**
+             * Result
+             * @description Which result it is drawn from (an index into `results`)
+             */
+            result: number;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /**
+         * PicturePreviewRequest
+         * @description A Slack step's settings as the person has them now — saved or not.
+         */
+        PicturePreviewRequest: {
+            /**
+             * Config
+             * @description The step's config, as edited
+             */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Step
+             * @description The step's position in the chain
+             */
+            step: number;
+        };
+        /** PicturePreviewResult */
+        PicturePreviewResult: {
+            /**
+             * Claim
+             * @default
+             */
+            claim: string;
+            /** Columns */
+            columns?: string[];
+            /**
+             * Rows
+             * @default 0
+             */
+            rows: number;
+        };
         /** PinIn */
         PinIn: {
             /** Connection Id */
@@ -29616,6 +29757,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    picture_preview_automations__automation_id__picture_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PicturePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PicturePreview"];
                 };
             };
             /** @description Validation Error */

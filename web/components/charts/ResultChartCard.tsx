@@ -490,7 +490,9 @@ export function ResultChartCard({
           rows={effData.rows}
           measure={(metricSel ?? seed.metric) ?? null}
           chartType={hint}
-          chartConfig={userChoseChart ? null : chartConfig}
+          // The names (`vega/names.ts`) are not field-role config either: what a column reads as
+          // does not change with the picture, so they survive a chosen chart type as the exhibit does.
+          chartConfig={userChoseChart ? (chartConfig?.names ? { names: chartConfig.names } : null) : chartConfig}
           exhibit={effExhibit}
           columnUnits={columnUnits}
           custom={effCustom}

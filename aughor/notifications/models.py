@@ -122,6 +122,7 @@ class ActionLog:
     #: be written as `failed`, and on the live install that made 332 refusals of one
     #: switched-off trigger read as 332 failed deliveries — a defect in the RECORD, not
     #: in delivery. A row that was never attempted must not count as an attempt that lost.
+    #: Also a send whose delivery key already left (Track C3, `sent_once`); its `error` says when.
     status:           Literal["ok", "failed", "timeout", "skipped"]
     http_status:      Optional[int]
     error:            Optional[str]
@@ -130,6 +131,9 @@ class ActionLog:
     #: send can be FILED on the object it is about. "" for transports that answer with
     #: nothing worth keeping, and for every pre-wave row.
     resource_ref:     str = ""
+    #: Track C3 — set on the record a send answers with when its delivery key already left: the
+    #: FIRST send's record, and why nothing left this time. Never stored (not in `to_dict`).
+    not_sent_again:   str = ""
 
     def to_dict(self) -> dict:
         return {

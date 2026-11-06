@@ -813,6 +813,28 @@ class Ledger:
                     (store, store, max_entries),
                 )
 
+    def kv_put_if_absent(self, store: str, key: str, value: Any, *,
+                         max_entries: Optional[int] = None) -> bool:
+        """Insert only when ``key`` is not there, in one statement; True when this call wrote it.
+        Two processes racing for one key get exactly one True — the claim a send makes before it
+        leaves (Track C3, `notifications/sent_once.py`), which `kv_put` cannot be: it overwrites."""
+        payload = json.dumps(value, default=str)
+        with self._lock, self._conn:
+            seq = self._next_seq()
+            cur = self._conn.execute(
+                "INSERT INTO kv (store, key, value, seq, updated_at) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(store, key) DO NOTHING",
+                (store, key, payload, seq, _now()),
+            )
+            wrote = cur.rowcount > 0
+            if wrote and max_entries:
+                self._conn.execute(
+                    "DELETE FROM kv WHERE store=? AND key NOT IN ("
+                    "  SELECT key FROM kv WHERE store=? ORDER BY seq DESC LIMIT ?)",
+                    (store, store, max_entries),
+                )
+        return wrote
+
     def kv_delete(self, store: str, key: str) -> bool:
         with self._lock, self._conn:
             cur = self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, key))
