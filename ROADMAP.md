@@ -13136,6 +13136,17 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   can close a loop yet. The Declare form and the reader now say so. The history method's 80% intervals hold about half
   the time; that, not the foundation, is the next thing worth fixing. The first loop is a person's: a decision declared
   today with what it expects, answered on its review date.
+- **The history method's interval, calibrated 2026-11-06** (the user: *"Fix calibration"*). Measured first: the misses
+  were one-sided (actuals above the band), and the method's own backtest had said "held 0 of 4" on the worst metrics
+  while it printed "80%". The formula was `mean ± 1.28·sd` — the interval for the MEAN, the spread taken as exact —
+  and it lived in two places (the Briefing re-implemented it). Now one function, `record/scenario.band`: the
+  prediction interval for one new reading (t on n − 1 df × sd·√(1 + 1/n)), never narrower than the method's own
+  largest miss on the same windows (split conformal); methods 3 and 4, a segment's comparison, the backtest and the
+  Briefing's expected band all draw it. **Backtested on 782 rolling origins of LuxExperience's real weekly and
+  monthly series (read-only, local Postgres; theLook is BigQuery and was not spent on): 65% → 81% held at a stated
+  80%, 1.39× the width, no series below 60% (was 8 of 34).** On theLook's 94 stored predictions the t part alone
+  lifts 47% → 54%; a week its source redrew at three times its size is not a band's to cover. Predictions already
+  booked keep their old bands: the North Star's 0.40 falls only as new ones settle, once this is live.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
